@@ -3,6 +3,8 @@
 [![license](https://img.shields.io/pypi/l/varseek)](LICENSE)
 ![status](https://github.com/pachterlab/varseek/actions/workflows/ci.yml/badge.svg)
 
+![alt text](https://github.com/pachterlab/varseek/blob/main/figures/logo.png?raw=true)
+
 `varseek` is a free, open-source command-line tool and Python package that provides mutation screening of RNA-seq and DNA-seq data using k-mer-based alignment against a reference of known mutations. The name comes from "seeking variants" or, alternatively, "seeing k-variants" (where a "k-variant" is defined as a k-mer containing a variant).
   
 ![alt text](https://github.com/pachterlab/varseek/blob/main/figures/varseek_overview.png?raw=true)

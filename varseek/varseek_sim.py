@@ -34,6 +34,8 @@ def sim(
     number_of_reads_per_sample_w=None,
     read_length=150,
     seed=42,
+    k=None,
+    w=None,
     add_noise=False,
     error_rate=0.0001,
     max_errors=float("inf"),
@@ -112,7 +114,14 @@ def sim(
         mutation_metadata_df = pd.read_csv(mutation_metadata_df)
 
     if (type(mutation_metadata_df) == str and not os.path.exists(mutation_metadata_df)) or "mutant_sequence_read_parent" not in mutation_metadata_df.columns or "wt_sequence_read_parent" not in mutation_metadata_df.columns:  # TODO: debug when a subset of columns is already in df
+        print("cannot find mutant sequence read parent")
         update_df_out = f"{out_dir_vk_build}/sim_data_df.csv"
+
+        if k and w:
+            assert k > w, "k must be greater than w"
+            read_w = read_length - (k - w)
+        else:
+            read_w = read_length - 1
 
         if sequences_cdna is not None and sequences_genome is not None:
             update_df_out_cdna = update_df_out.replace(".csv", "_cdna.csv")
@@ -122,7 +131,7 @@ def sim(
                     mutations=mutation_metadata_df_path,
                     out=out_dir_vk_build,
                     reference_out=reference_out_dir,
-                    w=read_length - 1,
+                    w=read_w,
                     remove_seqs_with_wt_kmers=False,
                     optimize_flanking_regions=False,
                     min_seq_len=read_length,
@@ -141,7 +150,7 @@ def sim(
                     mutations=mutation_metadata_df_path,
                     out=out_dir_vk_build,
                     reference_out=reference_out_dir,
-                    w=read_length - 1,
+                    w=read_w,
                     remove_seqs_with_wt_kmers=False,
                     optimize_flanking_regions=False,
                     min_seq_len=read_length,
@@ -167,12 +176,13 @@ def sim(
         else:
             # TODO: add more support for column names based on whether cDNA or genome specified
             if not os.path.exists(update_df_out):
+                print("running varseek build")
                 varseek.build(
                     sequences=sequences,
                     mutations=mutation_metadata_df_path,
                     out=out_dir_vk_build,
                     reference_out=reference_out_dir,
-                    w=read_length - 1,
+                    w=read_w,
                     remove_seqs_with_wt_kmers=False,
                     optimize_flanking_regions=False,
                     min_seq_len=read_length,
@@ -241,6 +251,10 @@ def sim(
         ("list_of_read_starting_indices_mutant", None),
         ("number_of_reads_wt", 0),
         ("number_of_reads_mutant", 0),
+        ("any_noisy_reads_wt", False),
+        ("noisy_read_indices_wt", None),
+        ("any_noisy_reads_mutant", False),
+        ("noisy_read_indices_mutant", None),
     ]
 
     for column, default_value in column_and_default_value_list_of_tuples:
