@@ -230,6 +230,9 @@ def sim(
             suffixes=("", "_read_parent"),
         )
 
+    filters.extend(['mutant_sequence_read_parent-isnotnull', 'wt_sequence_read_parent-isnotnull'])
+    filters = list(set(filters))
+
     if filters:
         filtered_df = varseek.filter(mutation_metadata_df, filters=filters, return_df=True, output_mcrs_fasta=None)  # filter to include only rows not already in mutation and whatever condition I would like
     else:
@@ -313,8 +316,10 @@ def sim(
 
     # Write to a FASTA file
     total_fragments = 0
+    skipped = 0
     with open(fasta_output_path_temp, "a") as fa_file:
         for row in sampled_reference_df.itertuples(index=False):
+            # try:
             header = row.header
             mcrs_id = row.mcrs_id
             mcrs_header = row.mcrs_header
@@ -503,6 +508,11 @@ def sim(
                 new_column_dict["noisy_read_indices_wt"].append(noisy_read_indices_wt)
                 new_column_dict["any_noisy_reads_wt"].append(bool(noisy_read_indices_wt))
                 noisy_read_indices_wt = []
+            # except Exception as e:
+            #     skipped += 1
+
+    if skipped > 0:
+        print(f"Skipped {skipped} mutations due to errors")
 
             
     for key in new_column_dict:

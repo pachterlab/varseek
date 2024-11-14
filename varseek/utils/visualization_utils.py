@@ -155,11 +155,11 @@ def calculate_metrics(df, header_name=None, check_assertions=False, crude = Fals
         FNs = []
 
     print(f"TP: {TP}, FP: {FP}, FN: {FN}, TN: {TN}")
-    if FP != 0:
-        print(f"FPs: {FPs}")
+    # if FP != 0:
+    #     print(f"FPs: {FPs}")
 
-    if FN != 0:
-        print(f"FNs: {FNs}")
+    # if FN != 0:
+    #     print(f"FNs: {FNs}")
 
     accuracy, sensitivity, specificity = calculate_sensitivity_specificity(TP, TN, FP, FN)
     print(f"Accuracy: {accuracy}, Sensitivity: {sensitivity}, Specificity: {specificity}")

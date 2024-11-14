@@ -1261,38 +1261,126 @@ def generate_kmers(sequence, k):
     return [sequence[i : i + k] for i in range(len(sequence) - k + 1)]
 
 
-def generate_kmer_overlap_df_temp(sequences, k, mcrs_id_column="mcrs_id"):
-    # Dictionary to store all k-mers and the sequences they come from
+# def generate_kmer_overlap_df_temp(sequences, k, mcrs_id_column="mcrs_id"):
+#     # Dictionary to store all k-mers and the sequences they come from
+#     results = []
+#     kmer_to_sequences = defaultdict(set)
+
+#     # Loop through each sequence and generate k-mers
+#     # for seq_id, sequence in sequences.items():
+#     for seq_id, sequence in tqdm(sequences.items(), desc="Generating k-mers", unit="sequence"):
+#         kmers = generate_kmers(sequence, k)
+#         for kmer in kmers:
+#             kmer_to_sequences[kmer].add(seq_id)
+
+#     # Create a list to store results
+
+#     # Loop through each sequence again to check k-mer overlaps
+#     # for seq_id, sequence in sequences.items():
+#     for seq_id, sequence in tqdm(sequences.items(), desc="Checking overlaps", unit="sequence"):
+#         kmers = generate_kmers(sequence, k)
+#         overlapping_kmers = 0
+#         distinct_sequences = set()
+#         overlapping_kmers_list = []
+
+#         for kmer in kmers:
+#             if len(kmer_to_sequences[kmer]) > 1:  # Check if k-mer overlaps with any other sequence
+#                 overlapping_kmers += 1
+#                 distinct_sequences.update(kmer_to_sequences[kmer])
+#                 overlapping_kmers_list.append(kmer)
+
+#         # Remove the current sequence from the distinct sequences count
+#         distinct_sequences.discard(seq_id)
+
+#         # Store the results for this sequence
+#         results.append(
+#             {
+#                 mcrs_id_column: seq_id,
+#                 "number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference": overlapping_kmers,
+#                 "overlapping_kmers": overlapping_kmers_list,
+#                 "number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference": len(distinct_sequences),
+#                 "mcrs_items_with_overlapping_kmers_in_mcrs_reference": distinct_sequences,
+#             }
+#         )
+
+#     # Convert results to a DataFrame
+#     df = pd.DataFrame(results)
+
+#     return df
+
+
+# def count_kmer_overlaps(fasta_file, k=31, strandedness=False, mcrs_id_column="mcrs_id"):
+#     """Count k-mer overlaps between sequences in the FASTA file."""
+#     # Parse the fasta file and store sequences
+#     sequences_f = {record.id: str(record.seq) for record in SeqIO.parse(fasta_file, "fasta")}
+#     df = generate_kmer_overlap_df_temp(sequences_f, k, mcrs_id_column=mcrs_id_column)
+
+#     if not strandedness:
+#         sequences_rc = {record_id: reverse_complement(seq) for record_id, seq in sequences_f.items()}  # TODO: takes a long time
+#         df_rc = generate_kmer_overlap_df_temp(sequences_rc, k, mcrs_id_column=mcrs_id_column)
+
+#         # Concatenate the DataFrames
+#         df_concat = pd.concat([df, df_rc], ignore_index=True)
+
+#         # Identify the columns
+#         int_columns = [
+#             "number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference",
+#             "number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference",
+#         ]
+#         set_columns = [
+#             "overlapping_kmers",
+#             "mcrs_items_with_overlapping_kmers_in_mcrs_reference",
+#         ]
+
+#         # Define the union function for sets
+#         def union_sets(series):
+#             sets = [s for s in series if isinstance(s, set)]
+#             return set.union(*sets) if sets else set()
+
+#         # Create the aggregation dictionary
+#         agg_dict = {col: "sum" for col in int_columns}
+#         agg_dict.update({col: union_sets for col in set_columns})
+
+#         # Group by mcrs_id_column and aggregate
+#         df = df_concat.groupby(mcrs_id_column).agg(agg_dict).reset_index()
+
+#     return df
+
+
+def count_kmer_overlaps_new(fasta_file, k=31, strandedness=False, mcrs_id_column="mcrs_id"):
+    """Count k-mer overlaps between sequences in the FASTA file."""
+    # Parse the FASTA file and store sequences
+    id_and_sequence_list_of_tuples = [(record.id, str(record.seq)) for record in SeqIO.parse(fasta_file, "fasta")]
+    
+    if not strandedness:
+        # Generate reverse complements
+        sequences_rc = [(record_id, reverse_complement(seq)) for record_id, seq in id_and_sequence_list_of_tuples]
+        id_and_sequence_list_of_tuples.extend(sequences_rc)
+
+    # Create a combined k-mer overlap dictionary
+    kmer_to_seqids = defaultdict(set)
+    for seq_id, sequence in tqdm(id_and_sequence_list_of_tuples, desc="Generating k-mers", unit="sequence"):
+        for kmer in generate_kmers(sequence, k):
+            kmer_to_seqids[kmer].add(seq_id)
+
+    # Process forward sequences only, checking overlaps with both forward and reverse complement k-mers
     results = []
-    kmer_to_sequences = defaultdict(set)
-
-    # Loop through each sequence and generate k-mers
-    # for seq_id, sequence in sequences.items():
-    for seq_id, sequence in tqdm(sequences.items(), desc="Generating k-mers", unit="sequence"):
-        kmers = generate_kmers(sequence, k)
-        for kmer in kmers:
-            kmer_to_sequences[kmer].add(seq_id)
-
-    # Create a list to store results
-
-    # Loop through each sequence again to check k-mer overlaps
-    # for seq_id, sequence in sequences.items():
-    for seq_id, sequence in tqdm(sequences.items(), desc="Checking overlaps", unit="sequence"):
+    for seq_id, sequence in tqdm(id_and_sequence_list_of_tuples, desc="Checking overlaps", unit="sequence"):
         kmers = generate_kmers(sequence, k)
         overlapping_kmers = 0
         distinct_sequences = set()
         overlapping_kmers_list = []
 
         for kmer in kmers:
-            if len(kmer_to_sequences[kmer]) > 1:  # Check if k-mer overlaps with any other sequence
+            if len(kmer_to_seqids[kmer]) > 1:  # Overlaps with at least one other sequence
                 overlapping_kmers += 1
-                distinct_sequences.update(kmer_to_sequences[kmer])
+                distinct_sequences.update(kmer_to_seqids[kmer])
                 overlapping_kmers_list.append(kmer)
 
         # Remove the current sequence from the distinct sequences count
         distinct_sequences.discard(seq_id)
 
-        # Store the results for this sequence
+        # Store results
         results.append(
             {
                 mcrs_id_column: seq_id,
@@ -1305,44 +1393,6 @@ def generate_kmer_overlap_df_temp(sequences, k, mcrs_id_column="mcrs_id"):
 
     # Convert results to a DataFrame
     df = pd.DataFrame(results)
-
-    return df
-
-
-def count_kmer_overlaps(fasta_file, k=31, strandedness=False, mcrs_id_column="mcrs_id"):
-    """Count k-mer overlaps between sequences in the FASTA file."""
-    # Parse the fasta file and store sequences
-    sequences_f = {record.id: str(record.seq) for record in SeqIO.parse(fasta_file, "fasta")}
-    df = generate_kmer_overlap_df_temp(sequences_f, k, mcrs_id_column=mcrs_id_column)
-
-    if not strandedness:
-        sequences_rc = {record_id: reverse_complement(seq) for record_id, seq in sequences_f.items()}  # TODO: takes a long time
-        df_rc = generate_kmer_overlap_df_temp(sequences_rc, k, mcrs_id_column=mcrs_id_column)
-
-        # Concatenate the DataFrames
-        df_concat = pd.concat([df, df_rc], ignore_index=True)
-
-        # Identify the columns
-        int_columns = [
-            "number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference",
-            "number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference",
-        ]
-        set_columns = [
-            "overlapping_kmers",
-            "mcrs_items_with_overlapping_kmers_in_mcrs_reference",
-        ]
-
-        # Define the union function for sets
-        def union_sets(series):
-            sets = [s for s in series if isinstance(s, set)]
-            return set.union(*sets) if sets else set()
-
-        # Create the aggregation dictionary
-        agg_dict = {col: "sum" for col in int_columns}
-        agg_dict.update({col: union_sets for col in set_columns})
-
-        # Group by mcrs_id_column and aggregate
-        df = df_concat.groupby(mcrs_id_column).agg(agg_dict).reset_index()
 
     return df
 
@@ -3417,7 +3467,7 @@ def get_mcrss_that_pseudoalign_but_arent_dlisted(
 
 def get_df_overlap(mcrs_fa, out_dir_notebook=".", k=31, strandedness=False, mcrs_id_column = "mcrs_id", output_text_file = None, output_plot_folder = None):
     df_overlap_save_path = f"{out_dir_notebook}/kmer_overlap_stats.csv"
-    df_overlap = count_kmer_overlaps(mcrs_fa, k=k, strandedness=strandedness, mcrs_id_column=mcrs_id_column)
+    df_overlap = count_kmer_overlaps_new(mcrs_fa, k=k, strandedness=strandedness, mcrs_id_column=mcrs_id_column)
     df_overlap.to_csv(df_overlap_save_path, index=False)
 
     print_column_summary_stats(df_overlap, "number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference", output_file = output_text_file)
