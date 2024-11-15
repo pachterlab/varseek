@@ -7,6 +7,26 @@ from varseek.utils import split_fastq_reads_by_N, replace_low_quality_base_with_
 
 from pdb import set_trace as st
 
+def check_for_successful_downloads(ccle_data_out_base):
+    bad_samples = []
+
+    for subfolder in os.listdir(ccle_data_out_base):
+        subfolder_path = os.path.join(ccle_data_out_base, subfolder)
+        
+        if os.path.isdir(subfolder_path):
+            # Paths to the required subdirectories
+            mutation_index_path = os.path.join(subfolder_path, "kb_count_out_mutation_index")
+            standard_index_path = os.path.join(subfolder_path, "kb_count_out_standard_index")
+            
+            # Check if both subdirectories exist and are non-empty
+            mutation_exists = os.path.exists(mutation_index_path) and os.listdir(mutation_index_path)
+            standard_exists = os.path.exists(standard_index_path) and os.listdir(standard_index_path)
+            
+            if not mutation_exists and standard_exists:
+                bad_samples.append(subfolder)
+
+    return bad_samples
+
 def download_ccle_total(
     record,
     mutation_index,
@@ -15,6 +35,7 @@ def download_ccle_total(
     standard_t2g = None,
     ccle_data_out_base = ".",
     k = 31,
+    k_standard = 31,
     seqtk = "seqtk",
     threads_per_task = 1,
     trim_edges_off_reads = False,
@@ -23,7 +44,8 @@ def download_ccle_total(
     minimum_base_quality_replace_with_N = 20,
     split_reads_by_Ns = False,
     save_fastq_headers = False,
-    save_fastq_files = False
+    save_fastq_files = False,
+    max_retries = 5
 ):
     sample_accession = record.get('sample_accession')
     experiment_accession = record.get('experiment_accession')
@@ -49,25 +71,45 @@ def download_ccle_total(
         os.makedirs(kb_count_out_standard_index)
 
     fastq_files = []
+    download_success = False
 
     for link in fastq_links:
         rnaseq_fastq_file = os.path.join(sample_out_folder, os.path.basename(link))
-        if not os.path.exists(rnaseq_fastq_file):  # just here while I keep files permanently for debugging
-            print(f"Downloading {link} to {rnaseq_fastq_file}")
+        for _ in range(max_retries):
+            if not os.path.exists(rnaseq_fastq_file):  # just here while I keep files permanently for debugging
+                print(f"Downloading {link} to {rnaseq_fastq_file}")
 
-            if not link.startswith(('ftp://', 'http://')):
-                link = 'ftp://' + link
+                if not link.startswith(('ftp://', 'http://')):
+                    link = 'ftp://' + link
 
-            download_command = f"curl --connect-timeout 60 --speed-time 30 --speed-limit 10000 -o {rnaseq_fastq_file} {link}"
+                download_command = f"curl --connect-timeout 60 --speed-time 30 --speed-limit 10000 -o {rnaseq_fastq_file} {link}"
 
-            try:
-                result = subprocess.run(download_command, shell=True, check=True)
-            except subprocess.CalledProcessError as e:
-                print(f"Error downloading {link} to {rnaseq_fastq_file}")
-                print(e)
-                continue
+                try:
+                    result = subprocess.run(download_command, shell=True, check=True)
+                except subprocess.CalledProcessError as e:
+                    print(f"Error downloading {link} to {rnaseq_fastq_file}")
+                    print(e)
+                    continue
+
+                # Validate the file with gzip -t
+                gzip_check_command = f"gzip -t {rnaseq_fastq_file}"
+                
+                try:
+                    subprocess.run(gzip_check_command, shell=True, check=True)
+                    download_success = True
+                    break
+                except subprocess.CalledProcessError:
+                    if os.path.exists(rnaseq_fastq_file):
+                        os.remove(rnaseq_fastq_file)  # Remove the corrupted file
 
         fastq_files.append(rnaseq_fastq_file)
+    
+    if not download_success:
+        print(f"Failed to download all files for run accession {run_accession}")
+        if not save_fastq_files:
+            for fastq in fastq_files:
+                os.remove(fastq)
+        return
     
     print(f"Downloaded all files for run accession {run_accession}")
 
@@ -104,7 +146,7 @@ def download_ccle_total(
 
     # run kb count standard with paired end, before any further fastq modification
     if not os.path.exists(kb_count_out_standard_index) or not os.listdir(kb_count_out_standard_index):
-        kb_count_standard_index_command = ["kb", "count", "-t", str(threads_per_task), "-k", str(k), "-i", standard_index, "-g", standard_t2g, "-x", "bulk", "--num", "--h5ad", "--parity", "paired", "-o", kb_count_out_standard_index] + fastq_files
+        kb_count_standard_index_command = ["kb", "count", "-t", str(threads_per_task), "-k", str(k_standard), "-i", standard_index, "-g", standard_t2g, "-x", "bulk", "--num", "--h5ad", "--parity", "paired", "-o", kb_count_out_standard_index] + fastq_files
         try:
             subprocess.run(kb_count_standard_index_command, check=True)
         except subprocess.CalledProcessError as e:
@@ -178,6 +220,7 @@ def main(args):
     ccle_data_out_base = args.ccle_data_out_base
     seqtk = args.seqtk
     k = args.k
+    k_standard = args.k_standard
     threads_per_task = args.threads_per_task
     number_of_tasks_total = args.number_of_tasks_total
     trim_edges_off_reads = args.trim_edges_off_reads
@@ -187,6 +230,7 @@ def main(args):
     split_reads_by_Ns = args.split_reads_by_Ns
     save_fastq_headers = args.save_fastq_headers
     save_fastq_files = args.save_fastq_files
+    max_retries = args.max_retries
 
     if not os.path.exists(ccle_data_out_base):
         os.makedirs(ccle_data_out_base, exist_ok=True)
@@ -246,6 +290,7 @@ def main(args):
                 standard_t2g=standard_t2g,
                 ccle_data_out_base=ccle_data_out_base,
                 k=k,
+                k_standard=k_standard,
                 seqtk=seqtk,
                 threads_per_task=threads_per_task,
                 trim_edges_off_reads=trim_edges_off_reads,
@@ -254,7 +299,8 @@ def main(args):
                 minimum_base_quality_replace_with_N=minimum_base_quality_replace_with_N,
                 split_reads_by_Ns=split_reads_by_Ns,
                 save_fastq_headers=save_fastq_headers,
-                save_fastq_files=save_fastq_files
+                save_fastq_files=save_fastq_files,
+                max_retries=max_retries
             )
             for record in data_list_to_run
         ]
@@ -267,6 +313,10 @@ def main(args):
     except subprocess.CalledProcessError as e:
         print("Error running multiqc_total")
         print(e)
+
+    bad_samples = check_for_successful_downloads(ccle_data_out_base)
+    
+    print(f"Samples with failed downloads: {bad_samples}")
     
     print("Program complete")
 
@@ -282,6 +332,7 @@ if __name__ == "__main__":
     parser.add_argument("--json_path", type=str, default="", help="Path to JSON file containing metadata.")
     parser.add_argument("--ccle_data_out_base", type=str, default=".", help="Base directory for kb output.")
     parser.add_argument("-k", "--k", type=int, default=31, help="Length of k-mer for kb count (default: 31).")
+    parser.add_argument("--k_standard", type=int, default=31, help="Length of k-mer for standard index (default: 31).")
     parser.add_argument("--seqtk", type=str, default="seqtk", help="Path to seqtk executable.")
     parser.add_argument("--threads_per_task", type=int, default=1, help="Number of threads per task (default: 1).")
     parser.add_argument("--number_of_tasks_total", type=int, default=4, help="Total number of concurrent tasks (default: 4).")
@@ -292,6 +343,7 @@ if __name__ == "__main__":
     parser.add_argument("--split_reads_by_Ns", action="store_true", help="Flag to split reads by 'N'.")
     parser.add_argument("--save_fastq_headers", action="store_true", help="Flag to save fastq headers.")
     parser.add_argument("--save_fastq_files", action="store_true", help="Flag to not delete fastq files after processing.")
+    parser.add_argument("--max_retries", type=int, default=5, help="Maximum number of retries for downloading files (default: 5).")
 
     # Parse arguments
     args = parser.parse_args()

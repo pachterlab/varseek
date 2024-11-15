@@ -224,6 +224,9 @@ def write_temp_fa(mcrs_fa):
 
     return mcrs_fa, mcrs_fa_original
 
+def fast_reverse_complement(sequence):
+    complement_map = str.maketrans("ACGTNacgtn.", "TGCANtgcan.")
+    return sequence.translate(complement_map)[::-1]
 
 def reverse_complement(sequence):
     return "".join(complement.get(nucleotide, "N") for nucleotide in sequence[::-1])
@@ -1256,9 +1259,15 @@ def apply_enst_format(unique_mutations_genome, cosmic_reference_file_mutation_cs
     return unique_mutations_genome_enst_format
 
 
-def generate_kmers(sequence, k):
+def generate_kmers(sequence, k, strandedness = True):
     """Generate k-mers of length k from a sequence."""
-    return [sequence[i : i + k] for i in range(len(sequence) - k + 1)]
+    if strandedness:
+        return [sequence[i : i + k] for i in range(len(sequence) - k + 1)]
+    else:
+        list_f = [sequence[i : i + k] for i in range(len(sequence) - k + 1)]
+        sequence_rc = reverse_complement(sequence)
+        list_rc = [sequence_rc[i : i + k] for i in range(len(sequence_rc) - k + 1)]
+        return list_f + list_rc
 
 
 # def generate_kmer_overlap_df_temp(sequences, k, mcrs_id_column="mcrs_id"):
@@ -1346,48 +1355,60 @@ def generate_kmers(sequence, k):
 
 #     return df
 
+from hashlib import md5
+def hash_kmer(kmer):
+    """Return the MD5 hash of a k-mer as a hexadecimal string."""
+    return md5(kmer.encode('utf-8')).hexdigest()
 
 def count_kmer_overlaps_new(fasta_file, k=31, strandedness=False, mcrs_id_column="mcrs_id"):
     """Count k-mer overlaps between sequences in the FASTA file."""
     # Parse the FASTA file and store sequences
     id_and_sequence_list_of_tuples = [(record.id, str(record.seq)) for record in SeqIO.parse(fasta_file, "fasta")]
     
-    if not strandedness:
-        # Generate reverse complements
-        sequences_rc = [(record_id, reverse_complement(seq)) for record_id, seq in id_and_sequence_list_of_tuples]
-        id_and_sequence_list_of_tuples.extend(sequences_rc)
-
     # Create a combined k-mer overlap dictionary
     kmer_to_seqids = defaultdict(set)
     for seq_id, sequence in tqdm(id_and_sequence_list_of_tuples, desc="Generating k-mers", unit="sequence"):
-        for kmer in generate_kmers(sequence, k):
-            kmer_to_seqids[kmer].add(seq_id)
+        for kmer in generate_kmers(sequence, k, strandedness=strandedness):
+            # kmer_to_seqids[kmer].add(seq_id)
+            # TODO: erase the line above and try storing hashes of k-mers instead
+            kmer_hash = hash_kmer(kmer)  # Hash the k-mer
+            kmer_to_seqids[kmer_hash].add(seq_id)
 
     # Process forward sequences only, checking overlaps with both forward and reverse complement k-mers
     results = []
     for seq_id, sequence in tqdm(id_and_sequence_list_of_tuples, desc="Checking overlaps", unit="sequence"):
         kmers = generate_kmers(sequence, k)
         overlapping_kmers = 0
-        distinct_sequences = set()
-        overlapping_kmers_list = []
+        distinct_sequences_set = set()
+        overlapping_kmers_set = set()
 
         for kmer in kmers:
-            if len(kmer_to_seqids[kmer]) > 1:  # Overlaps with at least one other sequence
-                overlapping_kmers += 1
-                distinct_sequences.update(kmer_to_seqids[kmer])
-                overlapping_kmers_list.append(kmer)
+            kmer_hash = hash_kmer(kmer)
+            if strandedness:
+                if len(kmer_to_seqids[kmer_hash]) > 1:
+                    overlapping_kmers += 1
+                    overlapping_kmers_set.add(kmer)
+                    distinct_sequences_set.update(kmer_to_seqids[kmer_hash])
+            else:
+                kmer_rc = reverse_complement(kmer)
+                kmer_rc_hash = hash_kmer(kmer_rc)
+                if len(kmer_to_seqids[kmer_rc_hash]) > 1 or len(kmer_to_seqids[kmer_hash]) > 1:
+                    overlapping_kmers += 1
+                    overlapping_kmers_set.add(kmer)
+                    distinct_sequences_set.update(kmer_to_seqids[kmer_hash])
+                    distinct_sequences_set.update(kmer_to_seqids[kmer_rc_hash])
 
         # Remove the current sequence from the distinct sequences count
-        distinct_sequences.discard(seq_id)
+        distinct_sequences_set.discard(seq_id)
 
         # Store results
         results.append(
             {
                 mcrs_id_column: seq_id,
                 "number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference": overlapping_kmers,
-                "overlapping_kmers": overlapping_kmers_list,
-                "number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference": len(distinct_sequences),
-                "mcrs_items_with_overlapping_kmers_in_mcrs_reference": distinct_sequences,
+                "overlapping_kmers": overlapping_kmers_set,
+                "number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference": len(distinct_sequences_set),
+                "mcrs_items_with_overlapping_kmers_in_mcrs_reference": distinct_sequences_set,
             }
         )
 
@@ -4524,6 +4545,7 @@ def map_transcripts_to_genes(transcript_list, mapping_dict):
 
 #* TODO: only works when kb count was run with --num (as this means that each row of the BUS file corresponds to exactly one read)
 def make_bus_df(kallisto_out, fastq_file, t2g_file, mm = False, union = False, assay = "bulk", bustools = "bustools"):
+    print("loading in transcripts")
     with open(f"{kallisto_out}/transcripts.txt") as f:
         transcripts = f.read().splitlines()  # get transcript at index 0 with transcript[0], and index of transcript named "name" with transcript.index("name")
 
@@ -4533,6 +4555,7 @@ def make_bus_df(kallisto_out, fastq_file, t2g_file, mm = False, union = False, a
     fastq_file = str(fastq_file)
 
     # TODO: figure out how to handle multiple fastqs - i.e., how to extract barcode from read, and how to handle the case where the barcode is associated with the file as a whole
+    print("loading in fastq headers")
     if fastq_file.endswith(".fastq") or fastq_file.endswith(".fq") or fastq_file.endswith(".fastq.gz") or fastq_file.endswith(".fq.gz"):
         fastq_header_list = get_header_set_from_fastq(fastq_file, output_format="list")
     elif fastq_file.endswith(".txt"):
@@ -4542,6 +4565,7 @@ def make_bus_df(kallisto_out, fastq_file, t2g_file, mm = False, union = False, a
     # fastq_header_list.insert(0, "")  # because bus file read indices are index 1
 
     # Get equivalence class that matches to 0-indexed line number of target ID
+    print("loading in ec matrix")
     ec_df = pd.read_csv(f"{kallisto_out}/matrix.ec", sep="\t", header=None, names=["EC", "transcript_ids"])
     ec_df['transcript_ids'] = ec_df['transcript_ids'].astype(str)
     ec_df['transcript_ids_list'] = ec_df["transcript_ids"].str.split(",")
@@ -4553,6 +4577,7 @@ def make_bus_df(kallisto_out, fastq_file, t2g_file, mm = False, union = False, a
     bus_file = f"{kallisto_out}/output.bus"
     bus_text_file = f"{kallisto_out}/output_sorted_bus.txt"
     if not os.path.exists(bus_text_file):
+        print("running bustools text")
         bus_txt_file_existed_originally = False
         create_bus_txt_file_command = f"{bustools} text -o {bus_text_file} -f {bus_file}"
         subprocess.run(create_bus_txt_file_command, shell=True, check=True)
@@ -4560,6 +4585,7 @@ def make_bus_df(kallisto_out, fastq_file, t2g_file, mm = False, union = False, a
     else:
         bus_txt_file_existed_originally = True
     
+    print("loading in bus df")
     bus_df = pd.read_csv(bus_text_file, sep="\t", header=None, names=['barcode', 'UMI', 'EC', 'count', 'read_index'])
     
     if not bus_txt_file_existed_originally:
@@ -4568,6 +4594,7 @@ def make_bus_df(kallisto_out, fastq_file, t2g_file, mm = False, union = False, a
     # TODO: if multiple fastqs, then consider the barcode as well (requires technology parameter)
     bus_df["fastq_header"] = bus_df["read_index"].map(pd.Series(fastq_header_list))
 
+    print("merging ec df into bus df")
     bus_df = bus_df.merge(ec_df, on="EC", how="left")
 
     if assay == "sc":
@@ -4601,6 +4628,7 @@ def make_bus_df(kallisto_out, fastq_file, t2g_file, mm = False, union = False, a
         bus_df["transcript_ids_list_final"] = bus_df["transcript_ids_list"]
         bus_df["transcript_names_final"] = bus_df["transcript_names"]
 
+    print("loading in t2g df")
     t2g_df = pd.read_csv(t2g_file, sep="\t", header=None, names=["transcript_id", "gene_name"])
     t2g_dict = dict(zip(t2g_df["transcript_id"], t2g_df["gene_name"]))
 
@@ -4625,6 +4653,7 @@ def make_bus_df(kallisto_out, fastq_file, t2g_file, mm = False, union = False, a
     # so now I can iterate through this dataframe for the columns where counted_in_count_matrix is True - barcode will be the cell/sample (adata row), gene_names_final will be the list of gene name(s) (adata column), and count will be the number added to this entry of the matrix (always 1 for bulk)
 
     # save bus_df
+    print("saving bus df")
     bus_df.to_csv(f"{kallisto_out}/bus_df.csv", index=False)
     return bus_df
 

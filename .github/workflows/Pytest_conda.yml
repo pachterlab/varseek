@@ -1,4 +1,4 @@
-name: Pytest conda
+name: Pytest_conda
 
 on:
   push:

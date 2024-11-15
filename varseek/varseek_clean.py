@@ -10,7 +10,6 @@ def clean(adata_path, adata_output_path = None, output_figures_dir = None, id_to
     data_fastq = None  # space-separated string of fastqs
     mcrs_fasta = None
     dlist_fasta = None
-    bus_file = None
     kb_count_out = "kb_count_out_temp"
     mcrs_index = None
     mcrs_t2g = None
@@ -53,10 +52,10 @@ def clean(adata_path, adata_output_path = None, output_figures_dir = None, id_to
     adata.var['mcrs_id'] = adata.var.index
     
     if adata_path_normal_genome:
-        if isinstance(adata_path, anndata.AnnData):
+        if isinstance(adata_path_normal_genome, anndata.AnnData):
             adata_normal_genome = adata_path_normal_genome
             adata_normal_dir = "."
-        elif isinstance(adata_path, str):
+        elif isinstance(adata_path_normal_genome, str):
             adata_normal_genome = sc.read_h5ad(adata_path_normal_genome)
             adata_normal_dir = os.path.dirname(adata_path_normal_genome)
         else:
@@ -80,7 +79,7 @@ def clean(adata_path, adata_output_path = None, output_figures_dir = None, id_to
         adata.var = adata.var.merge(df_to_merge, on=mcrs_id_column, how='left')
         adata.var_names = original_var_names
     
-    if False:  #* erase once tested
+    if False:  # TODO: erase once tested
         if split_reads_by_Ns:
             # TODO: test this
             adata = decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_mode(adata, fastq=data_fastq, kb_count_out=kb_count_out, t2g=mcrs_t2g, mm=mm, bustools=bustools, split_Ns = split_reads_by_Ns, paired_end_fastqs = False, paired_end_suffix_length = 2, assay="bulk", keep_only_insertions = True)
@@ -100,7 +99,7 @@ def clean(adata_path, adata_output_path = None, output_figures_dir = None, id_to
         adata.X = (adata.X > 0).astype(int)
 
     # TODO: make sure the adata objects are in the same order (relevant for both bulk and sc)
-    if adata_normal_genome:
+    if adata_path_normal_genome:
         if assay == "sc":
             if filter_cells_by_min_counts:
                 if type(filter_cells_by_min_counts) != int:  # ie True for automatic
@@ -196,7 +195,7 @@ def clean(adata_path, adata_output_path = None, output_figures_dir = None, id_to
     if gene_set_to_exclude:
         adata = remove_adata_columns(adata, values_of_interest = gene_set_to_exclude, operation = "exclude", var_column_name = "gene_name")
 
-    adata.var['mcrs_count'] = adata.X.sum(axis=0).A1 if hasattr(adata.X, 'A1') else adata.X.sum(axis=0).flatten()
+    adata.var['mcrs_count'] = adata.X.sum(axis=0).A1 if hasattr(adata.X, 'A1') else np.asarray(adata.X.sum(axis=0)).flatten()
 
     if adata_path_normal_genome:
         adata_normal_genome.write(adata_normal_genome_output_path)

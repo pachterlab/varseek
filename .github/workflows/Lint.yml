@@ -1,4 +1,4 @@
-name: Lint_Format_Test
+name: Lint
 
 on:
   push:

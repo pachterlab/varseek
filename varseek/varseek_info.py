@@ -601,6 +601,9 @@ def info(
             columns_not_successfully_added.extend(["entries_for_which_this_mcrs_is_substring", "entries_for_which_this_mcrs_is_superstring", "mcrs_is_substring", "mcrs_is_superstring"])
 
     # CELL
+    logger.info("sorting mutation metadata by mcrs id")
+    mutation_metadata_df.sort_values(by='mcrs_id', inplace=True).reset_index(drop=True)
+    
     logger.info("Saving mutation metadata")
     mutation_metadata_df.to_csv(mutation_metadata_df_out_path, index=False)
 
