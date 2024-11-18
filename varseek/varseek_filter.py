@@ -11,7 +11,7 @@ from .utils import (
     prepare_filters_list,
     create_mutant_t2g,
     filter_id_to_header_csv,
-    fasta_summary_stats
+    fasta_summary_stats,
 )
 
 logger = set_up_logger()
@@ -66,15 +66,21 @@ def filter(
         # TODO: if I want number of mutations (in addition to number of MCRSs), then calculate the length of the df exploded by header
         logger.info(f"Initial number of mutations: {number_of_mutations_initial}")
 
-    filtered_df = apply_filters(mutation_metadata_df, filters, verbose=verbose, logger=logger)
-    filtered_df = filtered_df.copy()  # here to avoid pandas warning about assigning to a slice rather than a copy
+    filtered_df = apply_filters(
+        mutation_metadata_df, filters, verbose=verbose, logger=logger
+    )
+    filtered_df = (
+        filtered_df.copy()
+    )  # here to avoid pandas warning about assigning to a slice rather than a copy
 
     if output_metadata_df is not None:
         filtered_df.to_csv(output_metadata_df, index=False)
 
     filtered_df["mcrs_id"] = filtered_df["mcrs_id"].astype(str)
 
-    filtered_df["fasta_format"] = ">" + filtered_df["mcrs_id"] + "\n" + filtered_df["mcrs_sequence"] + "\n"
+    filtered_df["fasta_format"] = (
+        ">" + filtered_df["mcrs_id"] + "\n" + filtered_df["mcrs_sequence"] + "\n"
+    )
 
     if type(output_mcrs_fasta) == str:
         with open(output_mcrs_fasta, "w") as fasta_file:
@@ -100,7 +106,9 @@ def filter(
     if id_to_header_csv is not None:
         if output_id_to_header_csv is None:
             output_id_to_header_csv = id_to_header_csv.replace(".csv", "_filtered.csv")
-        filter_id_to_header_csv(id_to_header_csv, output_id_to_header_csv, filtered_df_mcrs_ids)
+        filter_id_to_header_csv(
+            id_to_header_csv, output_id_to_header_csv, filtered_df_mcrs_ids
+        )
 
     if create_t2g:
         if output_t2g is None:

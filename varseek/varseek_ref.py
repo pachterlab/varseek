@@ -2,6 +2,7 @@ import os
 import subprocess
 import varseek as vk
 
+
 def ref(
     mutations="cosmic_cmc",
     sequences="cdna",
@@ -16,15 +17,15 @@ def ref(
     near_splice_junction_threshold=10,
     save_exploded_df=False,
     fasta_filters=[
-                    "dlist_substring-equal=none",  # filter out mutations which are a substring of the reference genome
-                    "pseudoaligned_to_human_reference_despite_not_truly_aligning-isnottrue",  # filter out mutations which pseudoaligned to human genome despite not truly aligning
-                    "dlist-equal=none",  # *** erase eventually when I want to d-list  # filter out mutations which are capable of being d-listed (given that I filter out the substrings above)
-                    "number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference-max=999999",  # filter out mutations which overlap with other MCRSs in the reference
-                    "number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference-max=999999",  # filter out mutations which overlap with other MCRSs in the reference
-                    "longest_homopolymer_length-max=999999",  # filters out MCRSs with repeating single nucleotide - eg 6
-                    "triplet_complexity-min=0",  # filters out MCRSs with repeating triplets - eg 0.2
-                ],  # TODO: edit
-    dlist= False,    # path to dlist fasta file or "None" (including the quotes)
+        "dlist_substring-equal=none",  # filter out mutations which are a substring of the reference genome
+        "pseudoaligned_to_human_reference_despite_not_truly_aligning-isnottrue",  # filter out mutations which pseudoaligned to human genome despite not truly aligning
+        "dlist-equal=none",  # *** erase eventually when I want to d-list  # filter out mutations which are capable of being d-listed (given that I filter out the substrings above)
+        "number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference-max=999999",  # filter out mutations which overlap with other MCRSs in the reference
+        "number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference-max=999999",  # filter out mutations which overlap with other MCRSs in the reference
+        "longest_homopolymer_length-max=999999",  # filters out MCRSs with repeating single nucleotide - eg 6
+        "triplet_complexity-min=0",  # filters out MCRSs with repeating triplets - eg 0.2
+    ],  # TODO: edit
+    dlist=False,  # path to dlist fasta file or "None" (including the quotes)
     out_dir_base=".",
     run_name="kb_ref_run",
     mutations_csv=None,
@@ -178,4 +179,3 @@ def ref(
     vk_ref_output_dict["metadata_df"] = output_metadata_df_vk_filter
 
     return vk_ref_output_dict
-    

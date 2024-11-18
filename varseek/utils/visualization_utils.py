@@ -56,9 +56,9 @@ def print_column_summary_stats(df_overlap, column, output_file=None):
     # Save the statistics to a text file
     if output_file is not None:
         if os.path.exists(output_file):
-            writing_mode = 'a'  # Append to the file if it already exists
+            writing_mode = "a"  # Append to the file if it already exists
         else:
-            writing_mode = 'w'
+            writing_mode = "w"
         with open(output_file, writing_mode) as f:
             f.write(stats_summary)
 
@@ -66,24 +66,34 @@ def print_column_summary_stats(df_overlap, column, output_file=None):
     print(stats_summary)
 
 
-def plot_histogram_notebook_1(df_overlap, column, x_label="x-axis", title="Histogram", output_plot_file = None):
+def plot_histogram_notebook_1(
+    df_overlap, column, x_label="x-axis", title="Histogram", output_plot_file=None
+):
     # Define the bin range for the histograms
     bins = range(0, df_overlap[column].max() + 2)  # Bins for k-mers
 
     # Replace 0 values with a small value to be represented on log scale
-    data = df_overlap[column].replace(0, 1e-10)  # Replace 0 with a very small value (1e-10)
+    data = df_overlap[column].replace(
+        0, 1e-10
+    )  # Replace 0 with a very small value (1e-10)
 
     # Plot histogram
     plt.figure(figsize=(10, 6))
-    plt.hist(data, bins=bins, alpha=0.7, color="blue", edgecolor="black", log=True)  # log=True for log scale
+    plt.hist(
+        data, bins=bins, alpha=0.7, color="blue", edgecolor="black", log=True
+    )  # log=True for log scale
     plt.xlabel(x_label)
     plt.ylabel("Frequency (log10 scale)")
     plt.title(title)
 
     # Set y-axis to log10 with ticks at every power of 10
     plt.yscale("log")
-    plt.gca().yaxis.set_major_locator(plt.LogLocator(base=10.0))  # Ensure ticks are at powers of 10
-    plt.gca().yaxis.set_minor_locator(plt.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
+    plt.gca().yaxis.set_major_locator(
+        plt.LogLocator(base=10.0)
+    )  # Ensure ticks are at powers of 10
+    plt.gca().yaxis.set_minor_locator(
+        plt.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10)
+    )
     plt.gca().yaxis.set_minor_formatter(plt.NullFormatter())  # Hide minor tick labels
 
     # Set x-ticks dynamically
@@ -91,17 +101,23 @@ def plot_histogram_notebook_1(df_overlap, column, x_label="x-axis", title="Histo
     step = max(1, int(np.ceil(max_value / 10)))  # Adjust for dynamic tick spacing
     plt.gca().xaxis.set_major_locator(plt.MultipleLocator(step))
 
-    plt.grid(True, which="major", axis="y", ls="-")  # Grid lines for both major and minor ticks
+    plt.grid(
+        True, which="major", axis="y", ls="-"
+    )  # Grid lines for both major and minor ticks
 
     if output_plot_file:
-        plt.savefig(output_plot_file, format='png', dpi=300, bbox_inches='tight')
-        
+        plt.savefig(output_plot_file, format="png", dpi=300, bbox_inches="tight")
+
     plt.show()
 
 
-def plot_histogram_of_nearby_mutations_7_5(mutation_metadata_df, column, bins, output_file=None):
+def plot_histogram_of_nearby_mutations_7_5(
+    mutation_metadata_df, column, bins, output_file=None
+):
     plt.figure(figsize=(10, 6))
-    plt.hist(mutation_metadata_df[column], bins=bins, color="skyblue", edgecolor="black")
+    plt.hist(
+        mutation_metadata_df[column], bins=bins, color="skyblue", edgecolor="black"
+    )
 
     # Set titles and labels
     plt.title(f"Histogram of {column}", fontsize=16)
@@ -114,8 +130,8 @@ def plot_histogram_of_nearby_mutations_7_5(mutation_metadata_df, column, bins, o
     plt.tight_layout()
 
     if output_file:
-        plt.savefig(output_file, format='png', dpi=300)
-    
+        plt.savefig(output_file, format="png", dpi=300)
+
     plt.show()
 
 
@@ -130,7 +146,9 @@ def retrieve_value_from_metric_file(key_of_interest, metric_file):
     return value_of_interest
 
 
-def calculate_metrics(df, header_name=None, check_assertions=False, crude = False, out=None):
+def calculate_metrics(
+    df, header_name=None, check_assertions=False, crude=False, out=None
+):
     if crude:
         TP_column = "TP_crude"
         FP_column = "FP_crude"
@@ -161,8 +179,12 @@ def calculate_metrics(df, header_name=None, check_assertions=False, crude = Fals
     # if FN != 0:
     #     print(f"FNs: {FNs}")
 
-    accuracy, sensitivity, specificity = calculate_sensitivity_specificity(TP, TN, FP, FN)
-    print(f"Accuracy: {accuracy}, Sensitivity: {sensitivity}, Specificity: {specificity}")
+    accuracy, sensitivity, specificity = calculate_sensitivity_specificity(
+        TP, TN, FP, FN
+    )
+    print(
+        f"Accuracy: {accuracy}, Sensitivity: {sensitivity}, Specificity: {specificity}"
+    )
 
     if check_assertions:
         assert int(accuracy) == 1, "Accuracy is not 1"
@@ -198,7 +220,7 @@ def calculate_metrics(df, header_name=None, check_assertions=False, crude = Fals
     return metric_dictionary
 
 
-def compute_grouped_metric(grouped_df, y_metric, crude = False):
+def compute_grouped_metric(grouped_df, y_metric, crude=False):
     if crude:
         TP_column = "TP_crude"
         FP_column = "FP_crude"
@@ -209,17 +231,32 @@ def compute_grouped_metric(grouped_df, y_metric, crude = False):
         FP_column = "FP"
         FN_column = "FN"
         TN_column = "TN"
-    
+
     if y_metric == "accuracy":
-        grouped_df[y_metric] = (grouped_df[TP_column] + grouped_df[TN_column]) / (grouped_df[TP_column] + grouped_df[TN_column] + grouped_df[FP_column] + grouped_df[FN_column])  #* TODO: replace with len(grouped_df)
+        grouped_df[y_metric] = (grouped_df[TP_column] + grouped_df[TN_column]) / (
+            grouped_df[TP_column]
+            + grouped_df[TN_column]
+            + grouped_df[FP_column]
+            + grouped_df[FN_column]
+        )  # * TODO: replace with len(grouped_df)
     elif y_metric == "sensitivity":
-        grouped_df[y_metric] = grouped_df[TP_column] / (grouped_df[TP_column] + grouped_df[FN_column])
-        grouped_df.loc[(grouped_df[TP_column] + grouped_df[FN_column]) == 0, y_metric] = 1.0
+        grouped_df[y_metric] = grouped_df[TP_column] / (
+            grouped_df[TP_column] + grouped_df[FN_column]
+        )
+        grouped_df.loc[
+            (grouped_df[TP_column] + grouped_df[FN_column]) == 0, y_metric
+        ] = 1.0
     elif y_metric == "specificity":
-        grouped_df[y_metric] = grouped_df[TN_column] / (grouped_df[TN_column] + grouped_df[FP_column])
-        grouped_df.loc[(grouped_df[TN_column] + grouped_df[FP_column]) == 0, y_metric] = 1.0
+        grouped_df[y_metric] = grouped_df[TN_column] / (
+            grouped_df[TN_column] + grouped_df[FP_column]
+        )
+        grouped_df.loc[
+            (grouped_df[TN_column] + grouped_df[FP_column]) == 0, y_metric
+        ] = 1.0
     elif y_metric == "expression_error":
-        grouped_df[y_metric] = grouped_df["mutation_expression_prediction_error"] / grouped_df["count"]
+        grouped_df[y_metric] = (
+            grouped_df["mutation_expression_prediction_error"] / grouped_df["count"]
+        )
     else:
         raise ValueError(f"Invalid y_metric: {y_metric}")
 
@@ -253,11 +290,13 @@ def create_stratified_metric_bar_plot(
     title=None,
     display_numbers=False,
     out_path=None,
-    crude = False,
+    crude=False,
 ):
     if bins is not None:
         labels = convert_number_bin_into_labels(bins)
-        df["binned_" + x_stratification] = pd.cut(df[x_stratification], bins=bins, labels=labels, right=True)
+        df["binned_" + x_stratification] = pd.cut(
+            df[x_stratification], bins=bins, labels=labels, right=True
+        )
 
         group_col = "binned_" + x_stratification
     else:
@@ -265,13 +304,19 @@ def create_stratified_metric_bar_plot(
 
     if y_metric != "expression_error":
         grouped_df = df.groupby(group_col).sum()
-        grouped_df = compute_grouped_metric(grouped_df, y_metric, crude = crude)
+        grouped_df = compute_grouped_metric(grouped_df, y_metric, crude=crude)
         grouped_df = grouped_df.reset_index()
         bottom_value = 0
     else:
         # grouped_df = df.groupby(group_col)['mutation_expression_prediction_error'].var().reset_index()
-        grouped_df = df.groupby(group_col)["mutation_expression_prediction_error"].apply(lambda x: x.abs().mean()).reset_index()
-        grouped_df.rename(columns={"mutation_expression_prediction_error": y_metric}, inplace=True)
+        grouped_df = (
+            df.groupby(group_col)["mutation_expression_prediction_error"]
+            .apply(lambda x: x.abs().mean())
+            .reset_index()
+        )
+        grouped_df.rename(
+            columns={"mutation_expression_prediction_error": y_metric}, inplace=True
+        )
         grouped_df[y_metric] += 0.05
         bottom_value = -0.05
 
@@ -282,7 +327,9 @@ def create_stratified_metric_bar_plot(
     # Create a bar chart where the x axis is number_of_reads_mutant, and y axis is accuracy
     if group_col == "number_of_reads_mutant":
         had_zero = (grouped_df[group_col].astype(int) == 0).any()
-        grouped_df = grouped_df[grouped_df[group_col].astype(int) != 0].reset_index(drop=True)
+        grouped_df = grouped_df[grouped_df[group_col].astype(int) != 0].reset_index(
+            drop=True
+        )
     else:
         had_zero = None
 
@@ -319,7 +366,9 @@ def create_stratified_metric_bar_plot(
         plt.ylim(0, 1)
         plt.yticks(np.arange(0, 1.1, 0.1))  # Major ticks every 0.1
         plt.minorticks_on()
-        plt.gca().yaxis.set_minor_locator(plt.MultipleLocator(0.05))  # Minor ticks every 0.05
+        plt.gca().yaxis.set_minor_locator(
+            plt.MultipleLocator(0.05)
+        )  # Minor ticks every 0.05
 
     if log_x_axis:
         plt.xscale("log")
@@ -340,7 +389,9 @@ def create_stratified_metric_bar_plot(
             step_size = 1  # Use a step of 1 if the range is small
             minor_step_size = None  # No minor ticks for step size of 1
         else:
-            step_size = 5 * ((range_x // 10) // 5 + 1)  # Ensure step size is a multiple of 5
+            step_size = 5 * (
+                (range_x // 10) // 5 + 1
+            )  # Ensure step size is a multiple of 5
             minor_step_size = step_size / 5  # 4 minor ticks between each major tick
 
         # step_size = (max_x - min_x) // 10  # Adjust 10 to a lower number to reduce tick frequency
@@ -354,7 +405,9 @@ def create_stratified_metric_bar_plot(
         if minor_step_size:
             plt.gca().xaxis.set_minor_locator(MultipleLocator(minor_step_size))
         else:
-            plt.gca().xaxis.set_minor_locator(plt.NullLocator())  # No minor ticks if step size is 1
+            plt.gca().xaxis.set_minor_locator(
+                plt.NullLocator()
+            )  # No minor ticks if step size is 1
 
     # Add labels and title
     if x_axis_name is None:
@@ -392,17 +445,23 @@ def create_venn_diagram(true_set, positive_set, TN=None, mm=None, out_path=None)
     if venn.get_label_by_id("10") is not None:  # Make sure the intersection exists
         venn.get_patch_by_id("10").set_color("yellow")  # Left circle (Set 1)
         venn.get_label_by_id("10").set_fontsize(10)  # Label for Set 1 only
-        venn.get_label_by_id("10").set_text(f'FN: {venn.get_label_by_id("10").get_text()}{mm_line}')
+        venn.get_label_by_id("10").set_text(
+            f'FN: {venn.get_label_by_id("10").get_text()}{mm_line}'
+        )
 
     if venn.get_label_by_id("01") is not None:  # Make sure the intersection exists
         venn.get_patch_by_id("01").set_color("blue")  # Right circle (Set 2)
         venn.get_label_by_id("01").set_fontsize(10)  # Label for Set 2 only
-        venn.get_label_by_id("01").set_text(f'FP: {venn.get_label_by_id("01").get_text()}')
+        venn.get_label_by_id("01").set_text(
+            f'FP: {venn.get_label_by_id("01").get_text()}'
+        )
 
     if venn.get_patch_by_id("11") is not None:
         venn.get_patch_by_id("11").set_color("green")  # Intersection of Set 1 and Set 2
         venn.get_label_by_id("11").set_fontsize(10)  # Label for the intersection
-        venn.get_label_by_id("11").set_text(f'TP: {venn.get_label_by_id("11").get_text()}')
+        venn.get_label_by_id("11").set_text(
+            f'TP: {venn.get_label_by_id("11").get_text()}'
+        )
 
     for label in venn.set_labels:
         if label is not None:
@@ -529,7 +588,9 @@ def synthetic_data_summary_plot(df, column, sort_ascending=True, out_path=None):
     else:
         try:
             # If x-ticks are numbers, enforce integer-only ticks
-            ax.xaxis.set_major_locator(MaxNLocator(integer=True))  # Ensure x-ticks are integers
+            ax.xaxis.set_major_locator(
+                MaxNLocator(integer=True)
+            )  # Ensure x-ticks are integers
         except ValueError:
             pass
 
@@ -555,12 +616,14 @@ def plot_basic_bar_plot_from_dict(my_dict, y_axis, log_scale=False, output_file=
     plt.tight_layout()
 
     if output_file:
-        plt.savefig(output_file, format='png', dpi=300)
+        plt.savefig(output_file, format="png", dpi=300)
 
     plt.show()
 
 
-def plot_descending_bar_plot(gene_counts, x_label, y_label, tick_interval=None, output_file=None):
+def plot_descending_bar_plot(
+    gene_counts, x_label, y_label, tick_interval=None, output_file=None
+):
     # Plot a histogram of gene names in descending order
     plt.figure(figsize=(10, 6))
     gene_counts.plot(kind="bar", color="skyblue")
@@ -583,7 +646,7 @@ def plot_descending_bar_plot(gene_counts, x_label, y_label, tick_interval=None, 
     plt.tight_layout()
 
     if output_file:
-        plt.savefig(output_file, format='png', dpi=300)
+        plt.savefig(output_file, format="png", dpi=300)
 
     plt.show()
 
@@ -606,8 +669,12 @@ def draw_confusion_matrix(metric_dictionary_reads):
     table.add_column("Predicted Negative", justify="center")
 
     # Add rows for the confusion matrix
-    table.add_row("Actual Positive", str(confusion_matrix["TP"]), str(confusion_matrix["FN"]))
-    table.add_row("Actual Negative", str(confusion_matrix["FP"]), str(confusion_matrix["TN"]))
+    table.add_row(
+        "Actual Positive", str(confusion_matrix["TP"]), str(confusion_matrix["FN"])
+    )
+    table.add_row(
+        "Actual Negative", str(confusion_matrix["FP"]), str(confusion_matrix["TN"])
+    )
 
     # Display the table
     console.print(table)
@@ -619,29 +686,29 @@ def plot_kat_histogram(kat_hist, out_path=None):
         out_path = f"{base_name}_custom.png"
 
     # Read the data, skip the header lines
-    data = pd.read_csv(kat_hist, sep=' ', comment='#', header=None)
+    data = pd.read_csv(kat_hist, sep=" ", comment="#", header=None)
 
     # Assign column names for easier reference
-    data.columns = ['Frequency', 'Distinct_kmers']
+    data.columns = ["Frequency", "Distinct_kmers"]
 
-    data = data[data['Distinct_kmers'] > 0]
+    data = data[data["Distinct_kmers"] > 0]
 
     # Plot the histogram
     plt.figure(figsize=(10, 6))
-    plt.bar(data['Frequency'], data['Distinct_kmers'], width=0.8, color='skyblue')
+    plt.bar(data["Frequency"], data["Distinct_kmers"], width=0.8, color="skyblue")
 
-    plt.yscale('log')
+    plt.yscale("log")
 
     # Ensure x-axis values are integers
-    plt.xticks(np.arange(data['Frequency'].min(), data['Frequency'].max() + 1, step=1))
+    plt.xticks(np.arange(data["Frequency"].min(), data["Frequency"].max() + 1, step=1))
 
     if len(data) == 1:
-        plt.xlim([data['Frequency'].min() - 1, data['Frequency'].max() + 1])
+        plt.xlim([data["Frequency"].min() - 1, data["Frequency"].max() + 1])
 
     # Add labels and title
-    plt.xlabel('55-mer Frequency')
-    plt.ylabel('# of Distinct 55-mers')
-    plt.title('55-mer Spectra for random_sequences.fasta')
+    plt.xlabel("55-mer Frequency")
+    plt.ylabel("# of Distinct 55-mers")
+    plt.title("55-mer Spectra for random_sequences.fasta")
 
     # Save the plot
     plt.savefig(out_path)
@@ -650,8 +717,16 @@ def plot_kat_histogram(kat_hist, out_path=None):
     plt.show()
 
 
-
-def plot_items_descending_order(df, x_column, y_column, item_range = (0,10), xlabel = "x-axis", title = "Title", save_path = None, figsize = (15, 7)):
+def plot_items_descending_order(
+    df,
+    x_column,
+    y_column,
+    item_range=(0, 10),
+    xlabel="x-axis",
+    title="Title",
+    save_path=None,
+    figsize=(15, 7),
+):
     # Plot the line plot
     plt.figure(figsize=figsize)
 
@@ -666,13 +741,13 @@ def plot_items_descending_order(df, x_column, y_column, item_range = (0,10), xla
 
     else:
         x_axis_type = list(df[x_column])[first_item:last_item]
-    
-    plt.plot(x_axis_type, df.iloc[first_item:last_item][y_column], marker='o')
+
+    plt.plot(x_axis_type, df.iloc[first_item:last_item][y_column], marker="o")
     plt.xticks(rotation=90)
     plt.xlabel(xlabel)
-    plt.ylabel('Transcript Count')
+    plt.ylabel("Transcript Count")
     plt.title(title)
-    plt.yscale('log')
+    plt.yscale("log")
     plt.grid(True)
     plt.tight_layout()
 
@@ -684,26 +759,38 @@ def plot_items_descending_order(df, x_column, y_column, item_range = (0,10), xla
     plt.show()
 
 
-
-def plot_scree(adata, output_plot_file = None):
-    variance_explained = adata.uns['pca']['variance_ratio']
+def plot_scree(adata, output_plot_file=None):
+    variance_explained = adata.uns["pca"]["variance_ratio"]
     num_components = len(variance_explained)
 
     # Plot the scree plot
     plt.figure(figsize=(10, 5))
-    plt.plot(np.arange(1, len(variance_explained) + 1), variance_explained, marker='o', linestyle='-')
+    plt.plot(
+        np.arange(1, len(variance_explained) + 1),
+        variance_explained,
+        marker="o",
+        linestyle="-",
+    )
     plt.xticks(ticks=np.arange(1, num_components + 1))
-    plt.xlabel('Principal Component')
-    plt.ylabel('Variance Explained')
-    plt.title('Scree Plot')
+    plt.xlabel("Principal Component")
+    plt.ylabel("Variance Explained")
+    plt.title("Scree Plot")
     if output_plot_file:
         os.makedirs(os.path.dirname(output_plot_file), exist_ok=True)
         plt.savefig(output_plot_file)
     plt.show()
 
-def plot_loading_contributions(adata, PC_index = 0, top_genes_stats = 100, top_genes_plot = 10, output_stats_file = None, output_plot_file = None):
+
+def plot_loading_contributions(
+    adata,
+    PC_index=0,
+    top_genes_stats=100,
+    top_genes_plot=10,
+    output_stats_file=None,
+    output_plot_file=None,
+):
     # Get PCA loadings for the selected component
-    loadings = adata.varm['PCs'][:, PC_index]
+    loadings = adata.varm["PCs"][:, PC_index]
 
     # Find indices of top genes by absolute loading values
     top_gene_indices_stats = np.argsort(np.abs(loadings))[::-1][:top_genes_stats]
@@ -722,10 +809,10 @@ def plot_loading_contributions(adata, PC_index = 0, top_genes_stats = 100, top_g
 
     # Plot as a horizontal bar chart
     plt.figure(figsize=(8, 6))
-    plt.barh(top_gene_names_plot, top_gene_loadings_plot, color='skyblue')
-    plt.xlabel('Contribution to PC1')
-    plt.ylabel('Gene')
-    plt.title('Top Gene Contributions to PC1')
+    plt.barh(top_gene_names_plot, top_gene_loadings_plot, color="skyblue")
+    plt.xlabel("Contribution to PC1")
+    plt.ylabel("Gene")
+    plt.title("Top Gene Contributions to PC1")
     plt.gca().invert_yaxis()  # Invert Y-axis for descending order
     if output_plot_file:
         os.makedirs(os.path.dirname(output_plot_file), exist_ok=True)
@@ -733,7 +820,9 @@ def plot_loading_contributions(adata, PC_index = 0, top_genes_stats = 100, top_g
     plt.show()
 
 
-def find_resolution_for_target_clusters(adata, target_clusters, tolerance=3, max_iters=10):
+def find_resolution_for_target_clusters(
+    adata, target_clusters, tolerance=3, max_iters=10
+):
     # Initial bounds for resolution
     lower, upper = 0.1, 10
     assert max_iters > 0, "max_iters must be a positive integer"
@@ -742,24 +831,32 @@ def find_resolution_for_target_clusters(adata, target_clusters, tolerance=3, max
         adata_copy = adata.copy()
         resolution = (lower + upper) / 2
         sc.tl.leiden(adata_copy, resolution=resolution)
-        num_clusters = adata_copy.obs['leiden'].nunique()
-        
-        print(f"Iteration {i + 1}: Resolution = {resolution}, Clusters = {num_clusters}")
-        
+        num_clusters = adata_copy.obs["leiden"].nunique()
+
+        print(
+            f"Iteration {i + 1}: Resolution = {resolution}, Clusters = {num_clusters}"
+        )
+
         # Check if the number of clusters is within the tolerance of the target
         if abs(num_clusters - target_clusters) <= tolerance:
             return adata_copy, resolution, num_clusters
-        
+
         # Update bounds based on whether we have too many or too few clusters
         if num_clusters < target_clusters:
             lower = resolution
         else:
             upper = resolution
 
-    return adata_copy, resolution, num_clusters  # Return last tested resolution if exact match not found
+    return (
+        adata_copy,
+        resolution,
+        num_clusters,
+    )  # Return last tested resolution if exact match not found
 
 
-def plot_contingency_table(adata, column1 = "tissue", column2 = "leiden", output_plot_file = None):
+def plot_contingency_table(
+    adata, column1="tissue", column2="leiden", output_plot_file=None
+):
     # Create a contingency table (counts of cells in each combination of tissue and leiden cluster)
     contingency_table = pd.crosstab(adata.obs[column1], adata.obs[column2])
 
@@ -774,11 +871,16 @@ def plot_contingency_table(adata, column1 = "tissue", column2 = "leiden", output
     plt.show()
 
 
-def plot_knn_tissue_frequencies(indices, adata_combined_ccle_rnaseq, output_plot_file = None):
+def plot_knn_tissue_frequencies(
+    indices, adata_combined_ccle_rnaseq, output_plot_file=None
+):
     # Split the 'obs_names' to extract the tissue component
     neighbor_tissues = [
-        adata_combined_ccle_rnaseq.obs_names[idx].split("_")[-1]  # Extract tissue from "experiment_tissue"
-        for neighbors in indices for idx in neighbors
+        adata_combined_ccle_rnaseq.obs_names[idx].split("_")[
+            -1
+        ]  # Extract tissue from "experiment_tissue"
+        for neighbors in indices
+        for idx in neighbors
     ]
 
     # Count occurrences of each tissue in the nearest neighbors
@@ -786,7 +888,7 @@ def plot_knn_tissue_frequencies(indices, adata_combined_ccle_rnaseq, output_plot
 
     # Plot the tissue frequencies
     plt.figure(figsize=(10, 6))
-    plt.bar(tissue_counts.keys(), tissue_counts.values(), color='skyblue')
+    plt.bar(tissue_counts.keys(), tissue_counts.values(), color="skyblue")
     plt.xlabel("Tissue Type")
     plt.ylabel("Frequency")
     plt.title("Frequency of Each Tissue in Nearest Neighbors")
@@ -798,12 +900,14 @@ def plot_knn_tissue_frequencies(indices, adata_combined_ccle_rnaseq, output_plot
     return tissue_counts
 
 
-def plot_ascending_bar_plot_of_cluster_distances(sorted_distances, output_plot_file = None):
+def plot_ascending_bar_plot_of_cluster_distances(
+    sorted_distances, output_plot_file=None
+):
     # Separate clusters and distances for plotting
     clusters_sorted, distances_sorted = zip(*sorted_distances)
-    
+
     plt.figure(figsize=(10, 6))
-    plt.bar(clusters_sorted, distances_sorted, color='skyblue')
+    plt.bar(clusters_sorted, distances_sorted, color="skyblue")
     plt.xlabel("Cluster")
     plt.ylabel("Distance to Unknown Sample")
     plt.title("Distance from Unknown Sample to Each Cluster Centroid (Ascending Order)")
@@ -811,12 +915,12 @@ def plot_ascending_bar_plot_of_cluster_distances(sorted_distances, output_plot_f
     plt.show()
 
 
-def plot_jaccard_bar_plot(tissues, jaccard_values, output_plot_file = None):
+def plot_jaccard_bar_plot(tissues, jaccard_values, output_plot_file=None):
     sorted_data = sorted(zip(jaccard_values, tissues), reverse=True)
     sorted_jaccard_values, sorted_tissues = zip(*sorted_data)
 
     plt.figure(figsize=(10, 6))
-    plt.bar(sorted_tissues, sorted_jaccard_values, color='skyblue')
+    plt.bar(sorted_tissues, sorted_jaccard_values, color="skyblue")
     plt.xlabel("Tissue")
     plt.ylabel("Jaccard Index")
     plt.title("Jaccard Index for Each Tissue")
@@ -826,9 +930,19 @@ def plot_jaccard_bar_plot(tissues, jaccard_values, output_plot_file = None):
     plt.show()
 
 
-def plot_knee_plot(umi_counts_sorted, knee_locator, min_counts_assessed_by_knee_plot=None, output_file = None):
-    plt.plot(range(len(umi_counts_sorted)), umi_counts_sorted, marker='.')
-    plt.axvline(knee_locator.knee, color='red', linestyle='--', label=f"Cutoff at UMI = {min_counts_assessed_by_knee_plot}")
+def plot_knee_plot(
+    umi_counts_sorted,
+    knee_locator,
+    min_counts_assessed_by_knee_plot=None,
+    output_file=None,
+):
+    plt.plot(range(len(umi_counts_sorted)), umi_counts_sorted, marker=".")
+    plt.axvline(
+        knee_locator.knee,
+        color="red",
+        linestyle="--",
+        label=f"Cutoff at UMI = {min_counts_assessed_by_knee_plot}",
+    )
     plt.xlabel("Cell Rank")
     plt.ylabel("Total UMI Counts")
     plt.title("Knee Plot with Cutoff")

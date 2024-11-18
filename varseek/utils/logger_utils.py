@@ -11,14 +11,18 @@ logging.getLogger("numexpr").setLevel(logging.WARNING)
 def set_up_logger(logging_level_name=None, save_logs=False, log_dir=None):
     if logging_level_name is None:
         logging_level_name = os.getenv("VARSEEK_LOGLEVEL", "INFO")
-    logging_level = logging.getLevelName(logging_level_name)  # "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"
+    logging_level = logging.getLevelName(
+        logging_level_name
+    )  # "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"
     if type(logging_level) != int:  # unknown log level
         logging_level = logging.INFO
     logger = logging.getLogger(__name__)
     logger.setLevel(logging_level)
 
     if not logger.hasHandlers():
-        formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s", "%H:%M:%S")
+        formatter = logging.Formatter(
+            "%(asctime)s - %(levelname)s - %(message)s", "%H:%M:%S"
+        )
 
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(formatter)
@@ -32,7 +36,9 @@ def set_up_logger(logging_level_name=None, save_logs=False, log_dir=None):
             if not os.path.exists(log_dir):
                 os.makedirs(log_dir)
 
-            log_file = os.path.join(log_dir, f"logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+            log_file = os.path.join(
+                log_dir, f"logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+            )
 
             file_handler = logging.FileHandler(log_file)
             file_handler.setFormatter(formatter)
@@ -41,8 +47,7 @@ def set_up_logger(logging_level_name=None, save_logs=False, log_dir=None):
     return logger
 
 
-
-#* DEPRECATED - use %%time instead
+# * DEPRECATED - use %%time instead
 def report_time(running_total=None):
     if running_total is None:
         running_total = time.time()
@@ -64,7 +69,9 @@ except ImportError:
 if ip:
 
     @register_cell_magic
-    def cell_runtime(line, cell):  # best version - slight overhead (~0.15s per bash command in a cell), but works on multiline bash commands with variables
+    def cell_runtime(
+        line, cell
+    ):  # best version - slight overhead (~0.15s per bash command in a cell), but works on multiline bash commands with variables
         start_time = time.time()
         get_ipython().run_cell(cell)  # type: ignore
         elapsed_time = time.time() - start_time

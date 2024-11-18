@@ -2,6 +2,7 @@ import os
 import subprocess
 import varseek as vk
 
+
 def count(
     rnaseq_fastq_files,
     mutation_index,
@@ -77,7 +78,7 @@ def count(
     - standard_t2g           (str)  Path to standard t2g file
     - out_dir_base           (str)  Output directory
     """
-    
+
     # mutation_index = f"{out_dir_notebook}/mutation_reference.idx"
     # t2g_vk = os.path.join(out_dir_notebook, "t2g_filtered.txt")
 
@@ -98,10 +99,14 @@ def count(
         rnaseq_fastq_files = [rnaseq_fastq_files]
 
     adata_path = f"{kb_count_out}/counts_unfiltered/adata.h5ad"
-    adata_path_normal_genome = f"{kb_count_out_standard_index}/counts_unfiltered/adata.h5ad"
+    adata_path_normal_genome = (
+        f"{kb_count_out_standard_index}/counts_unfiltered/adata.h5ad"
+    )
 
     adata_normal_dir = os.path.dirname(adata_path_normal_genome)
-    adata_normal_genome_output_path = os.path.join(adata_normal_dir, "adata_normal_genome_cleaned.h5ad")
+    adata_normal_genome_output_path = os.path.join(
+        adata_normal_dir, "adata_normal_genome_cleaned.h5ad"
+    )
 
     rnaseq_fastq_files_list_dict = vk.fastqpp(
         rnaseq_fastq_files_list=rnaseq_fastq_files,
@@ -251,7 +256,9 @@ def count(
     vk_count_output_dict["adata_path"] = adata_path
     vk_count_output_dict["adata_path_normal_genome"] = adata_path_normal_genome
     vk_count_output_dict["adata_path_clean"] = adata_path_clean
-    vk_count_output_dict["adata_path_normal_genome_clean"] = adata_normal_genome_output_path
+    vk_count_output_dict["adata_path_normal_genome_clean"] = (
+        adata_normal_genome_output_path
+    )
     vk_count_output_dict["vk_summarize_output_dir"] = vk_summarize_output_dir
 
     return vk_count_output_dict
