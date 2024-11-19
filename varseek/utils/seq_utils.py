@@ -459,10 +459,11 @@ def create_header_to_sequence_ordered_dict_from_fasta_after_semicolon_splitting(
 
 def create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(input_fasta, low_memory = False):
     if low_memory:
-        pass
-    mutant_reference = OrderedDict()
-    for mutant_reference_header, mutant_reference_sequence in read_fasta(input_fasta):
-        mutant_reference[mutant_reference_header] = mutant_reference_sequence
+        mutant_reference = pyfastx.Fasta(input_fasta, build_index=True)
+    else:
+        mutant_reference = OrderedDict()
+        for mutant_reference_header, mutant_reference_sequence in read_fasta(input_fasta):
+            mutant_reference[mutant_reference_header] = mutant_reference_sequence
     return mutant_reference
 
 
@@ -1428,20 +1429,20 @@ def compute_unique_mutation_header_set(
     return unique_headers
 
 
-def count_number_of_total_mutations(headers_list, id_to_header_csv=None):
-    if id_to_header_csv is not None:
-        temp_header_fa = file.replace(".fa", "_with_headers.fa")
-        swap_ids_for_headers_in_fasta(
-            file, id_to_header_csv, out_fasta=temp_header_fa
-        )  # * added
-        file = temp_header_fa
-    i = 0
-    for header in headers_list:
-        individual_header = header.split(";")
-        i += len(individual_header)
+# def count_number_of_total_mutations(headers_list, id_to_header_csv=None):
+#     if id_to_header_csv is not None:
+#         temp_header_fa = file.replace(".fa", "_with_headers.fa")
+#         swap_ids_for_headers_in_fasta(
+#             file, id_to_header_csv, out_fasta=temp_header_fa
+#         )  # * added
+#         file = temp_header_fa
+#     i = 0
+#     for header in headers_list:
+#         individual_header = header.split(";")
+#         i += len(individual_header)
 
-    # TODO: make id fasta from header fasta with id:header dict
-    return i
+#     # TODO: make id fasta from header fasta with id:header dict
+#     return i
 
 
 def apply_enst_format(unique_mutations_genome, cosmic_reference_file_mutation_csv):
@@ -4984,6 +4985,7 @@ def create_fai(fasta_path, fai_path=None):
             with open(fasta_path, "r") as fasta_file, open(fai_path, "w") as fai_file:
                 offset = 0  # Track byte offset of each sequence
                 seq_name = None
+                seq_start = 0
                 seq_length = 0
                 line_length = 0
                 line_length_with_newline = 0
@@ -4998,9 +5000,7 @@ def create_fai(fasta_path, fai_path=None):
 
                         # Initialize new sequence information
                         seq_name = line[1:].strip()
-                        seq_start = offset + len(
-                            line
-                        )  # Starting byte offset of the sequence
+                        seq_start = offset + len(line)  # Starting byte offset of the sequence
                         seq_length = 0  # Reset sequence length
 
                     else:
@@ -5963,13 +5963,14 @@ def adjust_mutation_adata_by_normal_gene_matrix(adata, kb_output_mutation, kb_ou
 
     return adata
 
+
 def match_adata_orders(adata, adata_ref):
     # Ensure cells (obs) are in the same order
     adata = adata[adata_ref.obs_names]
 
     # Add missing genes to adata
     missing_genes = adata_ref.var_names.difference(adata.var_names)
-    padding_matrix = sp.csr_matrix((adata.n_obs, len(missing_genes)))  # Sparse zero matrix
+    padding_matrix = csr_matrix((adata.n_obs, len(missing_genes)))  # Sparse zero matrix
 
     # Create a padded AnnData for missing genes
     adata_padded = ad.AnnData(

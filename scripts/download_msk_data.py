@@ -3,7 +3,7 @@ import subprocess
 import requests
 import pandas as pd
 
-def download_msk_data(output_path = "data_mutation_downloaded.txt")
+def download_msk_data(output_path = "data_mutation_downloaded.txt"):
     # URL of the file to be downloaded
     url = "https://raw.githubusercontent.com/cBioPortal/datahub/master/public/msk_impact_2017/data_mutations.txt"
 

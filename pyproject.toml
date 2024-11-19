@@ -40,6 +40,7 @@ dependencies = [
     "biopython>=1.83",
     "scipy>=1.13.1",
     "pyfastx>=2.1.0",
+    "test"
 ]
 
 [project.optional-dependencies]
@@ -47,6 +48,8 @@ dev = [
     "pytest>=7.0.0",
     "black[jupyter]>=22.0.0",
     "toml>=0.10.2",
+    "nbval>=7.6.7",
+    "nbdime>=4.0.2",
 ]
 analysis = [
     "matplotlib-venn>=1.1.1",

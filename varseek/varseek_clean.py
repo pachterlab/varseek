@@ -9,6 +9,7 @@ from varseek.utils import (
     increment_adata_based_on_dlist_fns,
     decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_mode,
     remove_adata_columns,
+    adjust_mutation_adata_by_normal_gene_matrix
 )
 
 
@@ -114,43 +115,43 @@ def clean(
         adata.var = adata.var.merge(df_to_merge, on=mcrs_id_column, how="left")
         adata.var_names = original_var_names
 
-    if False:  # TODO: erase once tested
-        if split_reads_by_Ns:
-            # TODO: test this
-            adata = decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_mode(
-                adata,
-                fastq=data_fastq,
-                kb_count_out=kb_count_out,
-                t2g=mcrs_t2g,
-                mm=mm,
-                bustools=bustools,
-                split_Ns=split_reads_by_Ns,
-                paired_end_fastqs=False,
-                paired_end_suffix_length=2,
-                assay="bulk",
-                keep_only_insertions=True,
-            )
+    # TODO: uncomment once tested
+    if split_reads_by_Ns:
+        # TODO: test this
+        adata = decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_mode(
+            adata,
+            fastq=data_fastq,
+            kb_count_out=kb_count_out_mutant,
+            t2g=mcrs_t2g,
+            mm=mm,
+            bustools=bustools,
+            split_Ns=split_reads_by_Ns,
+            paired_end_fastqs=False,
+            paired_end_suffix_length=2,
+            assay="bulk",
+            keep_only_insertions=True,
+        )
 
-        if dlist_file:
-            # TODO: test this
-            adata = increment_adata_based_on_dlist_fns(
-                adata=adata,
-                mcrs_fasta=mcrs_fasta,
-                dlist_fasta=dlist_fasta,
-                kb_count_out=kb_count_out,
-                index=mcrs_index,
-                t2g=mcrs_t2g,
-                fastq=data_fastq,
-                newer_kallisto=newer_kallisto,
-                k=k,
-                mm=mm,
-                bustools=bustools,
-            )
+    if dlist_file:
+        # TODO: test this
+        adata = increment_adata_based_on_dlist_fns(
+            adata=adata,
+            mcrs_fasta=mcrs_fasta,
+            dlist_fasta=dlist_fasta,
+            kb_count_out=kb_count_out_mutant,
+            index=mcrs_index,
+            t2g=mcrs_t2g,
+            fastq=data_fastq,
+            newer_kallisto=newer_kallisto,
+            k=k,
+            mm=mm,
+            bustools=bustools,
+        )
 
-        if adjust_mutation_adata_by_normal_gene_matrix_information:
-            adata = adjust_mutation_adata_by_normal_gene_matrix(
-                adata, kb_output_mutation=kb_count_out, kb_output_standard=kb_count_out_normal_genome, id_to_header_csv=id_to_header_csv, mutation_metadata_csv=mutation_metadata_df, adata_output_path=None, t2g_mutation=mcrs_t2g, t2g_standard=None, fastq_file_list=data_fastq, mm=mm, union=False, assay=assay, parity="single", bustools=bustools
-            )
+    if adjust_mutation_adata_by_normal_gene_matrix_information:
+        adata = adjust_mutation_adata_by_normal_gene_matrix(
+            adata, kb_output_mutation=kb_count_out_mutant, kb_output_standard=kb_count_out_normal_genome, id_to_header_csv=id_to_header_csv, mutation_metadata_csv=mutation_metadata_df, adata_output_path=None, t2g_mutation=mcrs_t2g, t2g_standard=None, fastq_file_list=data_fastq, mm=mm, union=False, assay=assay, parity="single", bustools=bustools
+        )
 
     # set all count values below minimum_count_filter to 0
     if minimum_count_filter is not None:
