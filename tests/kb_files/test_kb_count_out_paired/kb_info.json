@@ -1,0 +1,28 @@
+{
+    "workdir": "/home/jrich/Desktop/varseek/notebooks",
+    "version": "0.29.1",
+    "kallisto": {
+        "path": "/home/jrich/miniconda3/envs/varseek2/lib/python3.10/site-packages/kb_python/bins/linux/kallisto/kallisto",
+        "version": "0.51.1"
+    },
+    "bustools": {
+        "path": "/home/jrich/miniconda3/envs/varseek2/lib/python3.10/site-packages/kb_python/bins/linux/bustools/bustools",
+        "version": "0.44.1"
+    },
+    "start_time": "2024-11-15T16:50:16.748427",
+    "end_time": "2024-11-15T16:50:25.625498",
+    "elapsed": 8.877071,
+    "call": "/home/jrich/miniconda3/envs/varseek2/bin/kb count -t 8 -i /home/jrich/Desktop/varseek/test_index.idx -g /home/jrich/Desktop/varseek/test_t2g.txt -x bulk --num --h5ad --parity paired -o /home/jrich/Desktop/varseek/test_kb_count_out_paired /home/jrich/Desktop/varseek/test_reads1.fq /home/jrich/Desktop/varseek/test_reads2.fq",
+    "commands": [
+        "kallisto bus -i /home/jrich/Desktop/varseek/test_index.idx -o /home/jrich/Desktop/varseek/test_kb_count_out_paired -x BULK -t 8 --num --paired /home/jrich/Desktop/varseek/test_reads1.fq /home/jrich/Desktop/varseek/test_reads2.fq",
+        "bustools sort -o /home/jrich/Desktop/varseek/test_kb_count_out_paired/tmp/output.s.bus -T /home/jrich/Desktop/varseek/test_kb_count_out_paired/tmp -t 8 -m 2G --no-flags /home/jrich/Desktop/varseek/test_kb_count_out_paired/output.bus",
+        "bustools inspect -o /home/jrich/Desktop/varseek/test_kb_count_out_paired/inspect.json /home/jrich/Desktop/varseek/test_kb_count_out_paired/tmp/output.s.bus",
+        "bustools count -o /home/jrich/Desktop/varseek/test_kb_count_out_paired/counts_unfiltered/cells_x_genes -g /home/jrich/Desktop/varseek/test_t2g.txt -e /home/jrich/Desktop/varseek/test_kb_count_out_paired/matrix.ec -t /home/jrich/Desktop/varseek/test_kb_count_out_paired/transcripts.txt --genecounts --cm /home/jrich/Desktop/varseek/test_kb_count_out_paired/tmp/output.s.bus"
+    ],
+    "runtimes": [
+        1.1020891666412354,
+        3.306595802307129,
+        1.1028540134429932,
+        1.1027820110321045
+    ]
+}

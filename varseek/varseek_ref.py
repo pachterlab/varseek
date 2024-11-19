@@ -56,21 +56,15 @@ def ref(
     assert k >= w + 1, "k must be greater than or equal to w + 1"
 
     id_to_header_csv = os.path.join(out_dir_notebook, "id_to_header_mapping.csv")
-    mutation_metadata_df_out_path_vk_info = os.path.join(
-        out_dir_notebook, "mutation_metadata_df_updated_vk_info.csv"
-    )
+    mutation_metadata_df_out_path_vk_info = os.path.join(out_dir_notebook, "mutation_metadata_df_updated_vk_info.csv")
     mutation_index = f"{out_dir_notebook}/mutation_reference.idx"
     dlist_fasta = f"{out_dir_notebook}/dlist.fa"
 
     mcrs_fasta_vk_filter = os.path.join(out_dir_notebook, "mcrs_filtered.fa")
-    output_metadata_df_vk_filter = os.path.join(
-        out_dir_notebook, "mutation_metadata_df_filtered.csv"
-    )
+    output_metadata_df_vk_filter = os.path.join(out_dir_notebook, "mutation_metadata_df_filtered.csv")
     dlist_fasta_vk_filter = os.path.join(out_dir_notebook, "dlist_filtered.fa")
     t2g_vk_filter = os.path.join(out_dir_notebook, "t2g_filtered.txt")
-    id_to_header_csv_vk_filter = os.path.join(
-        out_dir_notebook, "id_to_header_mapping_filtered.csv"
-    )
+    id_to_header_csv_vk_filter = os.path.join(out_dir_notebook, "id_to_header_mapping_filtered.csv")
 
     if dlist:
         dlist_kb_argument = dlist_fasta_vk_filter

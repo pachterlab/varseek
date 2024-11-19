@@ -22,7 +22,7 @@ def check_for_successful_downloads(ccle_data_out_base):
             mutation_exists = os.path.exists(mutation_index_path) and os.listdir(mutation_index_path)
             standard_exists = os.path.exists(standard_index_path) and os.listdir(standard_index_path)
             
-            if not mutation_exists and not standard_exists:
+            if not mutation_exists and standard_exists:
                 bad_samples.append(subfolder)
 
     return bad_samples
@@ -72,47 +72,53 @@ def download_ccle_total(
 
     fastq_files = []
     download_success = set()
+    fastq_links_updated = []
 
     for link in fastq_links:
         rnaseq_fastq_file = os.path.join(sample_out_folder, os.path.basename(link))
-
-        if not os.path.exists(rnaseq_fastq_file):  # just here while I keep files permanently for debugging
-            print(f"Downloading {link} to {rnaseq_fastq_file}")
-
-            if not link.startswith(('ftp://', 'http://')):
-                link = 'ftp://' + link
-
-            # download_command = f"curl --connect-timeout 60 --speed-time 30 --speed-limit 10000 -o {rnaseq_fastq_file} {link}"
-            download_command = f"wget -c --tries={max_retries} --retry-connrefused -O {rnaseq_fastq_file} {link}"  # --limit-rate=1m  (or some other rate)
-            # download_command = f"aria2c -x 16 -d {sample_out_folder} -o {os.path.basename(link)} -c {link}"
-
-            try:
-                result = subprocess.run(download_command, shell=True, check=True)
-            except subprocess.CalledProcessError as e:
-                print(f"Error downloading {link} to {rnaseq_fastq_file}")
-                print(e)
-                download_success.add(False)
-                continue
-
-            # # Validate the file with gzip -t
-            # gzip_check_command = f"gzip -t {rnaseq_fastq_file}"
-            
-            # try:
-            #     subprocess.run(gzip_check_command, shell=True, check=True)
-            #     download_success.add(True)
-            # except subprocess.CalledProcessError:
-            #     download_success.add(False)
-            #     if os.path.exists(rnaseq_fastq_file):
-            #         os.remove(rnaseq_fastq_file)  # Remove the corrupted file
-
         fastq_files.append(rnaseq_fastq_file)
+        if not link.startswith(('ftp://', 'http://')):
+            link = 'ftp://' + link
+            fastq_links_updated.append(link)
     
-    # if download_success != {True}:
-    #     print(f"Failed to download all files for run accession {run_accession}")
-    #     if not save_fastq_files:
-    #         for fastq in fastq_files:
-    #             os.remove(fastq)
-    #     return
+    if not os.path.exists(fastq_files[0]) or not os.path.exists(fastq_files[1]):
+        temp_file = os.path.join(sample_out_folder, "temp_input_files.txt")
+        with open(temp_file, "w") as file:
+            for item in fastq_links_updated:
+                file.write(f"{item}\n")
+        
+        # download_command = f"curl --connect-timeout 60 --speed-time 30 --speed-limit 10000 -o {rnaseq_fastq_file} {link}"
+        # download_command = f"wget -c --tries={max_retries} --retry-connrefused -O {rnaseq_fastq_file} {link}"  # --limit-rate=1m  (or some other rate)
+        download_command = f"aria2c -x 16 -j 2 -d {sample_out_folder} -c -i {temp_file}"
+
+        try:
+            result = subprocess.run(download_command, shell=True, check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"Error downloading {fastq_links_updated}")
+            print(e)
+            if not save_fastq_files:
+                for fastq in fastq_files:
+                    os.remove(fastq)
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+            return
+        
+        if os.path.exists(temp_file):
+            os.remove(temp_file)
+
+    for rnaseq_fastq_file in fastq_files:
+        # Validate the file with gzip -t
+        gzip_check_command = f"gzip -t {rnaseq_fastq_file}"
+        
+        try:
+            subprocess.run(gzip_check_command, shell=True, check=True)
+            download_success.add(True)
+        except subprocess.CalledProcessError:
+            download_success.add(False)
+            if not save_fastq_files:
+                for fastq in fastq_files:
+                    os.remove(fastq)
+            return
     
     print(f"Downloaded all files for run accession {run_accession}")
 
@@ -243,7 +249,7 @@ def main(args):
 
     if not os.path.exists(json_path):
         os.makedirs(os.path.dirname(json_path), exist_ok=True)
-        ccle_metadata_download_command = f"wget -q -O {json_path} 'https://www.ebi.ac.uk/ena/portal/api/filereport?accession=PRJNA523380&result=read_run&fields=study_accession,sample_accession,experiment_accession,run_accession,scientific_name,library_strategy,experiment_title,experiment_alias,fastq_bytes,fastq_ftp,sra_ftp&format=json&download=true&limit=0'"
+        ccle_metadata_download_command = f"wget -O {json_path} 'https://www.ebi.ac.uk/ena/portal/api/filereport?accession=PRJNA523380&result=read_run&fields=study_accession,sample_accession,experiment_accession,run_accession,scientific_name,library_strategy,experiment_title,experiment_alias,fastq_bytes,fastq_ftp,sra_ftp&format=json&download=true&limit=0'"
         subprocess.run(ccle_metadata_download_command, shell=True, check=True)
 
     # Loop through json file and download fastqs
@@ -280,35 +286,27 @@ def main(args):
     # ref_dlist_fa_genome, ref_dlist_fa_cdna, ref_dlist_gtf = download_t2t_reference_files(t2t_folder)
     # kb_ref_standard_command = f"kb ref -k {k} -i {standard_index} -g {standard_t2g} -f1 {standard_f1} -t {number_of_tasks_total} {ref_dlist_fa_genome} {ref_dlist_gtf}"
     # result = subprocess.run(kb_ref_standard_command, shell=True, check=True)
-        
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=number_of_tasks_total) as executor:
-        futures = [
-            executor.submit(
-                download_ccle_total,
-                record=record,
-                mutation_index=mutation_index,
-                mutation_t2g=mutation_t2g,
-                standard_index=standard_index,
-                standard_t2g=standard_t2g,
-                ccle_data_out_base=ccle_data_out_base,
-                k=k,
-                k_standard=k_standard,
-                seqtk=seqtk,
-                threads_per_task=threads_per_task,
-                trim_edges_off_reads=trim_edges_off_reads,
-                minimum_base_quality_trim_reads=minimum_base_quality_trim_reads,
-                replace_low_quality_bases_with_N=replace_low_quality_bases_with_N,
-                minimum_base_quality_replace_with_N=minimum_base_quality_replace_with_N,
-                split_reads_by_Ns=split_reads_by_Ns,
-                save_fastq_headers=save_fastq_headers,
-                save_fastq_files=save_fastq_files,
-                max_retries=max_retries
-            )
-            for record in data_list_to_run
-        ]
-
-        concurrent.futures.wait(futures)
+    for record in data_list_to_run:
+        download_ccle_total(record=record,
+                            mutation_index=mutation_index,
+                            mutation_t2g=mutation_t2g,
+                            standard_index=standard_index,
+                            standard_t2g=standard_t2g,
+                            ccle_data_out_base=ccle_data_out_base,
+                            k=k,
+                            k_standard=k_standard,
+                            seqtk=seqtk,
+                            threads_per_task=threads_per_task,
+                            trim_edges_off_reads=trim_edges_off_reads,
+                            minimum_base_quality_trim_reads=minimum_base_quality_trim_reads,
+                            replace_low_quality_bases_with_N=replace_low_quality_bases_with_N,
+                            minimum_base_quality_replace_with_N=minimum_base_quality_replace_with_N,
+                            split_reads_by_Ns=split_reads_by_Ns,
+                            save_fastq_headers=save_fastq_headers,
+                            save_fastq_files=save_fastq_files,
+                            max_retries=max_retries
+                            )
 
     try:
         multiqc_total_command = f"find {ccle_data_out_base} -type f -name '*fastqc.zip*' | xargs multiqc --filename multiqc_total --outdir {ccle_data_out_base}"

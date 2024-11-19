@@ -23,11 +23,7 @@ logger = set_up_logger(logging_level_name=None, save_logs=False, log_dir="logs")
 
 
 def process_filters(filters):
-    if (
-        len(filters) == 1
-        and os.path.isfile(filters[0])
-        and filters[0].endswith(".json")
-    ):
+    if len(filters) == 1 and os.path.isfile(filters[0]) and filters[0].endswith(".json"):
         return prepare_filters_json(filters[0])
     else:
         return prepare_filters_list(filters)
@@ -53,9 +49,7 @@ def extract_help_from_doc(module, arg_name):
     # Regular expression to match the start of a new argument or 'Additional input arguments:'
     new_arg_pattern = r"-\s*[a-zA-Z_]\w*\s*\(.*?\)|Additional input arguments:"
 
-    capturing = (
-        False  # Flag to check if we are reading the target argument's help message
-    )
+    capturing = False  # Flag to check if we are reading the target argument's help message
 
     for line in docstring.splitlines():
         # Stop capturing if a new argument or 'Additional input arguments:' is found after starting
@@ -110,9 +104,7 @@ def convert_to_list(*args):
 
 def int_or_float(value):
     # Check if the value is an int or a float (including infinity)
-    return isinstance(value, (int, float)) and not isinstance(
-        value, bool
-    )  # Excludes boolean values
+    return isinstance(value, (int, float)) and not isinstance(value, bool)  # Excludes boolean values
 
 
 def is_int_or_float_or_inf(value):
@@ -192,9 +184,7 @@ def strpath_or_str_or_list_or_df(value):
             raise ValueError(f"File has an unsupported extension: {value}")
 
     # If none of the conditions match, raise an error
-    raise ValueError(
-        "Input must be a non-path string, a valid file path, a list, or a pandas DataFrame."
-    )
+    raise ValueError("Input must be a non-path string, a valid file path, a list, or a pandas DataFrame.")
 
 
 def main():
@@ -202,22 +192,16 @@ def main():
     Function containing argparse parsers and arguments to allow the use of varseek from the terminal (as varseek).
     """
     # Define parent parser
-    parent_parser = argparse.ArgumentParser(
-        description=f"varseek v{__version__}", add_help=False
-    )
+    parent_parser = argparse.ArgumentParser(description=f"varseek v{__version__}", add_help=False)
     # Initiate subparsers
     parent_subparsers = parent_parser.add_subparsers(dest="command")
     # Define parent (not sure why I need both parent parser and parent, but otherwise it does not work)
     parent = argparse.ArgumentParser(add_help=False)
 
     # Add custom help argument to parent parser
-    parent_parser.add_argument(
-        "-h", "--help", action="store_true", help="Print manual."
-    )
+    parent_parser.add_argument("-h", "--help", action="store_true", help="Print manual.")
     # Add custom version argument to parent parser
-    parent_parser.add_argument(
-        "-v", "--version", action="store_true", help="Print version."
-    )
+    parent_parser.add_argument("-v", "--version", action="store_true", help="Print version.")
 
     # build parser arguments
     build_desc = "Build a mutation-containing reference sequence (MCRS) file."
@@ -490,9 +474,7 @@ def main():
         default="chromosome",
         help=extract_help_from_doc(info, "mutation_genome_column"),
     )
-    parser_info.add_argument(
-        "--gtf", type=str, required=False, help=extract_help_from_doc(info, "gtf")
-    )
+    parser_info.add_argument("--gtf", type=str, required=False, help=extract_help_from_doc(info, "gtf"))
     parser_info.add_argument(
         "--mutation_metadata_df_out_path",
         type=str,
@@ -976,19 +958,12 @@ def main():
     ### Define return values
     args, unknown_args = parent_parser.parse_known_args()
 
-    kwargs = {
-        unknown_args[i].lstrip("--"): unknown_args[i + 1]
-        for i in range(0, len(unknown_args), 2)
-    }
+    kwargs = {unknown_args[i].lstrip("--"): unknown_args[i + 1] for i in range(0, len(unknown_args), 2)}
 
     # Help return
     if args.help:
         # Retrieve all subparsers from the parent parser
-        subparsers_actions = [
-            action
-            for action in parent_parser._actions
-            if isinstance(action, argparse._SubParsersAction)
-        ]
+        subparsers_actions = [action for action in parent_parser._actions if isinstance(action, argparse._SubParsersAction)]
         for subparsers_action in subparsers_actions:
             # Get all subparsers and print help
             for choice, subparser in subparsers_action.choices.items():

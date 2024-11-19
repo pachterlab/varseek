@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 import anndata as ad
 import scanpy as sc
+import pysam
 
 from scipy.sparse import csr_matrix
 from bisect import bisect_left
@@ -456,9 +457,9 @@ def create_header_to_sequence_ordered_dict_from_fasta_after_semicolon_splitting(
     return mutant_reference
 
 
-def create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(
-    input_fasta,
-):
+def create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(input_fasta, low_memory = False):
+    if low_memory:
+        pass
     mutant_reference = OrderedDict()
     for mutant_reference_header, mutant_reference_sequence in read_fasta(input_fasta):
         mutant_reference[mutant_reference_header] = mutant_reference_sequence
@@ -5555,7 +5556,7 @@ def make_bus_df(
     if parity == "paired":
         fastq_header_df['fastq_header_pair'] = None
 
-    if type(fastq_file_list) == "str":
+    if type(fastq_file_list) == str:
         fastq_file_list = [fastq_file_list]
     
     skip_upcoming_fastq = False
@@ -5713,7 +5714,8 @@ def make_bus_df(
     )
     t2g_dict = dict(zip(t2g_df["transcript_id"], t2g_df["gene_name"]))
 
-    # Apply the mapping function to create gene name columns
+    print("Apply the mapping function to create gene name columns")
+    # mapping transcript to gene names
     bus_df["gene_names"] = bus_df["transcript_names"].apply(
         lambda x: map_transcripts_to_genes(x, t2g_dict)
     )
@@ -5723,6 +5725,7 @@ def make_bus_df(
 
     bus_df["gene_names_final_set"] = bus_df["gene_names_final"].apply(set)
 
+    print("added counted in matrix column")
     if union or mm:
         # union or mm gets added to count matrix as long as dlist is not included in the EC
         bus_df["counted_in_count_matrix"] = bus_df["transcript_names_final"].apply(
@@ -5843,7 +5846,12 @@ def match_paired_ends_after_single_end_run(
 
 
 # TODO: unsure if this works for sc
-def adjust_mutation_adata_by_normal_gene_matrix(kb_output_mutation, kb_output_standard, id_to_header_csv = None, mutation_metadata_csv = None, adata_output_path = None, t2g_mutation = None, t2g_standard = None, fastq_file_list = None, mm = False, union = False, assay = "bulk", parity = "single", bustools = "bustools"):
+def adjust_mutation_adata_by_normal_gene_matrix(adata, kb_output_mutation, kb_output_standard, id_to_header_csv = None, mutation_metadata_csv = None, adata_output_path = None, t2g_mutation = None, t2g_standard = None, fastq_file_list = None, mm = False, union = False, assay = "bulk", parity = "single", bustools = "bustools"):
+    if not adata:
+        adata = f"{kb_output_mutation}/counts_unfiltered/adata.h5ad"
+    if type(adata) == str:
+        adata = sc.read_h5ad(adata)
+    
     bus_df_mutation_path = f"{kb_output_mutation}/bus_df.csv"
     bus_df_standard_path = f"{kb_output_standard}/bus_df.csv"
     assert id_to_header_csv or mutation_metadata_csv, "Either id_to_header_csv or mutation_metadata_csv must be provided"
@@ -5914,9 +5922,6 @@ def adjust_mutation_adata_by_normal_gene_matrix(kb_output_mutation, kb_output_st
         axis=1
     )
 
-    adata_path = f"{kb_output_mutation}/counts_unfiltered/adata.h5ad"
-    adata = sc.read_h5ad(adata_path)
-
     n_rows, n_cols = adata.X.shape
     decrement_matrix = csr_matrix((n_rows, n_cols))
 
@@ -5957,3 +5962,400 @@ def adjust_mutation_adata_by_normal_gene_matrix(kb_output_mutation, kb_output_st
     adata.write(adata_output_path)
 
     return adata
+
+def match_adata_orders(adata, adata_ref):
+    # Ensure cells (obs) are in the same order
+    adata = adata[adata_ref.obs_names]
+
+    # Add missing genes to adata
+    missing_genes = adata_ref.var_names.difference(adata.var_names)
+    padding_matrix = sp.csr_matrix((adata.n_obs, len(missing_genes)))  # Sparse zero matrix
+
+    # Create a padded AnnData for missing genes
+    adata_padded = ad.AnnData(
+        X=padding_matrix,
+        obs=adata.obs,
+        var=pd.DataFrame(index=missing_genes)
+    )
+
+    # Concatenate the original and padded AnnData objects
+    adata_padded = ad.concat([adata, adata_padded], axis=1)
+
+    # Reorder genes to match adata_ref
+    adata_padded = adata_padded[:, adata_ref.var_names]
+
+    return adata_padded
+
+def make_vaf_matrix(adata_mutant_mcrs_path, adata_wt_mcrs_path, adata_vaf_output = None, mutant_vcf = None):
+    import scipy.sparse as sp
+    adata_mutant_mcrs = sc.read_h5ad(adata_mutant_mcrs_path)
+    adata_wt_mcrs = sc.read_h5ad(adata_wt_mcrs_path)
+
+    adata_mutant_mcrs_path_out = adata_mutant_mcrs_path.replace('.h5ad', '_with_vaf.h5ad')
+    adata_wt_mcrs_path_out = adata_wt_mcrs_path.replace('.h5ad', '_with_vaf.h5ad')
+
+    adata_wt_mcrs_padded = match_adata_orders(adata = adata_wt_mcrs, adata_ref = adata_mutant_mcrs)
+
+    # Perform element-wise division (handle sparse matrices)
+    mutant_X = adata_mutant_mcrs.X
+    wt_X = adata_wt_mcrs_padded.X
+
+    if sp.issparse(mutant_X) and sp.issparse(wt_X):
+        # Calculate the denominator: mutant_X + wt_X (element-wise addition for sparse matrices)
+        denominator = mutant_X + wt_X
+        
+        # Avoid division by zero by setting zeros in the denominator to NaN
+        denominator.data[denominator.data == 0] = np.nan
+        
+        # Calculate VAF: mutant_X / (mutant_X + wt_X)
+        result_matrix = mutant_X.multiply(1 / denominator)
+        
+        # Handle NaNs and infinities resulting from division
+        result_matrix.data[np.isnan(result_matrix.data)] = 0.0  # Set NaNs to 0
+        result_matrix.data[np.isinf(result_matrix.data)] = 0.0  # Set infinities to 0
+    else:
+        # Calculate VAF for dense matrices
+        denominator = mutant_X + wt_X
+        result_matrix = np.nan_to_num(mutant_X / denominator, nan=0.0, posinf=0.0, neginf=0.0)
+
+    # Create a new AnnData object with the result
+    adata_result = ad.AnnData(
+        X=result_matrix,
+        obs=adata_mutant_mcrs.obs,
+        var=adata_mutant_mcrs.var
+    )
+
+    if not adata_vaf_output:
+        adata_vaf_output = "./adata_vaf.h5ad"
+
+    # Save the result as an AnnData object
+    adata_result.write(adata_vaf_output)
+
+    # merge wt allele depth into mutant adata
+    # Ensure indices of adata2.var and adata1.var are aligned
+    merged_var = adata_mutant_mcrs.var.copy()  # Start with adata1.var
+
+    # Add the "mcrs_count" from adata2 as "wt_count" into adata1.var
+    merged_var["wt_count"] = adata_wt_mcrs.var["mcrs_count"].rename("wt_count")
+
+    # Assign the updated var back to adata1
+    adata_mutant_mcrs.var = merged_var
+
+    # Ensure there are no division by zero errors
+    mcrs_count = adata_mutant_mcrs.var["mcrs_count"]
+    wt_count = adata_mutant_mcrs.var["wt_count"]
+
+    # Calculate VAF
+    adata_mutant_mcrs.var["vaf_across_samples"] = mcrs_count / (mcrs_count + wt_count)
+
+    # wherever wt_count has a NaN, I want adata_mutant_mcrs.var["vaf_across_samples"] to have a NaN
+    adata_mutant_mcrs.var.loc[wt_count.isna(), "vaf_across_samples"] = pd.NA
+
+    adata_mutant_mcrs.write(adata_mutant_mcrs_path_out)
+    adata_wt_mcrs.write(adata_wt_mcrs_path_out)
+
+    return adata_vaf_output
+
+
+# convert gatk output vcf to pandas df
+def vcf_to_dataframe(vcf_file, additional_columns = True):
+    """Convert a VCF file to a Pandas DataFrame."""    
+    vcf = pysam.VariantFile(vcf_file)
+    
+    # List to store VCF rows
+    vcf_data = []
+    
+    # Fetch each record in the VCF
+    for record in vcf.fetch():
+        # For each record, extract the desired fields
+        vcf_row = {
+            'CHROM': record.chrom,
+            'POS': record.pos,
+            'ID': record.id,
+            'REF': record.ref,
+            'ALT': ','.join(record.alts),  # ALT can be multiple
+        }
+
+        if additional_columns:
+            vcf_row['QUAL'] = record.qual
+            vcf_row['FILTER'] = ';'.join(record.filter.keys()) if record.filter else None,  # FILTER keys
+
+            # Add INFO fields
+            for key, value in record.info.items():
+                vcf_row[f'INFO_{key}'] = value
+            
+            # Add per-sample data (FORMAT fields)
+            for sample, sample_data in record.samples.items():
+                for format_key, format_value in sample_data.items():
+                    vcf_row[f'{sample}_{format_key}'] = format_value
+
+        
+        # Append the row to the list
+        vcf_data.append(vcf_row)
+    
+    # Convert the list to a Pandas DataFrame
+    df = pd.DataFrame(vcf_data)
+    
+    return df
+
+def add_mutation_type(mutations, mut_column):
+    mutations["mutation_type_id"] = mutations[mut_column].str.extract(mutation_pattern)[1]
+
+    # Define conditions and choices for the mutation types
+    conditions = [
+        mutations["mutation_type_id"].str.contains(">", na=False),
+        mutations["mutation_type_id"].str.contains("delins", na=False),
+        mutations["mutation_type_id"].str.contains("del", na=False) & ~mutations["mutation_type_id"].str.contains("delins", na=False),
+        mutations["mutation_type_id"].str.contains("ins", na=False) & ~mutations["mutation_type_id"].str.contains("delins", na=False),
+        mutations["mutation_type_id"].str.contains("dup", na=False),
+        mutations["mutation_type_id"].str.contains("inv", na=False),
+    ]
+
+    choices = [
+        "substitution",
+        "delins",
+        "deletion",
+        "insertion",
+        "duplication",
+        "inversion",
+    ]
+
+    # Assign the mutation types
+    mutations["mutation_type"] = np.select(conditions, choices, default="unknown")
+
+    # Drop the temporary mutation_type_id column
+    mutations.drop(columns=["mutation_type_id"], inplace=True)
+
+    return mutations
+
+def add_vcf_info_to_cosmic_tsv(cosmic_tsv, reference_genome_fasta, cosmic_df_out = None, cosmic_cdna_info_csv = None, mutation_source = "cds"):
+    # load in COSMIC tsv with columns CHROM, POS, ID, REF, ALT
+    cosmic_df = pd.read_csv(cosmic_tsv, sep="\t", usecols=["Mutation genome position GRCh37", "GENOMIC_WT_ALLELE_SEQ", "GENOMIC_MUT_ALLELE_SEQ", "ACCESSION_NUMBER", "Mutation CDS", "MUTATION_URL"])
+
+    if mutation_source == "cdna":
+        cosmic_cdna_info_df = pd.read_csv(cosmic_cdna_info_csv, usecols=["mutation_id", "mutation"])
+        cosmic_cdna_info_df = cosmic_cdna_info_df.rename(columns={"mutation": "Mutation cDNA"})
+
+    cosmic_df = add_mutation_type(cosmic_df, "Mutation CDS")
+
+    cosmic_df["ACCESSION_NUMBER"] = cosmic_df["ACCESSION_NUMBER"].str.split(".").str[0]
+
+    cosmic_df[['CHROM', 'GENOME_POS']] = cosmic_df['Mutation genome position GRCh37'].str.split(':', expand=True)
+    # cosmic_df['CHROM'] = cosmic_df['CHROM'].apply(convert_chromosome_value_to_int_when_possible)
+    cosmic_df[['POS', 'GENOME_END_POS']] = cosmic_df['GENOME_POS'].str.split('-', expand=True)
+
+    cosmic_df = cosmic_df.rename(
+        columns={
+            "GENOMIC_WT_ALLELE_SEQ": "REF",
+            "GENOMIC_MUT_ALLELE_SEQ": "ALT",
+            "MUTATION_URL": "mutation_id"
+        }
+    )
+
+    if mutation_source == "cds":
+        cosmic_df['ID'] = cosmic_df['ACCESSION_NUMBER'] + ":" + cosmic_df['Mutation CDS']
+    elif mutation_source == "cdna":
+        cosmic_df["mutation_id"] = cosmic_df["mutation_id"].str.extract(r"id=(\d+)")
+        cosmic_df['mutation_id'] = cosmic_df['mutation_id'].astype(int, errors='raise')
+        cosmic_df = cosmic_df.merge(cosmic_cdna_info_df[['mutation_id', 'Mutation cDNA']], on='mutation_id', how='left')
+        cosmic_df['ID'] = cosmic_df['ACCESSION_NUMBER'] + ":" + cosmic_df['Mutation cDNA']
+        cosmic_df.drop(columns=["Mutation cDNA"], inplace=True)
+
+    cosmic_df = cosmic_df.dropna(subset=['CHROM', 'POS'])
+    cosmic_df = cosmic_df.dropna(subset=['ID'])  # a result of intron mutations and COSMIC duplicates that get dropped before cDNA determination
+
+
+    # reference_genome_fasta
+    reference_genome = pysam.FastaFile(reference_genome_fasta)
+
+    def get_nucleotide_from_reference(chromosome, position):
+        # pysam is 0-based, so subtract 1 from the position
+        return reference_genome.fetch(chromosome, int(position) - 1, int(position))
+
+    def get_complement(nucleotide_sequence):
+        return ''.join([complement[nuc] for nuc in nucleotide_sequence])
+
+    # Insertion, get original nucleotide (not in COSMIC df)
+    cosmic_df.loc[
+        (cosmic_df['GENOME_END_POS'].astype(int) != 1) & (cosmic_df['mutation_type'] == 'insertion'), 'original_nucleotide'
+    ] = cosmic_df.loc[
+        (cosmic_df['GENOME_END_POS'].astype(int) != 1) & (cosmic_df['mutation_type'] == 'insertion'), ['CHROM', 'POS']
+    ].progress_apply(
+        lambda row: get_nucleotide_from_reference(row['CHROM'], int(row['POS'])),
+        axis=1
+    )
+
+    # Deletion, get new nucleotide (not in COSMIC df)
+    cosmic_df.loc[
+        (cosmic_df['POS'].astype(int) != 1) & (cosmic_df['mutation_type'] == 'deletion'), 'original_nucleotide'
+    ] = cosmic_df.loc[
+        (cosmic_df['POS'].astype(int) != 1) & (cosmic_df['mutation_type'] == 'deletion'), ['CHROM', 'POS']
+    ].progress_apply(
+        lambda row: get_nucleotide_from_reference(row['CHROM'], int(row['POS']) - 1),
+        axis=1
+    )
+
+    # Duplication
+    cosmic_df.loc[cosmic_df['mutation_type'] == 'duplication', 'original_nucleotide'] = cosmic_df.loc[cosmic_df['ID'].str.contains('dup', na=False), 'ALT'].str[-1]
+
+    # deal with start of 1, insertion
+    cosmic_df.loc[
+        (cosmic_df['GENOME_END_POS'].astype(int) == 1) & (cosmic_df['mutation_type'] == 'insertion'), 'original_nucleotide'
+    ] = cosmic_df.loc[
+        (cosmic_df['GENOME_END_POS'].astype(int) == 1) & (cosmic_df['mutation_type'] == 'insertion'), ['CHROM', 'POS']
+    ].progress_apply(
+        lambda row: get_nucleotide_from_reference(row['CHROM'], int(row['GENOME_END_POS'])),
+        axis=1
+    )
+
+    # deal with start of 1, deletion
+    cosmic_df.loc[
+        (cosmic_df['POS'].astype(int) == 1) & (cosmic_df['mutation_type'] == 'deletion'), 'original_nucleotide'
+    ] = cosmic_df.loc[
+        (cosmic_df['POS'].astype(int) == 1) & (cosmic_df['mutation_type'] == 'deletion'), ['CHROM', 'POS']
+    ].progress_apply(
+        lambda row: get_nucleotide_from_reference(row['CHROM'], int(row['GENOME_END_POS']) + 1),
+        axis=1
+    )
+
+    # # deal with (-) strand - commented out because the vcf should all be relative to the forward strand, not the cdna
+    # cosmic_df.loc[cosmic_df['strand'] == '-', 'original_nucleotide'] = cosmic_df.loc[cosmic_df['strand'] == '-', 'original_nucleotide'].apply(get_complement)
+
+
+
+
+    # ins and dup, starting position not 1
+    cosmic_df.loc[(((cosmic_df['mutation_type'] == 'insertion') | (cosmic_df['mutation_type'] == 'duplication')) & (cosmic_df['POS'].astype(int) != 1)), 'ref_updated'] = cosmic_df.loc[(((cosmic_df['mutation_type'] == 'insertion') | (cosmic_df['mutation_type'] == 'duplication')) & (cosmic_df['POS'].astype(int) != 1)), 'original_nucleotide']
+    cosmic_df.loc[(((cosmic_df['mutation_type'] == 'insertion') | (cosmic_df['mutation_type'] == 'duplication')) & (cosmic_df['POS'].astype(int) != 1)), 'alt_updated'] = cosmic_df.loc[(((cosmic_df['mutation_type'] == 'insertion') | (cosmic_df['mutation_type'] == 'duplication')) & (cosmic_df['POS'].astype(int) != 1)), 'original_nucleotide'] + cosmic_df.loc[(((cosmic_df['mutation_type'] == 'insertion') | (cosmic_df['mutation_type'] == 'duplication')) & (cosmic_df['POS'].astype(int) != 1)), 'ALT']
+
+    # ins and dup, starting position 1
+    cosmic_df.loc[(((cosmic_df['mutation_type'] == 'insertion') | (cosmic_df['mutation_type'] == 'duplication')) & (cosmic_df['POS'].astype(int) == 1)), 'ref_updated'] = cosmic_df.loc[(((cosmic_df['mutation_type'] == 'insertion') | (cosmic_df['mutation_type'] == 'duplication')) & (cosmic_df['POS'].astype(int) == 1)), 'original_nucleotide']
+    cosmic_df.loc[(((cosmic_df['mutation_type'] == 'insertion') | (cosmic_df['mutation_type'] == 'duplication')) & (cosmic_df['POS'].astype(int) == 1)), 'alt_updated'] = cosmic_df.loc[(((cosmic_df['mutation_type'] == 'insertion') | (cosmic_df['mutation_type'] == 'duplication')) & (cosmic_df['POS'].astype(int) == 1)), 'ALT'] + cosmic_df.loc[(((cosmic_df['mutation_type'] == 'insertion') | (cosmic_df['mutation_type'] == 'duplication')) & (cosmic_df['POS'].astype(int) == 1)), 'original_nucleotide']
+
+
+    # del, starting position not 1
+    cosmic_df.loc[((cosmic_df['mutation_type'] == 'deletion') & (cosmic_df['POS'].astype(int) != 1)), 'ref_updated'] = cosmic_df.loc[((cosmic_df['mutation_type'] == 'deletion') & (cosmic_df['POS'].astype(int) != 1)), 'original_nucleotide'] + cosmic_df.loc[((cosmic_df['mutation_type'] == 'deletion') & (cosmic_df['POS'].astype(int) != 1)), 'REF']
+    cosmic_df.loc[((cosmic_df['mutation_type'] == 'deletion') & (cosmic_df['POS'].astype(int) != 1)), 'alt_updated'] = cosmic_df.loc[((cosmic_df['mutation_type'] == 'deletion') & (cosmic_df['POS'].astype(int) != 1)), 'original_nucleotide']
+
+    # del, starting position 1
+    cosmic_df.loc[((cosmic_df['mutation_type'] == 'deletion') & (cosmic_df['POS'].astype(int) == 1)), 'ref_updated'] = cosmic_df.loc[((cosmic_df['mutation_type'] == 'deletion') & (cosmic_df['POS'].astype(int) == 1)), 'REF'] + cosmic_df.loc[((cosmic_df['mutation_type'] == 'deletion') & (cosmic_df['POS'].astype(int) == 1)), 'original_nucleotide']
+    cosmic_df.loc[((cosmic_df['mutation_type'] == 'deletion') & (cosmic_df['POS'].astype(int) == 1)), 'alt_updated'] = cosmic_df.loc[((cosmic_df['mutation_type'] == 'deletion') & (cosmic_df['POS'].astype(int) == 1)), 'original_nucleotide']
+
+
+
+    # Deletion, update position (should refer to 1 BEFORE the deletion)
+    cosmic_df.loc[
+        (cosmic_df['POS'].astype(int) != 1) & (cosmic_df['mutation_type'] == 'deletion'), 'POS'
+    ] = cosmic_df.loc[
+        (cosmic_df['POS'].astype(int) != 1) & (cosmic_df['mutation_type'] == 'deletion'), 'POS'
+    ].progress_apply(
+        lambda pos: int(pos) - 1
+    )
+
+    # deal with start of 1, deletion update position (should refer to 1 after the deletion)
+    cosmic_df.loc[
+        (cosmic_df['POS'].astype(int) == 1) & (cosmic_df['mutation_type'] == 'deletion'), 'POS'
+    ] = cosmic_df.loc[
+        (cosmic_df['POS'].astype(int) == 1) & (cosmic_df['mutation_type'] == 'deletion'), 'GENOME_END_POS'
+    ].astype(int) + 1
+
+    # Insertion, update position when pos=1 (should refer to 1)
+    cosmic_df.loc[
+        (cosmic_df['GENOME_END_POS'].astype(int) == 1) & (cosmic_df['mutation_type'] == 'insertion'), 'POS'
+    ] = 1
+
+    cosmic_df['ref_updated'] = cosmic_df['ref_updated'].fillna(cosmic_df['REF'])
+    cosmic_df['alt_updated'] = cosmic_df['alt_updated'].fillna(cosmic_df['ALT'])
+    cosmic_df.rename(columns={'ALT': 'alt_cosmic', 'alt_updated': 'ALT', 'REF': 'ref_cosmic', 'ref_updated': 'REF'}, inplace=True)
+    cosmic_df.drop(columns=["Mutation genome position GRCh37", "GENOME_POS", "GENOME_END_POS", "ACCESSION_NUMBER", "Mutation CDS", "mutation_id", 'ref_cosmic', 'alt_cosmic', 'original_nucleotide', 'mutation_type'], inplace=True)  # 'strand'
+
+    num_rows_with_na = cosmic_df.isna().any(axis=1).sum()
+    assert num_rows_with_na == 0, f"Number of rows with NA values: {num_rows_with_na}"
+
+    cosmic_df['POS'] = cosmic_df['POS'].astype(np.int64)
+
+    if cosmic_df_out:
+        cosmic_df.to_csv(cosmic_df_out, index=False)
+
+    return cosmic_df
+
+
+# TODO: make sure this works for rows with just ID and everything else blank (due to different mutations being concatenated)
+def write_to_vcf(adata_var, output_file):
+    """
+    Write adata.var DataFrame to a VCF file.
+
+    Parameters:
+        adata_var (pd.DataFrame): DataFrame with VCF columns (CHROM, POS, REF, ALT, ID, DP, AF, NS).
+        output_file (str): Path to the output VCF file.
+    """
+    # Open VCF file for writing
+    with open(output_file, "w") as vcf_file:
+        # Write VCF header
+        vcf_file.write("##fileformat=VCFv4.2\n")
+        vcf_file.write('##INFO=<ID=DP,Number=1,Type=Integer,Description="Total Depth">\n')
+        vcf_file.write('##INFO=<ID=AF,Number=A,Type=Float,Description="Variant Allele Frequency">\n')
+        vcf_file.write('##INFO=<ID=NS,Number=1,Type=Integer,Description="Number of Samples">\n')
+        vcf_file.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
+        
+        # Write each row of the DataFrame
+        for _, row in adata_var.iterrows():
+            # Construct INFO field
+            info_fields = [
+                f"DP={row['DP']}" if pd.notna(row['DP']) else None,
+                f"AF={row['AF']}" if pd.notna(row['AF']) else None,
+                f"NS={row['NS']}" if pd.notna(row['NS']) else None,
+            ]
+            info = ";".join(filter(None, info_fields))
+            
+            # Write VCF row
+            vcf_file.write(
+                f"{row['CHROM']}\t{row['POS']}\t{row['ID']}\t{row['REF']}\t{row['ALT']}\t.\tPASS\t{info}\n"
+            )
+
+# TODO: make sure this works for rows with just ID and everything else blank (due to different mutations being concatenated)
+def write_vcfs_for_rows(adata, adata_wt_mcrs, adata_vaf, output_dir):
+    """
+    Write a VCF file for each row (variant) in adata.var.
+
+    Parameters:
+        adata: AnnData object with mutant counts.
+        adata_wt_mcrs: AnnData object with wild-type counts.
+        adata_vaf: AnnData object with VAF values.
+        output_dir: Directory to save VCF files.
+    """
+    for idx, row in adata.var.iterrows():
+        # Extract VCF fields from adata.var
+        chrom = row["CHROM"]
+        pos = row["POS"]
+        var_id = row["ID"]
+        ref = row["REF"]
+        alt = row["ALT"]
+        mcrs_id = row["mcrs_id"]  # This is the index for the column in the matrices
+        
+        # Extract corresponding matrix values
+        mutant_counts = adata[:, mcrs_id].X.flatten()  # Extract as 1D array
+        wt_counts = adata_wt_mcrs[:, mcrs_id].X.flatten()  # Extract as 1D array
+        vaf_values = adata_vaf[:, mcrs_id].X.flatten()  # Extract as 1D array
+        
+        # Create VCF file for the row
+        output_file = f"{output_dir}/{var_id}.vcf"
+        with open(output_file, "w") as vcf_file:
+            # Write VCF header
+            vcf_file.write("##fileformat=VCFv4.2\n")
+            vcf_file.write('##INFO=<ID=RD,Number=1,Type=Integer,Description="Total Depth">\n')
+            vcf_file.write('##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency">\n')
+            vcf_file.write('##INFO=<ID=NS,Number=1,Type=Integer,Description="Number of Samples">\n')
+            vcf_file.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
+            
+            # Iterate through samples (rows in the matrix)
+            for sample_idx in range(len(mutant_counts)):
+                # Calculate RD and AF
+                rd = mutant_counts[sample_idx] + wt_counts[sample_idx]
+                af = vaf_values[sample_idx]
+                
+                # INFO field
+                info = f"RD={int(rd)};AF={af:.3f};NS=1"
+                
+                # Write VCF row
+                vcf_file.write(f"{chrom}\t{pos}\t{var_id}\t{ref}\t{alt}\t.\tPASS\t{info}\n")

@@ -7,12 +7,25 @@ import tempfile
 import numpy as np
 import random
 
-def compare_two_dataframes_without_regard_for_order_of_rows_or_columns(df1_path, df2_path):
+def compare_two_dataframes_without_regard_for_order_of_rows_or_columns(df1_path, df2_path, columns_to_drop=None, head=False):
     df1 = pd.read_csv(df1_path)
     df2 = pd.read_csv(df2_path)
+
+    if columns_to_drop:
+        if type(columns_to_drop) == str:
+            columns_to_drop = [columns_to_drop]
+        
+        df1 = df1.drop(columns=columns_to_drop, errors='ignore')
+        df2 = df2.drop(columns=columns_to_drop, errors='ignore')
+
     # Sort by all columns and reset index to ignore both row and column order
     df1_sorted = df1.sort_values(by=list(df1.columns)).reset_index(drop=True)
     df2_sorted = df2.sort_values(by=list(df2.columns)).reset_index(drop=True)
+
+    if head:
+        df1 = df1.head()
+        df2 = df2.head()
+
     pd.testing.assert_frame_equal(df1_sorted, df2_sorted, check_like=True)
 
 def compare_two_fastas_without_regard_for_order_of_entries(fasta1, fasta2):

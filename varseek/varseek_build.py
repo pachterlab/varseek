@@ -22,6 +22,7 @@ from .utils import (
     wt_fragment_and_mutant_fragment_share_kmer,
     calculate_sufficient_id_length,
     create_mutant_t2g,
+    add_mutation_type
 )
 
 # from gget.utils import read_fasta
@@ -46,9 +47,7 @@ def reverse_complement(seq):
     return seq.translate(complement)[::-1]
 
 
-def merge_gtf_transcript_locations_into_cosmic_csv(
-    mutations, gtf_path, gtf_transcript_id_column, output_mutations_path=None
-):
+def merge_gtf_transcript_locations_into_cosmic_csv(mutations, gtf_path, gtf_transcript_id_column, output_mutations_path=None):
     gtf_df = pd.read_csv(
         gtf_path,
         sep="\t",
@@ -74,9 +73,7 @@ def merge_gtf_transcript_locations_into_cosmic_csv(
 
     gtf_df["transcript_id"] = gtf_df["attribute"].str.extract('transcript_id "([^"]+)"')
 
-    assert len(gtf_df["transcript_id"]) == len(
-        set(gtf_df["transcript_id"])
-    ), "Duplicate transcript_id values found!"
+    assert len(gtf_df["transcript_id"]) == len(set(gtf_df["transcript_id"])), "Duplicate transcript_id values found!"
 
     # Filter out rows where transcript_id is NaN
     gtf_df = gtf_df.dropna(subset=["transcript_id"])
@@ -92,12 +89,8 @@ def merge_gtf_transcript_locations_into_cosmic_csv(
     merged_df = pd.merge(mutations, gtf_df, on=gtf_transcript_id_column, how="left")
 
     # Fill NaN values
-    merged_df["start_transcript_position"] = merged_df[
-        "start_transcript_position"
-    ].fillna(0)
-    merged_df["end_transcript_position"] = merged_df["end_transcript_position"].fillna(
-        9999999
-    )
+    merged_df["start_transcript_position"] = merged_df["start_transcript_position"].fillna(0)
+    merged_df["end_transcript_position"] = merged_df["end_transcript_position"].fillna(9999999)
     merged_df["strand"] = merged_df["strand"].fillna(".")
 
     if output_mutations_path is not None:
@@ -118,73 +111,44 @@ def drop_duplication_mutations(input, output, mutation_column="mutation_genome")
     df_no_dup_mutations.to_csv(output, index=False)
 
 
-def improve_genome_strand_information(
-    cosmic_reference_file_mutation_csv, mutation_genome_column_name="mutation_genome"
-):
+def improve_genome_strand_information(cosmic_reference_file_mutation_csv, mutation_genome_column_name="mutation_genome"):
     df = pd.read_csv(cosmic_reference_file_mutation_csv)
 
     df["strand"] = df["strand"].replace(".", "+")
 
     genome_nucleotide_position_pattern = r"g\.(\d+)(?:_(\d+))?[A-Za-z]*"
 
-    extracted_numbers = df[mutation_genome_column_name].str.extract(
-        genome_nucleotide_position_pattern
-    )
+    extracted_numbers = df[mutation_genome_column_name].str.extract(genome_nucleotide_position_pattern)
     extracted_numbers[1] = extracted_numbers[1].fillna(extracted_numbers[0])
     df["GENOME_START"] = extracted_numbers[0]
     df["GENOME_STOP"] = extracted_numbers[1]
 
     def complement_substitution(actual_mutation):
-        return "".join(
-            complement.get(nucleotide, "N") for nucleotide in actual_mutation[:]
-        )
+        return "".join(complement.get(nucleotide, "N") for nucleotide in actual_mutation[:])
 
     def reverse_complement_insertion(actual_mutation):
-        return "".join(
-            complement.get(nucleotide, "N") for nucleotide in actual_mutation[::-1]
-        )
+        return "".join(complement.get(nucleotide, "N") for nucleotide in actual_mutation[::-1])
 
-    df[["nucleotide_positions", "actual_mutation"]] = df["mutation"].str.extract(
-        mutation_pattern
-    )
+    df[["nucleotide_positions", "actual_mutation"]] = df["mutation"].str.extract(mutation_pattern)
 
     minus_sub_mask = (df["strand"] == "-") & (df["actual_mutation"].str.contains(">"))
-    ins_delins_mask = (df["strand"] == "-") & (
-        df["actual_mutation"].str.contains("ins")
-    )
+    ins_delins_mask = (df["strand"] == "-") & (df["actual_mutation"].str.contains("ins"))
 
     df["actual_mutation_rc"] = df["actual_mutation"]
 
-    df.loc[minus_sub_mask, "actual_mutation_rc"] = df.loc[
-        minus_sub_mask, "actual_mutation"
-    ].apply(complement_substitution)
+    df.loc[minus_sub_mask, "actual_mutation_rc"] = df.loc[minus_sub_mask, "actual_mutation"].apply(complement_substitution)
 
-    df.loc[ins_delins_mask, ["mutation_type", "mut_nucleotides"]] = (
-        df.loc[ins_delins_mask, "actual_mutation"]
-        .str.extract(r"(delins|ins)([A-Z]+)")
-        .values
-    )
+    df.loc[ins_delins_mask, ["mutation_type", "mut_nucleotides"]] = df.loc[ins_delins_mask, "actual_mutation"].str.extract(r"(delins|ins)([A-Z]+)").values
 
-    df.loc[ins_delins_mask, "mut_nucleotides_rc"] = df.loc[
-        ins_delins_mask, "mut_nucleotides"
-    ].apply(reverse_complement_insertion)
+    df.loc[ins_delins_mask, "mut_nucleotides_rc"] = df.loc[ins_delins_mask, "mut_nucleotides"].apply(reverse_complement_insertion)
 
-    df.loc[ins_delins_mask, "actual_mutation_rc"] = (
-        df.loc[ins_delins_mask, "mutation_type"]
-        + df.loc[ins_delins_mask, "mut_nucleotides_rc"]
-    )
+    df.loc[ins_delins_mask, "actual_mutation_rc"] = df.loc[ins_delins_mask, "mutation_type"] + df.loc[ins_delins_mask, "mut_nucleotides_rc"]
 
-    df["actual_mutation_final"] = np.where(
-        df["strand"] == "+", df["actual_mutation"], df["actual_mutation_rc"]
-    )
+    df["actual_mutation_final"] = np.where(df["strand"] == "+", df["actual_mutation"], df["actual_mutation_rc"])
 
     df["mutation_genome"] = np.where(
         df["GENOME_START"] != df["GENOME_STOP"],
-        "g."
-        + df["GENOME_START"].astype(str)
-        + "_"
-        + df["GENOME_STOP"].astype(str)
-        + df["actual_mutation_final"],
+        "g." + df["GENOME_START"].astype(str) + "_" + df["GENOME_STOP"].astype(str) + df["actual_mutation_final"],
         "g." + df["GENOME_START"].astype(str) + df["actual_mutation_final"],
     )
 
@@ -224,47 +188,10 @@ def remove_gt_after_semicolon(line):
     return ";".join(parts)
 
 
-def add_mutation_type(mutations, mut_column):
-    mutations["mutation_type_id"] = mutations[mut_column].str.extract(mutation_pattern)[
-        1
-    ]
-
-    # Define conditions and choices for the mutation types
-    conditions = [
-        mutations["mutation_type_id"].str.contains(">", na=False),
-        mutations["mutation_type_id"].str.contains("delins", na=False),
-        mutations["mutation_type_id"].str.contains("del", na=False)
-        & ~mutations["mutation_type_id"].str.contains("delins", na=False),
-        mutations["mutation_type_id"].str.contains("ins", na=False)
-        & ~mutations["mutation_type_id"].str.contains("delins", na=False),
-        mutations["mutation_type_id"].str.contains("dup", na=False),
-        mutations["mutation_type_id"].str.contains("inv", na=False),
-    ]
-
-    choices = [
-        "substitution",
-        "delins",
-        "deletion",
-        "insertion",
-        "duplication",
-        "inversion",
-    ]
-
-    # Assign the mutation types
-    mutations["mutation_type"] = np.select(conditions, choices, default="unknown")
-
-    # Drop the temporary mutation_type_id column
-    mutations.drop(columns=["mutation_type_id"], inplace=True)
-
-    return mutations
-
-
 def extract_sequence(row, seq_dict, seq_id_column="seq_ID"):
     if pd.isna(row["start_mutation_position"]) or pd.isna(row["end_mutation_position"]):
         return None
-    seq = seq_dict[row[seq_id_column]][
-        int(row["start_mutation_position"]) : int(row["end_mutation_position"]) + 1
-    ]
+    seq = seq_dict[row[seq_id_column]][int(row["start_mutation_position"]) : int(row["end_mutation_position"]) + 1]
     return seq
 
 
@@ -329,9 +256,7 @@ def calculate_beginning_mutation_overlap_with_right_flank(row):
     else:
         original_sequence = row["right_flank_region"]
 
-    return beginning_mut_nucleotides_with_right_flank(
-        sequence_to_check, original_sequence
-    )
+    return beginning_mut_nucleotides_with_right_flank(sequence_to_check, original_sequence)
 
 
 def calculate_end_mutation_overlap_with_left_flank(row):
@@ -365,6 +290,7 @@ def build(
     merge_identical_rc: bool = False,
     keep_original_headers: bool = False,
     create_t2g: bool = False,
+    create_wt_mcrs_counterpart_fa: bool = False,
     update_df: bool = False,
     store_full_sequences: bool = False,
     translate: bool = False,
@@ -447,7 +373,6 @@ def build(
     - keep_original_headers        (True/False) Whether to keep the original sequence headers in the output fasta file. Default: False.
 
     # Optional arguments to generate additional output stored in a copy of the 'mutations' DataFrame
-    - create_t2g                   (True/False) Whether to add a column to the 'mutations' DataFrame containing the transcript to genome mapping for each mutation.
     - update_df                    (True/False) Whether to update the input 'mutations' DataFrame to include additional columns with the mutation type,
                                    wildtype nucleotide sequence, and mutant nucleotide sequence (only valid if 'mutations' is a csv or tsv file). Default: False
     - store_full_sequences         (True/False) Whether to also include the complete wildtype and mutant sequences in the updated 'mutations' DataFrame (not just the sub-sequence with
@@ -460,6 +385,10 @@ def build(
     - translate_end                (int | str | None) The position in the input nucleotide sequence to end translating. If a string is provided, it should correspond
                                    to a column name in 'mutations' containing the open reading frame end positions for each sequence/mutation.
                                    Only valid if translate=True. Default: None (translate from to the end of the sequence)
+
+    # Additional files to be generated:
+    - create_t2g                   (True/False) Whether to add a column to the 'mutations' DataFrame containing the transcript to genome mapping for each mutation.
+    - create_wt_mcrs_counterpart_fa (True/False) Whether to create a fasta file containing the wildtype sequences with the mutated coding regions (MCRs) replaced by the mutant sequences.
 
     # General arguments:
     - reference_out                (str) Path to reference files to be downloaded if 'mutations' is a supported database and 'sequences' is not provided. Default: 'out' directory.
@@ -515,27 +444,15 @@ def build(
     sequences_original = ""
 
     if type(mutations) == str:
-        if (
-            mutations in supported_databases_and_corresponding_reference_sequence_type
-            and "cosmic" in mutations
-        ):
+        if mutations in supported_databases_and_corresponding_reference_sequence_type and "cosmic" in mutations:
             if not kwargs.get("cosmic_release", None):
                 cosmic_release = "100"
             if not kwargs.get("cosmic_grch", None):
-                grch_dict = (
-                    supported_databases_and_corresponding_reference_sequence_type[
-                        mutations
-                    ]["database_version_to_reference_assembly_build"]
-                )
+                grch_dict = supported_databases_and_corresponding_reference_sequence_type[mutations]["database_version_to_reference_assembly_build"]
                 largest_key = max(int(k) for k in grch_dict.keys())
                 grch = grch_dict[str(largest_key)]
             else:
-                assert (
-                    kwargs.get("cosmic_grch", None)
-                    in supported_databases_and_corresponding_reference_sequence_type[
-                        mutations
-                    ]["database_version_to_reference_assembly_build"]
-                ), "The 'cosmic_grch' argument must be supported by the corresponding database."
+                assert kwargs.get("cosmic_grch", None) in supported_databases_and_corresponding_reference_sequence_type[mutations]["database_version_to_reference_assembly_build"], "The 'cosmic_grch' argument must be supported by the corresponding database."
                 grch = kwargs.get("cosmic_grch", None)
             if grch == "37":
                 gget_cosmic_grch = "human_grch37"
@@ -548,77 +465,38 @@ def build(
             cosmic_password = kwargs.get("cosmic_password", None)
 
     # Load input sequences and their identifiers from fasta file
-    if isinstance(sequences, str) and (
-        "." in sequences
-        or (
-            mutations in supported_databases_and_corresponding_reference_sequence_type
-            and sequences
-            in supported_databases_and_corresponding_reference_sequence_type[mutations][
-                "sequence_download_commands"
-            ]
-        )
-    ):
-        if (
-            mutations in supported_databases_and_corresponding_reference_sequence_type
-            and sequences
-            in supported_databases_and_corresponding_reference_sequence_type[mutations][
-                "sequence_download_commands"
-            ]
-        ):
+    if isinstance(sequences, str) and ("." in sequences or (mutations in supported_databases_and_corresponding_reference_sequence_type and sequences in supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_download_commands"])):
+        if mutations in supported_databases_and_corresponding_reference_sequence_type and sequences in supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_download_commands"]:
             # TODO: expand beyond COSMIC
             sequences_original = sequences
             if "cosmic" in mutations:
                 cosmic_email = kwargs.get("cosmic_email", None)
                 cosmic_password = kwargs.get("cosmic_password", None)
 
-                ensembl_version = (
-                    supported_databases_and_corresponding_reference_sequence_type[
-                        mutations
-                    ]["database_version_to_reference_release"][cosmic_release]
-                )
-                reference_out_sequences = (
-                    f"{reference_out}/ensembl_grch{grch}_release{ensembl_version}"
-                )
+                ensembl_version = supported_databases_and_corresponding_reference_sequence_type[mutations]["database_version_to_reference_release"][cosmic_release]
+                reference_out_sequences = f"{reference_out}/ensembl_grch{grch}_release{ensembl_version}"
 
-                sequences_download_command = (
-                    supported_databases_and_corresponding_reference_sequence_type[
-                        mutations
-                    ]["sequence_download_commands"][sequences]
-                )
-                sequences_download_command = sequences_download_command.replace(
-                    "OUT_DIR", reference_out_sequences
-                )
+                sequences_download_command = supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_download_commands"][sequences]
+                sequences_download_command = sequences_download_command.replace("OUT_DIR", reference_out_sequences)
                 sequences_download_command = sequences_download_command.replace(
                     "ENSEMBL_VERSION",
                     ensembl_version,
                 )
-                sequences_download_command = sequences_download_command.replace(
-                    "GRCH_NUMBER", gget_cosmic_grch
-                )
+                sequences_download_command = sequences_download_command.replace("GRCH_NUMBER", gget_cosmic_grch)
                 sequences_download_command_list = sequences_download_command.split(" ")
 
                 if sequences == "genome":
-                    genome_file = (
-                        supported_databases_and_corresponding_reference_sequence_type[
-                            mutations
-                        ]["sequence_file_names"]["genome"]
-                    )
+                    genome_file = supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_file_names"]["genome"]
                     genome_file = genome_file.replace("GRCH_NUMBER", grch)
                     genome_file = f"{reference_out_sequences}/{genome_file}"
-                    gtf_file = (
-                        supported_databases_and_corresponding_reference_sequence_type[
-                            mutations
-                        ]["sequence_file_names"]["gtf"]
-                    )
+                    gtf_file = supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_file_names"]["gtf"]
                     gtf_file = gtf_file.replace("GRCH_NUMBER", grch)
                     gtf_file = f"{reference_out_sequences}/{gtf_file}"
                     gtf_transcript_id_column = "seq_ID"
                     gtf = gtf_file
 
                     if not os.path.exists(genome_file) or not os.path.exists(gtf_file):
-                        logger.warning(
-                            f"Downloading reference sequences with {' '.join(sequences_download_command_list)}. Note that this requires curl >=7.73.0"
-                        )
+                        logger.warning(f"Downloading reference sequences with {' '.join(sequences_download_command_list)}. Note that this requires curl >=7.73.0")
                         subprocess.run(sequences_download_command_list, check=True)
 
                         subprocess.run(["gunzip", f"{genome_file}.gz"], check=True)
@@ -627,34 +505,20 @@ def build(
                     sequences = genome_file
 
                 elif sequences == "cdna" or sequences == "cds":
-                    cds_file = (
-                        supported_databases_and_corresponding_reference_sequence_type[
-                            mutations
-                        ]["sequence_file_names"]["cds"]
-                    )
+                    cds_file = supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_file_names"]["cds"]
                     cds_file = cds_file.replace("GRCH_NUMBER", grch)
                     cds_file = f"{reference_out_sequences}/{cds_file}"
                     if not os.path.exists(cds_file) and sequences == "cds":
-                        logger.warning(
-                            f"Downloading reference sequences with {' '.join(sequences_download_command_list)}. Note that this requires curl >=7.73.0"
-                        )
+                        logger.warning(f"Downloading reference sequences with {' '.join(sequences_download_command_list)}. Note that this requires curl >=7.73.0")
                         subprocess.run(sequences_download_command_list, check=True)
 
                         subprocess.run(["gunzip", f"{cds_file}.gz"], check=True)
                     if sequences == "cdna":
-                        cdna_file = supported_databases_and_corresponding_reference_sequence_type[
-                            mutations
-                        ][
-                            "sequence_file_names"
-                        ][
-                            "cdna"
-                        ]
+                        cdna_file = supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_file_names"]["cdna"]
                         cdna_file = cdna_file.replace("GRCH_NUMBER", grch)
                         cdna_file = f"{reference_out_sequences}/{cdna_file}"
                         if not os.path.exists(cdna_file):
-                            logger.warning(
-                                f"Downloading reference sequences with {' '.join(sequences_download_command_list)}. Note that this requires curl >=7.73.0"
-                            )
+                            logger.warning(f"Downloading reference sequences with {' '.join(sequences_download_command_list)}. Note that this requires curl >=7.73.0")
                             subprocess.run(sequences_download_command_list, check=True)
 
                             subprocess.run(["gunzip", f"{cds_file}.gz"], check=True)
@@ -694,10 +558,7 @@ def build(
 
     # logger.warning("Always ensure that the 'sequences' and 'mutations' are compatible with each other. This generally requires the correct source (e.g., Ensembl, RefSeq), version (e.g., GRCh37, GRCh38), and release (e.g., Ensembl release 112 - for transcript locations in particular).")
 
-    if (
-        isinstance(mutations, str)
-        and mutations in supported_databases_and_corresponding_reference_sequence_type
-    ):
+    if isinstance(mutations, str) and mutations in supported_databases_and_corresponding_reference_sequence_type:
         # TODO: expand beyond COSMIC
         if "cosmic" in mutations:
             reference_out_cosmic = f"{reference_out}/cosmic"
@@ -732,12 +593,8 @@ def build(
                     )
 
                 if "CancerMutationCensus" in mutations or mutations == "cosmic_cmc":
-                    logger.info(
-                        "COSMIC CMC genome strand information is not fully accurate. Improving with gtf information."
-                    )
-                    improve_genome_strand_information(
-                        mutations, mutation_genome_column_name="mutation_genome"
-                    )
+                    logger.info("COSMIC CMC genome strand information is not fully accurate. Improving with gtf information.")
+                    improve_genome_strand_information(mutations, mutation_genome_column_name="mutation_genome")
 
             if sequences_original == "cdna":
                 mutations_with_cdna = mutations.replace(".csv", "_with_cdna.csv")
@@ -752,16 +609,10 @@ def build(
                 mutations = mutations_with_cdna
 
             elif sequences_original == "genome":
-                mutations_no_duplications = mutations.replace(
-                    ".csv", "_no_duplications.csv"
-                )
+                mutations_no_duplications = mutations.replace(".csv", "_no_duplications.csv")
                 if not os.path.exists(mutations_no_duplications):
-                    logger.info(
-                        "COSMIC genome location is not accurate for duplications. Dropping duplications in a copy of the csv file."
-                    )
-                    drop_duplication_mutations(
-                        mutations, mutations_no_duplications
-                    )  # COSMIC incorrectly records genome positions of duplications
+                    logger.info("COSMIC genome location is not accurate for duplications. Dropping duplications in a copy of the csv file.")
+                    drop_duplication_mutations(mutations, mutations_no_duplications)  # COSMIC incorrectly records genome positions of duplications
 
                 mutations = mutations_no_duplications
 
@@ -771,26 +622,20 @@ def build(
         mutations = pd.read_csv(mutations)
         for col in mutations.columns:
             if col not in columns_to_keep:
-                columns_to_keep.append(
-                    col
-                )  # append "mutation_aa", "gene_name", "mutation_id"
+                columns_to_keep.append(col)  # append "mutation_aa", "gene_name", "mutation_id"
 
     elif isinstance(mutations, str) and mutations.endswith(".tsv"):
         mutations_path = mutations
         mutations = pd.read_csv(mutations, sep="\t")
         for col in mutations.columns:
             if col not in columns_to_keep:
-                columns_to_keep.append(
-                    col
-                )  # append "mutation_aa", "gene_name", "mutation_id"
+                columns_to_keep.append(col)  # append "mutation_aa", "gene_name", "mutation_id"
 
     # Handle mutations passed as a list
     elif isinstance(mutations, list):
         if len(mutations) > 1:
             if len(mutations) != len(seqs):
-                raise ValueError(
-                    "If a list is passed, the number of mutations must equal the number of input sequences."
-                )
+                raise ValueError("If a list is passed, the number of mutations must equal the number of input sequences.")
 
             temp = pd.DataFrame()
             temp["mutation"] = mutations
@@ -805,11 +650,7 @@ def build(
             mutations = temp
 
     # Handle single mutation passed as a string
-    elif (
-        isinstance(mutations, str)
-        and not mutations
-        in supported_databases_and_corresponding_reference_sequence_type
-    ):
+    elif isinstance(mutations, str) and not mutations in supported_databases_and_corresponding_reference_sequence_type:
         # This will work for one mutation for one sequence as well as one mutation for multiple sequences
         mutations_path = mutations
         temp = pd.DataFrame()
@@ -868,9 +709,7 @@ def build(
         mutations = mutations.dropna(subset=[seq_id_column])
 
     # ensure seq_ID column is string type, and chromosome numbers don't have decimals
-    mutations[seq_id_column] = mutations[seq_id_column].apply(
-        convert_chromosome_value_to_int_when_possible
-    )
+    mutations[seq_id_column] = mutations[seq_id_column].apply(convert_chromosome_value_to_int_when_possible)
 
     mutations = add_mutation_type(mutations, mut_column)
 
@@ -914,9 +753,7 @@ def build(
     if mut_id_column is not None:
         mutations["header"] = ">" + mutations[mut_id_column]
     else:
-        mutations["header"] = (
-            ">" + mutations[seq_id_column] + ":" + mutations[mut_column]
-        )
+        mutations["header"] = ">" + mutations[seq_id_column] + ":" + mutations[mut_column]
 
     # Calculate number of bad mutations
     uncertain_mutations = mutations[mut_column].str.contains(r"\?").sum()
@@ -933,9 +770,7 @@ def build(
     mutations = mutations[~mask]
 
     # Extract nucleotide positions and mutation info from Mutation CDS
-    mutations[["nucleotide_positions", "actual_mutation"]] = mutations[
-        mut_column
-    ].str.extract(mutation_pattern)
+    mutations[["nucleotide_positions", "actual_mutation"]] = mutations[mut_column].str.extract(mutation_pattern)
 
     # Filter out mutations that did not match the re
     unknown_mutations = mutations["nucleotide_positions"].isna().sum()
@@ -950,33 +785,23 @@ def build(
 
     mutations["start_mutation_position"] = split_positions[0]
     if split_positions.shape[1] > 1:
-        mutations["end_mutation_position"] = split_positions[1].fillna(
-            split_positions[0]
-        )
+        mutations["end_mutation_position"] = split_positions[1].fillna(split_positions[0])
     else:
         mutations["end_mutation_position"] = mutations["start_mutation_position"]
 
-    mutations.loc[
-        mutations["end_mutation_position"].isna(), "end_mutation_position"
-    ] = mutations["start_mutation_position"]
+    mutations.loc[mutations["end_mutation_position"].isna(), "end_mutation_position"] = mutations["start_mutation_position"]
 
-    mutations[["start_mutation_position", "end_mutation_position"]] = mutations[
-        ["start_mutation_position", "end_mutation_position"]
-    ].astype(int)
+    mutations[["start_mutation_position", "end_mutation_position"]] = mutations[["start_mutation_position", "end_mutation_position"]].astype(int)
 
     # Adjust positions to 0-based indexing
     mutations["start_mutation_position"] -= 1
     mutations["end_mutation_position"] -= 1  # don't forget to increment by 1 later
 
     # Calculate sequence length
-    mutations["sequence_length"] = mutations[seq_id_column].apply(
-        lambda x: get_sequence_length(x, seq_dict)
-    )
+    mutations["sequence_length"] = mutations[seq_id_column].apply(lambda x: get_sequence_length(x, seq_dict))
 
     # Filter out mutations with positions outside the sequence
-    index_error_mask = (
-        mutations["start_mutation_position"] > mutations["sequence_length"]
-    ) | (mutations["end_mutation_position"] > mutations["sequence_length"])
+    index_error_mask = (mutations["start_mutation_position"] > mutations["sequence_length"]) | (mutations["end_mutation_position"] > mutations["sequence_length"])
 
     mut_idx_outside_seq = index_error_mask.sum()
 
@@ -996,63 +821,26 @@ def build(
     inversion_mask = mutations["mutation_type"] == "inversion"
 
     if remove_seqs_with_wt_kmers:
-        long_duplications = (
-            (duplication_mask)
-            & (
-                (
-                    mutations["end_mutation_position"]
-                    - mutations["start_mutation_position"]
-                )
-                >= w
-            )
-        ).sum()
+        long_duplications = ((duplication_mask) & ((mutations["end_mutation_position"] - mutations["start_mutation_position"]) >= w)).sum()
         logger.info(f"Removing {long_duplications} duplications > w")
-        mutations = mutations[
-            ~(
-                (duplication_mask)
-                & (
-                    (
-                        mutations["end_mutation_position"]
-                        - mutations["start_mutation_position"]
-                    )
-                    >= w
-                )
-            )
-        ]
+        mutations = mutations[~((duplication_mask) & ((mutations["end_mutation_position"] - mutations["start_mutation_position"]) >= w))]
 
     # Create a mask for all non-substitution mutations
-    non_substitution_mask = (
-        deletion_mask | delins_mask | insertion_mask | duplication_mask | inversion_mask
-    )
+    non_substitution_mask = deletion_mask | delins_mask | insertion_mask | duplication_mask | inversion_mask
 
     # Extract the WT nucleotides for the substitution rows from reference fasta (i.e., Ensembl)
     start_positions = mutations.loc[substitution_mask, "start_mutation_position"].values
 
     # Get the nucleotides at the start positions
-    wt_nucleotides_substitution = np.array(
-        [
-            get_nucleotide_at_position(seq_id, pos, seq_dict)
-            for seq_id, pos in zip(
-                mutations.loc[substitution_mask, seq_id_column], start_positions
-            )
-        ]
-    )
+    wt_nucleotides_substitution = np.array([get_nucleotide_at_position(seq_id, pos, seq_dict) for seq_id, pos in zip(mutations.loc[substitution_mask, seq_id_column], start_positions)])
 
-    mutations.loc[substitution_mask, "wt_nucleotides_ensembl"] = (
-        wt_nucleotides_substitution
-    )
+    mutations.loc[substitution_mask, "wt_nucleotides_ensembl"] = wt_nucleotides_substitution
 
     # Extract the WT nucleotides for the substitution rows from the Mutation CDS (i.e., COSMIC)
     mutations["wt_nucleotides_cosmic"] = None
-    mutations.loc[substitution_mask, "wt_nucleotides_cosmic"] = mutations[
-        "actual_mutation"
-    ].str[0]
+    mutations.loc[substitution_mask, "wt_nucleotides_cosmic"] = mutations["actual_mutation"].str[0]
 
-    congruent_wt_bases_mask = (
-        mutations["wt_nucleotides_cosmic"] == mutations["wt_nucleotides_ensembl"]
-    ) | mutations[["wt_nucleotides_cosmic", "wt_nucleotides_ensembl"]].isna().any(
-        axis=1
-    )
+    congruent_wt_bases_mask = (mutations["wt_nucleotides_cosmic"] == mutations["wt_nucleotides_ensembl"]) | mutations[["wt_nucleotides_cosmic", "wt_nucleotides_ensembl"]].isna().any(axis=1)
 
     cosmic_incorrect_wt_base = (~congruent_wt_bases_mask).sum()
 
@@ -1063,99 +851,53 @@ def build(
         return []
 
     # Adjust the start and end positions for insertions
-    mutations.loc[
-        insertion_mask, "start_mutation_position"
-    ] += 1  # in other cases, we want left flank to exclude the start of mutation site; but with insertion, the start of mutation site as it is denoted still belongs in the flank region
-    mutations.loc[
-        insertion_mask, "end_mutation_position"
-    ] -= 1  # in this notation, the end position is one before the start position
+    mutations.loc[insertion_mask, "start_mutation_position"] += 1  # in other cases, we want left flank to exclude the start of mutation site; but with insertion, the start of mutation site as it is denoted still belongs in the flank region
+    mutations.loc[insertion_mask, "end_mutation_position"] -= 1  # in this notation, the end position is one before the start position
 
     # Extract the WT nucleotides for the non-substitution rows from the Mutation CDS (i.e., COSMIC)
-    mutations.loc[non_substitution_mask, "wt_nucleotides_ensembl"] = mutations.loc[
-        non_substitution_mask
-    ].apply(lambda row: extract_sequence(row, seq_dict, seq_id_column), axis=1)
+    mutations.loc[non_substitution_mask, "wt_nucleotides_ensembl"] = mutations.loc[non_substitution_mask].apply(lambda row: extract_sequence(row, seq_dict, seq_id_column), axis=1)
 
     # Apply mutations to the sequences
     mutations["mut_nucleotides"] = None
-    mutations.loc[substitution_mask, "mut_nucleotides"] = mutations.loc[
-        substitution_mask, "actual_mutation"
-    ].str[-1]
+    mutations.loc[substitution_mask, "mut_nucleotides"] = mutations.loc[substitution_mask, "actual_mutation"].str[-1]
     mutations.loc[deletion_mask, "mut_nucleotides"] = ""
-    mutations.loc[delins_mask, "mut_nucleotides"] = mutations.loc[
-        delins_mask, "actual_mutation"
-    ].str.extract(r"delins([A-Z]+)")[0]
-    mutations.loc[insertion_mask, "mut_nucleotides"] = mutations.loc[
-        insertion_mask, "actual_mutation"
-    ].str.extract(r"ins([A-Z]+)")[0]
-    mutations.loc[duplication_mask, "mut_nucleotides"] = mutations.loc[
-        duplication_mask
-    ].apply(lambda row: row["wt_nucleotides_ensembl"], axis=1)
+    mutations.loc[delins_mask, "mut_nucleotides"] = mutations.loc[delins_mask, "actual_mutation"].str.extract(r"delins([A-Z]+)")[0]
+    mutations.loc[insertion_mask, "mut_nucleotides"] = mutations.loc[insertion_mask, "actual_mutation"].str.extract(r"ins([A-Z]+)")[0]
+    mutations.loc[duplication_mask, "mut_nucleotides"] = mutations.loc[duplication_mask].apply(lambda row: row["wt_nucleotides_ensembl"], axis=1)
     if inversion_mask.any():
-        mutations.loc[inversion_mask, "mut_nucleotides"] = mutations.loc[
-            inversion_mask
-        ].apply(
-            lambda row: "".join(
-                complement.get(nucleotide, "N")
-                for nucleotide in row["wt_nucleotides_ensembl"][::-1]
-            ),
+        mutations.loc[inversion_mask, "mut_nucleotides"] = mutations.loc[inversion_mask].apply(
+            lambda row: "".join(complement.get(nucleotide, "N") for nucleotide in row["wt_nucleotides_ensembl"][::-1]),
             axis=1,
         )
 
     # Adjust the nucleotide positions of duplication mutations to mimic that of insertions (since duplications are essentially just insertions)
-    mutations.loc[duplication_mask, "start_mutation_position"] = (
-        mutations.loc[duplication_mask, "end_mutation_position"] + 1
-    )  # in the case of duplication, the "mutant" site is still in the left flank as well
+    mutations.loc[duplication_mask, "start_mutation_position"] = mutations.loc[duplication_mask, "end_mutation_position"] + 1  # in the case of duplication, the "mutant" site is still in the left flank as well
 
     mutations.loc[duplication_mask, "wt_nucleotides_ensembl"] = ""
 
     # Calculate the kmer bounds
     mutations["start_kmer_position_min"] = mutations["start_mutation_position"] - w
-    mutations["start_kmer_position"] = mutations["start_kmer_position_min"].combine(
-        0, max
-    )
+    mutations["start_kmer_position"] = mutations["start_kmer_position_min"].combine(0, max)
 
     mutations["end_kmer_position_max"] = mutations["end_mutation_position"] + w
-    mutations["end_kmer_position"] = mutations[
-        ["end_kmer_position_max", "sequence_length"]
-    ].min(
-        axis=1
-    )  # don't forget to increment by 1 later on
+    mutations["end_kmer_position"] = mutations[["end_kmer_position_max", "sequence_length"]].min(axis=1)  # don't forget to increment by 1 later on
 
     if gtf is not None:
-        assert mutations_path.endswith(".csv") or mutations_path.endswith(
-            ".tsv"
-        ), "Mutations must be a CSV or TSV file"
-        if (
-            "start_transcript_position" not in mutations.columns
-            and "end_transcript_position" not in mutations.columns
-        ):  # * currently hard-coded column names, but optionally can be changed to arguments later
-            mutations = merge_gtf_transcript_locations_into_cosmic_csv(
-                mutations, gtf, gtf_transcript_id_column=gtf_transcript_id_column
-            )
+        assert mutations_path.endswith(".csv") or mutations_path.endswith(".tsv"), "Mutations must be a CSV or TSV file"
+        if "start_transcript_position" not in mutations.columns and "end_transcript_position" not in mutations.columns:  # * currently hard-coded column names, but optionally can be changed to arguments later
+            mutations = merge_gtf_transcript_locations_into_cosmic_csv(mutations, gtf, gtf_transcript_id_column=gtf_transcript_id_column)
 
-            columns_to_keep.extend(
-                ["start_transcript_position", "end_transcript_position", "strand"]
-            )
+            columns_to_keep.extend(["start_transcript_position", "end_transcript_position", "strand"])
         else:
-            logger.warning(
-                "Transcript positions already present in the input mutations file. Skipping GTF file merging."
-            )
+            logger.warning("Transcript positions already present in the input mutations file. Skipping GTF file merging.")
 
         # adjust start_transcript_position to be 0-index
         mutations["start_transcript_position"] -= 1
 
-        mutations["start_kmer_position"] = mutations[
-            ["start_kmer_position", "start_transcript_position"]
-        ].max(axis=1)
-        mutations["end_kmer_position"] = mutations[
-            ["end_kmer_position", "end_transcript_position"]
-        ].min(axis=1)
+        mutations["start_kmer_position"] = mutations[["start_kmer_position", "start_transcript_position"]].max(axis=1)
+        mutations["end_kmer_position"] = mutations[["end_kmer_position", "end_transcript_position"]].min(axis=1)
 
-    mut_apply = (
-        (lambda *args, **kwargs: mutations.progress_apply(*args, **kwargs))
-        if verbose
-        else mutations.apply
-    )
+    mut_apply = (lambda *args, **kwargs: mutations.progress_apply(*args, **kwargs)) if verbose else mutations.apply
 
     if update_df and store_full_sequences:
         # Extract flank sequences
@@ -1163,9 +905,7 @@ def build(
             tqdm.pandas(desc="Extracting full left flank sequences")
 
         mutations["left_flank_region_full"] = mut_apply(
-            lambda row: seq_dict[row[seq_id_column]][
-                0 : row["start_mutation_position"]
-            ],
+            lambda row: seq_dict[row[seq_id_column]][0 : row["start_mutation_position"]],
             axis=1,
         )  # ? vectorize
 
@@ -1173,9 +913,7 @@ def build(
             tqdm.pandas(desc="Extracting full right flank sequences")
 
         mutations["right_flank_region_full"] = mut_apply(
-            lambda row: seq_dict[row[seq_id_column]][
-                row["end_mutation_position"] + 1 : row["sequence_length"]
-            ],
+            lambda row: seq_dict[row[seq_id_column]][row["end_mutation_position"] + 1 : row["sequence_length"]],
             axis=1,
         )  # ? vectorize
 
@@ -1183,9 +921,7 @@ def build(
         tqdm.pandas(desc="Extracting MCRS left flank sequences")
 
     mutations["left_flank_region"] = mut_apply(
-        lambda row: seq_dict[row[seq_id_column]][
-            row["start_kmer_position"] : row["start_mutation_position"]
-        ],
+        lambda row: seq_dict[row[seq_id_column]][row["start_kmer_position"] : row["start_mutation_position"]],
         axis=1,
     )  # ? vectorize
 
@@ -1193,9 +929,7 @@ def build(
         tqdm.pandas(desc="Extracting MCRS right flank sequences")
 
     mutations["right_flank_region"] = mut_apply(
-        lambda row: seq_dict[row[seq_id_column]][
-            row["end_mutation_position"] + 1 : row["end_kmer_position"] + 1
-        ],
+        lambda row: seq_dict[row[seq_id_column]][row["end_mutation_position"] + 1 : row["end_kmer_position"] + 1],
         axis=1,
     )  # ? vectorize
 
@@ -1216,46 +950,26 @@ def build(
 
     if optimize_flanking_regions and non_substitution_mask.any():
         # Apply the function for beginning of mut_nucleotides with right_flank_region
-        mutations.loc[
-            non_substitution_mask, "beginning_mutation_overlap_with_right_flank"
-        ] = mutations.loc[non_substitution_mask].apply(
-            calculate_beginning_mutation_overlap_with_right_flank, axis=1
-        )
+        mutations.loc[non_substitution_mask, "beginning_mutation_overlap_with_right_flank"] = mutations.loc[non_substitution_mask].apply(calculate_beginning_mutation_overlap_with_right_flank, axis=1)
 
         # Apply the function for end of mut_nucleotides with left_flank_region
-        mutations.loc[non_substitution_mask, "end_mutation_overlap_with_left_flank"] = (
-            mutations.loc[non_substitution_mask].apply(
-                calculate_end_mutation_overlap_with_left_flank, axis=1
-            )
-        )
+        mutations.loc[non_substitution_mask, "end_mutation_overlap_with_left_flank"] = mutations.loc[non_substitution_mask].apply(calculate_end_mutation_overlap_with_left_flank, axis=1)
 
         # Calculate w-len(flank) (see above instructions)
-        mutations.loc[non_substitution_mask, "k_minus_left_flank_length"] = (
-            w - mutations.loc[non_substitution_mask, "left_flank_region"].apply(len)
-        )
-        mutations.loc[non_substitution_mask, "k_minus_right_flank_length"] = (
-            w - mutations.loc[non_substitution_mask, "right_flank_region"].apply(len)
-        )
+        mutations.loc[non_substitution_mask, "k_minus_left_flank_length"] = w - mutations.loc[non_substitution_mask, "left_flank_region"].apply(len)
+        mutations.loc[non_substitution_mask, "k_minus_right_flank_length"] = w - mutations.loc[non_substitution_mask, "right_flank_region"].apply(len)
 
         mutations.loc[non_substitution_mask, "updated_left_flank_start"] = np.maximum(
-            mutations.loc[
-                non_substitution_mask, "beginning_mutation_overlap_with_right_flank"
-            ]
-            - mutations.loc[non_substitution_mask, "k_minus_left_flank_length"],
+            mutations.loc[non_substitution_mask, "beginning_mutation_overlap_with_right_flank"] - mutations.loc[non_substitution_mask, "k_minus_left_flank_length"],
             0,
         )
         mutations.loc[non_substitution_mask, "updated_right_flank_end"] = np.maximum(
-            mutations.loc[non_substitution_mask, "end_mutation_overlap_with_left_flank"]
-            - mutations.loc[non_substitution_mask, "k_minus_right_flank_length"],
+            mutations.loc[non_substitution_mask, "end_mutation_overlap_with_left_flank"] - mutations.loc[non_substitution_mask, "k_minus_right_flank_length"],
             0,
         )
 
-        mutations["updated_left_flank_start"] = (
-            mutations["updated_left_flank_start"].fillna(0).astype(int)
-        )
-        mutations["updated_right_flank_end"] = (
-            mutations["updated_right_flank_end"].fillna(0).astype(int)
-        )
+        mutations["updated_left_flank_start"] = mutations["updated_left_flank_start"].fillna(0).astype(int)
+        mutations["updated_right_flank_end"] = mutations["updated_right_flank_end"].fillna(0).astype(int)
 
     else:
         mutations["updated_left_flank_start"] = 0
@@ -1263,51 +977,29 @@ def build(
 
     # Create WT substitution w-mer sequences
     if substitution_mask.any():
-        mutations.loc[substitution_mask, "wt_sequence"] = (
-            mutations.loc[substitution_mask, "left_flank_region"]
-            + mutations.loc[substitution_mask, "wt_nucleotides_ensembl"]
-            + mutations.loc[substitution_mask, "right_flank_region"]
-        )
+        mutations.loc[substitution_mask, "wt_sequence"] = mutations.loc[substitution_mask, "left_flank_region"] + mutations.loc[substitution_mask, "wt_nucleotides_ensembl"] + mutations.loc[substitution_mask, "right_flank_region"]
 
     # Create WT non-substitution w-mer sequences
     if non_substitution_mask.any():
-        mutations.loc[non_substitution_mask, "wt_sequence"] = mutations.loc[
-            non_substitution_mask
-        ].apply(
-            lambda row: row["left_flank_region"][row["updated_left_flank_start"] :]
-            + row["wt_nucleotides_ensembl"]
-            + row["right_flank_region"][
-                : len(row["right_flank_region"]) - row["updated_right_flank_end"]
-            ],
+        mutations.loc[non_substitution_mask, "wt_sequence"] = mutations.loc[non_substitution_mask].apply(
+            lambda row: row["left_flank_region"][row["updated_left_flank_start"] :] + row["wt_nucleotides_ensembl"] + row["right_flank_region"][: len(row["right_flank_region"]) - row["updated_right_flank_end"]],
             axis=1,
         )
 
     # Create mutant substitution w-mer sequences
     if substitution_mask.any():
-        mutations.loc[substitution_mask, "mutant_sequence"] = (
-            mutations.loc[substitution_mask, "left_flank_region"]
-            + mutations.loc[substitution_mask, "mut_nucleotides"]
-            + mutations.loc[substitution_mask, "right_flank_region"]
-        )
+        mutations.loc[substitution_mask, "mutant_sequence"] = mutations.loc[substitution_mask, "left_flank_region"] + mutations.loc[substitution_mask, "mut_nucleotides"] + mutations.loc[substitution_mask, "right_flank_region"]
 
     # Create mutant non-substitution w-mer sequences
     if non_substitution_mask.any():
-        mutations.loc[non_substitution_mask, "mutant_sequence"] = mutations.loc[
-            non_substitution_mask
-        ].apply(
-            lambda row: row["left_flank_region"][row["updated_left_flank_start"] :]
-            + row["mut_nucleotides"]
-            + row["right_flank_region"][
-                : len(row["right_flank_region"]) - row["updated_right_flank_end"]
-            ],
+        mutations.loc[non_substitution_mask, "mutant_sequence"] = mutations.loc[non_substitution_mask].apply(
+            lambda row: row["left_flank_region"][row["updated_left_flank_start"] :] + row["mut_nucleotides"] + row["right_flank_region"][: len(row["right_flank_region"]) - row["updated_right_flank_end"]],
             axis=1,
         )
 
     if remove_seqs_with_wt_kmers:
         if verbose:
-            tqdm.pandas(
-                desc="Removing mutant fragments that share a kmer with wt fragments"
-            )
+            tqdm.pandas(desc="Removing mutant fragments that share a kmer with wt fragments")
 
         mutations["wt_fragment_and_mutant_fragment_share_kmer"] = mut_apply(
             lambda row: wt_fragment_and_mutant_fragment_share_kmer(
@@ -1318,9 +1010,7 @@ def build(
             axis=1,
         )
 
-        mutations_overlapping_with_wt = mutations[
-            "wt_fragment_and_mutant_fragment_share_kmer"
-        ].sum()
+        mutations_overlapping_with_wt = mutations["wt_fragment_and_mutant_fragment_share_kmer"].sum()
 
         mutations = mutations[~mutations["wt_fragment_and_mutant_fragment_share_kmer"]]
 
@@ -1328,30 +1018,20 @@ def build(
         columns_to_keep.extend(["wt_sequence_full", "mutant_sequence_full"])
 
         # Create full sequences (substitution and non-substitution)
-        mutations["mutant_sequence_full"] = (
-            mutations["left_flank_region_full"]
-            + mutations["mut_nucleotides"]
-            + mutations["right_flank_region_full"]
-        )
+        mutations["mutant_sequence_full"] = mutations["left_flank_region_full"] + mutations["mut_nucleotides"] + mutations["right_flank_region_full"]
 
     # Calculate k-mer lengths (where k=w) and report the distribution
-    mutations["mutant_sequence_kmer_length"] = mutations["mutant_sequence"].apply(
-        lambda x: len(x) if pd.notna(x) else 0
-    )
+    mutations["mutant_sequence_kmer_length"] = mutations["mutant_sequence"].apply(lambda x: len(x) if pd.notna(x) else 0)
 
     max_length = mutations["mutant_sequence_kmer_length"].max()
 
     if min_seq_len:
-        rows_less_than_minimum = (
-            mutations["mutant_sequence_kmer_length"] < min_seq_len
-        ).sum()
+        rows_less_than_minimum = (mutations["mutant_sequence_kmer_length"] < min_seq_len).sum()
 
         mutations = mutations[mutations["mutant_sequence_kmer_length"] >= min_seq_len]
 
         if verbose:
-            logger.info(
-                f"Removed {rows_less_than_minimum} mutant kmers with length less than {min_seq_len}..."
-            )
+            logger.info(f"Removed {rows_less_than_minimum} mutant kmers with length less than {min_seq_len}...")
 
     if max_ambiguous is not None:
         # Get number of 'N' or 'n' occuring in the sequence
@@ -1360,9 +1040,7 @@ def build(
         mutations = mutations[mutations["num_N"] <= max_ambiguous]
 
         if verbose:
-            logger.info(
-                f"Removed {num_rows_with_N} mutant kmers containing more than {max_ambiguous} 'N's..."
-            )
+            logger.info(f"Removed {num_rows_with_N} mutant kmers containing more than {max_ambiguous} 'N's...")
 
         # Drop the 'num_N' column after filtering
         mutations = mutations.drop(columns=["num_N"])
@@ -1372,9 +1050,7 @@ def build(
         bins = range(0, max_length + 6, 5)
 
         # Bin the lengths and count the number of elements in each bin
-        binned_lengths = pd.cut(
-            mutations["mutant_sequence_kmer_length"], bins=bins, right=False
-        )
+        binned_lengths = pd.cut(mutations["mutant_sequence_kmer_length"], bins=bins, right=False)
         bin_counts = binned_lengths.value_counts().sort_index()
 
         # Display the report
@@ -1420,9 +1096,7 @@ def build(
         columns_to_keep.extend(["wt_sequence_aa_full", "mutant_sequence_aa_full"])
 
         if not mutations_path:
-            assert (
-                type(translate_start) != str and type(translate_end) != str
-            ), "translate_start and translate_end must be integers when translating sequences (or default None)."
+            assert type(translate_start) != str and type(translate_end) != str, "translate_start and translate_end must be integers when translating sequences (or default None)."
             if translate_start is None:
                 translate_start = 0
             if translate_end is None:
@@ -1432,39 +1106,17 @@ def build(
 
             if verbose:
                 tqdm.pandas(desc="Translating WT amino acid sequences")
-                mutations["wt_sequence_aa_full"] = mutations[
-                    "wt_sequence_full"
-                ].progress_apply(
-                    lambda x: translate_sequence(
-                        x, start=translate_start, end=translate_end
-                    )
-                )
+                mutations["wt_sequence_aa_full"] = mutations["wt_sequence_full"].progress_apply(lambda x: translate_sequence(x, start=translate_start, end=translate_end))
             else:
-                mutations["wt_sequence_aa_full"] = mutations["wt_sequence_full"].apply(
-                    lambda x: translate_sequence(
-                        x, start=translate_start, end=translate_end
-                    )
-                )
+                mutations["wt_sequence_aa_full"] = mutations["wt_sequence_full"].apply(lambda x: translate_sequence(x, start=translate_start, end=translate_end))
 
             if verbose:
                 tqdm.pandas(desc="Translating mutant amino acid sequences")
 
-                mutations["mutant_sequence_aa_full"] = mutations[
-                    "mutant_sequence_full"
-                ].progress_apply(
-                    lambda x: translate_sequence(
-                        x, start=translate_start, end=translate_end
-                    )
-                )
+                mutations["mutant_sequence_aa_full"] = mutations["mutant_sequence_full"].progress_apply(lambda x: translate_sequence(x, start=translate_start, end=translate_end))
 
             else:
-                mutations["mutant_sequence_aa_full"] = mutations[
-                    "mutant_sequence_full"
-                ].apply(
-                    lambda x: translate_sequence(
-                        x, start=translate_start, end=translate_end
-                    )
-                )
+                mutations["mutant_sequence_aa_full"] = mutations["mutant_sequence_full"].apply(lambda x: translate_sequence(x, start=translate_start, end=translate_end))
 
             print(f"Translated mutated sequences: {mutations['wt_sequence_aa_full']}")
         else:
@@ -1484,9 +1136,7 @@ def build(
                 tqdm.pandas(desc="Translating WT amino acid sequences")
 
             mutations["wt_sequence_aa_full"] = mut_apply(
-                lambda row: translate_sequence(
-                    row["wt_sequence_full"], row[translate_start], row[translate_end]
-                ),
+                lambda row: translate_sequence(row["wt_sequence_full"], row[translate_start], row[translate_end]),
                 axis=1,
             )
 
@@ -1513,29 +1163,21 @@ def build(
         )
         mutations["start_mutation_position"] = split_positions[0]
         if split_positions.shape[1] > 1:
-            mutations["end_mutation_position"] = split_positions[1].fillna(
-                split_positions[0]
-            )
+            mutations["end_mutation_position"] = split_positions[1].fillna(split_positions[0])
         else:
             mutations["end_mutation_position"] = mutations["start_mutation_position"]
 
-        mutations[["start_mutation_position", "end_mutation_position"]] = mutations[
-            ["start_mutation_position", "end_mutation_position"]
-        ].astype(int)
+        mutations[["start_mutation_position", "end_mutation_position"]] = mutations[["start_mutation_position", "end_mutation_position"]].astype(int)
 
     if merge_identical:
         logger.info("Merging identical mutated sequences")
 
         if merge_identical_rc:
-            mutations["mutant_sequence_rc"] = mutations["mutant_sequence"].apply(
-                reverse_complement
-            )
+            mutations["mutant_sequence_rc"] = mutations["mutant_sequence"].apply(reverse_complement)
 
             # Create a column that stores a sorted tuple of (mutant_sequence, mutant_sequence_rc)
             mutations["mutant_sequence_and_rc_tuple"] = mutations.apply(
-                lambda row: tuple(
-                    sorted([row["mutant_sequence"], row["mutant_sequence_rc"]])
-                ),
+                lambda row: tuple(sorted([row["mutant_sequence"], row["mutant_sequence_rc"]])),
                 axis=1,
             )
 
@@ -1554,39 +1196,16 @@ def build(
             agg_columns = [col for col in mutations.columns if col != "mutant_sequence"]
 
         if update_df:
-            logger.warning(
-                "Merging identical mutated sequences can take a while if update_df=True since it will concatenate all MCRSs too)"
-            )
+            logger.warning("Merging identical mutated sequences can take a while if update_df=True since it will concatenate all MCRSs too)")
             mutations = (
-                mutations.groupby(group_key, sort=False)
-                .agg(
-                    {
-                        col: (
-                            "first"
-                            if col in columns_not_to_semicolon_join
-                            else (
-                                ";".join
-                                if col == "header"
-                                else lambda x: list(x.fillna(np.nan))
-                            )
-                        )
-                        for col in agg_columns
-                    }
-                )
-                .reset_index(drop=merge_identical_rc)
+                mutations.groupby(group_key, sort=False).agg({col: ("first" if col in columns_not_to_semicolon_join else (";".join if col == "header" else lambda x: list(x.fillna(np.nan)))) for col in agg_columns}).reset_index(drop=merge_identical_rc)
             )  # lambda x: list(x) will make simple list, but lengths will be inconsistent with NaN values  # concatenate values with semicolons: lambda x: `";".join(x.astype(str))`   # drop if merging by mutant_sequence_and_rc_tuple, but not if merging by mutant_sequence
 
         else:
-            mutations_temp = (
-                mutations.groupby(group_key, sort=False, group_keys=False)["header"]
-                .apply(";".join)
-                .reset_index()
-            )
+            mutations_temp = mutations.groupby(group_key, sort=False, group_keys=False)["header"].apply(";".join).reset_index()
 
             if merge_identical_rc:
-                mutations_temp = mutations_temp.merge(
-                    mutations[["mutant_sequence", group_key]], on=group_key, how="left"
-                )
+                mutations_temp = mutations_temp.merge(mutations[["mutant_sequence", group_key]], on=group_key, how="left")
                 mutations_temp = mutations_temp.drop_duplicates(subset="header")
                 mutations_temp.drop(columns=[group_key], inplace=True)
 
@@ -1612,16 +1231,12 @@ def build(
         mutations = mutations.drop(columns=["semicolon_count"])
 
         if verbose:
-            logger.info(
-                f"{total_semicolons} identical mutated sequences were merged (headers were combined and separated using a semicolon (;). Occurences of identical mutated sequences may be reduced by increasing w."
-            )
+            logger.info(f"{total_semicolons} identical mutated sequences were merged (headers were combined and separated using a semicolon (;). Occurences of identical mutated sequences may be reduced by increasing w.")
 
     empty_kmer_count = (mutations["mutant_sequence"] == "").sum()
 
     if empty_kmer_count > 0 and verbose:
-        logger.warning(
-            f"{empty_kmer_count} mutated sequences were empty and were not included in the output."
-        )
+        logger.warning(f"{empty_kmer_count} mutated sequences were empty and were not included in the output.")
 
     mutations = mutations[mutations["mutant_sequence"] != ""]
 
@@ -1632,16 +1247,12 @@ def build(
 
     id_to_header_mapping_out = os.path.join(out, "id_to_header_mapping.csv")
 
-    if not keep_original_headers or (
-        mut_id_column in mutations.columns and not merge_identical
-    ):
+    if not keep_original_headers or (mut_id_column in mutations.columns and not merge_identical):
         mutations["mcrs_id"] = generate_unique_ids(len(mutations))
     else:
         mutations["mcrs_id"] = mutations["header"]
 
-    mutations[["mcrs_id", "header"]].to_csv(
-        id_to_header_mapping_out, index=False
-    )  # TODO: change to txt
+    mutations[["mcrs_id", "header"]].to_csv(id_to_header_mapping_out, index=False)  # TODO: change to txt
 
     if update_df:  # use update_df_out if present,
         if not update_df_out:
@@ -1652,35 +1263,50 @@ def build(
             else:
                 update_df_out = os.path.join(out, "mutation_metadata_updated.csv")
         logger.info("Saving dataframe with updated mutation info...")
-        logger.warning(
-            "File size can be very large if the number of mutations is large."
-        )
+        logger.warning("File size can be very large if the number of mutations is large.")
         mutations.to_csv(update_df_out, index=False)
         print(f"Updated mutation info has been saved to {update_df_out}")
 
     if len(mutations) > 0:
-        mutations["fasta_format"] = (
-            ">" + mutations["mcrs_id"] + "\n" + mutations["mutant_sequence"] + "\n"
-        )
+        mutations["fasta_format"] = ">" + mutations["mcrs_id"] + "\n" + mutations["mutant_sequence"] + "\n"
+
+        if create_wt_mcrs_counterpart_fa:
+            assert update_df, "update_df must be True to create wt_mcrs_counterpart_fa"
+
+            mutations_with_exactly_1_wt_sequence_per_row = mutations[["mcrs_id", "wt_sequence"]].copy()
+
+            if merge_identical:  # remove the rows with multiple WT counterparts for 1 MCRS, and convert the list of strings to string
+                # Step 1: Filter rows where the length of the set of the list in `wt_sequence` is 1
+                mutations_with_exactly_1_wt_sequence_per_row = mutations_with_exactly_1_wt_sequence_per_row[mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"].apply(lambda x: len(set(x)) == 1)]
+
+                # Step 2: Convert the list to a string
+                mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"] = mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"].apply(lambda x: x[0])
+
+            mutations_with_exactly_1_wt_sequence_per_row["fasta_format_wt"] = ">" + mutations_with_exactly_1_wt_sequence_per_row["mcrs_id"] + "\n" + mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"] + "\n"
 
     if fasta_out:
         # Save mutated sequences in new fasta file
         with open(fasta_out, "w") as fasta_file:
             fasta_file.write("".join(mutations["fasta_format"].values))
 
+        if create_wt_mcrs_counterpart_fa:
+            fasta_out_wt = fasta_out.replace(".fa", "_wt.fa")
+            with open(fasta_out_wt, "w") as fasta_file:
+                fasta_file.write("".join(mutations_with_exactly_1_wt_sequence_per_row["fasta_format_wt"].values))
+
         if verbose:
-            logger.info(
-                f"FASTA file containing mutated sequences created at {fasta_out}."
-            )
+            logger.info(f"FASTA file containing mutated sequences created at {fasta_out}.")
 
         if create_t2g:
             mutation_reference_file_t2g = fasta_out.replace(".fa", "_t2g.txt")
             create_mutant_t2g(fasta_out, mutation_reference_file_t2g)
 
             if verbose:
-                logger.info(
-                    f"t2g file containing mutated sequences created at {mutation_reference_file_t2g}."
-                )
+                logger.info(f"t2g file containing mutated sequences created at {mutation_reference_file_t2g}.")
+
+            if create_wt_mcrs_counterpart_fa:
+                mutation_reference_file_t2g_wt = fasta_out_wt.replace(".fa", "_t2g.txt")
+                create_mutant_t2g(fasta_out_wt, mutation_reference_file_t2g_wt)
 
     # When out=None, return list of mutated seqs
     else:

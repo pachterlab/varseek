@@ -39,9 +39,7 @@ def summarize(
 
     if os.path.exists(stats_file):
         if not overwrite:
-            raise FileExistsError(
-                f"Stats file {stats_file} already exists. Please delete it or specify a different output directory."
-            )
+            raise FileExistsError(f"Stats file {stats_file} already exists. Please delete it or specify a different output directory.")
         else:
             os.remove(stats_file)
     if isinstance(adata_path, anndata.AnnData):
@@ -49,9 +47,7 @@ def summarize(
     elif isinstance(adata_path, str):
         adata = sc.read_h5ad(adata_path)
     else:
-        raise ValueError(
-            "adata_path must be a string (file path) or an AnnData object."
-        )
+        raise ValueError("adata_path must be a string (file path) or an AnnData object.")
 
     if "mcrs_id" not in adata.var.columns:
         adata.var["mcrs_id"] = adata.var_names
@@ -59,11 +55,7 @@ def summarize(
     adata.var_names = adata.var["mcrs_header"]
 
     if "mcrs_count" not in adata.var.columns:
-        adata.var["mcrs_count"] = (
-            adata.X.sum(axis=0).A1
-            if hasattr(adata.X, "A1")
-            else adata.X.sum(axis=0).flatten()
-        )
+        adata.var["mcrs_count"] = adata.X.sum(axis=0).A1 if hasattr(adata.X, "A1") else adata.X.sum(axis=0).flatten()
 
     # 1. Number of Mutations with Count > 0 in any Sample/Cell, and for bulk in particular, for each sample; then list the mutations
     with open(stats_file, "w") as f:
@@ -83,11 +75,7 @@ def summarize(
             f.write(f"{mutation}\n")
 
     # 2. Mutations Present Across the Most Samples
-    adata.var["number_of_samples_in_which_the_mutation_is_detected"] = (
-        (adata.X > 0).sum(axis=0).A1
-        if hasattr(adata.X, "A1")
-        else (adata.X > 0).sum(axis=0)
-    )
+    adata.var["number_of_samples_in_which_the_mutation_is_detected"] = (adata.X > 0).sum(axis=0).A1 if hasattr(adata.X, "A1") else (adata.X > 0).sum(axis=0)
     # Sort by number of samples and break ties with mcrs_count
     most_common_mutations = adata.var.sort_values(
         by=["number_of_samples_in_which_the_mutation_is_detected", "mcrs_count"],
@@ -96,19 +84,13 @@ def summarize(
     mutation_names = most_common_mutations.index.tolist()
     mutation_names_top_n = mutation_names[:top_values]
     with open(stats_file, "a") as f:
-        f.write(
-            f"Mutations present across the most samples: {', '.join(mutation_names_top_n)}"
-        )
-    with open(
-        f"{specific_stats_folder}/mutations_present_across_the_most_samples.txt", "w"
-    ) as f:
+        f.write(f"Mutations present across the most samples: {', '.join(mutation_names_top_n)}")
+    with open(f"{specific_stats_folder}/mutations_present_across_the_most_samples.txt", "w") as f:
         f.write("Mutation\tNumber_of_Samples\tTotal_Counts\n")
 
         # Write each mutation's details
         for mutation in most_common_mutations.index:
-            number_of_samples = adata.var.loc[
-                mutation, "number_of_samples_in_which_the_mutation_is_detected"
-            ]
+            number_of_samples = adata.var.loc[mutation, "number_of_samples_in_which_the_mutation_is_detected"]
             total_counts = adata.var.loc[mutation, "mcrs_count"]
             f.write(f"{mutation}\t{number_of_samples}\t{total_counts}\n")
 
@@ -117,17 +99,13 @@ def summarize(
     mutation_names = top_mutations_mcrs_count.index.tolist()
     mutation_names_top_n = mutation_names[:top_values]
     with open(stats_file, "a") as f:
-        f.write(
-            f"Mutations with highest counts across all samples: {', '.join(mutation_names_top_n)}"
-        )
+        f.write(f"Mutations with highest counts across all samples: {', '.join(mutation_names_top_n)}")
     with open(f"{specific_stats_folder}/mutations_highest_mcrs_count.txt", "w") as f:
         f.write("Mutation\tNumber_of_Samples\tTotal_Counts\n")
 
         # Write each mutation's details
         for mutation in top_mutations_mcrs_count.index:
-            number_of_samples = adata.var.loc[
-                mutation, "number_of_samples_in_which_the_mutation_is_detected"
-            ]
+            number_of_samples = adata.var.loc[mutation, "number_of_samples_in_which_the_mutation_is_detected"]
             total_counts = adata.var.loc[mutation, "mcrs_count"]
             f.write(f"{mutation}\t{number_of_samples}\t{total_counts}\n")
 
@@ -147,15 +125,7 @@ def summarize(
         if assay == "bulk":
             for sample in adata.obs_names:
                 # Calculate mcrs_count per gene for the specific sample
-                gene_counts_per_sample = (
-                    adata[sample, :]
-                    .to_df()
-                    .gt(0)
-                    .groupby(adata.var["gene_name"], axis=1)
-                    .sum()
-                    .gt(0)
-                    .sum()
-                )
+                gene_counts_per_sample = adata[sample, :].to_df().gt(0).groupby(adata.var["gene_name"], axis=1).sum().gt(0).sum()
                 line = f"Sample {sample} has {gene_counts_per_sample.sum()} genes with count > 0.\n"
                 f.write(line)
                 print(line.strip())  # For verification in console
@@ -168,12 +138,8 @@ def summarize(
 
     # 5. Genes Present Across the Most Samples
     # Calculate the number of samples where each gene has at least one mutation with count > 0
-    adata.var["detected"] = (adata.X > 0).astype(
-        int
-    )  # Binary matrix indicating presence per sample
-    gene_sample_count = adata.var.groupby("gene_name")[
-        "detected"
-    ].sum()  # Sum across mutations per gene
+    adata.var["detected"] = (adata.X > 0).astype(int)  # Binary matrix indicating presence per sample
+    gene_sample_count = adata.var.groupby("gene_name")["detected"].sum()  # Sum across mutations per gene
 
     # Add the total mcrs_count per gene (summing across all mutations for that gene)
     gene_mcrs_count = adata.var.groupby("gene_name")["mcrs_count"].sum()
@@ -181,9 +147,7 @@ def summarize(
     # Combine both into a DataFrame for sorting
     gene_presence_df = pd.DataFrame(
         {
-            "number_of_samples_in_which_the_gene_is_detected": gene_sample_count.max(
-                axis=1
-            ),
+            "number_of_samples_in_which_the_gene_is_detected": gene_sample_count.max(axis=1),
             "total_mcrs_count": gene_mcrs_count,
         }
     )
@@ -197,38 +161,26 @@ def summarize(
     # Write results to file
     with open(stats_file, "a") as f:
         gene_names_top_n = most_common_genes.index[:top_values].tolist()
-        f.write(
-            f"Genes present across the most samples: {', '.join(gene_names_top_n)}\n"
-        )
+        f.write(f"Genes present across the most samples: {', '.join(gene_names_top_n)}\n")
 
-    with open(
-        f"{specific_stats_folder}/genes_present_across_the_most_samples.txt", "w"
-    ) as f:
+    with open(f"{specific_stats_folder}/genes_present_across_the_most_samples.txt", "w") as f:
         f.write("Gene\tNumber_of_Samples\tTotal_mcrs_count\n")
         for gene, row in most_common_genes.iterrows():
-            f.write(
-                f"{gene}\t{row['number_of_samples_in_which_the_gene_is_detected']}\t{row['total_mcrs_count']}\n"
-            )
+            f.write(f"{gene}\t{row['number_of_samples_in_which_the_gene_is_detected']}\t{row['total_mcrs_count']}\n")
 
     # 6. Top 10 Genes with Highest mcrs_count Across All Samples
     # Sort genes by total mcrs_count
-    top_genes_mcrs_count = gene_presence_df.sort_values(
-        by="total_mcrs_count", ascending=False
-    )
+    top_genes_mcrs_count = gene_presence_df.sort_values(by="total_mcrs_count", ascending=False)
 
     # Write top genes with highest mcrs_count to stats file and detailed file
     with open(stats_file, "a") as f:
         gene_names_top_n = top_genes_mcrs_count.index[:top_values].tolist()
-        f.write(
-            f"Genes with highest mcrs_count across all samples: {', '.join(gene_names_top_n)}\n"
-        )
+        f.write(f"Genes with highest mcrs_count across all samples: {', '.join(gene_names_top_n)}\n")
 
     with open(f"{specific_stats_folder}/genes_highest_mcrs_count.txt", "w") as f:
         f.write("Gene\tNumber_of_Samples\tTotal_mcrs_count\n")
         for gene, row in top_genes_mcrs_count.iterrows():
-            f.write(
-                f"{gene}\t{row['number_of_samples_in_which_the_gene_is_detected']}\t{row['total_mcrs_count']}\n"
-            )
+            f.write(f"{gene}\t{row['number_of_samples_in_which_the_gene_is_detected']}\t{row['total_mcrs_count']}\n")
 
     # TODO: things to add
     # differentially expressed mutations/mutated genes

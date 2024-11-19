@@ -97,9 +97,7 @@ def fastqpp(
             file1 = rnaseq_fastq_files_list[i]
             file2 = rnaseq_fastq_files_list[i + 1]
             print(f"Concatenating {file1} and {file2}")
-            file_concatenated = concatenate_fastqs(
-                file1, file2, delete_original_files=delete_intermediate_files
-            )
+            file_concatenated = concatenate_fastqs(file1, file2, delete_original_files=delete_intermediate_files)
             rnaseq_fastq_files_list_copy.append(file_concatenated)
         rnaseq_fastq_files_list = rnaseq_fastq_files_list_copy
         rnaseq_fastq_files_list_dict["concatenated"] = rnaseq_fastq_files_list

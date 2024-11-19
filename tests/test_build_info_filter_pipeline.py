@@ -9,8 +9,7 @@ import subprocess
 from pdb import set_trace as st
 
 import varseek as vk
-from varseek.utils import convert_mutation_cds_locations_to_cdna
-from varseek.varseek_build import add_mutation_type
+from varseek.utils import convert_mutation_cds_locations_to_cdna, add_mutation_type
 from .conftest import compare_two_dataframes_without_regard_for_order_of_rows_or_columns, compare_two_fastas_without_regard_for_order_of_entries, compare_two_t2gs, compare_two_id_to_header_mappings
 
 ground_truth_folder = "/home/jrich/data/varseek_data_fresh/pytest_ground_truth"
@@ -19,7 +18,8 @@ reference_folder_parent = "/home/jrich/data/varseek_data_fresh/reference"
 reference_folder = "/home/jrich/data/varseek_data_fresh/reference/ensembl_grch37_release93"
 bowtie_path="/home/jrich/opt/bowtie2-2.5.4/bowtie2-2.5.4-linux-x86_64"
 sample_size=2000
-make_new_gt = False
+columns_to_drop_info_filter = None  # ["nearby_mutations", "number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference", "number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference", "overlapping_kmers", "mcrs_items_with_overlapping_kmers_in_mcrs_reference", "kmer_overlap_in_mcrs_reference"]
+make_new_gt = True
 
 
 @pytest.fixture
@@ -129,6 +129,7 @@ def cosmic_csv_path(cds_and_cdna_files, tmp_path):
     return subsampled_cosmic_csv_with_cdna_path
 
 
+#* note: temp files will be deleted upon completion of the test or running into an error - to debug with a temp file, place a breakpoint before the error occurs
 def test_file_processing(cosmic_csv_path, cds_and_cdna_files, genome_and_gtf_files):
     global ground_truth_folder, reference_folder_parent, bowtie_path, gtf_path, reference_genome_fasta, make_new_gt
 
@@ -229,8 +230,8 @@ def test_file_processing(cosmic_csv_path, cds_and_cdna_files, genome_and_gtf_fil
         )
 
         dlist_fasta = f"{out_dir_notebook}/dlist.fa"
-        mutation_metadata_df_out_path = os.path.join(out_dir_notebook, "mutation_metadata_df.csv")
-        mutation_metadata_df_out_exploded_path = os.path.join(out_dir_notebook, "mutation_metadata_df_exploded.csv")
+        mutation_metadata_df_out_path = os.path.join(out_dir_notebook, "mutation_metadata_df_vk_info.csv")
+        mutation_metadata_df_out_exploded_path = os.path.join(out_dir_notebook, "mutation_metadata_df_vk_info_exploded.csv")
         mcrs_fasta_vk_filter = os.path.join(out_dir_notebook, "mcrs_filtered.fa")
         output_metadata_df_vk_filter = os.path.join(out_dir_notebook, "mutation_metadata_df_filtered.csv")
         dlist_fasta_vk_filter = os.path.join(out_dir_notebook, "dlist_filtered.fa")
@@ -253,9 +254,9 @@ def test_file_processing(cosmic_csv_path, cds_and_cdna_files, genome_and_gtf_fil
         
         compare_two_fastas_without_regard_for_order_of_entries(dlist_fasta, dlist_fasta_ground_truth)
 
-        compare_two_dataframes_without_regard_for_order_of_rows_or_columns(mutation_metadata_df_out_path, mutation_metadata_df_out_path_ground_truth)
+        compare_two_dataframes_without_regard_for_order_of_rows_or_columns(mutation_metadata_df_out_path, mutation_metadata_df_out_path_ground_truth, columns_to_drop = columns_to_drop_info_filter)
 
-        compare_two_dataframes_without_regard_for_order_of_rows_or_columns(mutation_metadata_df_out_exploded_path, mutation_metadata_df_out_exploded_path_ground_truth)
+        compare_two_dataframes_without_regard_for_order_of_rows_or_columns(mutation_metadata_df_out_exploded_path, mutation_metadata_df_out_exploded_path_ground_truth, columns_to_drop = columns_to_drop_info_filter)
 
 
         vk.filter(mutation_metadata_df_path = mutation_metadata_df_out_path,
@@ -281,7 +282,7 @@ def test_file_processing(cosmic_csv_path, cds_and_cdna_files, genome_and_gtf_fil
 
         compare_two_fastas_without_regard_for_order_of_entries(mcrs_fasta_vk_filter, mcrs_fasta_vk_filter_ground_truth)
 
-        compare_two_dataframes_without_regard_for_order_of_rows_or_columns(output_metadata_df_vk_filter, output_metadata_df_vk_filter_ground_truth)
+        compare_two_dataframes_without_regard_for_order_of_rows_or_columns(output_metadata_df_vk_filter, output_metadata_df_vk_filter_ground_truth, columns_to_drop = columns_to_drop_info_filter)
 
         compare_two_fastas_without_regard_for_order_of_entries(dlist_fasta_vk_filter, dlist_fasta_vk_filter_ground_truth)
 

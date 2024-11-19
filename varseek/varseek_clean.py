@@ -19,11 +19,11 @@ def clean(
     id_to_header_csv=None,
     mutation_metadata_df=None,
     mutation_metadata_df_columns=None,
-    minimum_count_filter=None,
+    minimum_count_filter=0,
     use_binary_matrix=False,
     drop_zero_columns=False,
     assay="bulk",
-    adjust_mutation_adata_by_normal_gene_matrix_information=False,  #* change to True
+    adjust_mutation_adata_by_normal_gene_matrix_information=False,  # * change to True
     filter_cells_by_min_counts=None,
     filter_cells_by_min_genes=None,
     filter_genes_by_min_cells=None,
@@ -36,28 +36,28 @@ def clean(
     split_reads_by_Ns=False,
     dlist_file=None,
     mcrs_id_column="mcrs_id",
+    data_fastq=None,  # list of fastqs
+    mcrs_fasta=None,
+    dlist_fasta=None,
+    kb_count_out_mutant=None,
+    mcrs_index=None,
+    mcrs_t2g=None,
+    k=None,
+    mm=None,
+    threads=None,
+    strand=None,
+    newer_kallisto=None,
+    bustools="/home/jrich/miniconda3/envs/cartf/lib/python3.10/site-packages/kb_python/bins/linux/bustools/bustools",
+    mcrs_id_set_to_exclusively_keep=None,
+    mcrs_id_set_to_exclude=None,
+    transcript_set_to_exclusively_keep=None,
+    transcript_set_to_exclude=None,
+    gene_set_to_exclusively_keep=None,
+    gene_set_to_exclude=None,
+    adata_normal_genome_output_path=None,
     verbose=False,
     **kwargs,
 ):
-    data_fastq = None  # list of fastqs
-    mcrs_fasta = None
-    dlist_fasta = None
-    kb_count_out = "kb_count_out_temp"
-    mcrs_index = None
-    mcrs_t2g = None
-    k = None
-    mm = None
-    threads = None
-    strand = None
-    newer_kallisto = None
-    bustools = "/home/jrich/miniconda3/envs/cartf/lib/python3.10/site-packages/kb_python/bins/linux/bustools/bustools"
-    mcrs_id_set_to_exclusively_keep = None
-    mcrs_id_set_to_exclude = None
-    transcript_set_to_exclusively_keep = None
-    transcript_set_to_exclude = None
-    gene_set_to_exclusively_keep = None
-    gene_set_to_exclude = None
-    adata_normal_genome_output_path = None
 
     if isinstance(adata_path, anndata.AnnData):
         adata = adata_path
@@ -68,9 +68,13 @@ def clean(
         adata_dir = os.path.dirname(adata_path)
         output_type = "path"
     else:
-        raise ValueError(
-            "adata_path must be a string (file path) or an AnnData object."
-        )
+        raise ValueError("adata_path must be a string (file path) or an AnnData object.")
+
+    # if kb_count_out_wt_mcrs_counterpart:
+    #     adata_wt_mcrs_path = f"{kb_count_out_wt_mcrs_counterpart}/counts_unfiltered/adata.h5ad"
+    #     adata_wt_mcrs = sc.read_h5ad(adata_wt_mcrs_path)
+    # else:
+    #     adata_wt_mcrs = None
 
     if not output_figures_dir:
         output_figures_dir = os.path.join(adata_dir, "figures")
@@ -90,34 +94,20 @@ def clean(
             adata_normal_genome = sc.read_h5ad(adata_path_normal_genome)
             adata_normal_dir = os.path.dirname(adata_path_normal_genome)
         else:
-            raise ValueError(
-                "adata_path_normal_genome must be a string (file path) or an AnnData object."
-            )
+            raise ValueError("adata_path_normal_genome must be a string (file path) or an AnnData object.")
 
         if not adata_normal_genome_output_path:
-            adata_normal_genome_output_path = os.path.join(
-                adata_normal_dir, "adata_normal_genome_cleaned.h5ad"
-            )
+            adata_normal_genome_output_path = os.path.join(adata_normal_dir, "adata_normal_genome_cleaned.h5ad")
 
-    if (
-        mutation_metadata_df
-        and type(mutation_metadata_df) == str
-        and os.path.exists(mutation_metadata_df)
-    ):
-        mutation_metadata_df = pd.read_csv(
-            mutation_metadata_df, index_col=0, usecols=mutation_metadata_df_columns
-        )
+    if mutation_metadata_df and type(mutation_metadata_df) == str and os.path.exists(mutation_metadata_df):
+        mutation_metadata_df = pd.read_csv(mutation_metadata_df, index_col=0, usecols=mutation_metadata_df_columns)
 
     original_var_names = adata.var_names.copy()
 
     if mutation_metadata_df or id_to_header_csv:
         if mutation_metadata_df and type(mutation_metadata_df) == pd.DataFrame:
             df_to_merge = mutation_metadata_df
-        elif (
-            id_to_header_csv
-            and type(id_to_header_csv) == str
-            and os.path.exists(id_to_header_csv)
-        ):
+        elif id_to_header_csv and type(id_to_header_csv) == str and os.path.exists(id_to_header_csv):
             id_to_header_df = pd.read_csv(id_to_header_csv, index_col=0)
             df_to_merge = id_to_header_df
 
@@ -158,11 +148,13 @@ def clean(
             )
 
         if adjust_mutation_adata_by_normal_gene_matrix_information:
-            adata = adjust_mutation_adata_by_normal_gene_matrix(kb_output_mutation = kb_count_out, kb_output_standard = kb_count_out_normal_genome, id_to_header_csv = id_to_header_csv, mutation_metadata_csv = mutation_metadata_df, adata_output_path = None, t2g_mutation = mcrs_t2g, t2g_standard = None, fastq_file_list = data_fastq, mm = mm, union = False, assay = assay, parity = "single", bustools = bustools)
+            adata = adjust_mutation_adata_by_normal_gene_matrix(
+                adata, kb_output_mutation=kb_count_out, kb_output_standard=kb_count_out_normal_genome, id_to_header_csv=id_to_header_csv, mutation_metadata_csv=mutation_metadata_df, adata_output_path=None, t2g_mutation=mcrs_t2g, t2g_standard=None, fastq_file_list=data_fastq, mm=mm, union=False, assay=assay, parity="single", bustools=bustools
+            )
 
     # set all count values below minimum_count_filter to 0
-    if minimum_count_filter:
-        adata.X.multiply(adata.X >= minimum_count_filter)
+    if minimum_count_filter is not None:
+        adata.X = adata.X.multiply(adata.X >= minimum_count_filter)
 
     # # remove 0s for memory purposes
     # adata.X.eliminate_zeros()
@@ -178,9 +170,7 @@ def clean(
                     from kneed import KneeLocator
 
                     umi_counts = np.array(adata_normal_genome.X.sum(axis=1)).flatten()
-                    umi_counts_sorted = np.sort(umi_counts)[
-                        ::-1
-                    ]  # Sort in descending order for the knee plot
+                    umi_counts_sorted = np.sort(umi_counts)[::-1]  # Sort in descending order for the knee plot
 
                     # Step 2: Use KneeLocator to find the cutoff
                     knee_locator = KneeLocator(
@@ -196,58 +186,34 @@ def clean(
                         min_counts_assessed_by_knee_plot=filter_cells_by_min_counts,
                         output_file=f"{output_figures_dir}/knee_plot.png",
                     )
-                sc.pp.filter_cells(
-                    adata_normal_genome, min_counts=filter_cells_by_min_counts
-                )  # filter cells by min counts
+                sc.pp.filter_cells(adata_normal_genome, min_counts=filter_cells_by_min_counts)  # filter cells by min counts
             if filter_cells_by_min_genes:
-                sc.pp.filter_cells(
-                    adata_normal_genome, min_genes=filter_cells_by_min_genes
-                )  # filter cells by min genes
+                sc.pp.filter_cells(adata_normal_genome, min_genes=filter_cells_by_min_genes)  # filter cells by min genes
             if filter_genes_by_min_cells:
-                sc.pp.filter_genes(
-                    adata_normal_genome, min_cells=filter_genes_by_min_cells
-                )  # filter genes by min cells
+                sc.pp.filter_genes(adata_normal_genome, min_cells=filter_genes_by_min_cells)  # filter genes by min cells
             if filter_cells_by_max_mt_content:
                 has_mt_genes = adata_normal_genome.var_names.str.startswith("MT-").any()
                 if has_mt_genes:
-                    adata_normal_genome.var["mt"] = (
-                        adata_normal_genome.var_names.str.startswith("MT-")
-                    )
+                    adata_normal_genome.var["mt"] = adata_normal_genome.var_names.str.startswith("MT-")
                 else:
-                    mito_ensembl_ids = sc.queries.mitochondrial_genes(
-                        "hsapiens", attrname="ensembl_gene_id"
-                    )
+                    mito_ensembl_ids = sc.queries.mitochondrial_genes("hsapiens", attrname="ensembl_gene_id")
                     mito_genes = set(mito_ensembl_ids["ensembl_gene_id"].values)
 
-                    adata_base_var_names = adata_normal_genome.var_names.str.split(
-                        "."
-                    ).str[
-                        0
-                    ]  # Removes minor version from var names
-                    mito_genes_base = {
-                        gene.split(".")[0] for gene in mito_genes
-                    }  # Removes minor version from mito_genes
+                    adata_base_var_names = adata_normal_genome.var_names.str.split(".").str[0]  # Removes minor version from var names
+                    mito_genes_base = {gene.split(".")[0] for gene in mito_genes}  # Removes minor version from mito_genes
 
                     # Identify mitochondrial genes in adata.var using the stripped version of gene IDs
-                    adata_normal_genome.var["mt"] = adata_base_var_names.isin(
-                        mito_genes_base
-                    )
+                    adata_normal_genome.var["mt"] = adata_base_var_names.isin(mito_genes_base)
 
-                mito_counts = adata_normal_genome[
-                    :, adata_normal_genome.var["mt"]
-                ].X.sum(axis=1)
+                mito_counts = adata_normal_genome[:, adata_normal_genome.var["mt"]].X.sum(axis=1)
 
                 # Calculate total counts per cell
                 total_counts = adata_normal_genome.X.sum(axis=1)
 
                 # Calculate percent mitochondrial gene expression per cell
-                adata_normal_genome.obs["percent_mito"] = np.array(
-                    mito_counts / total_counts * 100
-                ).flatten()
+                adata_normal_genome.obs["percent_mito"] = np.array(mito_counts / total_counts * 100).flatten()
 
-                adata_normal_genome.obs["total_counts"] = adata_normal_genome.X.sum(
-                    axis=1
-                ).A1
+                adata_normal_genome.obs["total_counts"] = adata_normal_genome.X.sum(axis=1).A1
                 sc.pp.calculate_qc_metrics(
                     adata_normal_genome,
                     qc_vars=["mt"],
@@ -267,38 +233,26 @@ def clean(
                 # * TODO: move violin plot file path
                 violin_plot_path = f"{output_figures_dir}/qc_violin_plot.png"
 
-                adata_normal_genome = adata_normal_genome[
-                    adata_normal_genome.obs.pct_counts_mt < 5, :
-                ].copy()  # filter cells by high MT content
+                adata_normal_genome = adata_normal_genome[adata_normal_genome.obs.pct_counts_mt < 5, :].copy()  # filter cells by high MT content
 
                 adata.obs["percent_mito"] = adata_normal_genome.obs["percent_mito"]
                 adata.obs["total_counts"] = adata_normal_genome.obs["total_counts"]
             if doublet_detection:
-                sc.pp.scrublet(
-                    adata_normal_genome, batch_key="sample"
-                )  # filter doublets
-                adata.obs["predicted_doublet"] = adata_normal_genome.obs[
-                    "predicted_doublet"
-                ]
+                sc.pp.scrublet(adata_normal_genome, batch_key="sample")  # filter doublets
+                adata.obs["predicted_doublet"] = adata_normal_genome.obs["predicted_doublet"]
                 if remove_doublets:
-                    adata_normal_genome = adata_normal_genome[
-                        ~adata_normal_genome.obs["predicted_doublet"], :
-                    ].copy()
+                    adata_normal_genome = adata_normal_genome[~adata_normal_genome.obs["predicted_doublet"], :].copy()
                     adata = adata[~adata.obs["predicted_doublet"], :].copy()
 
             common_cells = adata.obs_names.intersection(adata_normal_genome.obs_names)
             adata = adata[common_cells, :].copy()
 
         # do cpm
-        if (
-            do_cpm_normalization and not use_binary_matrix
-        ):  # normalization not needed for binary matrix
+        if do_cpm_normalization and not use_binary_matrix:  # normalization not needed for binary matrix
             total_counts = adata_normal_genome.X.sum(axis=1)
             cpm_factor = total_counts / 1e6
 
-            adata.X = (
-                adata.X / cpm_factor[:, None]
-            )  # Reshape to make cpm_factor compatible with adata.X
+            adata.X = adata.X / cpm_factor[:, None]  # Reshape to make cpm_factor compatible with adata.X
             adata.obs["cpm_factor"] = cpm_factor
 
     if drop_zero_columns:
@@ -316,6 +270,7 @@ def clean(
             operation="keep",
             var_column_name="mcrs_id",
         )
+
     if mcrs_id_set_to_exclude:
         adata = remove_adata_columns(
             adata,
@@ -323,6 +278,7 @@ def clean(
             operation="exclude",
             var_column_name="mcrs_id",
         )
+
     if transcript_set_to_exclusively_keep:
         adata = remove_adata_columns(
             adata,
@@ -330,6 +286,7 @@ def clean(
             operation="keep",
             var_column_name="seq_ID",
         )
+
     if transcript_set_to_exclude:
         adata = remove_adata_columns(
             adata,
@@ -337,6 +294,7 @@ def clean(
             operation="exclude",
             var_column_name="seq_ID",
         )
+
     if gene_set_to_exclusively_keep:
         adata = remove_adata_columns(
             adata,
@@ -344,6 +302,7 @@ def clean(
             operation="keep",
             var_column_name="gene_name",
         )
+
     if gene_set_to_exclude:
         adata = remove_adata_columns(
             adata,
@@ -352,11 +311,8 @@ def clean(
             var_column_name="gene_name",
         )
 
-    adata.var["mcrs_count"] = (
-        adata.X.sum(axis=0).A1
-        if hasattr(adata.X, "A1")
-        else np.asarray(adata.X.sum(axis=0)).flatten()
-    )
+
+    adata.var["mcrs_count"] = adata.X.sum(axis=0).A1 if hasattr(adata.X, "A1") else np.asarray(adata.X.sum(axis=0)).flatten()
 
     if adata_path_normal_genome:
         adata_normal_genome.write(adata_normal_genome_output_path)
