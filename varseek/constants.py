@@ -122,3 +122,43 @@ supported_databases_and_corresponding_reference_sequence_type = {
 
 seqID_pattern = r"(ENST\d+|(?:[1-9]|1[0-9]|2[0-3]|X|Y|MT)\d+)"
 mutation_pattern = r"(?:c|g)\.([0-9_\-\+\*\(\)\?]+)([a-zA-Z>]+)"  # more complex: r'c\.([0-9_\-\+\*\(\)\?]+)([a-zA-Z>\(\)0-9]+)'
+
+# None means no barcode/umi
+technology_barcode_and_umi_dict = {
+    "bulk": {"barcode_start": None,
+            "barcode_end": None,
+            "umi_start": None,
+            "umi_end": None,
+            "spacer_start": None,
+            "spacer_end": None},
+    "10xv2": {"barcode_start": 0,
+            "barcode_end": 16,
+            "umi_start": 16,
+            "umi_end": 26,
+            "spacer_start": None,
+            "spacer_end": None},
+    "10xv3": {"barcode_start": 0,
+            "barcode_end": 16,
+            "umi_start": 16,
+            "umi_end": 28,
+            "spacer_start": None,
+            "spacer_end": None},
+    "Visium": {"barcode_start": 0,
+            "barcode_end": 16,
+            "umi_start": 16,
+            "umi_end": 28,
+            "spacer_start": None,
+            "spacer_end": None},
+    "SMARTSEQ2": {"barcode_start": None,
+            "barcode_end": None,
+            "umi_start": None,
+            "umi_end": None,
+            "spacer_start": None,
+            "spacer_end": None},
+    "SMARTSEQ3": {"barcode_start": None,
+            "barcode_end": None,
+            "umi_start": 11,
+            "umi_end": 19,
+            "spacer_start": 0,  
+            "spacer_end": 11},
+}

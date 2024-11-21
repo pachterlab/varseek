@@ -282,6 +282,8 @@ def build(
     gtf: Optional[str] = None,
     gtf_transcript_id_column: Optional[str] = None,
     w: int = 30,
+    k: Optional[int] = None,
+    insertion_size_limit: Optional[int] = None,
     min_seq_len: Optional[int] = None,
     optimize_flanking_regions: bool = False,
     remove_seqs_with_wt_kmers: bool = False,
@@ -359,6 +361,8 @@ def build(
     Mutant sequence generation/filtering options:
     - w                            (int) Length of sequence windows flanking the mutation. Default: 30.
                                    If w > total length of the sequence, the entire sequence will be kept.
+    - k                            (int) Length of the k-mers to be considered when removed remove_seqs_with_wt_kmers (should correspond to kallisto k). Default: w+1.
+    - insertion_size_limit         (int) Maximum number of nucleotides allowed in an insertion. Default: None (no insertion size limit will be applied)
     - min_seq_len                  (int) Minimum length of the mutant output sequence. Mutant sequences smaller than this will be dropped.
                                    Default: None
     - optimize_flanking_regions    (True/False) Whether to remove nucleotides from either end of the mutant sequence to ensure (when possible)
@@ -401,6 +405,7 @@ def build(
     - fasta_out                    (str) Path to output fasta file containing the mutated sequences, e.g., 'path/to/output_fasta.fa'.
                                    Default: None -> returns a list of the mutated sequences to standard out.
                                    The identifiers (following the '>') of the mutated sequences in the output fasta will be '>[seq_ID]_[mut_ID]'.
+    - id_to_header_csv_out         (str) File name of csv file containing the mapping of unique IDs to the original sequence headers. Default: "id_to_header_mapping.csv". None -> not saved
 
     # Other kwargs options:
     - cosmic_release               (str) COSMIC release version to download. Default: "100".
@@ -418,6 +423,9 @@ def build(
 
     if out is None:
         out = "."
+
+    if not k:
+        k = w + 1
 
     if reference_out is None:
         reference_out = out
@@ -440,6 +448,11 @@ def build(
 
     fasta_out = kwargs.get("fasta_out", None)
     update_df_out = kwargs.get("update_df_out", None)
+    id_to_header_csv_out = kwargs.get("id_to_header_csv_out", "id_to_header_mapping.csv")
+
+    if id_to_header_csv_out:
+        id_to_header_mapping_out = os.path.join(out, "id_to_header_mapping.csv")
+
     # keep_original_headers = kwargs.get("keep_original_headers", False)
     sequences_original = ""
 
@@ -827,6 +840,7 @@ def build(
 
     # Create a mask for all non-substitution mutations
     non_substitution_mask = deletion_mask | delins_mask | insertion_mask | duplication_mask | inversion_mask
+    insertion_and_delins_mask = insertion_mask | delins_mask
 
     # Extract the WT nucleotides for the substitution rows from reference fasta (i.e., Ensembl)
     start_positions = mutations.loc[substitution_mask, "start_mutation_position"].values
@@ -933,6 +947,17 @@ def build(
         axis=1,
     )  # ? vectorize
 
+    mutations["inserted_nucleotide_length"] = None
+
+    if insertion_and_delins_mask.any():
+        mutations.loc[insertion_and_delins_mask, "inserted_nucleotide_length"] = mutations.loc[insertion_and_delins_mask, "mut_nucleotides"].str.len()
+
+        if insertion_size_limit is not None:
+            mutations = mutations[
+                (mutations["inserted_nucleotide_length"].isna()) |  # Keep rows where it is None/NaN
+                (mutations["inserted_nucleotide_length"] <= insertion_size_limit)     # Keep rows where it's <= 5
+            ]
+
     mutations["beginning_mutation_overlap_with_right_flank"] = 0
     mutations["end_mutation_overlap_with_left_flank"] = 0
 
@@ -947,7 +972,6 @@ def build(
     # Delins, inversion:
     # To what extend the beginning of i overlaps with the beginning of d --> shave up to that many nucleotides off the beginning of r1 until w - len(r1) ≥ extent of overlap
     # To what extend the end of i overlaps with the beginning of d --> shave up to that many nucleotides off the end of r2 until w - len(r2) ≥ extent of overlap
-
     if optimize_flanking_regions and non_substitution_mask.any():
         # Apply the function for beginning of mut_nucleotides with right_flank_region
         mutations.loc[non_substitution_mask, "beginning_mutation_overlap_with_right_flank"] = mutations.loc[non_substitution_mask].apply(calculate_beginning_mutation_overlap_with_right_flank, axis=1)
@@ -955,6 +979,16 @@ def build(
         # Apply the function for end of mut_nucleotides with left_flank_region
         mutations.loc[non_substitution_mask, "end_mutation_overlap_with_left_flank"] = mutations.loc[non_substitution_mask].apply(calculate_end_mutation_overlap_with_left_flank, axis=1)
 
+        # for insertions and delins, make sure I see at bare minimum the full insertion context and the subseqeuent nucleotide - eg if I have c.2_3insA to become ACGTT to ACAGTT, if I only check for ACAG, then I can't distinguosh between ACAGTT, ACAGGTT, ACAGGGTT, etc. (and there are more complex examples)
+        if insertion_and_delins_mask.any():  #* new as of 11/20/24
+            mutations.loc[insertion_and_delins_mask, "beginning_mutation_overlap_with_right_flank"] = np.maximum(
+                mutations.loc[insertion_and_delins_mask, "beginning_mutation_overlap_with_right_flank"], mutations.loc[insertion_and_delins_mask, "inserted_nucleotide_length"],
+            )
+
+            mutations.loc[insertion_and_delins_mask, "end_mutation_overlap_with_left_flank"] = np.maximum(
+                mutations.loc[insertion_and_delins_mask, "end_mutation_overlap_with_left_flank"], mutations.loc[insertion_and_delins_mask, "inserted_nucleotide_length"],
+            )
+        
         # Calculate w-len(flank) (see above instructions)
         mutations.loc[non_substitution_mask, "k_minus_left_flank_length"] = w - mutations.loc[non_substitution_mask, "left_flank_region"].apply(len)
         mutations.loc[non_substitution_mask, "k_minus_right_flank_length"] = w - mutations.loc[non_substitution_mask, "right_flank_region"].apply(len)
@@ -1005,7 +1039,7 @@ def build(
             lambda row: wt_fragment_and_mutant_fragment_share_kmer(
                 mutated_fragment=row["mutant_sequence"],
                 wildtype_fragment=row["wt_sequence"],
-                k=w + 1,
+                k=k,
             ),
             axis=1,
         )
@@ -1245,14 +1279,13 @@ def build(
     if out_original and not fasta_out:
         fasta_out = os.path.join(out, "mcrs.fa")
 
-    id_to_header_mapping_out = os.path.join(out, "id_to_header_mapping.csv")
-
     if not keep_original_headers or (mut_id_column in mutations.columns and not merge_identical):
         mutations["mcrs_id"] = generate_unique_ids(len(mutations))
     else:
         mutations["mcrs_id"] = mutations["header"]
 
-    mutations[["mcrs_id", "header"]].to_csv(id_to_header_mapping_out, index=False)  # TODO: change to txt
+    if id_to_header_csv_out:
+        mutations[["mcrs_id", "header"]].to_csv(id_to_header_mapping_out, index=False)  # TODO: change to txt
 
     if update_df:  # use update_df_out if present,
         if not update_df_out:

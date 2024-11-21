@@ -276,6 +276,21 @@ def main():
         help=extract_help_from_doc(build, "w"),
     )
     parser_build.add_argument(
+        "-k",
+        "--k",
+        default=None,
+        type=int,
+        required=False,
+        help=extract_help_from_doc(build, "k"),
+    )
+    parser_build.add_argument(
+        "--insertion_size_limit",
+        default=None,
+        type=int,
+        required=False,
+        help=extract_help_from_doc(build, "insertion_size_limit"),
+    )
+    parser_build.add_argument(
         "-msl",
         "--min_seq_len",
         default=None,

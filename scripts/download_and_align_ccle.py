@@ -150,6 +150,10 @@ def download_ccle_total(
     # run kb count standard with paired end, before any further fastq modification
     if not os.path.exists(kb_count_out_standard_index) or not os.listdir(kb_count_out_standard_index):
         kb_count_standard_index_command = ["kb", "count", "-t", str(threads_per_task), "-k", str(k_standard), "-i", standard_index, "-g", standard_t2g, "-x", "bulk", "--num", "--h5ad", "--parity", "paired", "-o", kb_count_out_standard_index] + fastq_files
+
+        if not save_fastq_headers and not save_fastq_files:
+            kb_count_standard_index_command.remove("--num")  # num only useful for keeping read header indices in bus file - but if I'm not saving read headers, then simply remove this
+
         try:
             subprocess.run(kb_count_standard_index_command, check=True)
         except subprocess.CalledProcessError as e:
@@ -160,16 +164,20 @@ def download_ccle_total(
 
     fastq_files_copy = []
 
-    for fastq_file in fastq_files:
+    for i, fastq_file in enumerate(fastq_files):
         # # not supported with paired-end
         if replace_low_quality_bases_with_N:
             print(f"Replacing low-quality bases with 'N' for {fastq_file}")
             fastq_file = replace_low_quality_base_with_N(fastq_file, seqtk = seqtk, minimum_base_quality = minimum_base_quality_replace_with_N)
             fastq_files_total.append(fastq_file)
-
+        
         if split_reads_by_Ns:
+            # if i % 2 == 0:  # only do for the first file of paired-end - but always false for bulk
+            #     contains_barcodes_or_umis = True
+            # else:
+            #     contains_barcodes_or_umis = False
             print(f"Splitting reads by 'N' for {fastq_file}")
-            fastq_file = split_fastq_reads_by_N(fastq_file, minimum_sequence_length = k)  # TODO: would need a way of postprocessing to make sure I don't double-count fragmented reads - I would need to see where each fragmented read aligns - perhaps with kb extract or pseudobam
+            fastq_file = split_fastq_reads_by_N(fastq_file, minimum_sequence_length = k, contains_barcodes_or_umis = False)
             fastq_files_total.append(fastq_file)
 
         fastq_files_copy.append(fastq_file)

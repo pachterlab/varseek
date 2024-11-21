@@ -19,12 +19,17 @@ reference_folder = "/home/jrich/data/varseek_data_fresh/reference/ensembl_grch37
 bowtie_path="/home/jrich/opt/bowtie2-2.5.4/bowtie2-2.5.4-linux-x86_64"
 sample_size=2000
 columns_to_drop_info_filter = None  # ["nearby_mutations", "number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference", "number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference", "overlapping_kmers", "mcrs_items_with_overlapping_kmers_in_mcrs_reference", "kmer_overlap_in_mcrs_reference"]
-make_new_gt = True
+make_new_gt = False
 
 
 @pytest.fixture
 def genome_and_gtf_files(tmp_path):
-    global reference_folder
+    global reference_folder, make_new_gt, ground_truth_folder
+
+    if (not os.path.exists(ground_truth_folder) or not os.listdir(ground_truth_folder)):
+        if not make_new_gt:
+            pytest.skip("Ground truth folder is missing or empty, and make_new_gt is False. Skipping test.")
+
 
     # Setup code for cds_file, e.g., creating a mock file or providing the actual path
     genome_file_name = "Homo_sapiens.GRCh37.dna.primary_assembly.fa"
@@ -43,7 +48,12 @@ def genome_and_gtf_files(tmp_path):
 
 @pytest.fixture
 def cds_and_cdna_files(tmp_path):
-    global reference_folder
+    global reference_folder, ground_truth_folder, make_new_gt
+
+    if (not os.path.exists(ground_truth_folder) or not os.listdir(ground_truth_folder)):
+        if not make_new_gt:
+            pytest.skip("Ground truth folder is missing or empty, and make_new_gt is False. Skipping test.")
+
 
     # Setup code for cds_file, e.g., creating a mock file or providing the actual path
     cds_file_name = "Homo_sapiens.GRCh37.cds.all.fa"
@@ -61,7 +71,12 @@ def cds_and_cdna_files(tmp_path):
 
 @pytest.fixture
 def cosmic_csv_path(cds_and_cdna_files, tmp_path):
-    global cosmic_csv_path_starting, sample_size, make_new_gt
+    global cosmic_csv_path_starting, sample_size, make_new_gt, ground_truth_folder
+
+    if (not os.path.exists(ground_truth_folder) or not os.listdir(ground_truth_folder)):
+        if not make_new_gt:
+            pytest.skip("Ground truth folder is missing or empty, and make_new_gt is False. Skipping test.")
+
     cds_file, cdna_file = cds_and_cdna_files
 
     if os.path.exists(cosmic_csv_path_starting):
@@ -132,6 +147,11 @@ def cosmic_csv_path(cds_and_cdna_files, tmp_path):
 #* note: temp files will be deleted upon completion of the test or running into an error - to debug with a temp file, place a breakpoint before the error occurs
 def test_file_processing(cosmic_csv_path, cds_and_cdna_files, genome_and_gtf_files):
     global ground_truth_folder, reference_folder_parent, bowtie_path, gtf_path, reference_genome_fasta, make_new_gt
+
+    # skip this run if you don't have the ground truth and are not making it
+    if not os.path.exists(ground_truth_folder) or not os.listdir(ground_truth_folder):
+        if not make_new_gt:
+            pytest.skip("Ground truth folder is missing or empty, and make_new_gt is False. Skipping test.")
 
     w = 54
     k = 55

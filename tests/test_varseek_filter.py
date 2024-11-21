@@ -51,7 +51,8 @@ def test_no_filters_metadata_df(toy_mutation_metadata_df_path, dlist_file_small_
         output_dlist_fasta=output_dlist_fasta,
         output_id_to_header_csv=output_id_to_header_csv,
         output_t2g=output_t2g,
-        filters=filters
+        filters=filters,
+        return_df=True
     )
     
     output_metadata_df_expected = pd.read_csv(toy_mutation_metadata_df_path)

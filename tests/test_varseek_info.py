@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 import os
 from pdb import set_trace as st
-from varseek.utils import compare_dicts, collapse_df, explode_df, compare_cdna_and_genome, compute_distance_to_closest_splice_junction, calculate_nearby_mutations, compare_cdna_and_genome, align_to_normal_genome_and_build_dlist, get_mcrss_that_pseudoalign_but_arent_dlisted, get_df_overlap, longest_homopolymer, triplet_stats, add_mcrs_mutation_type, create_df_of_mcrs_to_self_headers, count_kmer_overlaps
+from varseek.utils import compare_dicts, collapse_df, explode_df, compare_cdna_and_genome, compute_distance_to_closest_splice_junction, calculate_nearby_mutations, compare_cdna_and_genome, align_to_normal_genome_and_build_dlist, get_mcrss_that_pseudoalign_but_arent_dlisted, get_df_overlap, longest_homopolymer, triplet_stats, add_mcrs_mutation_type, create_df_of_mcrs_to_self_headers, count_kmer_overlaps_new
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from Bio import SeqIO
@@ -283,14 +283,14 @@ def test_count_kmer_overlaps(mock_helpers):
         fasta_file.seek(0)
 
         # Run the function with the temporary FASTA file (strandedness=False)
-        df = count_kmer_overlaps(fasta_file.name, k=4, strandedness=True, mcrs_id_column="mcrs_id")
+        df = count_kmer_overlaps_new(fasta_file.name, k=4, strandedness=True, mcrs_id_column="mcrs_id")
 
         # Expected results
         expected_data = {
             "mcrs_id": ["seq_0", "seq_1", "seq_2", "seq_3"],
             "number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference": [2, 3, 2, 0],
             "number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference": [1, 1, 2, 0],
-            "overlapping_kmers": [["GATC", "GATC"], ["GCTA", "GCTA", "GCTA"], ["GATC", "GCTA"], []],
+            "overlapping_kmers": [{"GATC", "GATC"}, {"GCTA", "GCTA", "GCTA"}, {"GATC", "GCTA"}, set()],
             "mcrs_items_with_overlapping_kmers_in_mcrs_reference": [{"seq_2"}, {"seq_2"}, {"seq_0", "seq_1"}, set()],
         }
         expected_df = pd.DataFrame(expected_data)

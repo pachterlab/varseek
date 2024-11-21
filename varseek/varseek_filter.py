@@ -124,10 +124,11 @@ def filter(
 
         create_mutant_t2g(output_mcrs_fasta, output_t2g)
 
-        if output_t2g_wt is None:
-            output_t2g_wt = output_wt_mcrs_fa.replace(".fa", "_t2g.txt")
+        if type(output_wt_mcrs_fa) == str:
+            if output_t2g_wt is None:
+                output_t2g_wt = output_wt_mcrs_fa.replace(".fa", "_t2g.txt")
 
-        create_mutant_t2g(output_wt_mcrs_fa, output_t2g_wt)
+            create_mutant_t2g(output_wt_mcrs_fa, output_t2g_wt)
 
     if verbose:
         logger.info(f"Output fasta file with filtered mutations: {output_mcrs_fasta}")

@@ -31,7 +31,7 @@ from Bio import SeqIO
 from Bio.Seq import Seq
 import pyfastx
 import gget
-from varseek.constants import complement, codon_to_amino_acid, mutation_pattern
+from varseek.constants import complement, codon_to_amino_acid, mutation_pattern, technology_barcode_and_umi_dict
 from varseek.utils.visualization_utils import (
     print_column_summary_stats,
     plot_histogram_notebook_1,
@@ -1022,17 +1022,37 @@ def replace_low_quality_base_with_N(
     return filename_filtered
 
 
-# TODO: get this working for single-cell (requires a technology input with which I can query barcode and umi length, and make sure this gets copied to any new reads)
+# TODO: write this
+def check_if_read_has_index_and_umi_smartseq3(sequence):
+    pass
+
 def split_fastq_reads_by_N(
     input_fastq_file,
     output_fastq_file=None,
     minimum_sequence_length=31,
     technology="bulk",
+    contains_barcodes_or_umis = False  # set to False for bulk and for the paired file of any single-cell technology
 ):
-    technology_to_barcode_and_umi_information = {
-        "sample": {"barcode_len": 0, "umi_len": 0}
-    }
+    if "smartseq" in technology.lower():
+        barcode_key = "spacer"
+    else:
+        barcode_key = "barcode"
+    
+    if technology != "bulk" and contains_barcodes_or_umis:
+        if technology_barcode_and_umi_dict[technology][f"{barcode_key}_end"] is not None:
+            barcode_length = technology_barcode_and_umi_dict[technology][f"{barcode_key}_end"] - technology_barcode_and_umi_dict[technology][f"{barcode_key}tart"]
+        else:
+            barcode_length = 0
 
+        if technology_barcode_and_umi_dict[technology]["umi_start"] is not None:
+            umi_length = technology_barcode_and_umi_dict[technology]["umi_end"] - technology_barcode_and_umi_dict[technology]["umi_start"]
+        else:
+            umi_length = 0
+        
+        prefix_len = barcode_length + umi_length
+
+    prefix_len_original = prefix_len
+    
     parts = input_fastq_file.split(".", 1)
 
     is_gzipped = ".gz" in parts[1]
@@ -1040,26 +1060,30 @@ def split_fastq_reads_by_N(
 
     if output_fastq_file is None:
         output_fastq_file = f"{parts[0]}_split_by_Ns.{parts[1]}"
+
+    regex = re.compile(r"[^Nn]+")
+
     with open_func(output_fastq_file, "wt") as out_file:
         for header, sequence, plus_line, quality in read_fastq(input_fastq_file):
             header = header[1:]  # Remove '@' character
-            if technology != "bulk":
-                prefix_len = (
-                    technology_to_barcode_and_umi_information[technology["barcode_len"]]
-                    + technology_to_barcode_and_umi_information[
-                        technology["barcode_len"]
-                    ]
-                )
+            if technology != "bulk" and contains_barcodes_or_umis:
+                if technology == "SMARTSEQ3":
+                    sc_read_has_index_and_umi = check_if_read_has_index_and_umi_smartseq3(sequence)  # TODO: write this
+                    if not sc_read_has_index_and_umi:
+                        prefix_len = 0
+
                 barcode_and_umi_sequence = sequence[:prefix_len]
                 sequence_without_barcode_and_umi = sequence[prefix_len:]
-                quality_without_barcode_and_umi = quality[prefix_len:]
                 barcode_and_umi_quality = quality[:prefix_len]
+                quality_without_barcode_and_umi = quality[prefix_len:]
+                
+                prefix_len = prefix_len_original
             else:
                 sequence_without_barcode_and_umi = sequence
                 quality_without_barcode_and_umi = quality
 
             # Use regex to find all runs of non-"N" characters and their positions
-            matches = list(re.finditer(r"[^Nn]+", sequence_without_barcode_and_umi))
+            matches = list(regex.finditer(sequence_without_barcode_and_umi))
 
             # Extract sequence parts and their positions
             split_sequence = [match.group() for match in matches]
@@ -1070,7 +1094,7 @@ def split_fastq_reads_by_N(
                 quality_without_barcode_and_umi[start:end] for start, end in positions
             ]
 
-            if technology != "bulk":
+            if technology != "bulk" and contains_barcodes_or_umis:
                 split_sequence = [
                     barcode_and_umi_sequence + sequence for sequence in split_sequence
                 ]
@@ -5522,15 +5546,14 @@ def map_transcripts_to_genes(transcript_list, mapping_dict):
     return [mapping_dict.get(transcript, "Unknown") for transcript in transcript_list]
 
 
-# TODO: still doesn't work with single cell, as it currently finds barcodes from file
-# * TODO: only works when kb count was run with --num (as this means that each row of the BUS file corresponds to exactly one read)
+#* only works when kb count was run with --num (as this means that each row of the BUS file corresponds to exactly one read)
 def make_bus_df(
     kallisto_out,
     fastq_file_list,  # make sure this is in the same order as passed into kb count - [sample1, sample2, etc] OR [sample1_pair1, sample1_pair2, sample2_pair1, sample2_pair2, etc]
     t2g_file,
     mm=False,
     union=False,
-    assay="bulk",
+    assay="bulk",  # technology flag of kb
     parity="single",
     bustools="bustools",
 ):
@@ -5542,13 +5565,21 @@ def make_bus_df(
 
     transcripts.append("dlist")  # add dlist to the end of the list
 
-    if assay == "bulk":
+    if assay == "bulk" or "smartseq" in assay.lower():  # smartseq does not have barcodes
         print("loading in barcodes")
         with open(f"{kallisto_out}/matrix.sample.barcodes") as f:
             barcodes = (
                 f.read().splitlines()
             )  # get transcript at index 0 with transcript[0], and index of transcript named "name" with transcript.index("name")
     else:
+        try:
+            barcode_start = technology_barcode_and_umi_dict[assay]["barcode_start"]
+            barcode_end = technology_barcode_and_umi_dict[assay]["barcode_end"]
+            umi_start = technology_barcode_and_umi_dict[assay]["umi_start"]
+            umi_end = technology_barcode_and_umi_dict[assay]["umi_end"]
+        except KeyError:
+            print(f"Assay {assay} currently not supported. Supported are {list(technology_barcode_and_umi_dict.keys())}")
+
         pass  # TODO: write this (will involve technology parameter to get barcode from read)
 
     fastq_header_df = pd.DataFrame(columns=['read_index', 'fastq_header', 'barcode'])
@@ -5580,10 +5611,16 @@ def make_bus_df(
             with open(fastq_file) as f:
                 fastq_header_list = f.read().splitlines()
 
+        if assay == "bulk" or "smartseq" in assay.lower():
+            barcode_list = barcodes[i]
+        else:
+            fq_dict = pyfastx.Fastq(fastq_file, build_index=True)
+            barcode_list = [fq_dict[i].seq[barcode_start:barcode_end] for i in range(len(fq_dict))]
+
         new_rows = pd.DataFrame({
             'read_index': range(len(fastq_header_list)),  # Position/index values
             'fastq_header': fastq_header_list,                 # List values
-            'barcode': barcodes[i]                  
+            'barcode': barcode_list
         })
 
         if parity == "paired":
@@ -5653,7 +5690,7 @@ def make_bus_df(
     print("merging ec df into bus df")
     bus_df = bus_df.merge(ec_df, on="EC", how="left")
 
-    if assay == "sc":
+    if assay != "bulk":
         bus_df_collapsed_1 = bus_df.groupby(
             ["barcode", "UMI", "EC"], as_index=False
         ).agg(
@@ -5703,7 +5740,7 @@ def make_bus_df(
 
         bus_df = bus_df_collapsed_2
 
-    elif assay == "bulk":
+    else:  # assay == "bulk"
         # bus_df.rename(columns={"transcript_ids_list": "transcript_ids_list_final", "transcript_names": "transcript_names_final"}, inplace=True)
         bus_df["transcript_ids_list_final"] = bus_df["transcript_ids_list"]
         bus_df["transcript_names_final"] = bus_df["transcript_names"]
