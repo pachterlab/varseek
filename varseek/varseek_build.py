@@ -1337,6 +1337,7 @@ def build(
             if verbose:
                 logger.info(f"t2g file containing mutated sequences created at {mutation_reference_file_t2g}.")
 
+            # separate t2g is needed because it may have a subset of the rows of mutant (because it doesn't contain any MCRSs with merged mutations and 2+ originating WT sequences)
             if create_wt_mcrs_counterpart_fa:
                 mutation_reference_file_t2g_wt = fasta_out_wt.replace(".fa", "_t2g.txt")
                 create_mutant_t2g(fasta_out_wt, mutation_reference_file_t2g_wt)

@@ -2366,6 +2366,8 @@ def read_fasta_as_tuples(file_path):
 
 
 def is_in_ranges(num, ranges):
+    if not ranges:
+        return False
     for start, end in ranges:
         if start <= num <= end:
             return True
@@ -2431,9 +2433,14 @@ def build_random_genome_read_df(
         mcrs_end_column = "end_mutation_position_cdna"
 
     i = 0
+    num_loops = 0
     while i < n:
         # Choose a random entry (header, sequence) from the FASTA file
         random_transcript, random_sequence = random.choice(fasta_entries)
+
+        random_transcript = random_transcript.split()[0]
+        if input_type == "transcriptome":
+            random_transcript = random_transcript.split(".")[0]
 
         # Choose a random integer between 1 and the sequence length
         start_position = random.randint(1, len(random_sequence))
@@ -2465,6 +2472,11 @@ def build_random_genome_read_df(
                 read_df, header, random_sequence, start_position, selected_strand
             )
             i += 1
+
+        num_loops += 1
+        if num_loops > n * 100:
+            print(f"Exiting after only {i} mutations added due to long while loop")
+            break
 
     return read_df
 
@@ -2730,19 +2742,23 @@ def align_all_kmers_from_a_given_fasta_entry_to_all_other_kmers_in_the_file(
 
 
 def introduce_sequencing_errors(
-    sequence, error_rate=0.0001, max_errors=float("inf")
+    sequence, error_rate=0.0001, error_distribution=(0.85, 0.1, 0.05), max_errors=float("inf")  # error_distribution is (sub, del, ins)
 ):  # Illumina error rate is around 0.01% (1 in 10,000)
     # Define the possible bases
     bases = ["A", "T", "C", "G"]
     new_sequence = []
     number_errors = 0
 
+    error_distribution_sub = error_distribution[0]
+    error_distribution_del = error_distribution[1]
+    error_distribution_ins = error_distribution[2]
+
     for base in sequence:
         if number_errors < max_errors and random.random() < error_rate:
-            if random.random() < 0.85:  # Substitution
+            if random.random() < error_distribution_sub:  # Substitution
                 new_base = random.choice([b for b in bases if b != base])
                 new_sequence.append(new_base)
-            elif random.random() < 0.05:  # Insertion
+            elif random.random() < error_distribution_ins:  # Insertion
                 new_sequence.append(random.choice(bases))
             else:  # Deletion
                 continue  # Skip this base (deletion)

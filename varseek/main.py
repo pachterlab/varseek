@@ -347,6 +347,21 @@ def main():
         help=extract_help_from_doc(build, "keep_original_headers"),
     )
     parser_build.add_argument(
+        "--create_t2g",
+        default=False,
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(build, "create_t2g"),
+    )
+    parser_build.add_argument(
+        "-koh",
+        "--create_wt_mcrs_counterpart_fa",
+        default=False,
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(build, "create_wt_mcrs_counterpart_fa"),
+    )
+    parser_build.add_argument(
         "-udf",
         "--update_df",
         default=False,

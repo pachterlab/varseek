@@ -38,6 +38,7 @@ def sim(
     w=None,
     add_noise=False,
     error_rate=0.0001,
+    error_distribution=(0.85, 0.1, 0.05),  # sub, del, ins
     max_errors=float("inf"),
     with_replacement=False,
     sequences=None,
@@ -456,6 +457,7 @@ def sim(
                             sequence_chunk = introduce_sequencing_errors(
                                 sequence_chunk,
                                 error_rate=error_rate,
+                                error_distribution=error_distribution,
                                 max_errors=max_errors,
                             )
                             if sequence_chunk != sequence_chunk_old:
@@ -501,6 +503,7 @@ def sim(
                             sequence_chunk = introduce_sequencing_errors(
                                 sequence_chunk,
                                 error_rate=error_rate,
+                                error_distribution=error_distribution,
                                 max_errors=max_errors,
                             )
                             if sequence_chunk != sequence_chunk_old:
@@ -569,7 +572,7 @@ def sim(
 
     mutation_metadata_df = merge_synthetic_read_info_into_mutations_metadata_df(mutation_metadata_df, sampled_reference_df, sample_type=sample_type)
 
-    mutation_metadata_df["tumor_purity"] = mutation_metadata_df["number_of_reads_mutant"] / mutation_metadata_df["number_of_reads_wt"]
+    mutation_metadata_df["tumor_purity"] = mutation_metadata_df["number_of_reads_mutant"] / (mutation_metadata_df["number_of_reads_wt"] + mutation_metadata_df["number_of_reads_mutant"])
 
     mutation_metadata_df["tumor_purity"] = np.where(
         np.isnan(mutation_metadata_df["tumor_purity"]),
