@@ -251,7 +251,7 @@ def main(args):
 
     if not os.path.exists(json_path):
         os.makedirs(os.path.dirname(json_path), exist_ok=True)
-        ccle_metadata_download_command = f"wget -q -O {json_path} 'https://www.ebi.ac.uk/ena/portal/api/filereport?accession=PRJNA523380&result=read_run&fields=study_accession,sample_accession,experiment_accession,run_accession,scientific_name,library_strategy,experiment_title,experiment_alias,fastq_bytes,fastq_ftp,sra_ftp&format=json&download=true&limit=0'"
+        ccle_metadata_download_command = f"wget -q -O {json_path} 'https://www.ebi.ac.uk/ena/portal/api/filereport?accession=PRJNA523380&result=read_run&fields=study_accession,sample_accession,experiment_accession,run_accession,scientific_name,library_strategy,experiment_title,experiment_alias,fastq_bytes,fastq_ftp,sra_ftp,sample_title&format=json&download=true&limit=0'"
         subprocess.run(ccle_metadata_download_command, shell=True, check=True)
 
     # Loop through json file and download fastqs
@@ -326,6 +326,7 @@ def main(args):
         print(e)
 
     bad_samples = check_for_successful_downloads(ccle_data_out_base)
+    bad_samples.remove("multiqc_total_data")
     
     print(f"Samples with failed downloads: {bad_samples}")
     
@@ -354,7 +355,7 @@ if __name__ == "__main__":
     parser.add_argument("--split_reads_by_Ns", action="store_true", help="Flag to split reads by 'N'.")
     parser.add_argument("--save_fastq_headers", action="store_true", help="Flag to save fastq headers.")
     parser.add_argument("--save_fastq_files", action="store_true", help="Flag to not delete fastq files after processing.")
-    parser.add_argument("--max_retries", type=int, default=5, help="Maximum number of retries for downloading files (default: 5).")
+    parser.add_argument("--max_retries", type=int, default=20, help="Maximum number of retries for downloading files (default: 5).")
 
     # Parse arguments
     args = parser.parse_args()
