@@ -14,6 +14,7 @@ def check_for_successful_downloads(ccle_data_out_base, save_fastq_files = False)
         subfolder_path = os.path.join(ccle_data_out_base, subfolder)
         
         if os.path.isdir(subfolder_path) and subfolder != "multiqc_total_data":
+            print(f"Checking {subfolder}")
             sample_name = subfolder.split("___")[-1]
             
             # Paths to the required subdirectories

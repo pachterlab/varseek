@@ -109,6 +109,7 @@ def plot_histogram_notebook_1(
         plt.savefig(output_plot_file, format="png", dpi=300, bbox_inches="tight")
 
     plt.show()
+    plt.close()
 
 
 def plot_histogram_of_nearby_mutations_7_5(
@@ -133,6 +134,7 @@ def plot_histogram_of_nearby_mutations_7_5(
         plt.savefig(output_file, format="png", dpi=300)
 
     plt.show()
+    plt.close()
 
 
 def retrieve_value_from_metric_file(key_of_interest, metric_file):
@@ -428,6 +430,7 @@ def create_stratified_metric_bar_plot(
         plt.savefig(out_path, bbox_inches="tight")
 
     plt.show()
+    plt.close()
 
 
 def create_venn_diagram(true_set, positive_set, TN=None, mm=None, out_path=None):
@@ -496,6 +499,7 @@ def create_venn_diagram(true_set, positive_set, TN=None, mm=None, out_path=None)
 
     # Show the plot
     plt.show()
+    plt.close()
 
 
 def plot_histogram(
@@ -560,6 +564,7 @@ def plot_histogram(
         plt.savefig(out_path, bbox_inches="tight")
     else:
         plt.show()
+        plt.close()
 
 
 def synthetic_data_summary_plot(df, column, sort_ascending=True, out_path=None):
@@ -602,6 +607,7 @@ def synthetic_data_summary_plot(df, column, sort_ascending=True, out_path=None):
 
     # Show the plot
     plt.show()
+    plt.close()
 
 
 def plot_basic_bar_plot_from_dict(my_dict, y_axis, log_scale=False, output_file=None):
@@ -619,6 +625,7 @@ def plot_basic_bar_plot_from_dict(my_dict, y_axis, log_scale=False, output_file=
         plt.savefig(output_file, format="png", dpi=300)
 
     plt.show()
+    plt.close()
 
 
 def plot_descending_bar_plot(
@@ -649,6 +656,7 @@ def plot_descending_bar_plot(
         plt.savefig(output_file, format="png", dpi=300)
 
     plt.show()
+    plt.close()
 
 
 def draw_confusion_matrix(metric_dictionary_reads):
@@ -715,6 +723,7 @@ def plot_kat_histogram(kat_hist, out_path=None):
 
     # Display the plot
     plt.show()
+    plt.close()
 
 
 def plot_items_descending_order(
@@ -757,6 +766,7 @@ def plot_items_descending_order(
 
     # Show the plot
     plt.show()
+    plt.close()
 
 
 def plot_scree(adata, output_plot_file=None):
@@ -779,6 +789,7 @@ def plot_scree(adata, output_plot_file=None):
         os.makedirs(os.path.dirname(output_plot_file), exist_ok=True)
         plt.savefig(output_plot_file)
     plt.show()
+    plt.close()
 
 
 def plot_loading_contributions(
@@ -788,6 +799,7 @@ def plot_loading_contributions(
     top_genes_plot=10,
     output_stats_file=None,
     output_plot_file=None,
+    show=False
 ):
     # Get PCA loadings for the selected component
     loadings = adata.varm["PCs"][:, PC_index]
@@ -817,7 +829,9 @@ def plot_loading_contributions(
     if output_plot_file:
         os.makedirs(os.path.dirname(output_plot_file), exist_ok=True)
         plt.savefig(output_plot_file)
-    plt.show()
+    if show:
+        plt.show()
+    plt.close()
 
 
 def find_resolution_for_target_clusters(
@@ -869,6 +883,7 @@ def plot_contingency_table(
     if output_plot_file:
         plt.savefig(output_plot_file)
     plt.show()
+    plt.close()
 
 
 def plot_knn_tissue_frequencies(
@@ -896,6 +911,7 @@ def plot_knn_tissue_frequencies(
     if output_plot_file:
         plt.savefig(output_plot_file)
     plt.show()
+    plt.close()
 
     return tissue_counts
 
@@ -913,6 +929,7 @@ def plot_ascending_bar_plot_of_cluster_distances(
     plt.title("Distance from Unknown Sample to Each Cluster Centroid (Ascending Order)")
     plt.xticks(rotation=45)
     plt.show()
+    plt.close()
 
 
 def plot_jaccard_bar_plot(tissues, jaccard_values, output_plot_file=None):
@@ -928,6 +945,7 @@ def plot_jaccard_bar_plot(tissues, jaccard_values, output_plot_file=None):
     if output_plot_file:
         plt.savefig(output_plot_file)
     plt.show()
+    plt.close()
 
 
 def plot_knee_plot(
@@ -950,3 +968,4 @@ def plot_knee_plot(
     if output_file:
         plt.savefig(output_file)
     plt.show()
+    plt.close()

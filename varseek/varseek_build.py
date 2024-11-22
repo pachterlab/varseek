@@ -2,6 +2,7 @@ import os
 import subprocess
 from typing import Union, List, Optional
 import re
+import time
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
@@ -20,9 +21,9 @@ from .utils import (
     generate_unique_ids,
     translate_sequence,
     wt_fragment_and_mutant_fragment_share_kmer,
-    calculate_sufficient_id_length,
     create_mutant_t2g,
-    add_mutation_type
+    add_mutation_type,
+    report_time
 )
 
 # from gget.utils import read_fasta
@@ -418,6 +419,9 @@ def build(
     """
 
     global intronic_mutations, posttranslational_region_mutations, unknown_mutations, uncertain_mutations, ambiguous_position_mutations, cosmic_incorrect_wt_base, mut_idx_outside_seq
+
+    start_overall = report_time(start)
+    start = start_overall
 
     out_original = out
 
@@ -1078,21 +1082,6 @@ def build(
 
         # Drop the 'num_N' column after filtering
         mutations = mutations.drop(columns=["num_N"])
-
-    try:
-        # Create bins of width 5 from 0 to max_length
-        bins = range(0, max_length + 6, 5)
-
-        # Bin the lengths and count the number of elements in each bin
-        binned_lengths = pd.cut(mutations["mutant_sequence_kmer_length"], bins=bins, right=False)
-        bin_counts = binned_lengths.value_counts().sort_index()
-
-        # Display the report
-        if verbose:
-            logger.debug("Report of the number of elements in each bin of width 5:")
-            logger.debug(bin_counts)
-    except Exception as e:
-        pass
 
     # Report status of mutations back to user
     good_mutations = mutations.shape[0]

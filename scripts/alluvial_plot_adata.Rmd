@@ -1,0 +1,69 @@
+---
+title: "alluvial_plot_adata"
+output: html_document
+date: "2024-11-22"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# library(Seurat)
+# library(Matrix)
+library(tidyverse)
+# library(patchwork)
+# library(eulerr)
+# library(scattermore)
+# library(DropletUtils)
+library(glue)
+# library(bluster)
+library(ggforce)
+# library(ggplotify)
+# library(grid)
+# library(gtable)
+library(ggalluvial)
+```
+
+```{r}
+# Load the CSV file
+adata_obs <- read.csv("/Users/joeyrich/Downloads/adata_obs.csv")
+
+adata_obs$tissue_int <- as.integer(as.factor(adata_obs$tissue))
+
+# Convert tissue to a factor
+adata_obs_tissue <- setNames(adata_obs$tissue_int, adata_obs$experiment_accession)
+adata_obs_leiden <- setNames(adata_obs$leiden, adata_obs$experiment_accession)
+```
+
+```{r}
+output_base_path = "/Users/joeyrich/Desktop/temp_r"
+source("/Users/joeyrich/Desktop/local/seurat_scanpy_final/RMEJLBASBMP_2024/analysis/scripts/data_analysis_helper.R")
+source("/Users/joeyrich/Desktop/local/seurat_scanpy_final/RMEJLBASBMP_2024/analysis/scripts/plotting_and_stats.R")
+
+df <- tibble(
+    tissue = adata_obs_tissue,
+    leiden = adata_obs_leiden
+)
+
+clus_df_gather <- get_alluvial_df(df)
+
+clus_df_gather <- clus_df_gather %>% mutate(
+    group1_column_original_clusters := as.numeric(as.character(.data[["tissue"]])),
+    group2_column_original_clusters := as.numeric(as.character(.data[["leiden"]]))
+)
+
+clus_df_gather <- sort_clusters_by_agreement(clus_df_gather, stable_column = "tissue", reordered_column = "leiden")
+
+# clus_df_gather <- clus_df_gather %>%
+#     mutate(
+#         stratum_label = case_when(
+#             !!sym(tissue) != "" ~ as.character(group1_column_original_clusters),
+#             !!sym(leiden) != "" ~ as.character(group2_column_original_clusters)
+#         )
+#     )
+
+alluvial_plot <- plot_alluvial(clus_df_gather, group1_name = "tissue", group2_name = "leiden", color_boxes = TRUE, color_bands = TRUE, match_colors = TRUE, alluvial_alpha = 0.5, include_labels_in_boxes = TRUE, include_axis_titles = TRUE)
+alluvial_plot
+# alluvial_plot_legend <- plot_alluvial(clus_df_gather, color_boxes = TRUE, color_bands = TRUE, alluvial_alpha = 0.5, match_colors = TRUE, save = file_paths$alluvial_legend)
+```

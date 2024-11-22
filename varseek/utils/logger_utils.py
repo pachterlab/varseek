@@ -47,16 +47,48 @@ def set_up_logger(logging_level_name=None, save_logs=False, log_dir=None):
     return logger
 
 
-# * DEPRECATED - use %%time instead
-def report_time(running_total=None):
-    if running_total is None:
-        running_total = time.time()
-    elapsed_time = time.time() - running_total
-    minutes = int(elapsed_time // 60)
-    seconds = elapsed_time % 60
-    print(f"RUNTIME: {minutes}m, {seconds:.2f}s")
-    running_total = time.time()
-    return running_total
+import time
+
+def report_time(start=None, logger=None, verbose=True):
+    """
+    Reports elapsed time if `start` is provided, otherwise starts a timer.
+
+    Args:
+        start (float): The starting time (from `time.perf_counter()`).
+        logger (logging.Logger): Optional logger to log messages. Falls back to `print` if None.
+        verbose (bool): Whether to display the message.
+
+    Returns:
+        float: The new start time (from `time.perf_counter()`).
+    """
+    if verbose:
+        if start is None:
+            message = "Starting timer"
+        else:
+            elapsed = time.perf_counter() - start
+            minutes = int(elapsed // 60)
+            seconds = elapsed % 60
+            message = f"RUNTIME: {minutes}m, {seconds:.2f}s"
+        
+        # Log the message
+        if logger:
+            logger.debug(message)
+        else:
+            print(message)
+
+    # return the new start time
+    return time.perf_counter()
+
+# # * DEPRECATED - use %%time instead
+# def report_time(running_total=None):
+#     if running_total is None:
+#         running_total = time.time()
+#     elapsed_time = time.time() - running_total
+#     minutes = int(elapsed_time // 60)
+#     seconds = elapsed_time % 60
+#     print(f"RUNTIME: {minutes}m, {seconds:.2f}s")
+#     running_total = time.time()
+#     return running_total
 
 
 try:
