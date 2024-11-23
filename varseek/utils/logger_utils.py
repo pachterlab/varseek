@@ -1,12 +1,13 @@
-import os
-import tracemalloc
-import logging
 from datetime import datetime
+import logging
+import os
 import time
-from IPython.core.magic import register_cell_magic
+import tracemalloc
 
 # Mute numexpr threads info
 logging.getLogger("numexpr").setLevel(logging.WARNING)
+
+from IPython.core.magic import register_cell_magic
 
 
 def set_up_logger(logging_level_name=None, save_logs=False, log_dir=None):
@@ -47,15 +48,7 @@ def set_up_logger(logging_level_name=None, save_logs=False, log_dir=None):
 
     return logger
 
-
-import time
-
-def report_time_and_memory_setup():
-    tracemalloc.start()
-    peaks_list = []
-    return time.perf_counter(), peaks_list
-
-def report_time_and_memory(start=None, peaks_list=None, final_call=False, logger=None, verbose=True):
+def report_time_and_memory(start=None, peaks_list=None, final_call=False, logger=None, report=True, process_name="the process"):
     """
     Reports elapsed time if `start` is provided, otherwise starts a timer.
 
@@ -67,8 +60,10 @@ def report_time_and_memory(start=None, peaks_list=None, final_call=False, logger
     Returns:
         float: The new start time (from `time.perf_counter()`).
     """
+    if os.environ.get("REPORT_TIME_AND_MEMORY") != "TRUE":
+        return None, None
 
-    if verbose:
+    if report:
         if start is None and peaks_list is None:
             message = "Starting timer and memory tracking"
             tracemalloc.start()
@@ -84,12 +79,12 @@ def report_time_and_memory(start=None, peaks_list=None, final_call=False, logger
                 peak_mb = peak / 1024 / 1024
                 peaks_list.append(peak_mb)
 
-                message = f"RUNTIME: {minutes}m, {seconds:.2f}s\ncurrent={current_mb:.3f}MB, peak={peak_mb:.3f}MB"
+                message = f"Time and memory information for {process_name}\nRuntime: {minutes}m, {seconds:.2f}s\nMemory: current={current_mb:.3f}MB, peak={peak_mb:.3f}MB"
 
                 tracemalloc.stop()
                 tracemalloc.start()
             else:
-                message = f"RUNTIME: {minutes}m, {seconds:.2f}s\nHighest peak memory usage: {max(peaks_list):.3f}MB"
+                message = f"Total runtime: {minutes}m, {seconds:.2f}s\nHighest peak memory usage: {max(peaks_list):.3f}MB"
                 tracemalloc.stop()
         
         # Log the message
@@ -99,9 +94,13 @@ def report_time_and_memory(start=None, peaks_list=None, final_call=False, logger
             print(message)
 
     else:
-        # so that memory tracking gets reset if verbose=False
-        tracemalloc.stop()
-        tracemalloc.start()
+        # so that memory tracking gets reset if report=False
+        if start is None and peaks_list is None:
+            tracemalloc.start()
+            peaks_list = []
+        else:
+            tracemalloc.stop()
+            tracemalloc.start()
 
     # return the new start time
     return time.perf_counter(), peaks_list
