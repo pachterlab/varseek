@@ -290,7 +290,7 @@ def test_count_kmer_overlaps(mock_helpers):
             "mcrs_id": ["seq_0", "seq_1", "seq_2", "seq_3"],
             "number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference": [2, 3, 2, 0],
             "number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference": [1, 1, 2, 0],
-            "overlapping_kmers": [{"GATC", "GATC"}, {"GCTA", "GCTA", "GCTA"}, {"GATC", "GCTA"}, set()],
+            "overlapping_kmers": [["GATC", "GATC"], ["GCTA", "GCTA", "GCTA"], ["GATC", "GCTA"], []],
             "mcrs_items_with_overlapping_kmers_in_mcrs_reference": [{"seq_2"}, {"seq_2"}, {"seq_0", "seq_1"}, set()],
         }
         expected_df = pd.DataFrame(expected_data)
