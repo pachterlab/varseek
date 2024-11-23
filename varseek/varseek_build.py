@@ -23,7 +23,7 @@ from .utils import (
     wt_fragment_and_mutant_fragment_share_kmer,
     create_mutant_t2g,
     add_mutation_type,
-    report_time
+    report_time_and_memory
 )
 
 # from gget.utils import read_fasta
@@ -420,8 +420,18 @@ def build(
 
     global intronic_mutations, posttranslational_region_mutations, unknown_mutations, uncertain_mutations, ambiguous_position_mutations, cosmic_incorrect_wt_base, mut_idx_outside_seq
 
-    start_overall = report_time(start)
+    # begin tracking time and memory
+    start_overall, peaks_list = report_time_and_memory(logger=logger, verbose=verbose)
     start = start_overall
+
+    #* middle of code 
+    start, peaks_list = report_time_and_memory(start=start, peaks_list=peaks_list, logger=logger, verbose=verbose)  # (before function I want to measure)  # set verbose=False (rather than verbose=verbose) to suppress output, and instead simply give a new timer and memory peak
+    # my code
+    start, peaks_list = report_time_and_memory(start=start, peaks_list=peaks_list, logger=logger, verbose=verbose)  # (after function I want to measure)
+
+    #* end of code
+    start, peaks_list = report_time_and_memory(start=start, peaks_list=peaks_list, logger=logger, verbose=verbose)
+    start, peaks_list = report_time_and_memory(start=start_overall, peaks_list=peaks_list, logger=logger, verbose=verbose, final_call=True)
 
     out_original = out
 

@@ -1,4 +1,5 @@
 import os
+import tracemalloc
 import logging
 from datetime import datetime
 import time
@@ -49,7 +50,12 @@ def set_up_logger(logging_level_name=None, save_logs=False, log_dir=None):
 
 import time
 
-def report_time(start=None, logger=None, verbose=True):
+def report_time_and_memory_setup():
+    tracemalloc.start()
+    peaks_list = []
+    return time.perf_counter(), peaks_list
+
+def report_time_and_memory(start=None, peaks_list=None, final_call=False, logger=None, verbose=True):
     """
     Reports elapsed time if `start` is provided, otherwise starts a timer.
 
@@ -61,14 +67,30 @@ def report_time(start=None, logger=None, verbose=True):
     Returns:
         float: The new start time (from `time.perf_counter()`).
     """
+
     if verbose:
-        if start is None:
-            message = "Starting timer"
+        if start is None and peaks_list is None:
+            message = "Starting timer and memory tracking"
+            tracemalloc.start()
+            peaks_list = []
         else:
             elapsed = time.perf_counter() - start
             minutes = int(elapsed // 60)
             seconds = elapsed % 60
-            message = f"RUNTIME: {minutes}m, {seconds:.2f}s"
+
+            if not final_call:
+                current, peak = tracemalloc.get_traced_memory()
+                current_mb = current / 1024 / 1024
+                peak_mb = peak / 1024 / 1024
+                peaks_list.append(peak_mb)
+
+                message = f"RUNTIME: {minutes}m, {seconds:.2f}s\ncurrent={current_mb:.3f}MB, peak={peak_mb:.3f}MB"
+
+                tracemalloc.stop()
+                tracemalloc.start()
+            else:
+                message = f"RUNTIME: {minutes}m, {seconds:.2f}s\nHighest peak memory usage: {max(peaks_list):.3f}MB"
+                tracemalloc.stop()
         
         # Log the message
         if logger:
@@ -76,8 +98,13 @@ def report_time(start=None, logger=None, verbose=True):
         else:
             print(message)
 
+    else:
+        # so that memory tracking gets reset if verbose=False
+        tracemalloc.stop()
+        tracemalloc.start()
+
     # return the new start time
-    return time.perf_counter()
+    return time.perf_counter(), peaks_list
 
 # # * DEPRECATED - use %%time instead
 # def report_time(running_total=None):

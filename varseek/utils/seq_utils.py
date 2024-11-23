@@ -1,4 +1,5 @@
 import os
+import gc
 import ast
 import json
 import shutil
@@ -5676,6 +5677,12 @@ def make_bus_df(
         lambda ids: [transcripts[i] for i in ids]
     )
 
+    print("loading in t2g df")
+    t2g_df = pd.read_csv(
+        t2g_file, sep="\t", header=None, names=["transcript_id", "gene_name"]
+    )
+    t2g_dict = dict(zip(t2g_df["transcript_id"], t2g_df["gene_name"]))
+
     # Get bus output (converted to txt)
     bus_file = f"{kallisto_out}/output.bus"
     bus_text_file = f"{kallisto_out}/output_sorted_bus.txt"
@@ -5701,6 +5708,7 @@ def make_bus_df(
     if not bus_txt_file_existed_originally:
         os.remove(bus_text_file)
 
+    # TODO: if I have low memory mode, then break up bus_df and loop from here through end
     bus_df = bus_df.merge(fastq_header_df, on=['read_index', 'barcode'], how="left")
 
     print("merging ec df into bus df")
@@ -5760,12 +5768,6 @@ def make_bus_df(
         # bus_df.rename(columns={"transcript_ids_list": "transcript_ids_list_final", "transcript_names": "transcript_names_final"}, inplace=True)
         bus_df["transcript_ids_list_final"] = bus_df["transcript_ids_list"]
         bus_df["transcript_names_final"] = bus_df["transcript_names"]
-
-    print("loading in t2g df")
-    t2g_df = pd.read_csv(
-        t2g_file, sep="\t", header=None, names=["transcript_id", "gene_name"]
-    )
-    t2g_dict = dict(zip(t2g_df["transcript_id"], t2g_df["gene_name"]))
 
     print("Apply the mapping function to create gene name columns")
     # mapping transcript to gene names
