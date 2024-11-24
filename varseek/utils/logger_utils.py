@@ -50,6 +50,8 @@ def set_up_logger(logging_level_name=None, save_logs=False, log_dir=None):
     return logger
 
 
+# os.environ["REPORT_TIME_AND_MEMORY"] = "TRUE"
+# os.environ["REPORT_TIME_AND_MEMORY_TOTAL_ONLY"] = "FALSE"
 
 def report_time_and_memory(start=None, peaks_list=None, final_call=False, logger=None, report=True, process_name="the process", dfs = None, cols=False):
     """
@@ -69,53 +71,11 @@ def report_time_and_memory(start=None, peaks_list=None, final_call=False, logger
     if os.environ.get("REPORT_TIME_AND_MEMORY") != "TRUE":
         return None, None
     
-    if os.environ.get("REPORT_TIME_AND_MEMORY_TOTAL_ONLY") == "TRUE":
-        if start is None and peaks_list is None:
-            message = "Starting timer and memory tracking"
+    if (not final_call and os.environ.get("REPORT_TIME_AND_MEMORY_TOTAL_ONLY") == "TRUE"):
+        if start is None:
+            start = time.perf_counter()
             tracemalloc.start()
-            peaks_list = []
-
-            # Log the message
-            if logger:
-                logger.debug(message)
-            else:
-                print(message)
-
-            return time.perf_counter(), peaks_list
-        else:
-            if final_call and report:
-                elapsed = time.perf_counter() - start
-                minutes = int(elapsed // 60)
-                seconds = elapsed % 60
-
-                current, peak = tracemalloc.get_traced_memory()
-                current_mb = current / 1024 / 1024
-                peak_mb = peak / 1024 / 1024
-
-                process = psutil.Process()
-
-                message = f"Time and memory information for {process_name}\nRuntime: {minutes}m, {seconds:.2f}s\nMemory: current={current_mb:.3f}MB, peak={peak_mb:.3f}MB\nTotal process memory: {process.memory_info().rss / 1024 / 1024:.3f} MB"
-
-                if isinstance(dfs, dict) and dfs:
-                    for name, df in dfs.items():
-                        message += f"\ndf {name}: {df.memory_usage().sum() / 1024 / 1024:.3f}MB, {df.shape[0]:,} rows, {df.shape[1]} columns"
-                        if cols:
-                            top_columns = df.memory_usage(deep=True)[1:].sort_values(ascending=False)
-                            if isinstance(cols, int):
-                                top_columns = top_columns.head(cols)
-                            for col, usage in top_columns.items():
-                                message += f"\n{col}: {usage / (1024 * 1024):.3f} MB"
-
-                # Log the message
-                if logger:
-                    logger.debug(message)
-                else:
-                    print(message)
-
-                tracemalloc.stop()
-        
-            return start, peaks_list
-
+        return start, peaks_list
 
     if report:
         if start is None and peaks_list is None:
@@ -127,21 +87,18 @@ def report_time_and_memory(start=None, peaks_list=None, final_call=False, logger
             minutes = int(elapsed // 60)
             seconds = elapsed % 60
 
-            if not final_call:
+            process = psutil.Process()
+
+            if (not final_call and not os.environ.get("REPORT_TIME_AND_MEMORY_TOTAL_ONLY") == "TRUE") or (final_call and os.environ.get("REPORT_TIME_AND_MEMORY_TOTAL_ONLY") == "TRUE"):
                 current, peak = tracemalloc.get_traced_memory()
                 current_mb = current / 1024 / 1024
                 peak_mb = peak / 1024 / 1024
-                peaks_list.append(peak_mb)
+                if isinstance(peaks_list, list):
+                    peaks_list.append(peak_mb)
 
-                process = psutil.Process()
-
-                message = f"Time and memory information for {process_name}\nRuntime: {minutes}m, {seconds:.2f}s\nMemory: current={current_mb:.3f}MB, peak={peak_mb:.3f}MB\nTotal process memory: {process.memory_info().rss / 1024 / 1024:.3f} MB"
-
-                tracemalloc.stop()
-                tracemalloc.start()
-            else:
+                message = f"Time and memory information for {process_name}\nRuntime: {minutes}m, {seconds:.2f}s\nMemory: current={current_mb:.3f}MB, peak={peak_mb:.3f}MB, total process={process.memory_info().rss / 1024 / 1024:.3f}MB"
+            elif (final_call and not os.environ.get("REPORT_TIME_AND_MEMORY_TOTAL_ONLY") == "TRUE"):
                 message = f"Total runtime: {minutes}m, {seconds:.2f}s\nHighest peak memory usage: {max(peaks_list):.3f}MB\nTotal process memory: {process.memory_info().rss / 1024 / 1024:.3f} MB"
-                tracemalloc.stop()
 
             if isinstance(dfs, dict) and dfs:
                 for name, df in dfs.items():
@@ -152,6 +109,10 @@ def report_time_and_memory(start=None, peaks_list=None, final_call=False, logger
                             top_columns = top_columns.head(cols)
                         for col, usage in top_columns.items():
                             message += f"\n{col}: {usage / (1024 * 1024):.3f} MB"
+            
+            tracemalloc.stop()
+            if not final_call:
+                tracemalloc.start()
         
         # Log the message
         if logger:
@@ -166,7 +127,8 @@ def report_time_and_memory(start=None, peaks_list=None, final_call=False, logger
             peaks_list = []
         else:
             tracemalloc.stop()
-            tracemalloc.start()
+            if not final_call:
+                tracemalloc.start()
 
     # return the new start time
     return time.perf_counter(), peaks_list
