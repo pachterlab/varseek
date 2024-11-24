@@ -9,6 +9,11 @@ __pycache__/
 # C extensions
 *.so
 
+# R extension
+*.Rdata
+*.Rhistory
+*.Rproj
+
 # Distribution / packaging
 .Python
 build/
