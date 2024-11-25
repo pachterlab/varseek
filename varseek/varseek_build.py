@@ -704,7 +704,7 @@ def build(
             """
         )
     
-    start, peaks_list = report_time_and_memory(process_name="Loaded in mutations dataframe", start=start, peaks_list=peaks_list, logger=logger, report=True)
+    start, peaks_list = report_time_and_memory(process_name="Loaded in mutations dataframe", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
 
     # Set of possible nucleotides (- and . are gap annotations)
     nucleotides = set("ATGCUNatgcun.-")
@@ -745,12 +745,12 @@ def build(
 
     mutations = add_mutation_type(mutations, mut_column)
 
-    start, peaks_list = report_time_and_memory(process_name="Added in mutation types", start=start, peaks_list=peaks_list, logger=logger, report=True)
+    start, peaks_list = report_time_and_memory(process_name="Added in mutation types", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
 
     # Link sequences to their mutations using the sequence identifiers
     if store_full_sequences:
         mutations["wt_sequence_full"] = mutations[seq_id_column].map(seq_dict)
-        start, peaks_list = report_time_and_memory(process_name="Stored WT full sequences in df", start=start, peaks_list=peaks_list, logger=logger, report=True)
+        start, peaks_list = report_time_and_memory(process_name="Stored WT full sequences in df", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
 
     # Handle sequences that were not found based on their sequence IDs
     seqs_not_found = mutations[~mutations[seq_id_column].isin(seq_dict.keys())]
@@ -893,7 +893,7 @@ def build(
     # Extract the WT nucleotides for the non-substitution rows from the Mutation CDS (i.e., COSMIC)
     mutations.loc[non_substitution_mask, "wt_nucleotides_ensembl"] = mutations.loc[non_substitution_mask].apply(lambda row: extract_sequence(row, seq_dict, seq_id_column), axis=1)
 
-    start, peaks_list = report_time_and_memory(process_name="Various string extractions", start=start, peaks_list=peaks_list, logger=logger, report=True)
+    start, peaks_list = report_time_and_memory(process_name="Various string extractions", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
 
     # Apply mutations to the sequences
     mutations["mut_nucleotides"] = None
@@ -920,7 +920,7 @@ def build(
     mutations["end_kmer_position_max"] = mutations["end_mutation_position"] + w
     mutations["end_kmer_position"] = mutations[["end_kmer_position_max", "sequence_length"]].min(axis=1)  # don't forget to increment by 1 later on
 
-    start, peaks_list = report_time_and_memory(process_name="Extracting mutational info", start=start, peaks_list=peaks_list, logger=logger, report=True)
+    start, peaks_list = report_time_and_memory(process_name="Extracting mutational info", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
 
     if gtf is not None:
         assert mutations_path.endswith(".csv") or mutations_path.endswith(".tsv"), "Mutations must be a CSV or TSV file"
@@ -928,7 +928,7 @@ def build(
             mutations = merge_gtf_transcript_locations_into_cosmic_csv(mutations, gtf, gtf_transcript_id_column=gtf_transcript_id_column)
 
             columns_to_keep.extend(["start_transcript_position", "end_transcript_position", "strand"])
-            start, peaks_list = report_time_and_memory(process_name="Merged gtf", start=start, peaks_list=peaks_list, logger=logger, report=True)
+            start, peaks_list = report_time_and_memory(process_name="Merged gtf", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
         else:
             logger.warning("Transcript positions already present in the input mutations file. Skipping GTF file merging.")
 
@@ -988,7 +988,7 @@ def build(
     mutations["beginning_mutation_overlap_with_right_flank"] = 0
     mutations["end_mutation_overlap_with_left_flank"] = 0
 
-    start, peaks_list = report_time_and_memory(process_name="Extracted flank regions", start=start, peaks_list=peaks_list, logger=logger, report=True)
+    start, peaks_list = report_time_and_memory(process_name="Extracted flank regions", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
 
     # Rules for shaving off kmer ends - r1 = left flank, r2 = right flank, d = deleted portion, i = inserted portion
     # Substitution: N/A
@@ -1034,7 +1034,7 @@ def build(
         mutations["updated_left_flank_start"] = mutations["updated_left_flank_start"].fillna(0).astype(int)
         mutations["updated_right_flank_end"] = mutations["updated_right_flank_end"].fillna(0).astype(int)
 
-        start, peaks_list = report_time_and_memory(process_name="Optimized flank regions", start=start, peaks_list=peaks_list, logger=logger, report=True)
+        start, peaks_list = report_time_and_memory(process_name="Optimized flank regions", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
 
     else:
         mutations["updated_left_flank_start"] = 0
@@ -1062,7 +1062,7 @@ def build(
             axis=1,
         )
 
-    start, peaks_list = report_time_and_memory(process_name="Created wt/mutant mutation-containing reference sequences", start=start, peaks_list=peaks_list, logger=logger, report=True)
+    start, peaks_list = report_time_and_memory(process_name="Created wt/mutant mutation-containing reference sequences", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
 
     if remove_seqs_with_wt_kmers:
         if verbose:
@@ -1081,7 +1081,7 @@ def build(
 
         mutations = mutations[~mutations["wt_fragment_and_mutant_fragment_share_kmer"]]
 
-        start, peaks_list = report_time_and_memory(process_name="Removed MCRSs with WT k-mers (even after flank optimization, if enabled)", start=start, peaks_list=peaks_list, logger=logger, report=True)
+        start, peaks_list = report_time_and_memory(process_name="Removed MCRSs with WT k-mers (even after flank optimization, if enabled)", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
 
     if update_df and store_full_sequences:
         columns_to_keep.extend(["wt_sequence_full", "mutant_sequence_full"])
@@ -1089,7 +1089,7 @@ def build(
         # Create full sequences (substitution and non-substitution)
         mutations["mutant_sequence_full"] = mutations["left_flank_region_full"] + mutations["mut_nucleotides"] + mutations["right_flank_region_full"]
 
-        start, peaks_list = report_time_and_memory(process_name="Stored mutant full sequences in df", start=start, peaks_list=peaks_list, logger=logger, report=True)
+        start, peaks_list = report_time_and_memory(process_name="Stored mutant full sequences in df", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
 
     if min_seq_len:
         # Calculate k-mer lengths (where k=w) and report the distribution
@@ -1102,7 +1102,7 @@ def build(
         if verbose:
             logger.info(f"Removed {rows_less_than_minimum} mutant kmers with length less than {min_seq_len}...")
 
-        start, peaks_list = report_time_and_memory(process_name="Removed short sequences", start=start, peaks_list=peaks_list, logger=logger, report=True)
+        start, peaks_list = report_time_and_memory(process_name="Removed short sequences", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
 
     if max_ambiguous is not None:
         # Get number of 'N' or 'n' occuring in the sequence
@@ -1208,7 +1208,7 @@ def build(
                 axis=1,
             )
         
-        start, peaks_list = report_time_and_memory(process_name="Translated mutations", start=start, peaks_list=peaks_list, logger=logger, report=True)
+        start, peaks_list = report_time_and_memory(process_name="Translated mutations", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
 
     mutations = mutations[columns_to_keep]
 
@@ -1270,7 +1270,7 @@ def build(
 
             mutations = mutations_temp
 
-        start, peaks_list = report_time_and_memory(process_name="Merged by identical MCRSs", start=start, peaks_list=peaks_list, logger=logger, report=True)
+        start, peaks_list = report_time_and_memory(process_name="Merged by identical MCRSs", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
 
         if "mutant_sequence_and_rc_tuple" in mutations.columns:
             mutations = mutations.drop(columns=["mutant_sequence_and_rc_tuple"])
@@ -1313,7 +1313,7 @@ def build(
 
     if id_to_header_csv_out:
         mutations[["mcrs_id", "header"]].to_csv(id_to_header_mapping_out, index=False)  # TODO: change to txt
-        start, peaks_list = report_time_and_memory(process_name="Saved ID to header file", start=start, peaks_list=peaks_list, logger=logger, report=True)
+        start, peaks_list = report_time_and_memory(process_name="Saved ID to header file", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
 
     if update_df:  # use update_df_out if present,
         if not update_df_out:
@@ -1327,7 +1327,7 @@ def build(
         logger.warning("File size can be very large if the number of mutations is large.")
         mutations.to_csv(update_df_out, index=False)
         print(f"Updated mutation info has been saved to {update_df_out}")
-        start, peaks_list = report_time_and_memory(process_name="Saved updated df", start=start, peaks_list=peaks_list, logger=logger, report=True)
+        start, peaks_list = report_time_and_memory(process_name="Saved updated df", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
 
     if len(mutations) > 0:
         mutations["fasta_format"] = ">" + mutations["mcrs_id"] + "\n" + mutations["mutant_sequence"] + "\n"
@@ -1356,7 +1356,7 @@ def build(
             with open(fasta_out_wt, "w") as fasta_file:
                 fasta_file.write("".join(mutations_with_exactly_1_wt_sequence_per_row["fasta_format_wt"].values))
 
-        start, peaks_list = report_time_and_memory(process_name="Wrote fasta file(s)", start=start, peaks_list=peaks_list, logger=logger, report=True)
+        start, peaks_list = report_time_and_memory(process_name="Wrote fasta file(s)", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
 
         if verbose:
             logger.info(f"FASTA file containing mutated sequences created at {fasta_out}.")
@@ -1373,7 +1373,7 @@ def build(
                 mutation_reference_file_t2g_wt = fasta_out_wt.replace(".fa", "_t2g.txt")
                 create_mutant_t2g(fasta_out_wt, mutation_reference_file_t2g_wt)
 
-            start, peaks_list = report_time_and_memory(process_name="Wrote t2g(s)", start=start, peaks_list=peaks_list, logger=logger, report=True)
+            start, peaks_list = report_time_and_memory(process_name="Wrote t2g(s)", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
 
     # When out=None, return list of mutated seqs
     else:
@@ -1388,4 +1388,4 @@ def build(
         if len(all_mut_seqs) > 0:
             return all_mut_seqs
         
-    start, peaks_list = report_time_and_memory(start=start_overall, peaks_list=peaks_list, logger=logger, report=True, final_call=True)
+    start, peaks_list = report_time_and_memory(start=start_overall, peaks_list=peaks_list, logger=logger, report=True, final_call=True, dfs={"mutations": mutations}, cols=True)
