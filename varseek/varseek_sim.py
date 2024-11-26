@@ -237,6 +237,12 @@ def sim(
     filters.extend(["mutant_sequence_read_parent-isnotnull", "wt_sequence_read_parent-isnotnull"])
     filters = list(set(filters))
 
+    # TODO: stop hard-coding this
+    if "start_mutation_position_cdna" in mutation_metadata_df.columns:
+        mutation_metadata_df['start_position_for_which_read_contains_mutation_cdna'] = mutation_metadata_df['start_mutation_position_cdna'] - read_length + 1
+    if "start_mutation_position_genome" in mutation_metadata_df.columns:
+        mutation_metadata_df['start_position_for_which_read_contains_mutation_genome'] = mutation_metadata_df['start_mutation_position_genome'] - read_length + 1
+
     if filters:
         filtered_df = varseek.filter(
             mutation_metadata_df,
@@ -558,15 +564,18 @@ def sim(
     fasta_to_fastq(fasta_output_path_temp, fastq_output_path, add_noise=add_noise)
 
     # Read the contents of the files first
-    if fastq_parent_path and os.path.exists(fastq_parent_path) and os.path.getsize(fastq_parent_path) != 0:
+    if fastq_parent_path:
+        if not os.path.exists(fastq_parent_path) or os.path.getsize(fastq_parent_path) == 0:
+            # write to a new file
+            write_mode = "w"
+        else:
+            write_mode = "a"
         with open(fastq_output_path, "r") as new_file:
             file_content_new = new_file.read()
 
         # Now write both contents to read_fa_path
-        with open(fastq_parent_path, "a") as parent_file:
+        with open(fastq_parent_path, write_mode) as parent_file:
             parent_file.write(file_content_new)
-    else:
-        fastq_parent_path = fastq_output_path
 
     if read_df_parent is not None:
         if type(read_df_parent) == str:

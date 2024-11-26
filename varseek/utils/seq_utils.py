@@ -2393,19 +2393,31 @@ def append_row(read_df, header_value, sequence_value, start_position, strand):
         }
     )
 
-    return read_df.append(new_row, ignore_index=True)
+    return pd.concat([read_df, pd.DataFrame([new_row])], ignore_index=True)  # old (gives warning): return read_df.append(new_row, ignore_index=True)
 
 
 def build_random_genome_read_df(
     reference_fasta_file_path,
     mutation_metadata_df,
     read_df=None,
+    read_df_out=None,
+    fastq_output_path="random_reads.fq",
+    fastq_parent_path=None,
     n=10,
     read_length=150,
     input_type="transcriptome",
     strand=None,
+    add_noise=False
 ):
     # Collect all headers and sequences from the FASTA file
+    fasta_output_path_temp = fastq_output_path.replace(".fq", "_temp.fa")
+
+    # TODO: stop hard-coding this
+    if "start_mutation_position_cdna" in mutation_metadata_df.columns:
+        mutation_metadata_df['start_position_for_which_read_contains_mutation_cdna'] = mutation_metadata_df['start_mutation_position_cdna'] - read_length + 1
+    if "start_mutation_position_genome" in mutation_metadata_df.columns:
+        mutation_metadata_df['start_position_for_which_read_contains_mutation_genome'] = mutation_metadata_df['start_mutation_position_genome'] - read_length + 1
+
     fasta_entries = list(read_fasta(reference_fasta_file_path))
     if read_df is None:
         column_names = [
@@ -2435,49 +2447,73 @@ def build_random_genome_read_df(
 
     i = 0
     num_loops = 0
-    while i < n:
-        # Choose a random entry (header, sequence) from the FASTA file
-        random_transcript, random_sequence = random.choice(fasta_entries)
+    with open(fasta_output_path_temp, "a") as fa_file:
+        while i < n:
+            # Choose a random entry (header, sequence) from the FASTA file
+            random_transcript, random_sequence = random.choice(fasta_entries)
 
-        random_transcript = random_transcript.split()[0]
-        if input_type == "transcriptome":
-            random_transcript = random_transcript.split(".")[0]
+            random_transcript = random_transcript.split()[0]
+            if input_type == "transcriptome":
+                random_transcript = random_transcript.split(".")[0]
 
-        # Choose a random integer between 1 and the sequence length
-        start_position = random.randint(1, len(random_sequence))
+            # Choose a random integer between 1 and the sequence length
+            start_position = random.randint(1, len(random_sequence))
 
-        filtered_mutation_metadata_df = mutation_metadata_df.loc[
-            mutation_metadata_df[fasta_entry_column] == random_transcript
-        ]
+            filtered_mutation_metadata_df = mutation_metadata_df.loc[
+                mutation_metadata_df[fasta_entry_column] == random_transcript
+            ]
 
-        ranges = list(
-            zip(
-                filtered_mutation_metadata_df[mcrs_start_column],
-                filtered_mutation_metadata_df[mcrs_end_column],
-            )
-        )  # if a mutation spans from positions 950-955 and read length=150, then a random sequence between 801-955 will contain the mutation, and thus should be the range of exclusion here
+            ranges = list(
+                zip(
+                    filtered_mutation_metadata_df[mcrs_start_column],
+                    filtered_mutation_metadata_df[mcrs_end_column],
+                )
+            )  # if a mutation spans from positions 950-955 and read length=150, then a random sequence between 801-955 will contain the mutation, and thus should be the range of exclusion here
 
-        if not is_in_ranges(start_position, ranges):
-            end_position = start_position + read_length
-            if strand is None:
-                selected_strand = random.choice(["f", "r"])
-            else:
-                selected_strand = strand
+            if not is_in_ranges(start_position, ranges):
+                end_position = start_position + read_length
+                if strand is None:
+                    selected_strand = random.choice(["f", "r"])
+                else:
+                    selected_strand = strand
 
-            if selected_strand == "r":
-                # start_position, end_position = len(random_sequence) - end_position, len(random_sequence) - start_position  # I am keeping adding the "f/r" in header so I don't need this
-                random_sequence = reverse_complement(random_sequence)
+                if selected_strand == "r":
+                    # start_position, end_position = len(random_sequence) - end_position, len(random_sequence) - start_position  # I am keeping adding the "f/r" in header so I don't need this
+                    random_sequence = reverse_complement(random_sequence)
 
-            header = f"{random_transcript}:{start_position}_{end_position}_random{selected_strand}W"
-            read_df = append_row(
-                read_df, header, random_sequence, start_position, selected_strand
-            )
-            i += 1
+                header = f"{random_transcript}:{start_position}_{end_position}_random{selected_strand}W"
+                read_df = append_row(
+                    read_df, header, random_sequence, start_position, selected_strand
+                )
 
-        num_loops += 1
-        if num_loops > n * 100:
-            print(f"Exiting after only {i} mutations added due to long while loop")
-            break
+                fa_file.write(f">{header}\n{random_sequence}\n")
+
+                i += 1
+
+            num_loops += 1
+            if num_loops > n * 100:
+                print(f"Exiting after only {i} mutations added due to long while loop")
+                break
+
+    fasta_to_fastq(fasta_output_path_temp, fastq_output_path, add_noise=add_noise)
+
+    os.remove(fasta_output_path_temp)
+    
+    if fastq_parent_path:
+        if not os.path.exists(fastq_parent_path) or os.path.getsize(fastq_parent_path) == 0:
+            # write to a new file
+            write_mode = "w"
+        else:
+            write_mode = "a"
+        with open(fastq_output_path, "r") as new_file:
+            file_content_new = new_file.read()
+
+        # Now write both contents to read_fa_path
+        with open(fastq_parent_path, write_mode) as parent_file:
+            parent_file.write(file_content_new)
+
+    if read_df_out is not None:
+        read_df.to_csv(read_df_out, index=False)
 
     return read_df
 
@@ -5520,9 +5556,7 @@ def run_fastqc_and_multiqc(rnaseq_fastq_files_quality_controlled, fastqc_out_dir
         print(e)
 
 
-def replace_low_quality_bases_with_N_list(
-    rnaseq_fastq_files, minimum_base_quality, seqtk
-):
+def replace_low_quality_bases_with_N_list(rnaseq_fastq_files, minimum_base_quality, seqtk="seqtk", delete_original_files=False):
     rnaseq_fastq_files_replace_low_quality_bases_with_N = []
     for i in range(len(rnaseq_fastq_files)):
         rnaseq_fastq_file = rnaseq_fastq_files[i]
@@ -5530,8 +5564,9 @@ def replace_low_quality_bases_with_N_list(
             rnaseq_fastq_file, seqtk=seqtk, minimum_base_quality=minimum_base_quality
         )
         rnaseq_fastq_files_replace_low_quality_bases_with_N.append(rnaseq_fastq_file)
-        # # delete the file in rnaseq_fastq_files[i]
-        # os.remove(rnaseq_fastq_files[i])
+        # delete the file in rnaseq_fastq_files[i]
+        if delete_original_files:
+            os.remove(rnaseq_fastq_files[i])
     return rnaseq_fastq_files_replace_low_quality_bases_with_N
 
 

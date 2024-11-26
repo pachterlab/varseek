@@ -416,12 +416,14 @@ def download_entex_fastq_links(entex_df, tissue = None, data_download_base = "."
     print("downloading fastq files")
     if tissue:
         entex_df_tissue_selection = entex_df.loc[entex_df['tissue'] == tissue].reset_index(drop=True)
+    else:
+        entex_df_tissue_selection = entex_df
 
     # iterate through rows of entex_df_tissue_selection
     number_of_samples = len(entex_df_tissue_selection)
     for index, row in entex_df_tissue_selection.iterrows():
         tissue_underscore_separated = row['tissue'].replace(" ", "_")
-        sample_base_dir = os.path.join(data_download_base, row['experiment_id'], tissue_underscore_separated)
+        sample_base_dir = os.path.join(data_download_base, tissue_underscore_separated, row['experiment_id'])
         for i in [1, 2]:
             pair_dir = f"{sample_base_dir}/pair{i}"
             os.makedirs(pair_dir, exist_ok=True)
@@ -429,9 +431,13 @@ def download_entex_fastq_links(entex_df, tissue = None, data_download_base = "."
             link = row[f'fastq_link_pair_{i}']
 
             download_command = f"wget -c --tries=20 --retry-connrefused -P {pair_dir} {link}"
-            try:
-                print(f"Downloading sample {index + 1}/{number_of_samples}, pair {i}/2 to {pair_dir}")
-                result = subprocess.run(download_command, shell=True, check=True)
-            except subprocess.CalledProcessError as e:
-                print(f"Error downloading {link} to {pair_dir}")
-                print(e)
+
+            if not os.path.exists(f"{pair_dir}/{link.split('/')[-1]}"):
+                try:
+                    print(f"Downloading sample {index + 1}/{number_of_samples}, pair {i}/2 to {pair_dir}")
+                    result = subprocess.run(download_command, shell=True, check=True)
+                except subprocess.CalledProcessError as e:
+                    print(f"Error downloading {link} to {pair_dir}")
+                    print(e)
+            else:
+                print(f"File {pair_dir}/{link.split('/')[-1]} already exists, skipping download")
