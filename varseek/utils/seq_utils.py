@@ -23,6 +23,7 @@ import anndata as ad
 import scanpy as sc
 import pysam
 
+import scipy.sparse as sp
 from scipy.sparse import csr_matrix
 from bisect import bisect_left
 from sklearn.metrics import euclidean_distances
@@ -6078,7 +6079,6 @@ def match_adata_orders(adata, adata_ref):
     return adata_padded
 
 def make_vaf_matrix(adata_mutant_mcrs_path, adata_wt_mcrs_path, adata_vaf_output = None, mutant_vcf = None):
-    import scipy.sparse as sp
     adata_mutant_mcrs = sc.read_h5ad(adata_mutant_mcrs_path)
     adata_wt_mcrs = sc.read_h5ad(adata_wt_mcrs_path)
 
@@ -6557,3 +6557,98 @@ def merge_gatk_and_cosmic(df_mut, cosmic_df, exact_position = False):
         merged_df = pd.concat([sub_delins_merged, del_merged, ins_merged], ignore_index=True)
 
         return merged_df
+    
+
+def create_mutated_gene_count_matrix_from_mutation_count_matrix(adata, sum_strategy = "total_reads", merge_strategy = "all", use_binary_matrix = False):
+    """
+    This function takes a mutation count matrix and aggregates the counts for mutations belonging to the same gene. The function assumes that the AnnData object has the following columns in adata.var:
+    - gene_name_set_string: a string containing a semi-colon separated list of gene names for each mutation
+    - mcrs_id: a unique identifier for each mutation
+
+    Parameters
+    ----------
+    adata : AnnData
+
+    merge_strategy : str
+        The strategy to use when merging mutations. The following options are available:
+        - 'all': merge based on all genes matching (i.e., gene_name_set_string)
+        - 'any': merge based on any genes mapping (i.e., any match in gene_name_set)
+    sum_strategy: str
+        The strategy for summing MCRSs - options:
+        - 'total_reads': sum the total reads for each MCRS
+        - 'unique_mutations': sum the number of unique mutations detected for a gene
+    """
+    
+    if sum_strategy == "unique_mutations":
+        adata.X = (adata.X > 0).astype(int)  # convert to binary matrix
+        count_column = "mutation_count"
+    else:
+        count_column = "mcrs_count"
+    
+    if merge_strategy == "all":
+        gene_column = 'gene_name_set_string'
+    elif merge_strategy == "any":  # TODO: untested for merge_strategy == "any"
+        gene_column = 'gene_name_set'
+        gene_names = adata.var[gene_column]
+        mcrs_ids = adata.var_names
+        # Create a graph where each node is an mcrs_id
+        import networkx as nx
+        graph = nx.Graph()
+        for i, genes in enumerate(gene_names):
+            for j in range(i + 1, len(gene_names)):
+                if set(genes).intersection(gene_names[j]):
+                    graph.add_edge(mcrs_ids[i], mcrs_ids[j])
+
+        # Find connected components (each component is a group of columns to merge)
+        components = list(nx.connected_components(graph))
+
+        # Step 2: Create a mapping for new groups
+        new_var = []
+        group_mapping = {}
+        for group_id, component in enumerate(components):
+            # Combine gene names and mcrs_ids for the group
+            group_genes = sorted(set.union(*(set(gene_names[mcrs_ids.tolist().index(mcrs)]) for mcrs in component)))
+            group_mcrs_ids = sorted(component)
+
+            # Use a representative name for the group
+            group_name = ";".join(group_genes)
+            for mcrs in component:
+                group_mapping[mcrs] = group_name
+
+            # Store new metadata
+            new_var.append({'gene_name_set_string': group_name, 'mcrs_id_list': group_mcrs_ids})
+    
+    # Step 1: Extract mutation-gene mappings
+    gene_mapping = adata.var[gene_column]  # because I am using gene_name_set_string, this means that any merged mcrs's with different gene names will not be included in merging/summing
+    mcrs_id_mapping = adata.var['mcrs_id']
+
+    # Step 2: Convert your data to a DataFrame for easier manipulation
+    if sp.issparse(adata.X):
+        data_df = pd.DataFrame.sparse.from_spmatrix(adata.X, index=adata.obs_names, columns=adata.var_names)
+    else:
+        data_df = pd.DataFrame(adata.X, index=adata.obs_names, columns=adata.var_names)
+
+    # Step 3: Add gene mapping to the DataFrame for aggregation
+    if merge_strategy == "all":
+        data_df.columns = gene_mapping.values
+    elif merge_strategy == "any":
+        data_df.columns = [group_mapping[col] for col in data_df.columns]
+    
+    mcrs_id_df = pd.Series(mcrs_id_mapping.values, index=adata.var_names).groupby(gene_mapping).agg(list)
+
+    # Step 4: Group by gene and sum across mutations belonging to the same gene
+    data_gene_df = data_df.groupby(axis=1, level=0).sum()
+
+    # Step 5: Convert the result back into an AnnData object
+    adata_gene = sc.AnnData(data_gene_df, obs=adata.obs.copy())
+    adata_gene.var_names = data_gene_df.columns  # Gene names
+
+    adata_gene.var[gene_column] = adata_gene.var_names  # make this a column
+    adata_gene.var['mcrs_id_list'] = mcrs_id_df.loc[data_gene_df.columns].values
+
+    if use_binary_matrix:
+        adata_gene.X = (adata_gene.X > 0).astype(int)
+
+    adata_gene.var[count_column] = adata_gene.X.sum(axis=0).A1 if hasattr(adata_gene.X, "A1") else np.asarray(adata_gene.X.sum(axis=0)).flatten()
+
+    return adata_gene

@@ -432,7 +432,7 @@ def info(
         total_genes_output_stat_file = f"{output_stat_folder}/total_genes_and_transcripts.txt"
         try:
             logger.info("Calculating total gene info")
-            calculate_total_gene_info(
+            mutation_metadata_df_exploded, columns_to_explode = calculate_total_gene_info(
                 mutation_metadata_df_exploded,
                 mcrs_id_column=mcrs_id_column,
                 output_stat_file=total_genes_output_stat_file,

@@ -162,3 +162,37 @@ technology_barcode_and_umi_dict = {
             "spacer_start": 0,  
             "spacer_end": 11},
 }
+
+
+# entex tissue, ccle primary_disease
+entex_to_ccle_map = {
+    # "Peyer's patch": xxxxxxx,
+    # "adrenal gland": xxxxxxx,
+    # "ascending aorta": xxxxxxx,
+    "body of pancreas": "Pancreatic Cancer",
+    "breast epithelium": "Breast Cancer",
+    "esophagus muscularis mucosa": 'Esophageal Cancer',
+    "esophagus squamous epithelium": "Esophageal Cancer",
+    # "gastrocnemius medialis": xxxxxxx,
+    "gastroesophageal sphincter": "Gastric Cancer",  # possibly esophageal
+    # "heart left ventricle": xxxxxxx,
+    "lower leg skin": "Skin Cancer",
+    # "omental fat pad": xxxxxxx,
+    "ovary": "Ovarian Cancer",
+    "prostate gland": "Prostate Cancer",
+    # "right atrium auricular region": xxxxxxx,
+    "right lobe of liver": "Liver Cancer",
+    "sigmoid colon": "Colon/Colorectal Cancer",
+    # "spleen": xxxxxxx,
+    "stomach": "Gastric Cancer",
+    # "subcutaneous adipose tissue": xxxxxxx,
+    "suprapubic skin": "Skin Cancer",
+    # "testis": xxxxxxx,
+    # "thoracic aorta": xxxxxxx,
+    "thyroid gland": "Thyroid Cancer",
+    # "tibial nerve": xxxxxxx,
+    "transverse colon": "Colon/Colorectal Cancer",
+    "upper lobe of left lung": 'Lung Cancer',
+    "uterus": "Endometrial/Uterine Cancer"
+    # "vagina": xxxxxxx,
+}

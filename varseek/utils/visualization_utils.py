@@ -735,6 +735,7 @@ def plot_items_descending_order(
     title="Title",
     save_path=None,
     figsize=(15, 7),
+    show=False
 ):
     # Plot the line plot
     plt.figure(figsize=figsize)
@@ -765,7 +766,9 @@ def plot_items_descending_order(
         plt.savefig(save_path, dpi=300)
 
     # Show the plot
-    plt.show()
+    if show:
+        plt.show()
+    
     plt.close()
 
 
