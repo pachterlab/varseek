@@ -3390,6 +3390,7 @@ def increment_adata_based_on_dlist_fns(
     mm=False,
     assay="bulk",
     bustools="bustools",
+    ignore_barcodes=False
 ):
     run_kb_count_dry_run(
         index="index.idx",
@@ -3410,6 +3411,7 @@ def increment_adata_based_on_dlist_fns(
             union=False,
             assay=assay,
             bustools=bustools,
+            ignore_barcodes=ignore_barcodes
         )
     else:
         bus_df = pd.read_csv(f"{kb_count_out}/bus_df.csv")
@@ -5361,6 +5363,7 @@ def decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_
     paired_end_suffix_length=2,
     assay="bulk",
     keep_only_insertions=True,
+    ignore_barcodes=False
 ):
     assert (
         split_Ns or paired_end_fastqs
@@ -5377,6 +5380,7 @@ def decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_
             union=False,
             assay=assay,
             bustools=bustools,
+            ignore_barcodes=ignore_barcodes
         )
     else:
         bus_df = pd.read_csv(f"{kb_count_out}/bus_df.csv")
@@ -5609,6 +5613,7 @@ def make_bus_df(
     assay="bulk",  # technology flag of kb
     parity="single",
     bustools="bustools",
+    ignore_barcodes=False
 ):
     print("loading in transcripts")
     with open(f"{kallisto_out}/transcripts.txt") as f:
@@ -5617,7 +5622,7 @@ def make_bus_df(
         )  # get transcript at index 0 with transcript[0], and index of transcript named "name" with transcript.index("name")
 
     transcripts.append("dlist")  # add dlist to the end of the list
-
+    
     if assay == "bulk" or "smartseq" in assay.lower():  # smartseq does not have barcodes
         print("loading in barcodes")
         with open(f"{kallisto_out}/matrix.sample.barcodes") as f:
@@ -5625,6 +5630,8 @@ def make_bus_df(
                 f.read().splitlines()
             )  # get transcript at index 0 with transcript[0], and index of transcript named "name" with transcript.index("name")
     else:
+        assert not ignore_barcodes, "ignore_barcodes is only supported for bulk RNA-seq data"
+        
         try:
             barcode_start = technology_barcode_and_umi_dict[assay]["barcode_start"]
             barcode_end = technology_barcode_and_umi_dict[assay]["barcode_end"]
@@ -5665,7 +5672,10 @@ def make_bus_df(
                 fastq_header_list = f.read().splitlines()
 
         if assay == "bulk" or "smartseq" in assay.lower():
-            barcode_list = barcodes[i]
+            if ignore_barcodes:
+                barcode_list = barcodes[0]
+            else:
+                barcode_list = barcodes[i]
         else:
             fq_dict = pyfastx.Fastq(fastq_file, build_index=True)
             barcode_list = [fq_dict[i].seq[barcode_start:barcode_end] for i in range(len(fq_dict))]
@@ -5740,6 +5750,9 @@ def make_bus_df(
         header=None,
         names=["barcode", "UMI", "EC", "count", "read_index"],
     )
+
+    if ignore_barcodes:
+        bus_df["barcode"] = barcodes[0]  # set all barcodes to the first barcode in barcodes list
 
     if not bus_txt_file_existed_originally:
         os.remove(bus_text_file)
@@ -5937,7 +5950,7 @@ def match_paired_ends_after_single_end_run(
 
 
 # TODO: unsure if this works for sc
-def adjust_mutation_adata_by_normal_gene_matrix(adata, kb_output_mutation, kb_output_standard, id_to_header_csv = None, mutation_metadata_csv = None, adata_output_path = None, t2g_mutation = None, t2g_standard = None, fastq_file_list = None, mm = False, union = False, assay = "bulk", parity = "single", bustools = "bustools"):
+def adjust_mutation_adata_by_normal_gene_matrix(adata, kb_output_mutation, kb_output_standard, id_to_header_csv = None, mutation_metadata_csv = None, adata_output_path = None, t2g_mutation = None, t2g_standard = None, fastq_file_list = None, mm = False, union = False, assay = "bulk", parity = "single", bustools = "bustools", ignore_barcodes=False):
     if not adata:
         adata = f"{kb_output_mutation}/counts_unfiltered/adata.h5ad"
     if type(adata) == str:
@@ -6003,8 +6016,17 @@ def adjust_mutation_adata_by_normal_gene_matrix(adata, kb_output_mutation, kb_ou
         )
     )
 
-    bus_df_mutation = bus_df_mutation.merge(bus_df_standard[['barcode', 'UMI', 'fastq_header', 'transcripts_standard']], on=['barcode', 'UMI', 'fastq_header'], how='left')
+    if ignore_barcodes:
+        columns_for_merging = ['UMI', 'fastq_header', 'transcripts_standard']
+        columns_for_merging_without_transcripts_standard = ['UMI', 'fastq_header']
+    else:
+        columns_for_merging = ['barcode', 'UMI', 'fastq_header', 'transcripts_standard']
+        columns_for_merging_without_transcripts_standard = ['barcode', 'UMI', 'fastq_header']
 
+    
+    bus_df_mutation = bus_df_mutation.merge(bus_df_standard[columns_for_merging], on=columns_for_merging_without_transcripts_standard, how='left', suffixes=('', '_standard'))  # keep barcode designations of mutation bus df (which aligns with the adata object)
+
+    # TODO: I think this might be the inverse logic in the "any" line
     bus_df_mutation['mcrs_matrix_received_a_count_from_a_read_that_aligned_to_a_different_gene'] = bus_df_mutation.apply(
         lambda row: (
             row['counted_in_count_matrix'] and

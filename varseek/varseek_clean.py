@@ -32,6 +32,7 @@ def clean(
     doublet_detection=None,
     remove_doublets=None,
     do_cpm_normalization=None,
+    ignore_barcodes=False,
     kb_count_out_normal_genome=None,
     adata_path_normal_genome=None,
     split_reads_by_Ns=False,
@@ -150,8 +151,40 @@ def clean(
 
     # if adjust_mutation_adata_by_normal_gene_matrix_information:
     #     adata = adjust_mutation_adata_by_normal_gene_matrix(
-    #         adata, kb_output_mutation=kb_count_out_mutant, kb_output_standard=kb_count_out_normal_genome, id_to_header_csv=id_to_header_csv, mutation_metadata_csv=mutation_metadata_df, adata_output_path=None, t2g_mutation=mcrs_t2g, t2g_standard=None, fastq_file_list=data_fastq, mm=mm, union=False, assay=assay, parity="single", bustools=bustools
+    #         adata, 
+    #         kb_output_mutation=kb_count_out_mutant, 
+    #         kb_output_standard=kb_count_out_normal_genome, 
+    #         id_to_header_csv=id_to_header_csv, 
+    #         mutation_metadata_csv=mutation_metadata_df, 
+    #         adata_output_path=None, 
+    #         t2g_mutation=mcrs_t2g, t2g_standard=None, 
+    #         fastq_file_list=data_fastq, 
+    #         mm=mm, 
+    #         union=False, 
+    #         assay=assay, 
+    #         parity="single", 
+    #         bustools=bustools,
+    #         ignore_barcodes=ignore_barcodes,
+    #         verbose=verbose
     #     )
+
+    if ignore_barcodes and adata.shape[0] > 1:
+        # Sum across barcodes (rows)
+        summed_data = adata.X.sum(axis=0)
+        
+        # Retain the first barcode
+        first_barcode = adata.obs_names[0]
+
+        # Create a new AnnData object
+        new_adata = anndata.AnnData(
+            X=summed_data.reshape(1, -1),  # Reshape to (1, n_features)
+            obs=adata.obs.iloc[[0]].copy(),  # Copy the first barcode's metadata
+            var=adata.var.copy()             # Copy the original feature metadata
+        )
+
+        # Update the obs_names to reflect the first barcode
+        new_adata.obs_names = [first_barcode]
+        adata = new_adata.copy()
 
     # set all count values below minimum_count_filter to 0
     if minimum_count_filter is not None:

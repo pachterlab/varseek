@@ -22,6 +22,21 @@ from scipy.sparse import csr_matrix
 
 from varseek.constants import complement, codon_to_amino_acid, mutation_pattern
 
+# Set global settings
+plt.rcParams.update({
+    'savefig.dpi': 450,             # Set resolution to 450 dpi
+    'font.family': 'Arial',         # Set font to Arial
+    'pdf.fonttype': 42,             # Embed fonts as TrueType (keeps text editable)
+    'ps.fonttype': 42,              # Same for PostScript files
+    'savefig.format': 'pdf',        # Default save format as PNG
+    'savefig.bbox': 'tight',        # Adjust bounding box to fit tightly
+    'figure.facecolor': 'white',    # Set figure background to white (common for RGB)
+    'savefig.transparent': False,   # Disable transparency
+})
+
+save_pdf_global = True if os.getenv('VARSEEK_SAVE_PDF') == "TRUE" else False
+dpi = 450
+
 
 def calculate_sensitivity_specificity(TP, TN, FP, FN):
     # Accuracy = (TP + TN) / (TP + TN + FP + FN)
@@ -106,7 +121,9 @@ def plot_histogram_notebook_1(
     )  # Grid lines for both major and minor ticks
 
     if output_plot_file:
-        plt.savefig(output_plot_file, format="png", dpi=300, bbox_inches="tight")
+        plt.savefig(output_plot_file, format="png", dpi=dpi, bbox_inches="tight")
+        if save_pdf_global:
+            plt.savefig(output_plot_file.replace(".png", ".pdf"), format="pdf", dpi=dpi)
 
     plt.show()
     plt.close()
@@ -131,7 +148,9 @@ def plot_histogram_of_nearby_mutations_7_5(
     plt.tight_layout()
 
     if output_file:
-        plt.savefig(output_file, format="png", dpi=300)
+        plt.savefig(output_file, format="png", dpi=dpi)
+        if save_pdf_global:
+            plt.savefig(output_file.replace(".png", ".pdf"), format="pdf", dpi=dpi)
 
     plt.show()
     plt.close()
@@ -427,7 +446,9 @@ def create_stratified_metric_bar_plot(
     if out_path is not None:
         if out_path == True:
             out_path = f"{y_metric}_vs_{x_stratification}.png"
-        plt.savefig(out_path, bbox_inches="tight")
+        plt.savefig(out_path, bbox_inches="tight", dpi=dpi)
+        if save_pdf_global:
+            plt.savefig(out_path.replace(".png", ".pdf"), format="pdf", dpi=dpi)
 
     plt.show()
     plt.close()
@@ -561,7 +582,9 @@ def plot_histogram(
 
     # Save or show the plot
     if out_path is not None:
-        plt.savefig(out_path, bbox_inches="tight")
+        plt.savefig(out_path, bbox_inches="tight", dpi=dpi)
+        if save_pdf_global:
+            plt.savefig(out_path.replace(".png", ".pdf"), format="pdf", dpi=dpi)
     else:
         plt.show()
         plt.close()
@@ -604,6 +627,8 @@ def synthetic_data_summary_plot(df, column, sort_ascending=True, out_path=None):
 
     if out_path is not None:
         plt.savefig(out_path)
+        if save_pdf_global:
+            plt.savefig(out_path.replace(".png", ".pdf"), format="pdf", dpi=dpi)
 
     # Show the plot
     plt.show()
@@ -622,7 +647,9 @@ def plot_basic_bar_plot_from_dict(my_dict, y_axis, log_scale=False, output_file=
     plt.tight_layout()
 
     if output_file:
-        plt.savefig(output_file, format="png", dpi=300)
+        plt.savefig(output_file, format="png", dpi=dpi)
+        if save_pdf_global:
+            plt.savefig(output_file.replace(".png", ".pdf"), format="pdf", dpi=dpi)
 
     plt.show()
     plt.close()
@@ -653,7 +680,9 @@ def plot_descending_bar_plot(
     plt.tight_layout()
 
     if output_file:
-        plt.savefig(output_file, format="png", dpi=300)
+        plt.savefig(output_file, format="png", dpi=dpi)
+        if save_pdf_global:
+            plt.savefig(output_file.replace(".png", ".pdf"), format="pdf", dpi=dpi)
 
     plt.show()
     plt.close()
@@ -719,7 +748,9 @@ def plot_kat_histogram(kat_hist, out_path=None):
     plt.title("55-mer Spectra for random_sequences.fasta")
 
     # Save the plot
-    plt.savefig(out_path)
+    plt.savefig(out_path, format="png", dpi=dpi)
+    if save_pdf_global:
+        plt.savefig(out_path.replace(".png", ".pdf"), format="pdf", dpi=dpi)
 
     # Display the plot
     plt.show()
@@ -763,7 +794,9 @@ def plot_items_descending_order(
 
     # Save the plot
     if save_path:
-        plt.savefig(save_path, dpi=300)
+        plt.savefig(save_path, dpi=dpi)
+        if save_pdf_global:
+            plt.savefig(save_path.replace(".png", ".pdf"), format="pdf", dpi=dpi)
 
     # Show the plot
     if show:
@@ -790,7 +823,10 @@ def plot_scree(adata, output_plot_file=None):
     plt.title("Scree Plot")
     if output_plot_file:
         os.makedirs(os.path.dirname(output_plot_file), exist_ok=True)
-        plt.savefig(output_plot_file)
+        plt.savefig(output_plot_file, format="png", dpi=dpi)
+        if save_pdf_global:
+            plt.savefig(output_plot_file.replace(".png", ".pdf"), format="pdf", dpi=dpi)
+
     plt.show()
     plt.close()
 
@@ -831,7 +867,9 @@ def plot_loading_contributions(
     plt.gca().invert_yaxis()  # Invert Y-axis for descending order
     if output_plot_file:
         os.makedirs(os.path.dirname(output_plot_file), exist_ok=True)
-        plt.savefig(output_plot_file)
+        plt.savefig(output_plot_file, format="png", dpi=dpi)
+        if save_pdf_global:
+            plt.savefig(output_plot_file.replace(".png", ".pdf"), format="pdf", dpi=dpi)
     if show:
         plt.show()
     plt.close()
@@ -913,6 +951,8 @@ def plot_knn_tissue_frequencies(
     plt.xticks(rotation=45)
     if output_plot_file:
         plt.savefig(output_plot_file)
+        if save_pdf_global:
+            plt.savefig(output_plot_file.replace(".png", ".pdf"), format="pdf", dpi=dpi)
     plt.show()
     plt.close()
 
@@ -931,6 +971,11 @@ def plot_ascending_bar_plot_of_cluster_distances(
     plt.ylabel("Distance to Unknown Sample")
     plt.title("Distance from Unknown Sample to Each Cluster Centroid (Ascending Order)")
     plt.xticks(rotation=45)
+    if output_plot_file:
+        plt.savefig(output_plot_file, format="png", dpi=dpi)
+        if save_pdf_global:
+            plt.savefig(output_plot_file.replace(".png", ".pdf"), format="pdf", dpi=dpi)
+            
     plt.show()
     plt.close()
 
@@ -946,7 +991,10 @@ def plot_jaccard_bar_plot(tissues, jaccard_values, output_plot_file=None):
     plt.title("Jaccard Index for Each Tissue")
     plt.xticks(rotation=45)
     if output_plot_file:
-        plt.savefig(output_plot_file)
+        plt.savefig(output_plot_file, format="png", dpi=dpi)
+        if save_pdf_global:
+            plt.savefig(output_plot_file.replace(".png", ".pdf"), format="pdf", dpi=dpi)
+
     plt.show()
     plt.close()
 

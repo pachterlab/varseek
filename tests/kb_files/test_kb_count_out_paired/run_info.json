@@ -9,6 +9,6 @@
 	"kallisto_version": "0.51.1",
 	"index_version": 13,
 	"k-mer length": 31,
-	"start_time": "Fri Nov 15 16:50:18 2024",
-	"call": "/home/jrich/miniconda3/envs/varseek2/lib/python3.10/site-packages/kb_python/bins/linux/kallisto/kallisto bus -i /home/jrich/Desktop/varseek/test_index.idx -o /home/jrich/Desktop/varseek/test_kb_count_out_paired -x BULK -t 8 --num --paired /home/jrich/Desktop/varseek/test_reads1.fq /home/jrich/Desktop/varseek/test_reads2.fq"
+	"start_time": "Mon Dec  2 19:02:45 2024",
+	"call": "/home/jrich/miniconda3/envs/varseek2/lib/python3.10/site-packages/kb_python/bins/linux/kallisto/kallisto bus -i /home/jrich/Desktop/varseek/tests/kb_files/index_test.idx -o /home/jrich/Desktop/varseek/tests/kb_files/test_kb_count_out_paired -x BULK -t 8 --num --paired /home/jrich/Desktop/varseek/tests/kb_files/reads1_test.fq /home/jrich/Desktop/varseek/tests/kb_files/reads2_test.fq"
 }

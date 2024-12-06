@@ -289,6 +289,7 @@ def build(
     optimize_flanking_regions: bool = False,
     remove_seqs_with_wt_kmers: bool = False,
     max_ambiguous: Optional[int] = None,
+    required_insertion_overlap_length: Union[int, str, None] = None,
     merge_identical: bool = False,
     merge_identical_rc: bool = False,
     keep_original_headers: bool = False,
@@ -372,6 +373,7 @@ def build(
                                    If optimize_flanking_regions=True, only sequences for which a wildtpye kmer is still present after optimization will be removed.
                                    Default: False
     - max_ambiguous                (int) Maximum number of 'N' characters allowed in the output sequence. Default: None (no 'N' filter will be applied)
+    - required_insertion_overlap_length (int | str | None) Minimum number of nucleotides that must overlap between the inserted sequence and the flanking regions. Default: No checking. If "all", then require the entire insertion and the following nucleotide
     - merge_identical              (True/False) Whether to merge identical mutant sequences in the output (identical sequences will be merged by concatenating the sequence
                                    headers for all identical sequences). Default: False
     - merge_identical_rc           (True/False) Whether to merge identical sequences and their reverse complements in the output. Only effective when merge_identical is also True. Default: False
@@ -862,7 +864,7 @@ def build(
 
     # Create a mask for all non-substitution mutations
     non_substitution_mask = deletion_mask | delins_mask | insertion_mask | duplication_mask | inversion_mask
-    insertion_and_delins_mask = insertion_mask | delins_mask
+    insertion_and_delins_and_dup_and_inversion_mask = insertion_mask | delins_mask | duplication_mask | inversion_mask
 
     # Extract the WT nucleotides for the substitution rows from reference fasta (i.e., Ensembl)
     start_positions = mutations.loc[substitution_mask, "start_mutation_position"].values
@@ -976,13 +978,13 @@ def build(
 
     mutations["inserted_nucleotide_length"] = None
 
-    if insertion_and_delins_mask.any():
-        mutations.loc[insertion_and_delins_mask, "inserted_nucleotide_length"] = mutations.loc[insertion_and_delins_mask, "mut_nucleotides"].str.len()
+    if insertion_and_delins_and_dup_and_inversion_mask.any():
+        mutations.loc[insertion_and_delins_and_dup_and_inversion_mask, "inserted_nucleotide_length"] = mutations.loc[insertion_and_delins_and_dup_and_inversion_mask, "mut_nucleotides"].str.len()
 
         if insertion_size_limit is not None:
             mutations = mutations[
                 (mutations["inserted_nucleotide_length"].isna()) |  # Keep rows where it is None/NaN
-                (mutations["inserted_nucleotide_length"] <= insertion_size_limit)     # Keep rows where it's <= 5
+                (mutations["inserted_nucleotide_length"] <= insertion_size_limit)     # Keep rows where it's <= insertion_size_limit
             ]
 
     mutations["beginning_mutation_overlap_with_right_flank"] = 0
@@ -1009,13 +1011,22 @@ def build(
         mutations.loc[non_substitution_mask, "end_mutation_overlap_with_left_flank"] = mutations.loc[non_substitution_mask].apply(calculate_end_mutation_overlap_with_left_flank, axis=1)
 
         # for insertions and delins, make sure I see at bare minimum the full insertion context and the subseqeuent nucleotide - eg if I have c.2_3insA to become ACGTT to ACAGTT, if I only check for ACAG, then I can't distinguosh between ACAGTT, ACAGGTT, ACAGGGTT, etc. (and there are more complex examples)
-        if insertion_and_delins_mask.any():  #* new as of 11/20/24
-            mutations.loc[insertion_and_delins_mask, "beginning_mutation_overlap_with_right_flank"] = np.maximum(
-                mutations.loc[insertion_and_delins_mask, "beginning_mutation_overlap_with_right_flank"], mutations.loc[insertion_and_delins_mask, "inserted_nucleotide_length"],
+        if required_insertion_overlap_length and insertion_and_delins_and_dup_and_inversion_mask.any():  #* new as of 11/20/24
+            if required_insertion_overlap_length == "all":
+                required_insertion_overlap_length = np.inf
+            
+            if required_insertion_overlap_length >= 2*w:
+                mutations = mutations[
+                    (mutations["inserted_nucleotide_length"].isna()) |  # Keep rows where it is None/NaN
+                    (mutations["inserted_nucleotide_length"] < 2*w)     # Keep rows where it's < 2*w
+                ]
+            
+            mutations.loc[insertion_and_delins_and_dup_and_inversion_mask, "beginning_mutation_overlap_with_right_flank"] = np.maximum(
+                mutations.loc[insertion_and_delins_and_dup_and_inversion_mask, "beginning_mutation_overlap_with_right_flank"], np.minimum(mutations.loc[insertion_and_delins_and_dup_and_inversion_mask, "inserted_nucleotide_length"], required_insertion_overlap_length),
             )
 
-            mutations.loc[insertion_and_delins_mask, "end_mutation_overlap_with_left_flank"] = np.maximum(
-                mutations.loc[insertion_and_delins_mask, "end_mutation_overlap_with_left_flank"], mutations.loc[insertion_and_delins_mask, "inserted_nucleotide_length"],
+            mutations.loc[insertion_and_delins_and_dup_and_inversion_mask, "end_mutation_overlap_with_left_flank"] = np.maximum(
+                mutations.loc[insertion_and_delins_and_dup_and_inversion_mask, "end_mutation_overlap_with_left_flank"], np.minimum(mutations.loc[insertion_and_delins_and_dup_and_inversion_mask, "inserted_nucleotide_length"], required_insertion_overlap_length),
             )
         
         # Calculate w-len(flank) (see above instructions)

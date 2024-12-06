@@ -60,7 +60,7 @@ def download_ccle_total(
     replace_low_quality_bases_with_N = False,
     minimum_base_quality_replace_with_N = 20,
     split_reads_by_Ns = False,
-    concatenate_fastq_files = False,
+    dont_concatenate_fastq_files = False,
     save_fastq_headers = False,
     save_fastq_files = False,
     max_retries = 5
@@ -204,7 +204,7 @@ def download_ccle_total(
 
     fastq_files = fastq_files_copy
 
-    if concatenate_fastq_files and len(fastq_files) > 1:
+    if not dont_concatenate_fastq_files and len(fastq_files) > 1:
         print(f"Concatenating fastq files for sample {sample}")
         fastq_files = concatenate_fastqs(*fastq_files)
         fastq_files_total.append(fastq_files)
@@ -257,7 +257,7 @@ def main(args):
     replace_low_quality_bases_with_N = args.replace_low_quality_bases_with_N
     minimum_base_quality_replace_with_N = args.minimum_base_quality_replace_with_N
     split_reads_by_Ns = args.split_reads_by_Ns
-    concatenate_fastq_files = args.concatenate_fastq_files
+    dont_concatenate_fastq_files = args.dont_concatenate_fastq_files
     save_fastq_headers = args.save_fastq_headers
     save_fastq_files = args.save_fastq_files
     max_retries = args.max_retries
@@ -328,7 +328,7 @@ def main(args):
                 replace_low_quality_bases_with_N=replace_low_quality_bases_with_N,
                 minimum_base_quality_replace_with_N=minimum_base_quality_replace_with_N,
                 split_reads_by_Ns=split_reads_by_Ns,
-                concatenate_fastq_files=concatenate_fastq_files,
+                dont_concatenate_fastq_files=dont_concatenate_fastq_files,
                 save_fastq_headers=save_fastq_headers,
                 save_fastq_files=save_fastq_files,
                 max_retries=max_retries
@@ -370,7 +370,7 @@ if __name__ == "__main__":
     parser.add_argument("--replace_low_quality_bases_with_N", action="store_true", help="Flag to replace low-quality bases with 'N'.")
     parser.add_argument("--minimum_base_quality_replace_with_N", type=int, default=20, help="Minimum base quality to replace with 'N' (default: 20).")
     parser.add_argument("--split_reads_by_Ns", action="store_true", help="Flag to split reads by 'N'.")
-    parser.add_argument("--concatenate_fastq_files", action="store_true", help="Concatenate fastqs (should always be done unless I plan on summing the adata matrix across all rows later).")
+    parser.add_argument("--dont_concatenate_fastq_files", action="store_true", help="Dont concatenate fastqs (should always be done unless I plan on summing the adata matrix across all rows later).")
     parser.add_argument("--save_fastq_headers", action="store_true", help="Flag to save fastq headers.")
     parser.add_argument("--save_fastq_files", action="store_true", help="Flag to not delete fastq files after processing.")
     parser.add_argument("--max_retries", type=int, default=20, help="Maximum number of retries for downloading files (default: 5).")
