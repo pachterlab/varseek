@@ -9,9 +9,10 @@ import requests
 random.seed(42)
 
 # Define parameters
-base_data_folder = "/Users/joeyrich/Documents/Caltech/Pachter/TCGA/data"
+base_data_folder = "/home/jrich/data/varseek_data/sequencing/bulk/tcga"
 trial = False
 number_of_samples_per_combination = 10
+cohort_metadata_file = os.path.join(base_data_folder, "cohort_metadata.tsv")
 
 # 12 cancer types
 primary_site_and_primary_diagnosis_tuple_list = [('bladder', 'transitional cell carcinoma'), ('breast', 'infiltrating duct carcinoma, nos'), ('bronchus and lung', 'squamous cell carcinoma, nos'), ('colon', 'adenocarcinoma, nos'), ('esophagus', 'adenocarcinoma, nos'), ('kidney', 'clear cell adenocarcinoma, nos'), ('liver and intrahepatic bile ducts', 'hepatocellular carcinoma, nos'), ('pancreas', 'infiltrating duct carcinoma, nos'), ('skin', 'malignant melanoma, nos'), ('stomach', 'adenocarcinoma, nos'), ('testis', 'seminoma, nos'), ('thyroid gland', 'papillary adenocarcinoma, nos')]  # primary sites without stages: ('brain', 'glioblastoma'), ('ovary', 'serous cystadenocarcinoma, nos'), ('prostate gland', 'adenocarcinoma, nos')
@@ -24,9 +25,12 @@ tissue_type_list = ['tumor', 'normal']
 experimental_strategy_and_workflow_type_tuple_list = [('RNA-Seq', 'STAR 2-Pass Transcriptome')]  # can add/replace with ('WXS', 'BWA with Mark Duplicates and BQSR'), ('WGS', 'BWA with Mark Duplicates and BQSR')
 data_category_and_data_format_tuple_list = [('sequencing reads', 'BAM')]  # can add/replace with ('simple nucleotide variation', 'VCF')  # can replace VCF with MAF or TSV (TSV only available for RNA-seq, not WGS/WXS)
 
+
+
+
 if trial:
     primary_site_and_primary_diagnosis_tuple_list = primary_site_and_primary_diagnosis_tuple_list[:1]
-    ajcc_pathologic_stage_list = [sum(ajcc_pathologic_stage_list, [])]
+    ajcc_pathologic_stage_list = {"stage": [item for sublist in ajcc_pathologic_stage_dict.values() for item in sublist]}
     tissue_type_list = tissue_type_list[:1]
     experimental_strategy_and_workflow_type_tuple_list = experimental_strategy_and_workflow_type_tuple_list[:1]
     data_category_and_data_format_tuple_list = data_category_and_data_format_tuple_list[:1]
@@ -35,7 +39,6 @@ if trial:
 endpoint = "https://api.gdc.cancer.gov/files"
 
 os.makedirs(base_data_folder, exist_ok=True)
-cohort_metadata_file = os.path.join(base_data_folder, "cohort_metadata.tsv")
 
 uuids = []
 uuid_to_output_folder_dict = {}

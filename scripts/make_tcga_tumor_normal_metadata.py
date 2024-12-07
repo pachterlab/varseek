@@ -5,7 +5,7 @@ import requests
 import json
 
 experimental_strategy = "RNA-Seq"  # RNA-Seq, WGS, WXS
-base_data_folder = "/Users/joeyrich/Documents/Caltech/Pachter/TCGA/data"
+base_data_folder = "/home/jrich/data/varseek_data/sequencing/bulk/tcga"
 
 
 matched_tumor_normal_metadata_file = os.path.join(base_data_folder, f"matched_tumor_normal_metadata_{experimental_strategy}.tsv")
@@ -110,3 +110,22 @@ if response.status_code == 200:
         
 else:
     print(f"Error: {response.status_code}, {response.text}")
+
+
+# RESULTS OF RNA-SEQ:  # in my notebook, I also group by stage for an even better understanding
+# [('bladder', 'transitional cell carcinoma'),  # 18 tumor-normal matches
+#  ('breast', 'infiltrating duct carcinoma, nos'), # 90 tumor-normal matches
+#  ('bronchus and lung', 'squamous cell carcinoma, nos'),  # 46 tumor-normal matches
+#  ('colon', 'adenocarcinoma, nos'),  # 24 tumor-normal matches
+#  ('esophagus', 'adenocarcinoma, nos'),  # 9 tumor-normal matches
+#  ('kidney', 'clear cell adenocarcinoma, nos'), # 72 tumor-normal matches
+#  ('liver and intrahepatic bile ducts', 'hepatocellular carcinoma, nos'),  # 49 tumor-normal matches
+#  ('pancreas', 'infiltrating duct carcinoma, nos'),  # 2 tumor-normal matches
+#  ('skin', 'malignant melanoma, nos'), 
+#  ('stomach', 'adenocarcinoma, nos'),  # 5 tumor-normal matches
+#  ('testis', 'seminoma, nos'), 
+#  ('thyroid gland', 'papillary adenocarcinoma, nos')  # 49 tumor-normal matches
+# ]
+
+# prostate, adenocarcinoma, nos: 51 tumor-normal matches
+# bronchus and lung, adenocarcinoma, nos: 42 tumor-normal matches

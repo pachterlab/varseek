@@ -143,7 +143,7 @@ def download_ccle_total(
 
     if trim_edges_off_reads:
         rnaseq_fastq_file_original, rnaseq_fastq_file_2_original = rnaseq_fastq_file, rnaseq_fastq_file_2
-        rnaseq_fastq_file, rnaseq_fastq_file_2 = trim_edges_and_adaptors_off_fastq_reads(filename = rnaseq_fastq_file, filename_r2 = rnaseq_fastq_file_2, filename_filtered = None, filename_filtered_r2 = None, cut_mean_quality = minimum_base_quality_trim_reads, qualified_quality_phred = None, unqualified_percent_limit = None, n_base_limit = None, length_required = k)
+        rnaseq_fastq_file, rnaseq_fastq_file_2 = trim_edges_and_adaptors_off_fastq_reads(filename = rnaseq_fastq_file, filename_r2 = rnaseq_fastq_file_2, filename_filtered = None, filename_filtered_r2 = None, cut_mean_quality = minimum_base_quality_trim_reads, qualified_quality_phred = 15, unqualified_percent_limit = 50, n_base_limit = None, length_required = k)
         fastq_files_total = [rnaseq_fastq_file_original, rnaseq_fastq_file_2_original, rnaseq_fastq_file, rnaseq_fastq_file_2]
         fastq_files = [rnaseq_fastq_file, rnaseq_fastq_file_2]
     else:

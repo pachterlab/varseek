@@ -5,7 +5,6 @@ samtools = "/home/jrich/miniconda3/envs/kvar/bin/samtools"
 input_bam_list = ['/home/jrich/data/varseek_data/trash/gatk_nov17/alignment/merged.bam']
 threads = 8
 
-# TODO: test this, and replace pysam with samtools if needed
 for input_bam in input_bam_list:
     bam_file_name = input_bam.split("/")[-1]
     output_dir = os.path.dirname(input_bam)
