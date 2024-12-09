@@ -195,7 +195,7 @@ def download_ccle_total(
             # else:
             #     contains_barcodes_or_umis = False
             print(f"Splitting reads by 'N' for {fastq_file}")
-            fastq_file = split_fastq_reads_by_N(fastq_file, minimum_sequence_length = k, contains_barcodes_or_umis = False)
+            fastq_file = split_fastq_reads_by_N(fastq_file, minimum_sequence_length = k, contains_barcodes_or_umis = False, seqtk=seqtk)
             fastq_files_total.append(fastq_file)
 
         fastq_files_copy.append(fastq_file)

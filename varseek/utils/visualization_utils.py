@@ -25,7 +25,7 @@ from varseek.constants import complement, codon_to_amino_acid, mutation_pattern
 # Set global settings
 plt.rcParams.update({
     'savefig.dpi': 450,             # Set resolution to 450 dpi
-    'font.family': 'Arial',         # Set font to Arial
+    'font.family': 'DejaVu Sans',   # Set font to Arial  # TODO: replace with Arial for Nature
     'pdf.fonttype': 42,             # Embed fonts as TrueType (keeps text editable)
     'ps.fonttype': 42,              # Same for PostScript files
     'savefig.format': 'pdf',        # Default save format as PNG

@@ -993,7 +993,7 @@ def trim_edges_of_fastq_reads_seqtk(
 
 
 def replace_low_quality_base_with_N(
-    filename, filename_filtered=None, seqtk="seqtk", minimum_base_quality=20
+    filename, filename_filtered=None, seqtk="seqtk", minimum_base_quality=13
 ):
     parts = filename.split(".", 1)
     if filename_filtered is None:
@@ -1002,7 +1002,7 @@ def replace_low_quality_base_with_N(
         seqtk,
         "seq",
         "-q",
-        str(minimum_base_quality),
+        str(minimum_base_quality),  # mask bases with quality lower than this value (<, NOT <=)
         "-n",
         "N",
         "-x",
@@ -1033,100 +1033,118 @@ def split_fastq_reads_by_N(
     output_fastq_file=None,
     minimum_sequence_length=31,
     technology="bulk",
-    contains_barcodes_or_umis = False  # set to False for bulk and for the paired file of any single-cell technology
+    contains_barcodes_or_umis = False,  # set to False for bulk and for the paired file of any single-cell technology
+    seqtk = "seqtk"
 ):
-    if "smartseq" in technology.lower():
-        barcode_key = "spacer"
-    else:
-        barcode_key = "barcode"
-    
-    if technology != "bulk" and contains_barcodes_or_umis:
-        if technology_barcode_and_umi_dict[technology][f"{barcode_key}_end"] is not None:
-            barcode_length = technology_barcode_and_umi_dict[technology][f"{barcode_key}_end"] - technology_barcode_and_umi_dict[technology][f"{barcode_key}tart"]
+    if technology == "bulk":  # use seqtk
+        split_reads_by_N_command = f"{seqtk} cutN -n 1 -p 1 {input_fastq_file} | sed '/^$/d' > {output_fastq_file}"
+        subprocess.run(split_reads_by_N_command, shell=True, check=True)
+        if minimum_sequence_length:
+            output_fastq_file_temp = f"{output_fastq_file}.tmp"
+            seqtk_filter_short_read_command = f"{seqtk} seq -L {minimum_sequence_length} {output_fastq_file} > {output_fastq_file_temp}"
+            try:
+                subprocess.run(seqtk_filter_short_read_command, shell=True, check=True)
+                # erase output_fastq_file, and rename output_fastq_file_temp to output_fastq_file
+                if os.path.exists(output_fastq_file_temp):
+                    os.remove(output_fastq_file)
+                    os.rename(output_fastq_file_temp, output_fastq_file)
+            except Exception as e:
+                print(f"Error: {e}")
+                print("seqtk seq did not work. Skipping minimum length filtering")
+                if os.path.exists(output_fastq_file_temp):
+                    os.remove(output_fastq_file_temp)
+    else:  # must copy barcode/umi to each read, so seqtk will not work here
+        if "smartseq" in technology.lower():
+            barcode_key = "spacer"
         else:
-            barcode_length = 0
-
-        if technology_barcode_and_umi_dict[technology]["umi_start"] is not None:
-            umi_length = technology_barcode_and_umi_dict[technology]["umi_end"] - technology_barcode_and_umi_dict[technology]["umi_start"]
-        else:
-            umi_length = 0
+            barcode_key = "barcode"
         
-        prefix_len = barcode_length + umi_length
-
-    prefix_len_original = prefix_len
-    
-    parts = input_fastq_file.split(".", 1)
-
-    is_gzipped = ".gz" in parts[1]
-    open_func = gzip.open if is_gzipped else open
-
-    if output_fastq_file is None:
-        output_fastq_file = f"{parts[0]}_split_by_Ns.{parts[1]}"
-
-    regex = re.compile(r"[^Nn]+")
-
-    with open_func(output_fastq_file, "wt") as out_file:
-        for header, sequence, plus_line, quality in read_fastq(input_fastq_file):
-            header = header[1:]  # Remove '@' character
-            if technology != "bulk" and contains_barcodes_or_umis:
-                if technology == "SMARTSEQ3":
-                    sc_read_has_index_and_umi = check_if_read_has_index_and_umi_smartseq3(sequence)  # TODO: write this
-                    if not sc_read_has_index_and_umi:
-                        prefix_len = 0
-
-                barcode_and_umi_sequence = sequence[:prefix_len]
-                sequence_without_barcode_and_umi = sequence[prefix_len:]
-                barcode_and_umi_quality = quality[:prefix_len]
-                quality_without_barcode_and_umi = quality[prefix_len:]
-                
-                prefix_len = prefix_len_original
+        if technology != "bulk" and contains_barcodes_or_umis:
+            if technology_barcode_and_umi_dict[technology][f"{barcode_key}_end"] is not None:
+                barcode_length = technology_barcode_and_umi_dict[technology][f"{barcode_key}_end"] - technology_barcode_and_umi_dict[technology][f"{barcode_key}tart"]
             else:
-                sequence_without_barcode_and_umi = sequence
-                quality_without_barcode_and_umi = quality
+                barcode_length = 0
 
-            # Use regex to find all runs of non-"N" characters and their positions
-            matches = list(regex.finditer(sequence_without_barcode_and_umi))
+            if technology_barcode_and_umi_dict[technology]["umi_start"] is not None:
+                umi_length = technology_barcode_and_umi_dict[technology]["umi_end"] - technology_barcode_and_umi_dict[technology]["umi_start"]
+            else:
+                umi_length = 0
+            
+            prefix_len = barcode_length + umi_length
 
-            # Extract sequence parts and their positions
-            split_sequence = [match.group() for match in matches]
-            positions = [(match.start(), match.end()) for match in matches]
+        prefix_len_original = prefix_len
+        
+        parts = input_fastq_file.split(".", 1)
 
-            # Use the positions to split the quality scores
-            split_qualities = [
-                quality_without_barcode_and_umi[start:end] for start, end in positions
-            ]
+        is_gzipped = ".gz" in parts[1]
+        open_func = gzip.open if is_gzipped else open
 
-            if technology != "bulk" and contains_barcodes_or_umis:
-                split_sequence = [
-                    barcode_and_umi_sequence + sequence for sequence in split_sequence
-                ]
-                split_qualities = [
-                    barcode_and_umi_quality + quality for quality in split_qualities
-                ]
+        if output_fastq_file is None:
+            output_fastq_file = f"{parts[0]}_split_by_Ns.{parts[1]}"
 
-            number_of_subsequences = len(split_sequence)
-            for i in range(number_of_subsequences):
-                if len(split_sequence[i]) < minimum_sequence_length:
-                    continue
-                if number_of_subsequences == 1:
-                    new_header_prefix = ""
+        regex = re.compile(r"[^Nn]+")
+
+        with open_func(output_fastq_file, "wt") as out_file:
+            for header, sequence, plus_line, quality in read_fastq(input_fastq_file):
+                header = header[1:]  # Remove '@' character
+                if technology != "bulk" and contains_barcodes_or_umis:
+                    if technology == "SMARTSEQ3":
+                        sc_read_has_index_and_umi = check_if_read_has_index_and_umi_smartseq3(sequence)  # TODO: write this
+                        if not sc_read_has_index_and_umi:
+                            prefix_len = 0
+
+                    barcode_and_umi_sequence = sequence[:prefix_len]
+                    sequence_without_barcode_and_umi = sequence[prefix_len:]
+                    barcode_and_umi_quality = quality[:prefix_len]
+                    quality_without_barcode_and_umi = quality[prefix_len:]
+                    
+                    prefix_len = prefix_len_original
                 else:
-                    new_header_prefix = f"nsplit{i}__"
+                    sequence_without_barcode_and_umi = sequence
+                    quality_without_barcode_and_umi = quality
 
-                new_header = f"@{new_header_prefix}{header}"
-
-                if plus_line == "+":
-                    new_plus_line = plus_line
+                # Use regex to find all runs of non-"N" characters and their positions
+                matches = list(regex.finditer(sequence_without_barcode_and_umi))
+                if len(matches) == 1:
+                    start = 1
+                    end = matches[0].end()
+                    new_header = f"@{header}:{start}-{end}"
+                    out_file.write(
+                        f"{new_header}\n{sequence}\n{plus_line}\n{quality}\n"
+                    )
                 else:
-                    new_plus_line = f"{new_header_prefix}{plus_line}"
+                    # Extract sequence parts and their positions
+                    split_sequence = [match.group() for match in matches]
+                    positions = [(match.start(), match.end()) for match in matches]
 
-                out_file.write(
-                    f"{new_header}\n{split_sequence[i]}\n{new_plus_line}\n{split_qualities[i]}\n"
-                )
+                    # Use the positions to split the quality scores
+                    split_qualities = [
+                        quality_without_barcode_and_umi[start:end] for start, end in positions
+                    ]
 
-    print(f"Split reads written to {output_fastq_file}")
+                    if technology != "bulk" and contains_barcodes_or_umis:
+                        split_sequence = [
+                            barcode_and_umi_sequence + sequence for sequence in split_sequence
+                        ]
+                        split_qualities = [
+                            barcode_and_umi_quality + quality for quality in split_qualities
+                        ]
 
-    return output_fastq_file
+                    number_of_subsequences = len(split_sequence)
+                    for i in range(number_of_subsequences):
+                        if len(split_sequence[i]) < minimum_sequence_length:
+                            continue
+                        start = matches[i].start()
+                        end = matches[i].end()
+                        new_header = f"@{header}:{start}-{end}"
+
+                        out_file.write(
+                            f"{new_header}\n{split_sequence[i]}\n{plus_line}\n{split_qualities[i]}\n"
+                        )
+
+        print(f"Split reads written to {output_fastq_file}")
+
+        return output_fastq_file
 
 
 def count_number_of_nonidentical_mutation_fragments(
@@ -2376,20 +2394,23 @@ def is_in_ranges(num, ranges):
     return False
 
 
-def append_row(read_df, header_value, sequence_value, start_position, strand):
+def append_row(read_df, id_value, header_value, sequence_value, start_position, strand, added_noise=False):
     # Create a new row where 'header' and 'seq_ID' are populated, and others are NaN
     new_row = pd.Series(
         {
+            "read_id": id_value,
             "read_header": header_value,
             "read_sequence": sequence_value,
             "read_index": start_position,
-            "strand": strand,
+            "read_strand": strand,
             "reference_header": None,
+            "mcrs_id": None,
             "mcrs_header": None,
             "mcrs_mutation_type": None,
             "mutant_read": False,
             "wt_read": True,
             "region_included_in_mcrs_reference": False,
+            "noise_added": added_noise
             # All other columns will be NaN automatically
         }
     )
@@ -2422,6 +2443,7 @@ def build_random_genome_read_df(
     fasta_entries = list(read_fasta(reference_fasta_file_path))
     if read_df is None:
         column_names = [
+            "read_id",
             "read_header",
             "read_sequence",
             "reference_header",
@@ -2429,6 +2451,7 @@ def build_random_genome_read_df(
             "mutant_read",
             "wt_read",
             "region_included_in_mcrs_reference",
+            "noise_added"
         ]
         read_df = pd.DataFrame(columns=column_names)
 
@@ -2453,12 +2476,14 @@ def build_random_genome_read_df(
             # Choose a random entry (header, sequence) from the FASTA file
             random_transcript, random_sequence = random.choice(fasta_entries)
 
-            random_transcript = random_transcript.split()[0]
-            if input_type == "transcriptome":
-                random_transcript = random_transcript.split(".")[0]
+            len_random_sequence = len(random_sequence)
 
-            # Choose a random integer between 1 and the sequence length
-            start_position = random.randint(1, len(random_sequence))
+            random_transcript = random_transcript.split()[0]  # grab ENST from long transcript name string
+            if input_type == "transcriptome":
+                random_transcript = random_transcript.split(".")[0]  # strip version number from ENST
+
+            # Choose a random integer between 1 and the sequence_length-read_length as start position
+            start_position = random.randint(1, len_random_sequence-read_length)
 
             filtered_mutation_metadata_df = mutation_metadata_df.loc[
                 mutation_metadata_df[fasta_entry_column] == random_transcript
@@ -2478,13 +2503,16 @@ def build_random_genome_read_df(
                 else:
                     selected_strand = strand
 
+                random_sequence = random_sequence[start_position:end_position]
+
                 if selected_strand == "r":
                     # start_position, end_position = len(random_sequence) - end_position, len(random_sequence) - start_position  # I am keeping adding the "f/r" in header so I don't need this
-                    random_sequence = reverse_complement(random_sequence)
+                    random_sequence = reverse_complement(random_sequence)  # I slice the sequence first and then take the rc
 
+                wt_id = f"wt_{i}_random{selected_strand}W"
                 header = f"{random_transcript}:{start_position}_{end_position}_random{selected_strand}W"
                 read_df = append_row(
-                    read_df, header, random_sequence, start_position, selected_strand
+                    read_df, wt_id, header, random_sequence, start_position, selected_strand, added_noise=add_noise
                 )
 
                 fa_file.write(f">{header}\n{random_sequence}\n")
@@ -5413,7 +5441,7 @@ def decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_
     decrement_matrix = csr_matrix((n_rows, n_cols))
     bus_df["gene_names_final"] = bus_df["gene_names_final"].apply(safe_literal_eval)
 
-    tested_suffixes = set()
+    tested_read_header_bases = set()
 
     var_names_to_idx_in_adata_dict = {
         name: idx for idx, name in enumerate(adata.var_names)
@@ -5421,18 +5449,14 @@ def decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_
 
     for _, row in bus_df.iterrows():
         if row["counted_in_count_matrix"]:
-            suffix = row["fastq_header"]
-            if paired_end_fastqs:
-                suffix = suffix[:-paired_end_suffix_length]  # assumes the form nsplit{i}__READHEADERpairedendportion
-            if split_Ns and (
-                suffix.startswith("nsplit") or suffix.startswith("@nsplit")
-            ):
-                suffix = suffix.split("__")[1]  # assumes the form nsplit{i}__READHEADER
-            if (
-                suffix not in tested_suffixes
-            ):  # here to make sure I don't double-count the decrementing
+            read_header_base = row["fastq_header"]
+            if split_Ns:  # assumes the form READHEADERpairedendportion:START-END
+                read_header_base = read_header_base.rsplit(":", 1)[0]  # now will be of the form READHEADERpairedendportion
+            if paired_end_fastqs:  # assumes the form READHEADERpairedendportion
+                read_header_base = read_header_base[:-paired_end_suffix_length]  # now will be of the form READHEADER
+            if (read_header_base not in tested_read_header_bases):  # here to make sure I don't double-count the decrementing
                 filtered_bus_df = bus_df[
-                    bus_df["gene_names_final"].str.contains(suffix)
+                    bus_df["gene_names_final"].str.contains(read_header_base)
                 ]
                 # Calculate the count of matching rows with the same 'EC' and 'barcode'
                 count = (
@@ -5454,7 +5478,7 @@ def decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_
                         if header in var_names_to_idx_in_adata_dict
                     ]
                     decrement_matrix[barcode_idx, mcrs_idxs] += count
-                tested_suffixes.add(suffix)
+                tested_read_header_bases.add(read_header_base)
 
     if not isinstance(adata.X, csr_matrix):
         adata.X = adata.X.tocsr()

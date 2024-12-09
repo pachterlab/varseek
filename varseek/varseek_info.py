@@ -190,12 +190,12 @@ def info(
 
     if id_to_header_csv is not None:
         id_to_header_dict = make_mapping_dict(id_to_header_csv, dict_key="id")
-        header_to_id_dict = {v: k for k, v in id_to_header_dict.items()}
+        # header_to_id_dict = {v: k for k, v in id_to_header_dict.items()}
         temp_header_fa = mutations.replace(".fa", "_with_headers.fa")
         swap_ids_for_headers_in_fasta(mutations, id_to_header_csv, out_fasta=temp_header_fa)
     else:
         id_to_header_dict = None
-        header_to_id_dict = None
+        # header_to_id_dict = None
         temp_header_fa = mutations
 
     # CELL

@@ -22,6 +22,8 @@ def filter(
     filters,
     output_mcrs_fasta="output_mcrs_fasta.fa",
     output_metadata_df=None,
+    mutation_metadata_df_exploded_path=None,
+    output_mutation_metadata_df_exploded=None,
     dlist_fasta=None,
     output_dlist_fasta=None,
     output_wt_mcrs_fa=None,
@@ -104,6 +106,19 @@ def filter(
     fasta_summary_stats(output_mcrs_fasta)
 
     filtered_df_mcrs_ids = set(filtered_df["mcrs_id"])
+
+    if isinstance(mutation_metadata_df_exploded_path, str):
+        mutation_metadata_df_exploded = pd.read_csv(mutation_metadata_df_exploded_path)
+
+        # Filter mutation_metadata_df_exploded based on these unique values
+        filtered_mutation_metadata_df_exploded = mutation_metadata_df_exploded[
+            mutation_metadata_df_exploded['mcrs_id'].isin(filtered_df_mcrs_ids)
+        ]
+
+        if not output_mutation_metadata_df_exploded:
+            output_mutation_metadata_df_exploded = mutation_metadata_df_exploded_path.replace(".csv", "_filtered.csv")
+
+        filtered_mutation_metadata_df_exploded.to_csv(output_mutation_metadata_df_exploded, index=False)
 
     # if mcrs_fa is not None:
     #     filter_fasta(mcrs_fa, output_mcrs_fasta, filtered_df_mcrs_ids)
