@@ -4131,13 +4131,23 @@ def apply_filters(df, filters, verbose=False, logger=None):
         # TODO: if I want number of mutations (in addition to number of MCRSs), then calculate the length of the df exploded by header
 
         if rule == "min":
-            df = df.loc[df[column].astype(float) >= float(value)]
+            df = df.loc[(df[column].astype(float) >= float(value)) | (df[column].isnull())]
         elif rule == "max":
-            df = df.loc[df[column].astype(float) <= float(value)]
+            df = df.loc[(df[column].astype(float) <= float(value)) | (df[column].isnull())]
         elif rule == "between":
             value_min, value_max = value.split(",")
             value_min, value_max = float(value_min), float(value_max)
-            df = df.loc[(df[column] >= value_min) & (df[column] <= value_max)]
+            df = df.loc[((df[column] >= value_min) & (df[column] <= value_max) | (df[column].isnull()))]
+        elif rule == "toppercent":
+            # Calculate the cutoff for the top percent
+            percent_value = df[column].quantile((100 - value) / 100)
+            # Keep rows where the column value is NaN or greater than the percent value
+            df = df.loc[(df[column].isnull()) | (df[column] >= percent_value)]
+        elif rule == "bottompercent":
+            # Calculate the cutoff for the bottom percent
+            percent_value = df[column].quantile(value / 100)
+            # Keep rows where the column value is NaN or less than the percent value
+            df = df.loc[(df[column].isnull()) | (df[column] <= percent_value)]
         elif rule == "equal":
             df = df.loc[df[column].astype(str) == str(value)]
         elif rule == "notequal":
@@ -4169,14 +4179,18 @@ def apply_filters(df, filters, verbose=False, logger=None):
             df = df.loc[(df[column] != True) | df[column].isnull()]
         elif rule == "isnotfalse":
             df = df.loc[(df[column] != False) | df[column].isnull()]
+        else:
+            raise ValueError(f"Rule '{rule}' not recognized")
 
         len_df_end = len(df)
         number_filtered = len_df_start - len_df_end
 
         if verbose:
-            logger.info(
-                f"Filtered {number_filtered} mutations {column} with {rule} {value} - {len_df_end} mutations remaining"
-            )
+            message = f"Filtered {number_filtered} mutations {column} with {rule} {value} - {len_df_end} mutations remaining"
+            if logger:
+                logger.info(message)
+            else:
+                print(message)
 
     return df
 
@@ -4185,7 +4199,7 @@ def parse_filters(args):
     filters = []
     for col_rule, value in args:
         column, rule = col_rule.split("-")
-        if rule in ["min", "max"]:
+        if rule in ["min", "max", "toppercent", "bottompercent"]:
             value = float(value) if "." in value else int(value)
         elif rule in ["istrue", "isfalse", "isnottrue", "isnotfalse"]:
             value = True if "true" in rule else False

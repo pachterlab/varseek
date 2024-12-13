@@ -9,6 +9,8 @@ COLUMN-RULE=VALUE
     - min: minimum value
     - max: maximum value
     - between: between two values (inclusive)
+    - toppercent: top x% of values (eg 1 to keep top 1%)
+    - bottompercent: bottom x% of values (eg 1 to keep bottom 1%)
     - equal: equal to value
     - notequal: not equal to value
     - isin: equals an element in value (set, or a txt file where each value is separated by a new line)

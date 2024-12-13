@@ -12,6 +12,7 @@ from .utils import (
     create_mutant_t2g,
     filter_id_to_header_csv,
     fasta_summary_stats,
+    safe_literal_eval
 )
 
 logger = set_up_logger()
@@ -89,7 +90,9 @@ def filter(
     if type(output_wt_mcrs_fa) == str:
         mutations_with_exactly_1_wt_sequence_per_row = filtered_df[["mcrs_id", "wt_sequence"]].copy()
 
-        if type(filtered_df["wt_sequence"][0] == list):  # remove the rows with multiple WT counterparts for 1 MCRS, and convert the list of strings to string
+        mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"] = mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"].apply(safe_literal_eval)
+
+        if isinstance(mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"][0], list):  # remove the rows with multiple WT counterparts for 1 MCRS, and convert the list of strings to string
             # Step 1: Filter rows where the length of the set of the list in `wt_sequence` is 1
             mutations_with_exactly_1_wt_sequence_per_row = mutations_with_exactly_1_wt_sequence_per_row[mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"].apply(lambda x: len(set(x)) == 1)]
 
@@ -99,7 +102,7 @@ def filter(
         mutations_with_exactly_1_wt_sequence_per_row["fasta_format_wt"] = ">" + mutations_with_exactly_1_wt_sequence_per_row["mcrs_id"] + "\n" + mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"] + "\n"
 
         with open(output_wt_mcrs_fa, "w") as fasta_file:
-            fasta_file.write("".join(mutations_with_exactly_1_wt_sequence_per_row["wt_fasta_format"].values))
+            fasta_file.write("".join(mutations_with_exactly_1_wt_sequence_per_row["fasta_format_wt"].values))
 
     filtered_df.reset_index(drop=True, inplace=True)
 
@@ -119,6 +122,9 @@ def filter(
             output_mutation_metadata_df_exploded = mutation_metadata_df_exploded_path.replace(".csv", "_filtered.csv")
 
         filtered_mutation_metadata_df_exploded.to_csv(output_mutation_metadata_df_exploded, index=False)
+
+        # Delete the DataFrame from memory
+        del filtered_mutation_metadata_df_exploded
 
     # if mcrs_fa is not None:
     #     filter_fasta(mcrs_fa, output_mcrs_fasta, filtered_df_mcrs_ids)

@@ -4,6 +4,8 @@ import shutil
 import scanpy as sc
 from rich.table import Table
 from rich.console import Console
+from collections import OrderedDict, defaultdict
+import json
 
 console = Console()
 
@@ -19,6 +21,9 @@ import seaborn as sns
 
 from scipy import stats
 from scipy.sparse import csr_matrix
+from scipy.stats import ttest_rel, t
+from statsmodels.stats.contingency_tables import mcnemar
+
 
 from varseek.constants import complement, codon_to_amino_acid, mutation_pattern
 
@@ -33,6 +38,13 @@ plt.rcParams.update({
     'figure.facecolor': 'white',    # Set figure background to white (common for RGB)
     'savefig.transparent': False,   # Disable transparency
 })
+
+color_map_10 = plt.get_cmap("tab10").colors  # Default color map with 10 colors
+
+color_map_20 = [
+    "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
+    "#aec7e8", "#ffbb78", "#98df8a", "#ff9896", "#c5b0d5", "#c49c94", "#f7b6d2", "#c7c7c7", "#dbdb8d", "#9edae5"
+]  # plotly category 20
 
 save_pdf_global = True if os.getenv('VARSEEK_SAVE_PDF') == "TRUE" else False
 dpi = 450
@@ -168,18 +180,15 @@ def retrieve_value_from_metric_file(key_of_interest, metric_file):
 
 
 def calculate_metrics(
-    df, header_name=None, check_assertions=False, crude=False, out=None
+    df, header_name=None, check_assertions=False, crude=False, out=None, suffix=""
 ):
     if crude:
-        TP_column = "TP_crude"
-        FP_column = "FP_crude"
-        FN_column = "FN_crude"
-        TN_column = "TN_crude"
-    else:
-        TP_column = "TP"
-        FP_column = "FP"
-        FN_column = "FN"
-        TN_column = "TN"
+        suffix = "_crude"
+
+    TP_column = f"TP{suffix}"
+    FP_column = f"FP{suffix}"
+    FN_column = f"FN{suffix}"
+    TN_column = f"TN{suffix}"
 
     TP = df[TP_column].sum()
     FP = df[FP_column].sum()
@@ -203,19 +212,36 @@ def calculate_metrics(
     accuracy, sensitivity, specificity = calculate_sensitivity_specificity(
         TP, TN, FP, FN
     )
-    print(
-        f"Accuracy: {accuracy}, Sensitivity: {sensitivity}, Specificity: {specificity}"
-    )
+
+    print(f"Accuracy: {accuracy}, Sensitivity: {sensitivity}, Specificity: {specificity}")
+    
+    if f'mutation_expression_prediction_error{suffix}' in df.columns:
+        mean_expression_error = df[f'mutation_expression_prediction_error{suffix}'].mean()
+        median_expression_error = df[f'mutation_expression_prediction_error{suffix}'].median()
+        mean_magnitude_expression_error = df[f'mutation_expression_prediction_error{suffix}'].abs().mean()
+        median_magnitude_expression_error = df[f'mutation_expression_prediction_error{suffix}'].abs().median()
+        print(f"Mean Expression Error: {mean_expression_error}, Median Expression Error: {median_expression_error}, Mean Magnitude Expression Error: {mean_magnitude_expression_error}, Median Magnitude Expression Error: {median_magnitude_expression_error}")
+    else:
+        mean_expression_error = "N/A"
+        median_expression_error = "N/A"
+        mean_magnitude_expression_error = "N/A"
+        median_magnitude_expression_error = "N/A"
 
     if check_assertions:
         assert int(accuracy) == 1, "Accuracy is not 1"
         assert int(sensitivity) == 1, "Sensitivity is not 1"
         assert int(specificity) == 1, "Specificity is not 1"
+        if f'mutation_expression_prediction_error{suffix}' in df.columns:
+            assert int(mean_magnitude_expression_error) == 0, "Mean magnitude expression error is not 0"
 
     metric_dictionary = {
         "accuracy": accuracy,
         "sensitivity": sensitivity,
         "specificity": specificity,
+        "mean_expression_error": mean_expression_error,
+        "median_expression_error": median_expression_error,
+        "mean_magnitude_expression_error": mean_magnitude_expression_error,
+        "median_magnitude_expression_error": median_magnitude_expression_error,
         "TP": TP,
         "FP": FP,
         "FN": FN,
@@ -233,6 +259,10 @@ def calculate_metrics(
             "FP",
             "FN",
             "TN",
+            "mean_expression_error",
+            "median_expression_error",
+            "mean_magnitude_expression_error",
+            "median_magnitude_expression_error",
         ]
         with open(out, "w") as file:
             for key in keys_to_save:
@@ -688,17 +718,17 @@ def plot_descending_bar_plot(
     plt.close()
 
 
-def draw_confusion_matrix(metric_dictionary_reads):
+def draw_confusion_matrix(metric_dictionary_reads, title = "Confusion Matrix", suffix = ""):
     # Sample dictionary with confusion matrix values
     confusion_matrix = {
-        "TP": metric_dictionary_reads["TP"],  # True Positive
-        "TN": metric_dictionary_reads["TN"],  # True Negative
-        "FP": metric_dictionary_reads["FP"],  # False Positive
-        "FN": metric_dictionary_reads["FN"],  # False Negative
+        "TP": metric_dictionary_reads[f"TP{suffix}"],  # True Positive
+        "TN": metric_dictionary_reads[f"TN{suffix}"],  # True Negative
+        "FP": metric_dictionary_reads[f"FP{suffix}"],  # False Positive
+        "FN": metric_dictionary_reads[f"FN{suffix}"],  # False Negative
     }
 
     # Create a Rich Table to display the confusion matrix
-    table = Table(title="Confusion Matrix")
+    table = Table(title=title)
 
     # Add columns for the table
     table.add_column("", justify="center")
@@ -1020,3 +1050,519 @@ def plot_knee_plot(
         plt.savefig(output_file)
     plt.show()
     plt.close()
+
+
+def plot_overall_metrics(metric_dict_collection, primary_metrics = ("accuracy", "sensitivity", "specificity"), secondary_metric = "", display_numbers = False, unique_mcrs_df = None, show_p_values = False, bonferroni = True, output_file = None, show = True, output_file_p_values = None):
+    if not isinstance(primary_metrics, (str, list, tuple)):
+        raise ValueError("Primary metrics must be a string, list, or tuple.")
+    if not isinstance(secondary_metric, str):
+        raise ValueError("Secondary metrics must be a string or None.")
+    
+    # if unique_mcrs_df is not None:  #* uncomment if I use unique_mcrs_df in this function directly (and not just in the p-value stuff where I copy it anyways)
+    #     unique_mcrs_df = unique_mcrs_df.copy()
+    
+    if isinstance(primary_metrics, str):
+        primary_metrics = [primary_metrics]
+    elif isinstance(primary_metrics, tuple):
+        primary_metrics = list(primary_metrics)
+    
+    # Extract keys and values
+    groups = list(metric_dict_collection.keys())  # Outer keys: varseek, mutect2, haplotypecaller
+    if secondary_metric:
+        if secondary_metric not in {"mean_magnitude_expression_error", "median_magnitude_expression_error", "mean_expression_error", "median_expression_error"}:
+            raise ValueError("Invalid error metric. Please choose from: 'mean_magnitude_expression_error', 'median_magnitude_expression_error', 'mean_expression_error', 'median_expression")
+        x_secondary = len(primary_metrics)  # Position for the secondary metric
+    colors = color_map_20[:len(groups)]
+
+    # Prepare data
+    x_primary = np.arange(len(primary_metrics))  # Positions for the metrics on the x-axis
+    bar_width = 0.25  # Width of each primary_metrics
+    offsets = np.arange(len(groups)) * bar_width - (len(groups) - 1) * bar_width / 2  # Centered offsets
+
+    # Create the plot
+    fig, ax1 = plt.subplots(figsize=(8, 6))
+    y_values_primary_total = []  # y_values_primary_total holds all metrics across all tools - I could make this a nested dict if desired
+    for i, group in enumerate(groups):
+        y_values_primary = [metric_dict_collection[group][metric] for metric in primary_metrics]  # y_values_primary just holds all metrics for a specific tool
+        bars_primary = ax1.bar(x_primary + offsets[i], y_values_primary, bar_width, label=group, color=colors[i])
+
+        # Add value annotations for the primary metrics
+        if display_numbers:
+            for bar, value in zip(bars_primary, y_values_primary):
+                ax1.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
+                        f"{value:.2f}", ha="center", va="bottom", fontsize=10)
+                
+        y_values_primary_total.extend(y_values_primary)
+
+    # Customize the plot
+    # ax1.set_xlabel("Metrics", fontsize=12)
+    # ax1.set_title("Comparison of Metrics Across Tools", fontsize=14)
+    if "accuracy" in primary_metrics or "sensitivity" in primary_metrics or "specificity" in primary_metrics:
+        ax1.set_ylim(0, 1)
+    if secondary_metric:
+        ax1.set_ylabel(", ".join(map(str.capitalize, primary_metrics)), fontsize=12)
+        ax1.set_xticks(np.append(x_primary, x_secondary))
+        ax1.set_xticklabels(primary_metrics + [secondary_metric], fontsize=12, rotation=45)
+        # Add a secondary y-axis for the secondary metric
+        ax2 = ax1.twinx()
+        for i, group in enumerate(groups):
+            y_value_secondary = metric_dict_collection[group][secondary_metric]
+            bars_secondary = ax2.bar(x_secondary + offsets[i], y_value_secondary, bar_width, color=colors[i], alpha=0.7)
+
+            # Add value annotations for the secondary metric
+            if display_numbers:
+                for bar, value in zip(bars_secondary, [y_value_secondary]):
+                    ax2.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
+                            f"{value:.2f}", ha="center", va="bottom", fontsize=10)
+
+        # Customize the secondary y-axis
+        max_secondary = max(metric_dict_collection[group][secondary_metric] for group in groups) * 1.1  # Add 10% padding
+        metric_secondary_for_axis_name = secondary_metric.replace("_", " ").title()
+        ax2.set_ylabel(metric_secondary_for_axis_name, fontsize=12)
+        ax2.set_ylim(0, max_secondary)
+    else:
+        ax1.set_xticks(x_primary)
+        ax1.set_xticklabels(primary_metrics, fontsize=12)
+
+    metric_to_tool_to_p_value_dict_of_dicts = {}
+    margins_of_error = {}
+    if show_p_values or output_file_p_values:
+        for metric in primary_metrics:
+            margins_of_error[metric] = {}
+            if metric in {"accuracy", "sensitivity", "specificity"}:
+                tool_to_p_value_dict_aggregate = calculate_mcnemar(unique_mcrs_df, tools = groups, metric = metric)  # don't pass output file here because I want output file to include all p-values; and don't do bonferroni here for a similar reason
+            elif metric in {"mean_magnitude_expression_error"}:
+                tool_to_p_value_dict_aggregate = calculate_paired_t_test(unique_mcrs_df, column_root = "mutation_expression_prediction_error", tools = groups, take_absolute_value = True)
+                for group in groups:  # calculate 95% confidence intervals
+                    mean_value, margin_of_error = compute_95_confidence_interval_margin_of_error(unique_mcrs_df[f'mutation_expression_prediction_error_{group}'], take_absolute_value = True)
+                    margins_of_error[metric][group] = (mean_value, margin_of_error)
+            elif metric in {"mean_expression_error"}:
+                tool_to_p_value_dict_aggregate = calculate_paired_t_test(unique_mcrs_df, column_root = "mutation_expression_prediction_error", tools = groups, take_absolute_value = False)
+                for group in groups:  # calculate 95% confidence intervals
+                    mean_value, margin_of_error = compute_95_confidence_interval_margin_of_error(unique_mcrs_df[f'mutation_expression_prediction_error_{group}'], take_absolute_value = False)
+                    margins_of_error[metric][group] = (mean_value, margin_of_error)
+            else:
+                raise ValueError(f"Invalid metric for p-value calculation: {metric}. Valid options are 'accuracy', 'sensitivity', 'specificity', 'mean_magnitude_expression_error', 'mean_expression_error'")
+            
+            metric_to_tool_to_p_value_dict_of_dicts[metric] = tool_to_p_value_dict_aggregate
+
+        if bonferroni:
+            n_tests = count_leaves(metric_to_tool_to_p_value_dict_of_dicts)  # counts the number of leaves in the nested dictionary - makes it generalizable  # (len(groups)-1) * len(primary_metrics)
+            for metric in primary_metrics:
+                for group in groups:
+                    if metric in metric_to_tool_to_p_value_dict_of_dicts and group in metric_to_tool_to_p_value_dict_of_dicts[metric]:
+                        metric_to_tool_to_p_value_dict_of_dicts[metric][group] = min(metric_to_tool_to_p_value_dict_of_dicts[metric][group] * n_tests, 1.0)
+        
+        # Save to a file
+        if output_file_p_values:
+            with open(output_file_p_values, "w") as f:
+                json.dump(metric_to_tool_to_p_value_dict_of_dicts, f, indent=4)
+
+        # # toy p-values for accuracy, sensitivity, and specificity
+        # metric_to_tool_to_p_value_dict_of_dicts = {"accuracy": {
+        #     "gatk_mutect2": 0.0001,
+        #     "gatk_haplotypecaller": 0.04
+        # },
+        # "sensitivity": {
+        #     "gatk_mutect2": 0.007,
+        #     "gatk_haplotypecaller": 0.99
+        # },
+        # "specificity": {
+        #     "gatk_mutect2": 0.02,
+        #     "gatk_haplotypecaller": 0.99
+        # }}
+
+        # # toy p-values for mean_magnitude_expression_error
+        # metric_to_tool_to_p_value_dict_of_dicts = {"mean_magnitude_expression_error": {
+        #     "gatk_mutect2": 0.0001,
+        #     "gatk_haplotypecaller": 0.04
+        # }}
+        
+
+        if show_p_values:
+            for i, metric in enumerate(primary_metrics):
+                if metric in metric_to_tool_to_p_value_dict_of_dicts:
+                    number_of_p_values_in_this_cluster = 0
+                    for j, group in enumerate(groups):
+                        # 95% confidence intervals
+                        if metric in margins_of_error and group in margins_of_error[metric]:
+                            # Calculate error values
+                            mean_value, margin_of_error = margins_of_error[metric][group]
+                            yerr = [margin_of_error, margin_of_error]
+                            x_value = x_primary[i] + offsets[j]
+
+                            # Plot the point with the confidence interval
+                            ax1.errorbar(
+                                x_value, mean_value, 
+                                yerr=np.array([yerr]).T,  # Transpose to match dimensions
+                                fmt='',  # Marker for the point
+                                capsize=5,  # Adds caps to the error bars
+                                label="Mean with 95% CI",
+                                color="black"
+                            )
+
+                        # p-values
+                        if group in metric_to_tool_to_p_value_dict_of_dicts[metric]:
+                            p_value = metric_to_tool_to_p_value_dict_of_dicts[metric][group]
+                            if p_value >= 0.05:  #* increase these values to show more p-values for debugging
+                                continue
+                            elif p_value < 0.05 and p_value >= 0.01:
+                                symbol = "*"
+                            elif p_value < 0.01 and p_value >= 0.001:
+                                symbol = "**"
+                            else:
+                                symbol = "***"
+                            
+                            start_x = x_primary[i] + offsets[0]  # assuming varseek is first element
+                            end_x = x_primary[i] + offsets[j]
+
+                            if metric in {"accuracy", "sensitivity", "specificity"}:
+                                y_start = max(y_values_primary_total) + (number_of_p_values_in_this_cluster * 0.05) + 0.1
+                            else:
+                                y_start = (max(y_values_primary_total) + (number_of_p_values_in_this_cluster * 1.7)) * 1.08  # 1.7 (left constant) adjusts based on other bars; 1.08 (right constant) adjusts to make sure it doesn't hit the top bar
+                            
+                            y_end = y_start
+
+                            ax1.plot([start_x, start_x, end_x, end_x], [y_start, y_end, y_end, y_start], lw=1.5, c="k")
+                            ax1.text((start_x + end_x) * .5, y_end, symbol, ha='center', va='bottom', color="k")
+
+                            number_of_p_values_in_this_cluster += 1
+        
+    # ax1.legend(title="Tools", loc="upper left", bbox_to_anchor=(1.05, 1))
+    ax1.grid(axis="y", linestyle="--", alpha=0.7)
+
+    # Show the plot
+    plt.tight_layout()
+    if output_file:
+        plt.savefig(output_file)
+    if show:
+        plt.show()
+        plt.close()
+
+
+def calculate_grouped_metric(grouped_df, y_metric, tool):
+    TP_column = f"TP_{tool}"
+    FP_column = f"FP_{tool}"
+    FN_column = f"FN_{tool}"
+    TN_column = f"TN_{tool}"
+    mutation_expression_prediction_error_column = f"mutation_expression_prediction_error_{tool}"
+    y_metric_output_column = f"{y_metric}_{tool}"
+
+    if y_metric == "accuracy":
+        grouped_df[y_metric_output_column] = (grouped_df[TP_column] + grouped_df[TN_column]) / (grouped_df[TP_column] + grouped_df[TN_column] + grouped_df[FP_column] + grouped_df[FN_column])
+    elif y_metric == "sensitivity":
+        grouped_df[y_metric_output_column] = grouped_df[TP_column] / (grouped_df[TP_column] + grouped_df[FN_column])
+        grouped_df.loc[(grouped_df[TP_column] + grouped_df[FN_column]) == 0, y_metric] = 1.0
+    elif y_metric == "specificity":
+        grouped_df[y_metric_output_column] = grouped_df[TN_column] / (grouped_df[TN_column] + grouped_df[FP_column])
+        grouped_df.loc[(grouped_df[TN_column] + grouped_df[FP_column]) == 0, y_metric] = 1.0
+    elif y_metric == "mutation_expression_prediction_error":
+        grouped_df[y_metric_output_column] = (grouped_df[mutation_expression_prediction_error_column] / grouped_df["number_of_elements_in_the_group"])
+    else:
+        raise ValueError(f"Invalid y_metric: {y_metric}. Valid options are 'accuracy', 'sensitivity', 'specificity', and 'mutation_expression_prediction_error'")
+
+    return grouped_df
+
+def create_stratified_metric_line_plot(unique_mcrs_df, x_stratification, y_metric, tools, show_p_values = False, bonferroni = True, output_file = None, show = True, output_file_p_values = None, filter_real_negatives = False):
+    assert x_stratification in unique_mcrs_df.columns, f"Invalid x_stratification: {x_stratification}"
+    
+    unique_mcrs_df = unique_mcrs_df.copy()  # make a copy to avoid modifying the original DataFrame
+
+    if y_metric == "sensitivity" or filter_real_negatives:
+        unique_mcrs_df = unique_mcrs_df[unique_mcrs_df['included_in_synthetic_reads_mutant'] == True]
+    elif y_metric == "specificity":
+        unique_mcrs_df = unique_mcrs_df[unique_mcrs_df['included_in_synthetic_reads_mutant'] == False]
+
+    # Prepare for plotting
+    plt.figure(figsize=(10, 6))
+
+    x_values = sorted(list(unique_mcrs_df[x_stratification].unique()))
+    x_indices = range(len(x_values))
+    
+    if y_metric == "mutation_expression_prediction_error":
+        for tool in tools:
+            assert f"mutation_expression_prediction_error_{tool}" in unique_mcrs_df.columns, f"mutation_expression_prediction_error_{tool} not in unique_mcrs_df.columns"
+
+    # created grouped_df
+    if y_metric == "mutation_expression_prediction_error" and expression_error_summary_statistic == "mean_magnitude":  # calculate sum of magnitudes for this one column
+        aggregation_functions = {}
+        for tool in tools:
+            # Group by tumor purity and calculate sensitivity
+            aggregation_functions[f"mutation_expression_prediction_error_{tool}"] = lambda x: (x.abs()).sum(),  # Sum of absolute values
+
+        # Use the default sum for all other columns
+        grouped_df = unique_mcrs_df.groupby(x_stratification).agg(
+            {col: aggregation_functions.get(col, "sum") for col in unique_mcrs_df.columns}  # sum is the default aggregation function
+        )
+    else:  # including if expression_error_summary_statistic == "mean":  # calculate sum for all columns
+        grouped_df = unique_mcrs_df.groupby(x_stratification).sum()
+
+    grouped_df["number_of_elements_in_the_group"] = unique_mcrs_df.groupby(x_stratification).size()
+
+    
+    # redundant code for calculating y-max (because I need this for setting p-value asterisk height)
+    if y_metric in {"accuracy", "sensitivity", "specificity"}:
+        custom_y_limit = 1
+    else:
+        custom_y_limit = 0
+        for i, tool in enumerate(tools):
+            grouped_df = calculate_grouped_metric(grouped_df, y_metric, tool, expression_error_summary_statistic = expression_error_summary_statistic)
+            y_metric_tool_specific = f'{y_metric}_{tool}'
+            custom_y_limit = max(custom_y_limit, grouped_df[y_metric_tool_specific].max())
+
+    number_of_valid_p_values = 0
+    nested_dict = lambda: defaultdict(nested_dict)
+    metric_to_tool_to_p_value_dict_of_dicts = nested_dict()
+    
+    for i, tool in enumerate(tools):
+        grouped_df = calculate_grouped_metric(grouped_df, y_metric, tool, expression_error_summary_statistic = expression_error_summary_statistic)
+        y_metric_tool_specific = f'{y_metric}_{tool}'  # matches column created by calculate_grouped_metric - try not changing this name if possible
+
+        # Plot sensitivity as a function of tumor purity
+        plt.plot(x_indices, grouped_df[y_metric_tool_specific], label=tool, marker="o", color = color_map_20[i])  # use grouped_df.index to get the x-axis values and plot numerically (vs converting to categorical)
+
+        if (show_p_values or output_file_p_values) and tool != "varseek":  # because varseek is the reference tool
+            p_value_list = []
+            for x_value in x_values:
+                filtered_unique_mcrs_df_for_p_value = unique_mcrs_df.loc[unique_mcrs_df[x_stratification] == x_value]
+                if len(filtered_unique_mcrs_df_for_p_value) > 1:
+                    number_of_valid_p_values += 1
+                    if y_metric in {"accuracy", "sensitivity", "specificity"}:  # Mcnemar
+                        p_value = calculate_individual_mcnemar(filtered_unique_mcrs_df_for_p_value, 'mutation_detected_varseek', f'mutation_detected_{tool}')
+                        p_value_list.append(p_value)
+
+                    elif y_metric in {"mean_magnitude_expression_error"}:  # paired t-test
+                        p_value = calculate_individual_paired_t_test(filtered_unique_mcrs_df_for_p_value, column1 = "mutation_expression_prediction_error_varseek", column2 = f"mutation_expression_prediction_error_{tool}", take_absolute_value = True)
+
+                    elif y_metric in {"mean_expression_error"}:
+                        p_value = calculate_individual_paired_t_test(filtered_unique_mcrs_df_for_p_value, column1 = "mutation_expression_prediction_error_varseek", column2 = f"mutation_expression_prediction_error_{tool}", take_absolute_value = False)
+                    
+                    else:
+                        raise ValueError(f"Invalid metric for p-value calculation: {y_metric}. Valid options are 'accuracy', 'sensitivity', 'specificity', 'mean_magnitude_expression_error', 'mean_expression_error'")
+                    
+                    p_value_list.append(p_value)
+                else:
+                    p_value_list.append(1.0)
+
+            # bonferroni
+            if bonferroni:
+                n_tests = number_of_valid_p_values * (len(tools) - 1)  # because varseek is the reference tool
+                p_value_list = [min((p_value * n_tests), 1.0) for p_value in p_value_list]
+        
+            # Plot '*' above points where p-value < 0.05
+            if show_p_values:
+                for x, y, p_value in zip(x_indices, list(grouped_df[y_metric_tool_specific]), p_value_list):
+                    metric_to_tool_to_p_value_dict_of_dicts[str(x)][tool] = p_value
+                    if p_value >= 0.05:  #* increase these values to show more p-values for debugging
+                        continue
+                    elif p_value < 0.05 and p_value >= 0.01:
+                        symbol = "*"
+                    elif p_value < 0.01 and p_value >= 0.001:
+                        symbol = "**"
+                    else:
+                        symbol = "***"
+                    plt.text(x, y + (custom_y_limit*0.01), symbol, color=color_map_20[i], fontsize=12, ha='center')  # Slightly above the point
+
+    # # Set x-axis to log2 scale
+    # if log:  # log can be False (default, not log) or True (defaults to 2) or int (log base)
+    #     if log == True:
+    #         log = 2
+    #     plt.xscale("log", base=log)
+
+    if output_file_p_values:
+        with open(output_file_p_values, "w") as f:
+            json.dump(metric_to_tool_to_p_value_dict_of_dicts, f, indent=4)
+
+    # Customize plot
+    if y_metric in {"accuracy", "sensitivity", "specificity"}:  #"accuracy" in primary_metrics or "sensitivity" in primary_metrics or "specificity" in primary_metrics:
+        plt.ylim(0, custom_y_limit)
+    plt.xticks(ticks=x_indices, labels=x_values)
+    plt.xlabel(x_stratification, fontsize=12)
+    plt.ylabel(y_metric, fontsize=12)
+    # plt.legend(title="Tools")
+    plt.grid(axis="y", linestyle="--", alpha=0.7)
+
+    # Show the plot
+    plt.tight_layout()
+    if output_file:
+        plt.savefig(output_file)
+    if show:
+        plt.show()
+        plt.close()
+
+def create_benchmarking_legend(tools, outfile = None, show = True):
+    # Define colors
+    colors = color_map_20[:len(tools)]
+
+    # Create a figure for the legend
+    fig, ax = plt.subplots(figsize=(0.1, 0.1))  # Adjust size as needed to change whitespace margins
+
+    # Create proxy artists (invisible items for the legend)
+    proxies = [plt.Line2D([0], [0], color=color, lw=4) for color in colors]
+
+    # Add the legend to the figure
+    ax.legend(proxies, tools, title="Legend", loc="center")
+    ax.axis("off")  # Turn off the axes
+
+    # Show the legend-only figure
+    plt.tight_layout()
+    if outfile:
+        plt.savefig(outfile, bbox_inches="tight")
+    if show:
+        plt.show()
+        plt.close()
+
+def write_p_values_to_file(tool_to_p_value_dict, out_file):
+    if out_file.endswith(".txt"):
+        with open(out_file, "w") as f:
+            for tool, p_value in tool_to_p_value_dict.items():
+                f.write(f"{tool}: {p_value}\n")
+    elif out_file.endswith(".json"):
+        # Save to a file
+        with open(out_file, "w") as f:
+            json.dump(tool_to_p_value_dict, f, indent=4)
+    else:
+        raise ValueError(f"Invalid file extension: {out_file}. Accepted extensions are '.txt' and '.json'.")
+        
+def calculate_individual_mcnemar(df, column1, column2):
+    # Counting the true/false values
+    contingency_table = pd.crosstab(df[column1], df[column2])
+
+    # McNemar's test
+    exact = False if (contingency_table.values >= 25).all() else True
+    result = mcnemar(contingency_table, exact=exact)
+    return result.pvalue
+
+# see the function above for simple mncnemar, as the following function was written specifically for figure 2c
+def calculate_mcnemar(unique_mcrs_df, tools, metric = "accuracy", out_file = None, bonferroni = False, do_sensitivity_specificity_filtering = True):
+    # unique_mcrs_df = unique_mcrs_df.copy()  # make a copy to avoid modifying the original DataFrame
+    
+    # Filtering the DataFrame
+    if do_sensitivity_specificity_filtering:
+        if metric == "sensitivity":
+            filtered_df = unique_mcrs_df[unique_mcrs_df['included_in_synthetic_reads_mutant'] == True]
+        elif metric == "specificity":
+            filtered_df = unique_mcrs_df[unique_mcrs_df['included_in_synthetic_reads_mutant'] == False]
+        elif metric == "accuracy":
+            filtered_df = unique_mcrs_df
+        else:
+            raise ValueError(f"Invalid metric: {metric}. Accepted values are 'sensitivity', 'specificity', and 'accuracy'.")
+    else:
+        filtered_df = unique_mcrs_df
+    
+
+    tool_to_p_value_dict = {}
+    for tool in tools:
+        if tool == "varseek":
+            continue  # Skip varseek as it is the reference tool
+
+        tool_to_p_value_dict[tool] = calculate_individual_mcnemar(filtered_df, 'mutation_detected_varseek', f'mutation_detected_{tool}')
+
+    # Bonferroni correction
+    if bonferroni:
+        n_tests = count_leaves(tool_to_p_value_dict)
+        for tool in tools:
+            tool_to_p_value_dict[tool] = min(tool_to_p_value_dict[tool] * n_tests, 1.0)
+
+    if out_file:
+        write_p_values_to_file(tool_to_p_value_dict, out_file)
+
+    return tool_to_p_value_dict
+
+
+def calculate_individual_paired_t_test(df, column1, column2, tails = 2, larger_column_expected = None, take_absolute_value = False):
+    if take_absolute_value:
+        df[column1] = df[column1].abs()
+        df[column2] = df[column2].abs()
+
+    t_stat, p_value = ttest_rel(df[column1], df[column2])  # if one-tailed, then the sign of t_stat indicates if 1st arg > 2nd arg
+
+    if tails == 1:
+        if not larger_column_expected:
+            raise ValueError("larger_column_expected must be provided when tails == 1")
+        if larger_column_expected != column1 and larger_column_expected != column2:
+            raise ValueError("larger_column_expected must be one of the two columns passed in")
+        
+        if t_stat < 0 and larger_column_expected == column1:  # corresponds to varseek being passed in first above
+            p_value /= 2
+        elif t_stat > 0 and larger_column_expected != column2:
+            p_value /= 2
+        else:
+            p_value = 1.0
+
+    return p_value
+
+# make sure I've already computed the difference between predicted expression and true expression for each tool (i.e., DP_TOOL - number_of_reads_mutant)
+# two-tailed - to make one-tailed, divide by 2 and make sure that 
+def calculate_paired_t_test(unique_mcrs_df, column_root, tools, take_absolute_value = False, out_file = None, bonferroni = False, tails = 2, larger_column_expected = "varseek"):
+    unique_mcrs_df = unique_mcrs_df.copy()  # make a copy to avoid modifying the original DataFrame
+
+    tool_to_p_value_dict = {}
+    for tool in tools:
+        if tool == "varseek":
+            continue  # Skip varseek as it is the reference tool
+
+        if larger_column_expected == "varseek":
+            larger_column_expected = f'{column_root}_varseek'
+        elif larger_column_expected in tools:
+            larger_column_expected = f'{column_root}_{tool}'
+
+        p_value = calculate_individual_paired_t_test(unique_mcrs_df, column1 = f'{column_root}_varseek', column2 = f'{column_root}_{tool}', take_absolute_value = take_absolute_value, tails = tails, larger_column_expected = larger_column_expected)
+
+        tool_to_p_value_dict[tool] = p_value
+
+    # Bonferroni correction
+    if bonferroni:
+        n_tests = count_leaves(tool_to_p_value_dict)
+        for tool in tools:
+            tool_to_p_value_dict[tool] = min(tool_to_p_value_dict[tool] * n_tests, 1.0)
+
+    if out_file:
+        write_p_values_to_file(tool_to_p_value_dict, out_file)
+
+    return tool_to_p_value_dict
+
+def print_json(json_file):
+    with open(json_file, "r") as f:
+        data = json.load(f)
+    print(json.dumps(data, indent=4))
+
+def count_leaves(d):
+    """
+    Recursively counts the number of leaves in a nested dictionary.
+    
+    Args:
+        d (dict): The dictionary to traverse.
+    
+    Returns:
+        int: The count of leaves.
+    """
+    if not isinstance(d, dict):  # Base case: not a dictionary
+        return 1
+    return sum(count_leaves(value) for value in d.values())
+
+def compute_95_confidence_interval_margin_of_error(values, take_absolute_value = False):
+    # values = unique_mcrs_df[column]
+    if take_absolute_value:
+        values = values.abs()
+    
+    # Step 1: Compute mean
+    mean = np.mean(values)
+
+    # Step 2: Compute Standard Error of the Mean (SEM)
+    sem = np.std(values, ddof=1) / np.sqrt(len(values))
+
+    # Step 3: Degrees of freedom
+    df = len(values) - 1
+
+    # Step 4: Critical t-value for 95% confidence
+    t_critical = t.ppf(0.975, df)  # Two-tailed 95% confidence
+
+    # Step 5: Margin of error
+    margin_of_error = t_critical * sem
+
+    # # Step 6: Compute confidence interval
+    # ci_lower = mean - margin_of_error
+    # ci_upper = mean + margin_of_error
+
+    return mean, margin_of_error  # , ci_lower, ci_upper
