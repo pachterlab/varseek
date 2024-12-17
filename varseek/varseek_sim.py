@@ -473,8 +473,8 @@ def sim(
                                 noise_str = "n"
                                 noisy_read_indices_mutant.append(i)
 
-                        read_id = f"{mcrs_id}_{i}{selected_strand}M{noise_str}"
-                        read_header = f"{header}_{i}{selected_strand}M{noise_str}"
+                        read_id = f"{mcrs_id}_{i}{selected_strand}M{noise_str}_row{total_fragments}"
+                        read_header = f"{header}_{i}{selected_strand}M{noise_str}_row{total_fragments}"
                         fa_file.write(f">{read_id}\n{sequence_chunk}\n")
                         mutant_dict = {
                             "read_id": read_id,
@@ -519,8 +519,8 @@ def sim(
                                 noise_str = "n"
                                 noisy_read_indices_wt.append(i)
 
-                        read_id = f"{mcrs_id}_{i}{selected_strand}W{noise_str}"
-                        read_header = f"{header}_{i}{selected_strand}W{noise_str}"
+                        read_id = f"{mcrs_id}_{i}{selected_strand}W{noise_str}_row{total_fragments}"
+                        read_header = f"{header}_{i}{selected_strand}W{noise_str}_row{total_fragments}"
                         fa_file.write(f">{read_id}\n{sequence_chunk}\n")
                         wt_dict = {
                             "read_id": read_id,
