@@ -468,7 +468,7 @@ def sim(
                                 error_rate=error_rate,
                                 error_distribution=error_distribution,
                                 max_errors=max_errors,
-                            )
+                            )  # no need to pass seed here since it's already set
                             if sequence_chunk != sequence_chunk_old:
                                 noise_str = "n"
                                 noisy_read_indices_mutant.append(i)
@@ -514,7 +514,7 @@ def sim(
                                 error_rate=error_rate,
                                 error_distribution=error_distribution,
                                 max_errors=max_errors,
-                            )
+                            )  # no need to pass seed here since it's already set
                             if sequence_chunk != sequence_chunk_old:
                                 noise_str = "n"
                                 noisy_read_indices_wt.append(i)

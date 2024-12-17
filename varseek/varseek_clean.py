@@ -4,13 +4,22 @@ import numpy as np
 import pandas as pd
 import anndata
 
+import scipy as sp
+import pysam
+
 from varseek.utils import (
     plot_knee_plot,
     increment_adata_based_on_dlist_fns,
     decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_mode,
     remove_adata_columns,
-    adjust_mutation_adata_by_normal_gene_matrix
+    adjust_mutation_adata_by_normal_gene_matrix,
+    match_adata_orders,
+    write_to_vcf,
+    write_vcfs_for_rows
 )
+
+def make_vcf():
+    pass
 
 
 def clean(
@@ -57,6 +66,7 @@ def clean(
     gene_set_to_exclusively_keep=None,
     gene_set_to_exclude=None,
     adata_normal_genome_output_path=None,
+    make_vcf = False,
     verbose=False,
     **kwargs,
 ):

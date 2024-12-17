@@ -1,4 +1,5 @@
 import os
+import re
 
 from .utils import (
     set_up_logger,
@@ -55,6 +56,14 @@ def fastqpp(
     rnaseq_fastq_files_list_dict = {}
     rnaseq_fastq_files_list_dict["original"] = rnaseq_fastq_files_list
 
+    rnaseq_fastq_files_list_sequence_only = []
+
+    # don't include index files in any of the processing below
+    for filename in rnaseq_fastq_files_list:
+        match = re.search(r"_(I1|I2)_", filename)  # checks if index file (R1 and R2 are generally in scRNAseq files, not in bulk RNAseq, so I check specifically for the index notation)
+        if not match:
+            rnaseq_fastq_files_list_sequence_only.append(filename)
+
     if trim_edges_off_reads:
         print("Trimming edges off reads")
         rnaseq_fastq_files_list = trim_edges_off_reads_fastq_list(
@@ -67,7 +76,7 @@ def fastqpp(
             length_required=minimum_length,
             fastp=fastp,
         )
-        rnaseq_fastq_files_list_dict["trimmed"] = rnaseq_fastq_files_list
+        rnaseq_fastq_files_list_dict["quality_controlled"] = rnaseq_fastq_files_list
 
     if run_fastqc:
         run_fastqc_and_multiqc(rnaseq_fastq_files_list, fastqc_out_dir)

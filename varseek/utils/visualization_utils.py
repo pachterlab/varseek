@@ -1052,14 +1052,18 @@ def plot_knee_plot(
     plt.close()
 
 
-def plot_overall_metrics(metric_dict_collection, primary_metrics = ("accuracy", "sensitivity", "specificity"), secondary_metric = "", display_numbers = False, unique_mcrs_df = None, show_p_values = False, bonferroni = True, output_file = None, show = True, output_file_p_values = None):
+def plot_overall_metrics(metric_dict_collection, primary_metrics = ("accuracy", "sensitivity", "specificity"), display_numbers = False, unique_mcrs_df = None, show_p_values = False, bonferroni = True, output_file = None, show = True, output_file_p_values = None, filter_real_negatives = False):
     if not isinstance(primary_metrics, (str, list, tuple)):
         raise ValueError("Primary metrics must be a string, list, or tuple.")
-    if not isinstance(secondary_metric, str):
-        raise ValueError("Secondary metrics must be a string or None.")
     
-    # if unique_mcrs_df is not None:  #* uncomment if I use unique_mcrs_df in this function directly (and not just in the p-value stuff where I copy it anyways)
-    #     unique_mcrs_df = unique_mcrs_df.copy()
+    if unique_mcrs_df is not None:
+        unique_mcrs_df = unique_mcrs_df.copy()
+
+    if not filter_real_negatives and "expression_error" in primary_metrics:
+        print("Warning: filtering real negatives is recommended when using expression error as a primary metric, but this setting is not currently enabled. Recommended: filter_real_negatives = True.")
+    
+    if filter_real_negatives:
+        unique_mcrs_df = unique_mcrs_df[unique_mcrs_df['included_in_synthetic_reads_mutant'] == True]
     
     if isinstance(primary_metrics, str):
         primary_metrics = [primary_metrics]
@@ -1068,10 +1072,6 @@ def plot_overall_metrics(metric_dict_collection, primary_metrics = ("accuracy", 
     
     # Extract keys and values
     groups = list(metric_dict_collection.keys())  # Outer keys: varseek, mutect2, haplotypecaller
-    if secondary_metric:
-        if secondary_metric not in {"mean_magnitude_expression_error", "median_magnitude_expression_error", "mean_expression_error", "median_expression_error"}:
-            raise ValueError("Invalid error metric. Please choose from: 'mean_magnitude_expression_error', 'median_magnitude_expression_error', 'mean_expression_error', 'median_expression")
-        x_secondary = len(primary_metrics)  # Position for the secondary metric
     colors = color_map_20[:len(groups)]
 
     # Prepare data
@@ -1099,30 +1099,8 @@ def plot_overall_metrics(metric_dict_collection, primary_metrics = ("accuracy", 
     # ax1.set_title("Comparison of Metrics Across Tools", fontsize=14)
     if "accuracy" in primary_metrics or "sensitivity" in primary_metrics or "specificity" in primary_metrics:
         ax1.set_ylim(0, 1)
-    if secondary_metric:
-        ax1.set_ylabel(", ".join(map(str.capitalize, primary_metrics)), fontsize=12)
-        ax1.set_xticks(np.append(x_primary, x_secondary))
-        ax1.set_xticklabels(primary_metrics + [secondary_metric], fontsize=12, rotation=45)
-        # Add a secondary y-axis for the secondary metric
-        ax2 = ax1.twinx()
-        for i, group in enumerate(groups):
-            y_value_secondary = metric_dict_collection[group][secondary_metric]
-            bars_secondary = ax2.bar(x_secondary + offsets[i], y_value_secondary, bar_width, color=colors[i], alpha=0.7)
-
-            # Add value annotations for the secondary metric
-            if display_numbers:
-                for bar, value in zip(bars_secondary, [y_value_secondary]):
-                    ax2.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
-                            f"{value:.2f}", ha="center", va="bottom", fontsize=10)
-
-        # Customize the secondary y-axis
-        max_secondary = max(metric_dict_collection[group][secondary_metric] for group in groups) * 1.1  # Add 10% padding
-        metric_secondary_for_axis_name = secondary_metric.replace("_", " ").title()
-        ax2.set_ylabel(metric_secondary_for_axis_name, fontsize=12)
-        ax2.set_ylim(0, max_secondary)
-    else:
-        ax1.set_xticks(x_primary)
-        ax1.set_xticklabels(primary_metrics, fontsize=12)
+    ax1.set_xticks(x_primary)
+    ax1.set_xticklabels(primary_metrics, fontsize=12)
 
     metric_to_tool_to_p_value_dict_of_dicts = {}
     margins_of_error = {}
@@ -1188,18 +1166,19 @@ def plot_overall_metrics(metric_dict_collection, primary_metrics = ("accuracy", 
                         if metric in margins_of_error and group in margins_of_error[metric]:
                             # Calculate error values
                             mean_value, margin_of_error = margins_of_error[metric][group]
-                            yerr = [margin_of_error, margin_of_error]
-                            x_value = x_primary[i] + offsets[j]
+                            if margin_of_error != 0:
+                                yerr = [margin_of_error, margin_of_error]
+                                x_value = x_primary[i] + offsets[j]
 
-                            # Plot the point with the confidence interval
-                            ax1.errorbar(
-                                x_value, mean_value, 
-                                yerr=np.array([yerr]).T,  # Transpose to match dimensions
-                                fmt='',  # Marker for the point
-                                capsize=5,  # Adds caps to the error bars
-                                label="Mean with 95% CI",
-                                color="black"
-                            )
+                                # Plot the point with the confidence interval
+                                ax1.errorbar(
+                                    x_value, mean_value, 
+                                    yerr=np.array([yerr]).T,  # Transpose to match dimensions
+                                    fmt='',  # Marker for the point
+                                    capsize=5,  # Adds caps to the error bars
+                                    label="Mean with 95% CI",
+                                    color="black"
+                                )
 
                         # p-values
                         if group in metric_to_tool_to_p_value_dict_of_dicts[metric]:
@@ -1223,8 +1202,8 @@ def plot_overall_metrics(metric_dict_collection, primary_metrics = ("accuracy", 
                             
                             y_end = y_start
 
-                            ax1.plot([start_x, start_x, end_x, end_x], [y_start, y_end, y_end, y_start], lw=1.5, c="k")
-                            ax1.text((start_x + end_x) * .5, y_end, symbol, ha='center', va='bottom', color="k")
+                            ax1.plot([start_x, start_x, end_x, end_x], [y_start, y_end, y_end, y_start], lw=1.5, c="k")  # plot the bar
+                            ax1.text((start_x + end_x) * .5, y_end, symbol, ha='center', va='bottom', color="k")  # plot the asterisk(s)
 
                             number_of_p_values_in_this_cluster += 1
         
@@ -1256,17 +1235,20 @@ def calculate_grouped_metric(grouped_df, y_metric, tool):
     elif y_metric == "specificity":
         grouped_df[y_metric_output_column] = grouped_df[TN_column] / (grouped_df[TN_column] + grouped_df[FP_column])
         grouped_df.loc[(grouped_df[TN_column] + grouped_df[FP_column]) == 0, y_metric] = 1.0
-    elif y_metric == "mutation_expression_prediction_error":
+    elif y_metric == "mean_magnitude_expression_error" or y_metric == "mean_expression_error":
         grouped_df[y_metric_output_column] = (grouped_df[mutation_expression_prediction_error_column] / grouped_df["number_of_elements_in_the_group"])
     else:
         raise ValueError(f"Invalid y_metric: {y_metric}. Valid options are 'accuracy', 'sensitivity', 'specificity', and 'mutation_expression_prediction_error'")
 
     return grouped_df
 
-def create_stratified_metric_line_plot(unique_mcrs_df, x_stratification, y_metric, tools, show_p_values = False, bonferroni = True, output_file = None, show = True, output_file_p_values = None, filter_real_negatives = False):
+def create_stratified_metric_line_plot(unique_mcrs_df, x_stratification, y_metric, tools, bins = None, show_p_values = False, show_confidence_intervals = False, bonferroni = True, output_file = None, show = True, output_file_p_values = None, filter_real_negatives = False):
     assert x_stratification in unique_mcrs_df.columns, f"Invalid x_stratification: {x_stratification}"
     
     unique_mcrs_df = unique_mcrs_df.copy()  # make a copy to avoid modifying the original DataFrame
+
+    if "expression_error" in y_metric and not filter_real_negatives and x_stratification not in {"number_of_reads_mutant"}:
+        print("Warning: filtering real negatives is recommended when using expression error as a primary metric and stratifying by something other than number_of_reads_mutant, but this setting is not currently enabled. Recommended: filter_real_negatives = True.")
 
     if y_metric == "sensitivity" or filter_real_negatives:
         unique_mcrs_df = unique_mcrs_df[unique_mcrs_df['included_in_synthetic_reads_mutant'] == True]
@@ -1276,7 +1258,36 @@ def create_stratified_metric_line_plot(unique_mcrs_df, x_stratification, y_metri
     # Prepare for plotting
     plt.figure(figsize=(10, 6))
 
-    x_values = sorted(list(unique_mcrs_df[x_stratification].unique()))
+    x_values_raw = sorted(list(unique_mcrs_df[x_stratification].unique()))
+
+    x_stratification_original = x_stratification  # to label x-axis, as x_stratification may be changed to "bin"
+
+    if bins:  # remember bins are left-inclusive and right-exclusive
+        # list comprehension to assign labels list
+        labels = [f"[{bins[i]}, {bins[i+1]})" for i in range(len(bins)-1)]  # eg bins [0, 0.25, 0.5, 0.75, 1] --> labels ["[0, 0.25)", "[0.25, 0.5)", "[0.5, 0.75)", "[0.75, 1)"]
+        
+        # replace "inf" with true start and end values
+        if '-inf' in labels[0]:
+            labels[0] = labels[0].replace('-inf', str(x_values_raw[0]))
+        if 'inf' in labels[-1]:
+            labels[-1] = labels[-1].replace('inf', str(x_values_raw[-1]))
+
+        number_of_rows_before_filtering = len(unique_mcrs_df)
+        # remove rows lower than lower bound or higher than upper bound
+        unique_mcrs_df = unique_mcrs_df[(unique_mcrs_df[x_stratification] >= bins[0]) & (unique_mcrs_df[x_stratification] < bins[-1])]
+        number_of_rows_after_filtering = len(unique_mcrs_df)
+        
+        if number_of_rows_before_filtering != number_of_rows_after_filtering:
+            print(f"Removed {number_of_rows_before_filtering - number_of_rows_after_filtering} rows due to binning.")
+
+        # Assign bins to a new column
+        unique_mcrs_df["bin"] = pd.cut(unique_mcrs_df[x_stratification], bins=bins, labels=labels, include_lowest=True)
+
+        x_values = labels
+        x_stratification = "bin"
+    else:
+        x_values = x_values_raw
+
     x_indices = range(len(x_values))
     
     if y_metric == "mutation_expression_prediction_error":
@@ -1284,21 +1295,20 @@ def create_stratified_metric_line_plot(unique_mcrs_df, x_stratification, y_metri
             assert f"mutation_expression_prediction_error_{tool}" in unique_mcrs_df.columns, f"mutation_expression_prediction_error_{tool} not in unique_mcrs_df.columns"
 
     # created grouped_df
-    if y_metric == "mutation_expression_prediction_error" and expression_error_summary_statistic == "mean_magnitude":  # calculate sum of magnitudes for this one column
+    if y_metric == "mean_magnitude_expression_error":  # calculate sum of magnitudes for this one column
         aggregation_functions = {}
         for tool in tools:
             # Group by tumor purity and calculate sensitivity
-            aggregation_functions[f"mutation_expression_prediction_error_{tool}"] = lambda x: (x.abs()).sum(),  # Sum of absolute values
+            aggregation_functions[f"mutation_expression_prediction_error_{tool}"] = lambda x: x.abs().sum()  # Sum of absolute values
 
         # Use the default sum for all other columns
         grouped_df = unique_mcrs_df.groupby(x_stratification).agg(
             {col: aggregation_functions.get(col, "sum") for col in unique_mcrs_df.columns}  # sum is the default aggregation function
         )
-    else:  # including if expression_error_summary_statistic == "mean":  # calculate sum for all columns
-        grouped_df = unique_mcrs_df.groupby(x_stratification).sum()
+    else:  # including if y_metric == mean_expression_error:  # calculate sum for all columns
+        grouped_df = unique_mcrs_df.groupby(x_stratification).sum(numeric_only = True)
 
     grouped_df["number_of_elements_in_the_group"] = unique_mcrs_df.groupby(x_stratification).size()
-
     
     # redundant code for calculating y-max (because I need this for setting p-value asterisk height)
     if y_metric in {"accuracy", "sensitivity", "specificity"}:
@@ -1306,7 +1316,7 @@ def create_stratified_metric_line_plot(unique_mcrs_df, x_stratification, y_metri
     else:
         custom_y_limit = 0
         for i, tool in enumerate(tools):
-            grouped_df = calculate_grouped_metric(grouped_df, y_metric, tool, expression_error_summary_statistic = expression_error_summary_statistic)
+            grouped_df = calculate_grouped_metric(grouped_df, y_metric, tool)
             y_metric_tool_specific = f'{y_metric}_{tool}'
             custom_y_limit = max(custom_y_limit, grouped_df[y_metric_tool_specific].max())
 
@@ -1315,7 +1325,7 @@ def create_stratified_metric_line_plot(unique_mcrs_df, x_stratification, y_metri
     metric_to_tool_to_p_value_dict_of_dicts = nested_dict()
     
     for i, tool in enumerate(tools):
-        grouped_df = calculate_grouped_metric(grouped_df, y_metric, tool, expression_error_summary_statistic = expression_error_summary_statistic)
+        grouped_df = calculate_grouped_metric(grouped_df, y_metric, tool)
         y_metric_tool_specific = f'{y_metric}_{tool}'  # matches column created by calculate_grouped_metric - try not changing this name if possible
 
         # Plot sensitivity as a function of tumor purity
@@ -1323,24 +1333,29 @@ def create_stratified_metric_line_plot(unique_mcrs_df, x_stratification, y_metri
 
         if (show_p_values or output_file_p_values) and tool != "varseek":  # because varseek is the reference tool
             p_value_list = []
+            confidence_intervals_list = []
             for x_value in x_values:
                 filtered_unique_mcrs_df_for_p_value = unique_mcrs_df.loc[unique_mcrs_df[x_stratification] == x_value]
                 if len(filtered_unique_mcrs_df_for_p_value) > 1:
                     number_of_valid_p_values += 1
                     if y_metric in {"accuracy", "sensitivity", "specificity"}:  # Mcnemar
                         p_value = calculate_individual_mcnemar(filtered_unique_mcrs_df_for_p_value, 'mutation_detected_varseek', f'mutation_detected_{tool}')
-                        p_value_list.append(p_value)
+                        margin_of_error = 0
 
                     elif y_metric in {"mean_magnitude_expression_error"}:  # paired t-test
                         p_value = calculate_individual_paired_t_test(filtered_unique_mcrs_df_for_p_value, column1 = "mutation_expression_prediction_error_varseek", column2 = f"mutation_expression_prediction_error_{tool}", take_absolute_value = True)
+                        _, margin_of_error = compute_95_confidence_interval_margin_of_error(filtered_unique_mcrs_df_for_p_value[f'mutation_expression_prediction_error_{tool}'], take_absolute_value = True)
+                        
 
                     elif y_metric in {"mean_expression_error"}:
                         p_value = calculate_individual_paired_t_test(filtered_unique_mcrs_df_for_p_value, column1 = "mutation_expression_prediction_error_varseek", column2 = f"mutation_expression_prediction_error_{tool}", take_absolute_value = False)
+                        _, margin_of_error = compute_95_confidence_interval_margin_of_error(filtered_unique_mcrs_df_for_p_value[f'mutation_expression_prediction_error_{tool}'], take_absolute_value = False)
                     
                     else:
                         raise ValueError(f"Invalid metric for p-value calculation: {y_metric}. Valid options are 'accuracy', 'sensitivity', 'specificity', 'mean_magnitude_expression_error', 'mean_expression_error'")
                     
                     p_value_list.append(p_value)
+                    confidence_intervals_list.append(margin_of_error)
                 else:
                     p_value_list.append(1.0)
 
@@ -1351,7 +1366,22 @@ def create_stratified_metric_line_plot(unique_mcrs_df, x_stratification, y_metri
         
             # Plot '*' above points where p-value < 0.05
             if show_p_values:
-                for x, y, p_value in zip(x_indices, list(grouped_df[y_metric_tool_specific]), p_value_list):
+                for x, y, p_value, margin_of_error in zip(x_indices, list(grouped_df[y_metric_tool_specific]), p_value_list, confidence_intervals_list):
+                    if show_confidence_intervals and margin_of_error != 0:
+                        # confidence interval errors
+                        yerr = [margin_of_error, margin_of_error]
+
+                        # Plot the point with the confidence interval
+                        plt.errorbar(
+                            x, y, 
+                            yerr=np.array([yerr]).T,  # Transpose to match dimensions
+                            fmt='',  # Marker for the point
+                            capsize=5,  # Adds caps to the error bars
+                            label="Mean with 95% CI",
+                            color=color_map_20[i]
+                        )
+
+                    # p-values
                     metric_to_tool_to_p_value_dict_of_dicts[str(x)][tool] = p_value
                     if p_value >= 0.05:  #* increase these values to show more p-values for debugging
                         continue
@@ -1362,6 +1392,7 @@ def create_stratified_metric_line_plot(unique_mcrs_df, x_stratification, y_metri
                     else:
                         symbol = "***"
                     plt.text(x, y + (custom_y_limit*0.01), symbol, color=color_map_20[i], fontsize=12, ha='center')  # Slightly above the point
+                    
 
     # # Set x-axis to log2 scale
     # if log:  # log can be False (default, not log) or True (defaults to 2) or int (log base)
@@ -1376,8 +1407,15 @@ def create_stratified_metric_line_plot(unique_mcrs_df, x_stratification, y_metri
     # Customize plot
     if y_metric in {"accuracy", "sensitivity", "specificity"}:  #"accuracy" in primary_metrics or "sensitivity" in primary_metrics or "specificity" in primary_metrics:
         plt.ylim(0, custom_y_limit)
+
+    x_values_new = []
+    for x_value in x_values:  # add the number of elements in each stratification below the x-axis label
+        number_of_elements = grouped_df.loc[grouped_df.index == x_value]['number_of_elements_in_the_group'].iloc[0]
+        x_values_new.append(f"{x_value}\n(n={number_of_elements})")
+    x_values = x_values_new
+
     plt.xticks(ticks=x_indices, labels=x_values)
-    plt.xlabel(x_stratification, fontsize=12)
+    plt.xlabel(x_stratification_original, fontsize=12)
     plt.ylabel(y_metric, fontsize=12)
     # plt.legend(title="Tools")
     plt.grid(axis="y", linestyle="--", alpha=0.7)
@@ -1471,6 +1509,8 @@ def calculate_mcnemar(unique_mcrs_df, tools, metric = "accuracy", out_file = Non
 
 
 def calculate_individual_paired_t_test(df, column1, column2, tails = 2, larger_column_expected = None, take_absolute_value = False):
+    df = df.copy()  # make a copy to avoid modifying the original DataFrame
+    
     if take_absolute_value:
         df[column1] = df[column1].abs()
         df[column2] = df[column2].abs()
@@ -1566,3 +1606,192 @@ def compute_95_confidence_interval_margin_of_error(values, take_absolute_value =
     # ci_upper = mean + margin_of_error
 
     return mean, margin_of_error  # , ci_lower, ci_upper
+
+
+
+def create_stratified_metric_bar_plot_updated(unique_mcrs_df, x_stratification, y_metric, tools, display_numbers = False, show_p_values = False, show_confidence_intervals = True, bonferroni = True, output_file = None, show = True, output_file_p_values = None, filter_real_negatives = False):
+    assert x_stratification in unique_mcrs_df.columns, f"Invalid x_stratification: {x_stratification}"
+    
+    unique_mcrs_df = unique_mcrs_df.copy()  # make a copy to avoid modifying the original DataFrame
+
+    if "expression_error" in y_metric and not filter_real_negatives and x_stratification not in {"number_of_reads_mutant"}:
+        print("Warning: filtering real negatives is recommended when using expression error as a primary metric and stratifying by something other than number_of_reads_mutant, but this setting is not currently enabled. Recommended: filter_real_negatives = True.")
+
+    if y_metric == "sensitivity" or filter_real_negatives:
+        unique_mcrs_df = unique_mcrs_df[unique_mcrs_df['included_in_synthetic_reads_mutant'] == True]
+    elif y_metric == "specificity":
+        unique_mcrs_df = unique_mcrs_df[unique_mcrs_df['included_in_synthetic_reads_mutant'] == False]
+
+    # Prepare for plotting
+    plt.figure(figsize=(10, 6))
+
+    if y_metric == "mutation_expression_prediction_error":
+        for tool in tools:
+            assert f"mutation_expression_prediction_error_{tool}" in unique_mcrs_df.columns, f"mutation_expression_prediction_error_{tool} not in unique_mcrs_df.columns"
+
+    # created grouped_df
+    if y_metric == "mean_magnitude_expression_error":  # calculate sum of magnitudes for this one column
+        aggregation_functions = {}
+        for tool in tools:
+            # Group by tumor purity and calculate sensitivity
+            aggregation_functions[f"mutation_expression_prediction_error_{tool}"] = lambda x: x.abs().sum()  # Sum of absolute values
+
+        # Use the default sum for all other columns
+        grouped_df = unique_mcrs_df.groupby(x_stratification).agg(
+            {col: aggregation_functions.get(col, "sum") for col in unique_mcrs_df.columns}  # sum is the default aggregation function
+        )
+    else:  # including if y_metric == mean_expression_error:  # calculate sum for all columns
+        grouped_df = unique_mcrs_df.groupby(x_stratification).sum(numeric_only = True)
+
+    grouped_df["number_of_elements_in_the_group"] = unique_mcrs_df.groupby(x_stratification).size()
+    
+    # redundant code for calculating y-max (because I need this for setting p-value asterisk height)
+    if y_metric in {"accuracy", "sensitivity", "specificity"}:
+        custom_y_limit = 1
+    else:
+        custom_y_limit = 0
+        for i, tool in enumerate(tools):
+            grouped_df = calculate_grouped_metric(grouped_df, y_metric, tool)
+            y_metric_tool_specific = f'{y_metric}_{tool}'
+            custom_y_limit = max(custom_y_limit, grouped_df[y_metric_tool_specific].max())
+
+    number_of_valid_p_values = 0
+    nested_dict = lambda: defaultdict(nested_dict)
+    stratification_to_tool_to_p_value_dict_of_dicts = nested_dict()
+    stratification_to_tool_to_error_dict_of_dicts = nested_dict()
+
+    # Prepare data
+    bar_names = unique_mcrs_df[x_stratification].unique()
+    x_primary = np.arange(len(bar_names))  # Positions for the metrics on the x-axis
+    bar_width = 0.25  # Width of each primary_metrics
+    offsets = np.arange(len(tools)) * bar_width - (len(tools) - 1) * bar_width / 2  # Centered offsets
+
+    # Create the plot
+    y_values_primary_total = []  # y_values_primary_total holds all metrics across all tools - I could make this a nested dict if desired
+    for i, tool in enumerate(tools):
+        grouped_df = calculate_grouped_metric(grouped_df, y_metric, tool)
+        y_metric_tool_specific = f'{y_metric}_{tool}'  # matches column created by calculate_grouped_metric - try not changing this name if possible
+        y_values_primary = [grouped_df.loc[grouped_df.index == bar_name, y_metric_tool_specific][0] for bar_name in bar_names]  # y_values_primary just holds all metrics for a specific tool
+        bars_primary = plt.bar(x_primary + offsets[i], y_values_primary, bar_width, label=tool, color=color_map_20[i])
+
+        # Add value annotations for the primary metrics
+        if display_numbers:
+            for bar, value in zip(bars_primary, y_values_primary):
+                plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
+                        f"{value:.2f}", ha="center", va="bottom", fontsize=10)
+                
+        y_values_primary_total.extend(y_values_primary)
+                
+        if (show_p_values or output_file_p_values) and tool != "varseek":  # because varseek is the reference tool
+            p_value_list = []
+            confidence_intervals_list = []
+            for x_value in bar_names:
+                filtered_unique_mcrs_df_for_p_value = unique_mcrs_df.loc[unique_mcrs_df[x_stratification] == x_value]
+                if len(filtered_unique_mcrs_df_for_p_value) > 1:
+                    number_of_valid_p_values += 1
+                    if y_metric in {"accuracy", "sensitivity", "specificity"}:  # Mcnemar
+                        p_value = calculate_individual_mcnemar(filtered_unique_mcrs_df_for_p_value, 'mutation_detected_varseek', f'mutation_detected_{tool}')
+                        mean_value, margin_of_error = 0, 0
+
+                    elif y_metric in {"mean_magnitude_expression_error"}:  # paired t-test
+                        p_value = calculate_individual_paired_t_test(filtered_unique_mcrs_df_for_p_value, column1 = "mutation_expression_prediction_error_varseek", column2 = f"mutation_expression_prediction_error_{tool}", take_absolute_value = True)
+                        mean_value, margin_of_error = compute_95_confidence_interval_margin_of_error(filtered_unique_mcrs_df_for_p_value[f'mutation_expression_prediction_error_{tool}'], take_absolute_value = True)
+
+                    elif y_metric in {"mean_expression_error"}:
+                        p_value = calculate_individual_paired_t_test(filtered_unique_mcrs_df_for_p_value, column1 = "mutation_expression_prediction_error_varseek", column2 = f"mutation_expression_prediction_error_{tool}", take_absolute_value = False)
+                        mean_value, margin_of_error = compute_95_confidence_interval_margin_of_error(filtered_unique_mcrs_df_for_p_value[f'mutation_expression_prediction_error_{tool}'], take_absolute_value = False)
+                    
+                    else:
+                        raise ValueError(f"Invalid metric for p-value calculation: {y_metric}. Valid options are 'accuracy', 'sensitivity', 'specificity', 'mean_magnitude_expression_error', 'mean_expression_error'")
+                else:
+                    p_value = 1.0
+                    mean_value, margin_of_error = 0, 0
+
+                p_value_list.append(p_value)
+                confidence_intervals_list.append(margin_of_error)
+                stratification_to_tool_to_p_value_dict_of_dicts[x_value][tool] = p_value
+                stratification_to_tool_to_error_dict_of_dicts[x_value][tool] = (mean_value, margin_of_error)
+
+            # bonferroni
+            if bonferroni:
+                n_tests = number_of_valid_p_values * (len(tools) - 1)  # because varseek is the reference tool
+                p_value_list = [min((p_value * n_tests), 1.0) for p_value in p_value_list]
+                for x_value in bar_names:
+                    stratification_to_tool_to_p_value_dict_of_dicts[x_value][tool] = min((stratification_to_tool_to_p_value_dict_of_dicts[x_value][tool] * n_tests), 1.0)
+        
+    # Plot '*' above points where p-value < 0.05
+    if show_p_values:
+        for i, bar_name in enumerate(bar_names):
+            if bar_name in stratification_to_tool_to_p_value_dict_of_dicts:
+                number_of_p_values_in_this_cluster = 0
+                for j, tool in enumerate(tools):
+                    # 95% confidence intervals
+                    if bar_name in stratification_to_tool_to_error_dict_of_dicts and tool in stratification_to_tool_to_error_dict_of_dicts[bar_name]:
+                        # Calculate error values
+                        mean_value, margin_of_error = stratification_to_tool_to_error_dict_of_dicts[bar_name][tool]
+                        if margin_of_error != 0:
+                            yerr = [margin_of_error, margin_of_error]
+                            x_value = x_primary[i] + offsets[j]
+
+                            # Plot the point with the confidence interval
+                            plt.errorbar(
+                                x_value, mean_value, 
+                                yerr=np.array([yerr]).T,  # Transpose to match dimensions
+                                fmt='',  # Marker for the point
+                                capsize=5,  # Adds caps to the error bars
+                                label="Mean with 95% CI",
+                                color="black"
+                            )
+
+                    # p-values
+                    if tool in stratification_to_tool_to_p_value_dict_of_dicts[bar_name]:
+                        p_value = stratification_to_tool_to_p_value_dict_of_dicts[bar_name][tool]
+
+                        if p_value >= 0.05:  #* increase these values to show more p-values for debugging
+                            continue
+                        elif p_value < 0.05 and p_value >= 0.01:
+                            symbol = "*"
+                        elif p_value < 0.01 and p_value >= 0.001:
+                            symbol = "**"
+                        else:
+                            symbol = "***"
+                        
+                        start_x = x_primary[i] + offsets[0]  # assuming varseek is first element
+                        end_x = x_primary[i] + offsets[j]
+
+                        if y_metric in {"accuracy", "sensitivity", "specificity"}:
+                            y_start = max(y_values_primary_total) + (number_of_p_values_in_this_cluster * 0.05) + 0.05
+                        else:
+                            y_start = (max(y_values_primary_total) + (number_of_p_values_in_this_cluster * 1.7)) * 1.08  # 1.7 (left constant) adjusts based on other bars; 1.08 (right constant) adjusts to make sure it doesn't hit the top bar
+                        
+                        y_end = y_start
+
+                        plt.plot([start_x, start_x, end_x, end_x], [y_start, y_end, y_end, y_start], lw=1.5, c="k")  # plot the bar
+                        plt.text((start_x + end_x) * .5, y_end, symbol, ha='center', va='bottom', color="k")  # plot the asterisk(s)
+
+                        number_of_p_values_in_this_cluster += 1
+
+    if output_file_p_values:
+        with open(output_file_p_values, "w") as f:
+            json.dump(stratification_to_tool_to_p_value_dict_of_dicts, f, indent=4)
+    
+    if y_metric in {"accuracy", "sensitivity", "specificity"}:  #"accuracy" in primary_metrics or "sensitivity" in primary_metrics or "specificity" in primary_metrics:
+        plt.ylim(0, custom_y_limit)
+
+    x_values_new = []
+    for x_value in bar_names:  # add the number of elements in each stratification below the x-axis label
+        number_of_elements = grouped_df.loc[grouped_df.index == x_value]['number_of_elements_in_the_group'].iloc[0]
+        x_values_new.append(f"{x_value}\n(n={number_of_elements})")
+    bar_names = x_values_new
+
+    plt.xticks(ticks=x_primary, labels=bar_names, fontsize=12)
+    plt.ylabel(y_metric, fontsize=12)
+
+    # Show the plot
+    plt.grid(axis="y", linestyle="--", alpha=0.7)
+    plt.tight_layout()
+    if output_file:
+        plt.savefig(output_file)
+    if show:
+        plt.show()
+        plt.close()

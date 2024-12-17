@@ -130,6 +130,7 @@ def fasta_to_fastq(
     k=None,
     add_noise=False,
     average_quality_for_noisy_reads=30,
+    seed=None
 ):
     """
     Convert a FASTA file to a FASTQ file with a default quality score
@@ -143,7 +144,7 @@ def fasta_to_fastq(
             if k is None or k >= len(sequence):
                 if add_noise:
                     quality_scores = generate_noisy_quality_scores(
-                        sequence, average_quality_for_noisy_reads
+                        sequence, average_quality_for_noisy_reads, seed=seed
                     )
                 else:
                     quality_scores = quality_score * len(sequence)
@@ -156,7 +157,7 @@ def fasta_to_fastq(
                     kmer = sequence[i : i + k]
                     if add_noise:
                         quality_scores = generate_noisy_quality_scores(
-                            kmer, average_quality_for_noisy_reads
+                            kmer, average_quality_for_noisy_reads, seed=seed
                         )
                     else:
                         quality_scores = quality_score * k
@@ -2415,7 +2416,7 @@ def append_row(read_df, id_value, header_value, sequence_value, start_position, 
         }
     )
 
-    return pd.concat([read_df, pd.DataFrame([new_row])], ignore_index=True)  # old (gives warning): return read_df.append(new_row, ignore_index=True)
+    return pd.concat([read_df, pd.DataFrame([new_row])], ignore_index=True)    # concat returns a new df, and does NOT modify the original df in-place   # old (gives warning): return read_df.append(new_row, ignore_index=True)
 
 
 def build_random_genome_read_df(
@@ -2429,7 +2430,8 @@ def build_random_genome_read_df(
     read_length=150,
     input_type="transcriptome",
     strand=None,
-    add_noise=False
+    add_noise=False,
+    seed = 42,
 ):
     # Collect all headers and sequences from the FASTA file
     fasta_output_path_temp = fastq_output_path.replace(".fq", "_temp.fa")
@@ -2469,6 +2471,9 @@ def build_random_genome_read_df(
         mcrs_start_column = "start_position_for_which_read_contains_mutation_cdna"
         mcrs_end_column = "end_mutation_position_cdna"
 
+    if seed:
+        random.seed(seed)
+
     i = 0
     num_loops = 0
     with open(fasta_output_path_temp, "a") as fa_file:
@@ -2478,12 +2483,15 @@ def build_random_genome_read_df(
 
             len_random_sequence = len(random_sequence)
 
+            if len_random_sequence < read_length:
+                continue
+
             random_transcript = random_transcript.split()[0]  # grab ENST from long transcript name string
             if input_type == "transcriptome":
                 random_transcript = random_transcript.split(".")[0]  # strip version number from ENST
 
             # Choose a random integer between 1 and the sequence_length-read_length as start position
-            start_position = random.randint(1, len_random_sequence-read_length)
+            start_position = random.randint(0, len_random_sequence-read_length)  # positions are 0-index
 
             filtered_mutation_metadata_df = mutation_metadata_df.loc[
                 mutation_metadata_df[fasta_entry_column] == random_transcript
@@ -2497,13 +2505,15 @@ def build_random_genome_read_df(
             )  # if a mutation spans from positions 950-955 and read length=150, then a random sequence between 801-955 will contain the mutation, and thus should be the range of exclusion here
 
             if not is_in_ranges(start_position, ranges):
-                end_position = start_position + read_length
+                end_position = start_position + read_length  # positions are still 0-index
                 if strand is None:
                     selected_strand = random.choice(["f", "r"])
                 else:
                     selected_strand = strand
 
-                random_sequence = random_sequence[start_position:end_position]
+                random_sequence = random_sequence[start_position:end_position]    # positions are 0-index
+                start_position += 1    # positions are now 1-index
+                end_position += 1
 
                 if selected_strand == "r":
                     # start_position, end_position = len(random_sequence) - end_position, len(random_sequence) - start_position  # I am keeping adding the "f/r" in header so I don't need this
@@ -2524,7 +2534,7 @@ def build_random_genome_read_df(
                 print(f"Exiting after only {i} mutations added due to long while loop")
                 break
 
-    fasta_to_fastq(fasta_output_path_temp, fastq_output_path, add_noise=add_noise)
+    fasta_to_fastq(fasta_output_path_temp, fastq_output_path, add_noise=add_noise)  # no need to pass seed here since it's already set
 
     os.remove(fasta_output_path_temp)
     
@@ -2808,8 +2818,7 @@ def align_all_kmers_from_a_given_fasta_entry_to_all_other_kmers_in_the_file(
 
 
 def introduce_sequencing_errors(
-    sequence, error_rate=0.0001, error_distribution=(0.85, 0.1, 0.05), max_errors=float("inf")  # error_distribution is (sub, del, ins)
-):  # Illumina error rate is around 0.01% (1 in 10,000)
+    sequence, error_rate=0.0001, error_distribution=(0.85, 0.1, 0.05), max_errors=float("inf"), seed=None):  # Illumina error rate is around 0.01% (1 in 10,000); error_distribution is (sub, del, ins)
     # Define the possible bases
     bases = ["A", "T", "C", "G"]
     new_sequence = []
@@ -2818,6 +2827,9 @@ def introduce_sequencing_errors(
     error_distribution_sub = error_distribution[0]
     error_distribution_del = error_distribution[1]
     error_distribution_ins = error_distribution[2]
+
+    if seed:
+        random.seed(seed)
 
     for base in sequence:
         if number_errors < max_errors and random.random() < error_rate:
@@ -2835,14 +2847,17 @@ def introduce_sequencing_errors(
     return "".join(new_sequence)
 
 
-def generate_noisy_quality_scores(sequence, avg_quality=30):
+def generate_noisy_quality_scores(sequence, avg_quality=30, seed=None):
+    if seed:
+        random.seed(42)
+    
     # Assume a normal distribution for quality scores, with some fluctuation
     qualities = [max(0, min(40, int(random.gauss(avg_quality, 5)))) for _ in sequence]
     # Convert qualities to ASCII Phred scores (33 is the offset)
     return "".join([chr(q + 33) for q in qualities])
 
 
-def add_polyA_tail(sequence, tail_length_range=(10, 50)):
+def add_polyA_tail(sequence, tail_length_range=(10, 50), seed=42):
     tail_length = random.randint(*tail_length_range)
     return sequence + "A" * tail_length
 
@@ -6712,3 +6727,39 @@ def create_mutated_gene_count_matrix_from_mutation_count_matrix(adata, sum_strat
     adata_gene.var[count_column] = adata_gene.X.sum(axis=0).A1 if hasattr(adata_gene.X, "A1") else np.asarray(adata_gene.X.sum(axis=0)).flatten()
 
     return adata_gene
+
+
+def order_fastqs_correctly_for_kb_count(fastq_folder, keep_index_files=False):
+    # List all files in the directory
+    files = os.listdir(fastq_folder)
+
+    # Custom sort key function
+    def sort_key(filename):
+        # Extract components using regex
+        match = re.search(r"_S(\d+)_L(\d{3})_(R1|R2|I1|I2)_", filename)
+        if match:
+            s_val = int(match.group(1))  # Extract S value as an integer
+            l_val = int(match.group(2))  # Extract L value as an integer
+            r_val = match.group(3)  # Extract R1/R2/I1/I2
+            # Define the order for R/I
+            r_order = {"R1": 0, "R2": 1, "I1": 2, "I2": 3}
+            return (s_val, l_val, r_order[r_val])
+        else:
+            raise ValueError(f"Filename {filename} does not match the expected pattern")
+            # return (float('inf'), float('inf'), float('inf'))  # For unmatched files, push them to the end
+
+    # Sort files using the custom key
+    sorted_files = sorted(files, key=sort_key)
+
+    if not keep_index_files:
+        # Remove index files
+        sorted_files = [filename for filename in sorted_files if not re.search(r"_I[12]_", filename)]
+
+    # # Path to save the text file
+    # output_path = os.path.join(fastq_folder, "sorted_fastqs.txt")
+
+    # with open(output_path, "w") as f:
+    #     for filename in sorted_files:
+    #         f.write(filename + "\n")
+
+    return sorted_files

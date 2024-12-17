@@ -22,7 +22,7 @@ from varseek.utils import (
 
 def summarize(
     adata_path,
-    assay="bulk",
+    technology="bulk",
     output_dir=".",
     overwrite=False,
     top_values=10,
@@ -63,7 +63,7 @@ def summarize(
         mutations_count_any_row = (mutations_with_any_count > 0).sum()
         line = f"Total mutations with count > 0 for any sample/cell: {mutations_count_any_row}"
         f.write(line)
-        if assay == "bulk":
+        if technology == "bulk":
             for sample in adata.obs_names:
                 count_nonzero_mutations = (adata[sample, :].X > 0).sum()
                 line = f"Sample {sample} has {count_nonzero_mutations} mutations with count > 0."
@@ -121,8 +121,8 @@ def summarize(
         f.write(line)
         print(line.strip())  # For verification in console
 
-        # For bulk assays, calculate counts for each sample
-        if assay == "bulk":
+        # For bulk technologys, calculate counts for each sample
+        if technology == "bulk":
             for sample in adata.obs_names:
                 # Calculate mcrs_count per gene for the specific sample
                 gene_counts_per_sample = adata[sample, :].to_df().gt(0).groupby(adata.var["gene_name"], axis=1).sum().gt(0).sum()
