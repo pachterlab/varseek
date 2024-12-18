@@ -130,6 +130,7 @@ def fasta_to_fastq(
     k=None,
     add_noise=False,
     average_quality_for_noisy_reads=30,
+    sd_quality_for_noisy_reads=5,
     seed=None
 ):
     """
@@ -139,12 +140,14 @@ def fasta_to_fastq(
     :param fastq_file: Path to the output FASTQ file.
     :param quality_score: Default quality score to use for each base. Default is "I" (high quality).
     """
+    if seed:
+        random.seed(seed)
     with open(fastq_file, "w") as fastq:
         for sequence_id, sequence in read_fasta(fasta_file):
             if k is None or k >= len(sequence):
                 if add_noise:
                     quality_scores = generate_noisy_quality_scores(
-                        sequence, average_quality_for_noisy_reads, seed=seed
+                        sequence, average_quality_for_noisy_reads, sd_quality_for_noisy_reads    # don't pass seed in here since it is already set earlier
                     )
                 else:
                     quality_scores = quality_score * len(sequence)
@@ -157,8 +160,8 @@ def fasta_to_fastq(
                     kmer = sequence[i : i + k]
                     if add_noise:
                         quality_scores = generate_noisy_quality_scores(
-                            kmer, average_quality_for_noisy_reads, seed=seed
-                        )
+                            kmer, average_quality_for_noisy_reads, sd_quality_for_noisy_reads
+                        )  # don't pass seed in here since it is already set earlier
                     else:
                         quality_scores = quality_score * k
 
@@ -1918,7 +1921,7 @@ def merge_synthetic_read_info_into_mutations_metadata_df(
     mutation_metadata_df, sampled_reference_df, sample_type="all"
 ):
     if sample_type != "m":
-        mutation_metadata_df = mutation_metadata_df.merge(
+        mutation_metadata_df_new = mutation_metadata_df.merge(
             sampled_reference_df[
                 [
                     "header",
@@ -1933,35 +1936,35 @@ def merge_synthetic_read_info_into_mutations_metadata_df(
             how="left",
             suffixes=("", "_new"),
         )
-        mutation_metadata_df["included_in_synthetic_reads_wt"] = (
-            mutation_metadata_df["included_in_synthetic_reads_wt"]
-            | mutation_metadata_df["included_in_synthetic_reads_wt_new"]
+        mutation_metadata_df_new["included_in_synthetic_reads_wt"] = (
+            mutation_metadata_df_new["included_in_synthetic_reads_wt"]
+            | mutation_metadata_df_new["included_in_synthetic_reads_wt_new"]
         )
 
-        mutation_metadata_df["any_noisy_reads_wt"] = (
-            mutation_metadata_df["any_noisy_reads_wt"]
-            | mutation_metadata_df["any_noisy_reads_wt_new"]
+        mutation_metadata_df_new["any_noisy_reads_wt"] = (
+            mutation_metadata_df_new["any_noisy_reads_wt"]
+            | mutation_metadata_df_new["any_noisy_reads_wt_new"]
         )
 
-        mutation_metadata_df["number_of_reads_wt"] = np.where(
-            mutation_metadata_df["number_of_reads_wt"] == 0,
-            mutation_metadata_df["number_of_reads_wt_new"],
-            mutation_metadata_df["number_of_reads_wt"],
+        mutation_metadata_df_new["number_of_reads_wt"] = np.where(
+            (mutation_metadata_df_new["number_of_reads_wt"] == 0) | (mutation_metadata_df_new["number_of_reads_wt"].isna()),
+            mutation_metadata_df_new["number_of_reads_wt_new"],
+            mutation_metadata_df_new["number_of_reads_wt"],
         )
 
-        mutation_metadata_df["list_of_read_starting_indices_wt"] = np.where(
-            pd.isna(mutation_metadata_df["list_of_read_starting_indices_wt"]),
-            mutation_metadata_df["list_of_read_starting_indices_wt_new"],
-            mutation_metadata_df["list_of_read_starting_indices_wt"],
+        mutation_metadata_df_new["list_of_read_starting_indices_wt"] = np.where(
+            pd.isna(mutation_metadata_df_new["list_of_read_starting_indices_wt"]),
+            mutation_metadata_df_new["list_of_read_starting_indices_wt_new"],
+            mutation_metadata_df_new["list_of_read_starting_indices_wt"],
         )
 
-        mutation_metadata_df["noisy_read_indices_wt"] = np.where(
-            pd.isna(mutation_metadata_df["noisy_read_indices_wt"]),
-            mutation_metadata_df["noisy_read_indices_wt_new"],
-            mutation_metadata_df["noisy_read_indices_wt"],
+        mutation_metadata_df_new["noisy_read_indices_wt"] = np.where(
+            pd.isna(mutation_metadata_df_new["noisy_read_indices_wt"]),
+            mutation_metadata_df_new["noisy_read_indices_wt_new"],
+            mutation_metadata_df_new["noisy_read_indices_wt"],
         )
 
-        mutation_metadata_df = mutation_metadata_df.drop(
+        mutation_metadata_df_new = mutation_metadata_df_new.drop(
             columns=[
                 "included_in_synthetic_reads_wt_new",
                 "number_of_reads_wt_new",
@@ -1970,9 +1973,11 @@ def merge_synthetic_read_info_into_mutations_metadata_df(
                 "noisy_read_indices_wt_new",
             ]
         )
+    else:
+        mutation_metadata_df_new = mutation_metadata_df
 
     if sample_type != "w":
-        mutation_metadata_df = mutation_metadata_df.merge(
+        mutation_metadata_df_new = mutation_metadata_df_new.merge(
             sampled_reference_df[
                 [
                     "header",
@@ -1987,35 +1992,35 @@ def merge_synthetic_read_info_into_mutations_metadata_df(
             how="left",
             suffixes=("", "_new"),
         )
-        mutation_metadata_df["included_in_synthetic_reads_mutant"] = (
-            mutation_metadata_df["included_in_synthetic_reads_mutant"]
-            | mutation_metadata_df["included_in_synthetic_reads_mutant_new"]
+        mutation_metadata_df_new["included_in_synthetic_reads_mutant"] = (
+            mutation_metadata_df_new["included_in_synthetic_reads_mutant"]
+            | mutation_metadata_df_new["included_in_synthetic_reads_mutant_new"]
         )
 
-        mutation_metadata_df["any_noisy_reads_mutant"] = (
-            mutation_metadata_df["any_noisy_reads_mutant"]
-            | mutation_metadata_df["any_noisy_reads_mutant_new"]
+        mutation_metadata_df_new["any_noisy_reads_mutant"] = (
+            mutation_metadata_df_new["any_noisy_reads_mutant"]
+            | mutation_metadata_df_new["any_noisy_reads_mutant_new"]
         )
 
-        mutation_metadata_df["number_of_reads_mutant"] = np.where(
-            mutation_metadata_df["number_of_reads_mutant"] == 0,
-            mutation_metadata_df["number_of_reads_mutant_new"],
-            mutation_metadata_df["number_of_reads_mutant"],
+        mutation_metadata_df_new["number_of_reads_mutant"] = np.where(
+            (mutation_metadata_df_new["number_of_reads_mutant"] == 0) | (mutation_metadata_df_new["number_of_reads_mutant"].isna()),
+            mutation_metadata_df_new["number_of_reads_mutant_new"],
+            mutation_metadata_df_new["number_of_reads_mutant"],
         )
 
-        mutation_metadata_df["list_of_read_starting_indices_mutant"] = np.where(
-            pd.isna(mutation_metadata_df["list_of_read_starting_indices_mutant"]),
-            mutation_metadata_df["list_of_read_starting_indices_mutant_new"],
-            mutation_metadata_df["list_of_read_starting_indices_mutant"],
+        mutation_metadata_df_new["list_of_read_starting_indices_mutant"] = np.where(
+            pd.isna(mutation_metadata_df_new["list_of_read_starting_indices_mutant"]),
+            mutation_metadata_df_new["list_of_read_starting_indices_mutant_new"],
+            mutation_metadata_df_new["list_of_read_starting_indices_mutant"],
         )
 
-        mutation_metadata_df["noisy_read_indices_mutant"] = np.where(
-            pd.isna(mutation_metadata_df["noisy_read_indices_mutant"]),
-            mutation_metadata_df["noisy_read_indices_mutant_new"],
-            mutation_metadata_df["noisy_read_indices_mutant"],
+        mutation_metadata_df_new["noisy_read_indices_mutant"] = np.where(
+            pd.isna(mutation_metadata_df_new["noisy_read_indices_mutant"]),
+            mutation_metadata_df_new["noisy_read_indices_mutant_new"],
+            mutation_metadata_df_new["noisy_read_indices_mutant"],
         )
 
-        mutation_metadata_df = mutation_metadata_df.drop(
+        mutation_metadata_df_new = mutation_metadata_df_new.drop(
             columns=[
                 "included_in_synthetic_reads_mutant_new",
                 "number_of_reads_mutant_new",
@@ -2025,16 +2030,16 @@ def merge_synthetic_read_info_into_mutations_metadata_df(
             ]
         )
 
-    mutation_metadata_df["included_in_synthetic_reads"] = (
-        mutation_metadata_df["included_in_synthetic_reads_mutant"]
-        | mutation_metadata_df["included_in_synthetic_reads_wt"]
+    mutation_metadata_df_new["included_in_synthetic_reads"] = (
+        mutation_metadata_df_new["included_in_synthetic_reads_mutant"]
+        | mutation_metadata_df_new["included_in_synthetic_reads_wt"]
     )
-    mutation_metadata_df["any_noisy_reads"] = (
-        mutation_metadata_df["any_noisy_reads_mutant"]
-        | mutation_metadata_df["any_noisy_reads_wt"]
+    mutation_metadata_df_new["any_noisy_reads"] = (
+        mutation_metadata_df_new["any_noisy_reads_mutant"]
+        | mutation_metadata_df_new["any_noisy_reads_wt"]
     )
 
-    return mutation_metadata_df
+    return mutation_metadata_df_new
 
 
 # def generate_synthetic_reads(mutation_metadata_df, fasta_output_path, sampled_reference_df_parent = None, read_df_parent = None, sample_type = "all", n=1500, number_of_reads_per_sample = "all", read_length=150, seed=42, add_noise=False):
@@ -2430,7 +2435,11 @@ def build_random_genome_read_df(
     read_length=150,
     input_type="transcriptome",
     strand=None,
-    add_noise=False,
+    add_noise_sequencing_error=False,
+    add_noise_base_quality=False,
+    error_rate=0.0001,
+    error_distribution=(0.85, 0.1, 0.05),  # sub, del, ins
+    max_errors=float("inf"),
     seed = 42,
 ):
     # Collect all headers and sequences from the FASTA file
@@ -2519,10 +2528,22 @@ def build_random_genome_read_df(
                     # start_position, end_position = len(random_sequence) - end_position, len(random_sequence) - start_position  # I am keeping adding the "f/r" in header so I don't need this
                     random_sequence = reverse_complement(random_sequence)  # I slice the sequence first and then take the rc
 
-                wt_id = f"wt_{i}_random{selected_strand}W"
-                header = f"{random_transcript}:{start_position}_{end_position}_random{selected_strand}W"
+                noise_str = ""
+                if add_noise_sequencing_error:
+                    random_sequence_old = random_sequence
+                    random_sequence = introduce_sequencing_errors(
+                        random_sequence,
+                        error_rate=error_rate,
+                        error_distribution=error_distribution,
+                        max_errors=max_errors,
+                    )  # no need to pass seed here since it's already set
+                    if random_sequence != random_sequence_old:
+                        noise_str = "n"
+
+                wt_id = f"wt_random{selected_strand}W{noise_str}_row{i}"
+                header = f"{random_transcript}:{start_position}_{end_position}_random{selected_strand}W{noise_str}_row{i}"
                 read_df = append_row(
-                    read_df, wt_id, header, random_sequence, start_position, selected_strand, added_noise=add_noise
+                    read_df, wt_id, header, random_sequence, start_position, selected_strand, added_noise=bool(noise_str)
                 )
 
                 fa_file.write(f">{header}\n{random_sequence}\n")
@@ -2534,7 +2555,7 @@ def build_random_genome_read_df(
                 print(f"Exiting after only {i} mutations added due to long while loop")
                 break
 
-    fasta_to_fastq(fasta_output_path_temp, fastq_output_path, add_noise=add_noise)  # no need to pass seed here since it's already set
+    fasta_to_fastq(fasta_output_path_temp, fastq_output_path, add_noise=add_noise_base_quality)  # no need to pass seed here since it's already set
 
     os.remove(fasta_output_path_temp)
     
@@ -2847,35 +2868,35 @@ def introduce_sequencing_errors(
     return "".join(new_sequence)
 
 
-def generate_noisy_quality_scores(sequence, avg_quality=30, seed=None):
+def generate_noisy_quality_scores(sequence, avg_quality=30, sd_quality=5, seed=None):
     if seed:
-        random.seed(42)
+        random.seed(seed)
     
     # Assume a normal distribution for quality scores, with some fluctuation
-    qualities = [max(0, min(40, int(random.gauss(avg_quality, 5)))) for _ in sequence]
+    qualities = [max(0, min(40, int(random.gauss(avg_quality, sd_quality)))) for _ in sequence]
     # Convert qualities to ASCII Phred scores (33 is the offset)
     return "".join([chr(q + 33) for q in qualities])
 
 
-def add_polyA_tail(sequence, tail_length_range=(10, 50), seed=42):
-    tail_length = random.randint(*tail_length_range)
-    return sequence + "A" * tail_length
+# def add_polyA_tail(sequence, tail_length_range=(10, 50), seed=42):
+#     tail_length = random.randint(*tail_length_range)
+#     return sequence + "A" * tail_length
 
 
-def add_noise_to_read(sequence, error_rate=0.0001, avg_quality=30, add_polyA=True):
-    # Step 1: Introduce sequencing errors
-    noisy_sequence = introduce_sequencing_errors(sequence, error_rate=error_rate)
+# def add_noise_to_read(sequence, error_rate=0.0001, avg_quality=30, add_polyA=True):
+#     # Step 1: Introduce sequencing errors
+#     noisy_sequence = introduce_sequencing_errors(sequence, error_rate=error_rate)
 
-    # Step 2: Generate quality scores
-    quality_scores = generate_noisy_quality_scores(
-        noisy_sequence, avg_quality=avg_quality
-    )
+#     # Step 2: Generate quality scores
+#     quality_scores = generate_noisy_quality_scores(
+#         noisy_sequence, avg_quality=avg_quality
+#     )
 
-    # Step 3: Optionally add a poly(A) tail
-    if add_polyA:
-        noisy_sequence = add_polyA_tail(noisy_sequence)
+#     # Step 3: Optionally add a poly(A) tail
+#     if add_polyA:
+#         noisy_sequence = add_polyA_tail(noisy_sequence)
 
-    return noisy_sequence, quality_scores
+#     return noisy_sequence, quality_scores
 
 
 def count_nearby_mutations_efficient(
@@ -6729,7 +6750,12 @@ def create_mutated_gene_count_matrix_from_mutation_count_matrix(adata, sum_strat
     return adata_gene
 
 
-def order_fastqs_correctly_for_kb_count(fastq_folder, keep_index_files=False):
+def order_fastqs_correctly_for_kb_count(fastq_folder, technology = "bulk", multiplexed = False):
+    if "smartseq" in technology.lower() and multiplexed:
+        keep_index_files = True
+    else:
+        keep_index_files = False
+    
     # List all files in the directory
     files = os.listdir(fastq_folder)
 
@@ -6742,7 +6768,7 @@ def order_fastqs_correctly_for_kb_count(fastq_folder, keep_index_files=False):
             l_val = int(match.group(2))  # Extract L value as an integer
             r_val = match.group(3)  # Extract R1/R2/I1/I2
             # Define the order for R/I
-            r_order = {"R1": 0, "R2": 1, "I1": 2, "I2": 3}
+            r_order = {"I1": 0, "I2": 1, "R1": 2, "R2": 3}
             return (s_val, l_val, r_order[r_val])
         else:
             raise ValueError(f"Filename {filename} does not match the expected pattern")

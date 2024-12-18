@@ -19,6 +19,8 @@ def fastqpp(
     run_fastqc=False,
     replace_low_quality_bases_with_N=False,
     split_reads_by_Ns=False,
+    technology="bulk",
+    multiplexed=False,
     parity=None,
     fastqc_out_dir=".",
     minimum_base_quality_trim_reads=0,
@@ -58,11 +60,12 @@ def fastqpp(
 
     rnaseq_fastq_files_list_sequence_only = []
 
-    # don't include index files in any of the processing below
-    for filename in rnaseq_fastq_files_list:
-        match = re.search(r"_(I1|I2)_", filename)  # checks if index file (R1 and R2 are generally in scRNAseq files, not in bulk RNAseq, so I check specifically for the index notation)
-        if not match:
-            rnaseq_fastq_files_list_sequence_only.append(filename)
+    if not ("smartseq" in technology.lower() and multiplexed):  # only keep index files for SmartSeq multiplexed data
+        # don't include index files in any of the processing below
+        for filename in rnaseq_fastq_files_list:
+            match = re.search(r"_(I1|I2)_", filename)  # checks if index file (R1 and R2 are generally in scRNAseq files, not in bulk RNAseq, so I check specifically for the index notation)
+            if not match:
+                rnaseq_fastq_files_list_sequence_only.append(filename)
 
     if trim_edges_off_reads:
         print("Trimming edges off reads")

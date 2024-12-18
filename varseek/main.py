@@ -5,6 +5,7 @@ import math
 import argparse
 import sys
 import pandas as pd
+import json
 from datetime import datetime
 
 from .__init__ import __version__
@@ -14,7 +15,7 @@ from .varseek_filter import filter
 from .varseek_clean import clean
 from .varseek_info import info
 from .varseek_sim import sim
-from .utils import set_up_logger, prepare_filters_json, prepare_filters_list
+from .utils import set_up_logger, prepare_filters_json, prepare_filters_list, load_params
 
 # Get current date and time for alphafold default foldername
 dt_string = datetime.now().strftime("%Y_%m_%d-%H_%M")
@@ -77,6 +78,57 @@ def extract_help_from_doc(module, arg_name):
     else:
         return "Help message not found in docstring."
         # raise ValueError(f"Argument '{arg_name}' not found in the docstring of the module '{module}'.")
+    
+    
+# Check that if `--config` is passed, no other arguments are set
+def assert_only_config(args, parser):
+    if args.config:
+        vk_commands = {"build", "info", "filter", "sim", "clean", "summarize", "fastqpp", "ref", "count"}
+        additional_acceptable_commands = {"dry_run"}
+        additional_acceptable_commands_final = vk_commands.union(additional_acceptable_commands)
+        for key, value in vars(args).items():
+            # Ignore `config` itself
+            if key == "config" or key in additional_acceptable_commands_final:
+                continue
+            # Check if the argument value differs from its default
+            if value != parser.get_default(key):
+                raise ValueError(f"If '--config' is passed, no other arguments (like '{key}') can be set.")
+
+def copy_parser_arguments(parser_list, parser_target):
+    for parser in parser_list:
+        # Dynamically copy arguments from parser_build to parser_target
+        for action in parser._actions:
+            # Skip help action (default argparse behavior)
+            if isinstance(action, argparse._HelpAction):
+                continue
+
+            # Check if any option string already exists in parser_target (eg already contains --technology or -x)
+            if any(opt in parser_target._option_string_actions for opt in action.option_strings):
+                continue  # Skip adding this argument if there's an overlap
+
+            # Extract all option strings and argument attributes
+            option_strings = action.option_strings
+            kwargs = {
+                "default": action.default,
+                "type": action.type,
+                "required": action.required,
+                "help": action.help,
+                "choices": action.choices,
+                "metavar": action.metavar,
+                "dest": action.dest,
+                "action": action.__class__,  # Retain the action type
+            }
+
+            if not isinstance(action, (argparse._StoreTrueAction, argparse._StoreFalseAction)):
+                kwargs["nargs"] = action.nargs  # Only include nargs for compatible actions
+            
+            # Filter out None values to avoid redundant keyword arguments
+            kwargs = {k: v for k, v in kwargs.items() if v is not None}
+            
+            # Add the argument to the target parser
+            parser_target.add_argument(*option_strings, **kwargs)
+
+            return parser_target
 
 
 # Custom formatter for help messages that preserved the text formatting and adds the default value to the end of the help message
@@ -191,6 +243,7 @@ def main():
     """
     Function containing argparse parsers and arguments to allow the use of varseek from the terminal (as varseek).
     """
+
     # Define parent parser
     parent_parser = argparse.ArgumentParser(description=f"varseek v{__version__}", add_help=False)
     # Initiate subparsers
@@ -203,6 +256,7 @@ def main():
     # Add custom version argument to parent parser
     parent_parser.add_argument("-v", "--version", action="store_true", help="Print version.")
 
+    # NEW PARSER
     # build parser arguments
     build_desc = "Build a mutation-containing reference sequence (MCRS) file."
     parser_build = parent_subparsers.add_parser(
@@ -354,7 +408,6 @@ def main():
         help=extract_help_from_doc(build, "create_t2g"),
     )
     parser_build.add_argument(
-        "-koh",
         "--create_wt_mcrs_counterpart_fa",
         default=False,
         action="store_true",
@@ -947,6 +1000,25 @@ def main():
     )
 
     # NEW PARSER
+    fastqpp_desc = "Preprocess the fastq files."
+    parser_fastqpp = parent_subparsers.add_parser(
+        "fastqpp",
+        parents=[parent],
+        description=fastqpp_desc,
+        help=fastqpp_desc,
+        add_help=True,
+        formatter_class=CustomHelpFormatter,
+    )
+    parser_fastqpp.add_argument(
+        "-q",
+        "--quiet",
+        default=True,
+        action="store_false",
+        required=False,
+        help="Do not print progress information.",
+    )
+
+    # NEW PARSER
     clean_desc = "Run standard processing on the mutation count matrix."
     parser_clean = parent_subparsers.add_parser(
         "clean",
@@ -984,6 +1056,14 @@ def main():
         required=False,
         help="Do not print progress information.",
     )
+
+    parser_list_vk_ref = [parser_build, parser_info, parser_filter]
+    parser_list_vk_count = [parser_fastqpp, parser_clean, parser_summarize]
+
+    #!!! CONTINUE
+
+    # parser_ref = copy_parser_arguments(parser_target = parser_ref, parser_list = parser_list_vk_ref)
+    # parser_count = copy_parser_arguments(parser_target = parser_count, parser_list = parser_list_vk_count)
 
     ### Define return values
     args, unknown_args = parent_parser.parse_known_args()
@@ -1026,7 +1106,18 @@ def main():
             command_to_parser[sys.argv[1]].print_help(sys.stderr)
         else:
             parent_parser.print_help(sys.stderr)
-        sys.exit(1)
+        sys.exit(1)    
+
+    # Load params from config if provided
+    if args.config:
+        # Assert that, if `--config` is passed, that no other arguments are passed
+        assert_only_config(args, parent_parser)
+
+        params = load_params(file=args.config)
+
+        # Update args with params if not already set
+        for key, value in params.items():
+            setattr(args, key, value)
 
     ## build return
     if args.command == "build":

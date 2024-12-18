@@ -41,10 +41,15 @@ plt.rcParams.update({
 
 color_map_10 = plt.get_cmap("tab10").colors  # Default color map with 10 colors
 
-color_map_20 = [
+color_map_20_original = [
     "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
     "#aec7e8", "#ffbb78", "#98df8a", "#ff9896", "#c5b0d5", "#c49c94", "#f7b6d2", "#c7c7c7", "#dbdb8d", "#9edae5"
 ]  # plotly category 20
+
+color_map_20 = [
+    "#f08925", "#1f77b4", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
+    "#aec7e8", "#ffbb78", "#98df8a", "#ff9896", "#c5b0d5", "#c49c94", "#f7b6d2", "#c7c7c7", "#dbdb8d", "#9edae5"
+]  # modified to swap 1 and 2 (orange first), and replaced the orange with varseek orange 
 
 save_pdf_global = True if os.getenv('VARSEEK_SAVE_PDF') == "TRUE" else False
 dpi = 450
@@ -1098,7 +1103,7 @@ def plot_overall_metrics(metric_dict_collection, primary_metrics = ("accuracy", 
     # ax1.set_xlabel("Metrics", fontsize=12)
     # ax1.set_title("Comparison of Metrics Across Tools", fontsize=14)
     if "accuracy" in primary_metrics or "sensitivity" in primary_metrics or "specificity" in primary_metrics:
-        ax1.set_ylim(0, 1)
+        ax1.set_ylim(0, 1.05)
     ax1.set_xticks(x_primary)
     ax1.set_xticklabels(primary_metrics, fontsize=12)
 
@@ -1251,9 +1256,9 @@ def create_stratified_metric_line_plot(unique_mcrs_df, x_stratification, y_metri
         print("Warning: filtering real negatives is recommended when using expression error as a primary metric and stratifying by something other than number_of_reads_mutant, but this setting is not currently enabled. Recommended: filter_real_negatives = True.")
 
     if y_metric == "sensitivity" or filter_real_negatives:
-        unique_mcrs_df = unique_mcrs_df[unique_mcrs_df['included_in_synthetic_reads_mutant'] == True]
+        unique_mcrs_df = unique_mcrs_df[(unique_mcrs_df['included_in_synthetic_reads_mutant'] == True) & (unique_mcrs_df['number_of_reads_mutant'] > 0)]
     elif y_metric == "specificity":
-        unique_mcrs_df = unique_mcrs_df[unique_mcrs_df['included_in_synthetic_reads_mutant'] == False]
+        unique_mcrs_df = unique_mcrs_df[(unique_mcrs_df['included_in_synthetic_reads_mutant'] == False) & (unique_mcrs_df['number_of_reads_mutant'] == 0)]
 
     # Prepare for plotting
     plt.figure(figsize=(10, 6))
@@ -1263,8 +1268,10 @@ def create_stratified_metric_line_plot(unique_mcrs_df, x_stratification, y_metri
     x_stratification_original = x_stratification  # to label x-axis, as x_stratification may be changed to "bin"
 
     if bins:  # remember bins are left-inclusive and right-exclusive
+        if bins[-2] > x_values_raw[-1]:
+            raise ValueError(f"Invalid bins: {bins}. The 2nd to last bin value {bins[-2]} is greater than the maximum value in the data {x_values_raw[-1]}")
         # list comprehension to assign labels list
-        labels = [f"[{bins[i]}, {bins[i+1]})" for i in range(len(bins)-1)]  # eg bins [0, 0.25, 0.5, 0.75, 1] --> labels ["[0, 0.25)", "[0.25, 0.5)", "[0.5, 0.75)", "[0.75, 1)"]
+        labels = [f"({bins[i]}, {bins[i+1]}]" for i in range(len(bins)-1)]  # eg bins [0, 0.25, 0.5, 0.75, 1] --> labels ["[0, 0.25)", "[0.25, 0.5)", "[0.5, 0.75)", "[0.75, 1)"]
         
         # replace "inf" with true start and end values
         if '-inf' in labels[0]:
@@ -1281,7 +1288,7 @@ def create_stratified_metric_line_plot(unique_mcrs_df, x_stratification, y_metri
             print(f"Removed {number_of_rows_before_filtering - number_of_rows_after_filtering} rows due to binning.")
 
         # Assign bins to a new column
-        unique_mcrs_df["bin"] = pd.cut(unique_mcrs_df[x_stratification], bins=bins, labels=labels, include_lowest=True)
+        unique_mcrs_df["bin"] = pd.cut(unique_mcrs_df[x_stratification], bins=bins, labels=labels, right=True, include_lowest=False)
 
         x_values = labels
         x_stratification = "bin"
@@ -1312,7 +1319,7 @@ def create_stratified_metric_line_plot(unique_mcrs_df, x_stratification, y_metri
     
     # redundant code for calculating y-max (because I need this for setting p-value asterisk height)
     if y_metric in {"accuracy", "sensitivity", "specificity"}:
-        custom_y_limit = 1
+        custom_y_limit = 1.05
     else:
         custom_y_limit = 0
         for i, tool in enumerate(tools):
@@ -1647,7 +1654,7 @@ def create_stratified_metric_bar_plot_updated(unique_mcrs_df, x_stratification, 
     
     # redundant code for calculating y-max (because I need this for setting p-value asterisk height)
     if y_metric in {"accuracy", "sensitivity", "specificity"}:
-        custom_y_limit = 1
+        custom_y_limit = 1.05
     else:
         custom_y_limit = 0
         for i, tool in enumerate(tools):

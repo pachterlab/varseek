@@ -6,6 +6,9 @@ import requests
 import subprocess
 import time
 import tracemalloc
+import inspect
+import json
+from collections import OrderedDict
 
 from bs4 import BeautifulSoup
 import pandas as pd
@@ -54,6 +57,43 @@ def set_up_logger(logging_level_name=None, save_logs=False, log_dir=None):
             logger.addHandler(file_handler)
 
     return logger
+
+def load_params(file):
+    if file.endswith(".json"):
+        with open(file, "r") as f:
+            return json.load(f)
+    elif file.endswith(".yaml") or file.endswith(".yml"):
+        import yaml
+        with open(file, "r") as f:
+            return yaml.safe_load(f)
+    else:
+        print("config file format not recognized. currently supported are json and  yaml.")
+        return {}
+    
+def save_params_to_config_file(out_file="params.json"):
+    # Collect parameters in a dictionary
+    params = OrderedDict()
+
+    # Get the caller's frame (one level up in the stack)
+    frame = inspect.currentframe().f_back
+    function_args, varargs, varkw, values = inspect.getargvalues(frame)
+
+    # handle explicit function arguments
+    for arg in function_args:
+        params[arg] = values[arg]
+    
+    # handle *args
+    if varargs:
+        params["*args"] = values[varargs]
+    
+    # handle **kwargs
+    if varkw:
+        for key, value in values[varkw].items():
+            params[key] = value
+
+    # Write to JSON
+    with open(out_file, "w") as file:
+        json.dump(params, file, indent=4)
 
 
 # os.environ["REPORT_TIME_AND_MEMORY"] = "TRUE"

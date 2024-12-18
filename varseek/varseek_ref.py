@@ -173,3 +173,5 @@ def ref(
     vk_ref_output_dict["metadata_df"] = output_metadata_df_vk_filter
 
     return vk_ref_output_dict
+
+# ref.__doc__ = ref.__doc__ + vk.varseek_build.build.__doc__ + vk.varseek_info.info.__doc__ + vk.varseek_filter.filter.__doc__

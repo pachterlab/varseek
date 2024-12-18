@@ -36,7 +36,8 @@ def sim(
     seed=42,
     k=None,
     w=None,
-    add_noise=False,
+    add_noise_sequencing_error=False,
+    add_noise_base_quality=False,
     error_rate=0.0001,
     error_distribution=(0.85, 0.1, 0.05),  # sub, del, ins
     max_errors=float("inf"),
@@ -75,7 +76,8 @@ def sim(
     - number_of_reads_per_sample_w (int) Number of reads to simulate per mutation for wild-type reads. Only used if sample_type is 'w' and number_of_reads_per_sample is None.
     - read_length              (int) Length of the reads to simulate.
     - seed                     (int) Seed for random number generation.
-    - add_noise                (bool) Whether to add noise to the reads.
+    - add_noise_sequencing_error                (bool) Whether to add noise to the reads.
+    - add_noise_base_quality (bool) Whether to add noise to the base quality scores.
     - with_replacement         (bool) Whether to sample with replacement.
     - sequences                (str) Path to the fasta file containing the sequences.
     - reference_out_dir        (str) Path to the output directory for the reference files.
@@ -260,6 +262,7 @@ def sim(
 
     if seed is not None:
         random.seed(seed)
+        np.random.seed(seed)
 
     column_and_default_value_list_of_tuples = [
         ("included_in_synthetic_reads", False),
@@ -284,7 +287,7 @@ def sim(
     else:
         # Randomly select number_of_mutations_to_sample rows
         number_of_mutations_to_sample = min(number_of_mutations_to_sample, len(filtered_df))
-        sampled_reference_df = filtered_df.sample(n=number_of_mutations_to_sample, random_state=seed)
+        sampled_reference_df = filtered_df.sample(n=number_of_mutations_to_sample, random_state=None)
 
     if sampled_reference_df.empty:
         print("No mutations to sample")
@@ -363,8 +366,9 @@ def sim(
             elif number_of_reads_per_sample is None:  # sample number_of_reads_per_sample_m from mutant (if sample_type != "w") and number_of_reads_per_sample_w from wt (if sample_type != "m")
                 number_of_reads_per_sample_m = int(number_of_reads_per_sample_m)
                 number_of_reads_per_sample_w = int(number_of_reads_per_sample_w)
-                number_of_reads_mutant = min(valid_starting_index_max_mutant, number_of_reads_per_sample_m)
-                number_of_reads_wt = min(valid_starting_index_max_wt, number_of_reads_per_sample_w)
+
+                number_of_reads_mutant = number_of_reads_per_sample_m
+                number_of_reads_wt = number_of_reads_per_sample_w
 
                 if number_of_reads_per_sample_m > valid_starting_index_max_mutant:
                     logger.info("Setting with_replacement = True for this round")
@@ -373,18 +377,13 @@ def sim(
                 if with_replacement:
                     read_start_indices_mutant = random.choices(
                         range(valid_starting_index_max_mutant),
-                        k=min(
-                            valid_starting_index_max_mutant,
-                            number_of_reads_per_sample_m,
-                        ),
+                        k=number_of_reads_per_sample_m,
                     )
+
                 else:
                     read_start_indices_mutant = random.sample(
                         range(valid_starting_index_max_mutant),
-                        min(
-                            valid_starting_index_max_mutant,
-                            number_of_reads_per_sample_m,
-                        ),
+                        number_of_reads_per_sample_m
                     )
 
                 with_replacement = with_replacement_original
@@ -396,12 +395,12 @@ def sim(
                 if with_replacement:
                     read_start_indices_wt = random.choices(
                         range(valid_starting_index_max_wt),
-                        k=min(valid_starting_index_max_wt, number_of_reads_per_sample_w),
+                        k=number_of_reads_per_sample_w,
                     )
                 else:
                     read_start_indices_wt = random.sample(
                         range(valid_starting_index_max_wt),
-                        min(valid_starting_index_max_wt, number_of_reads_per_sample_w),
+                        number_of_reads_per_sample_w,
                     )
 
                 with_replacement = with_replacement_original
@@ -409,7 +408,7 @@ def sim(
             else:  # sample number_of_reads_per_sample (int) from sample_type (wt and/or mutant), and in the same locations if sample_type == "all"
                 valid_starting_index_max = min(valid_starting_index_max_mutant, valid_starting_index_max_wt)
                 number_of_reads_per_sample = int(number_of_reads_per_sample)
-                number_of_reads = min(valid_starting_index_max, number_of_reads_per_sample)
+                number_of_reads = number_of_reads_per_sample
 
                 if number_of_reads_per_sample > valid_starting_index_max:
                     logger.info("Setting with_replacement = True for this round")
@@ -418,12 +417,13 @@ def sim(
                 if with_replacement:
                     read_start_indices_mutant = random.choices(
                         range(valid_starting_index_max),
-                        k=min(valid_starting_index_max, number_of_reads_per_sample),
+                        k=number_of_reads_per_sample,
                     )
+
                 else:
                     read_start_indices_mutant = random.sample(
                         range(valid_starting_index_max),
-                        min(valid_starting_index_max, number_of_reads_per_sample),
+                        number_of_reads_per_sample,
                     )
 
                 with_replacement = with_replacement_original
@@ -461,7 +461,7 @@ def sim(
                     for i in read_start_indices_mutant:
                         sequence_chunk = selected_sequence[i : i + read_length]
                         noise_str = ""
-                        if add_noise:
+                        if add_noise_sequencing_error:
                             sequence_chunk_old = sequence_chunk
                             sequence_chunk = introduce_sequencing_errors(
                                 sequence_chunk,
@@ -507,7 +507,7 @@ def sim(
                     for i in read_start_indices_wt:
                         sequence_chunk = selected_sequence[i : i + read_length]
                         noise_str = ""
-                        if add_noise:
+                        if add_noise_sequencing_error:
                             sequence_chunk_old = sequence_chunk
                             sequence_chunk = introduce_sequencing_errors(
                                 sequence_chunk,
@@ -561,7 +561,7 @@ def sim(
     elif wt_list_of_dicts:
         read_df = pd.DataFrame(wt_list_of_dicts)
 
-    fasta_to_fastq(fasta_output_path_temp, fastq_output_path, add_noise=add_noise)
+    fasta_to_fastq(fasta_output_path_temp, fastq_output_path, add_noise=add_noise_base_quality)
 
     # Read the contents of the files first
     if fastq_parent_path:
