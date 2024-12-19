@@ -23,7 +23,8 @@ from .utils import (
     wt_fragment_and_mutant_fragment_share_kmer,
     create_mutant_t2g,
     add_mutation_type,
-    report_time_and_memory
+    report_time_and_memory,
+    save_params_to_config_file
 )
 
 # from gget.utils import read_fasta
@@ -293,15 +294,21 @@ def build(
     merge_identical: bool = False,
     merge_identical_rc: bool = False,
     keep_original_headers: bool = False,
-    create_t2g: bool = False,
     create_wt_mcrs_counterpart_fa: bool = False,
     update_df: bool = False,
     store_full_sequences: bool = False,
     translate: bool = False,
     translate_start: Union[int, str, None] = None,
     translate_end: Union[int, str, None] = None,
-    out: Optional[str] = None,
+    out: str = ".",
     reference_out: Optional[str] = None,
+    fasta_out: Optional[str] = None,
+    update_df_out: Optional[str] = None,
+    id_to_header_csv_out: Optional[str] = None,
+    mutation_reference_file_t2g: Optional[str] = None,
+    fasta_out_wt: Optional[str] = None,
+    mutation_reference_file_t2g_wt: Optional[str] = None,
+    stream_mutation_output: bool = False,
     verbose: bool = True,
     **kwargs,
 ):
@@ -393,9 +400,9 @@ def build(
                                    to a column name in 'mutations' containing the open reading frame end positions for each sequence/mutation.
                                    Only valid if translate=True. Default: None (translate from to the end of the sequence)
 
-    # Additional files to be generated:
-    - create_t2g                   (True/False) Whether to add a column to the 'mutations' DataFrame containing the transcript to genome mapping for each mutation.
+    # Additional arguments affecting output:
     - create_wt_mcrs_counterpart_fa (True/False) Whether to create a fasta file containing the wildtype sequences with the mutated coding regions (MCRs) replaced by the mutant sequences.
+    - stream_mutation_output    
 
     # General arguments:
     - reference_out                (str) Path to reference files to be downloaded if 'mutations' is a supported database and 'sequences' is not provided. Default: 'out' directory.
@@ -426,19 +433,37 @@ def build(
     start_overall, peaks_list = report_time_and_memory(logger=logger, report=True)
     start = start_overall
 
-    out_original = out
-
-    if out is None:
-        out = "."
-
-    if not k:
-        k = w + 1
+    config_file = os.path.join(out, "config", "vk_build_config.json")
+    save_params_to_config_file(config_file)
 
     if reference_out is None:
         reference_out = out
 
     os.makedirs(out, exist_ok=True)
     os.makedirs(reference_out, exist_ok=True)
+
+    if not fasta_out:
+        fasta_out = os.path.join(out, "mcrs.fa")
+    if not update_df_out:
+        update_df_out = os.path.join(out, "mutation_metadata_df.csv")
+    if not id_to_header_csv_out:
+        id_to_header_csv_out = os.path.join(out, "id_to_header_mapping.csv")
+    if not mutation_reference_file_t2g:
+        mutation_reference_file_t2g = os.path.join(out, "mcrs_t2g.txt")
+    if not fasta_out_wt:
+        fasta_out_wt = os.path.join(out, "wt_mcrs.fa")
+    if not mutation_reference_file_t2g_wt:
+        mutation_reference_file_t2g_wt = os.path.join(out, "wt_mcrs_t2g.txt")
+    
+
+    # make sure directories of all output files exist
+    output_files = [fasta_out, update_df_out, id_to_header_csv_out, mutation_reference_file_t2g, fasta_out_wt, mutation_reference_file_t2g_wt]
+    for output_file in output_files:
+        if output_file and os.path.dirname(output_file):
+            os.makedirs(os.path.dirname(output_file), exist_ok=True)
+
+    if not k:
+        k = w + 1
 
     columns_to_keep = [
         "header",
@@ -453,17 +478,10 @@ def build(
         "actual_mutation",
     ]
 
-    fasta_out = kwargs.get("fasta_out", None)
-    update_df_out = kwargs.get("update_df_out", None)
-    id_to_header_csv_out = kwargs.get("id_to_header_csv_out", "id_to_header_mapping.csv")
-
-    if id_to_header_csv_out:
-        id_to_header_mapping_out = os.path.join(out, "id_to_header_mapping.csv")
-
     # keep_original_headers = kwargs.get("keep_original_headers", False)
     sequences_original = ""
 
-    if type(mutations) == str:
+    if isinstance(mutations, str):
         if mutations in supported_databases_and_corresponding_reference_sequence_type and "cosmic" in mutations:
             if not kwargs.get("cosmic_release", None):
                 cosmic_release = "100"
@@ -1314,26 +1332,14 @@ def build(
 
     mutations["header"] = mutations["header"].str[1:]  # remove the > character
 
-    if out_original and not fasta_out:
-        fasta_out = os.path.join(out, "mcrs.fa")
-
     if not keep_original_headers or (mut_id_column in mutations.columns and not merge_identical):
         mutations["mcrs_id"] = generate_unique_ids(len(mutations))
+        mutations[["mcrs_id", "header"]].to_csv(id_to_header_csv_out, index=False)  # make the mapping csv
+        start, peaks_list = report_time_and_memory(process_name="Saved ID to header file", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
     else:
         mutations["mcrs_id"] = mutations["header"]
 
-    if id_to_header_csv_out:
-        mutations[["mcrs_id", "header"]].to_csv(id_to_header_mapping_out, index=False)  # TODO: change to txt
-        start, peaks_list = report_time_and_memory(process_name="Saved ID to header file", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
-
     if update_df:  # use update_df_out if present,
-        if not update_df_out:
-            if mutations_path:
-                file_name = os.path.basename(mutations_path)
-                base_name, ext = os.path.splitext(file_name)
-                update_df_out = os.path.join(out, f"{base_name}_updated{ext}")
-            else:
-                update_df_out = os.path.join(out, "mutation_metadata_updated.csv")
         logger.info("Saving dataframe with updated mutation info...")
         logger.warning("File size can be very large if the number of mutations is large.")
         mutations.to_csv(update_df_out, index=False)
@@ -1357,37 +1363,25 @@ def build(
 
             mutations_with_exactly_1_wt_sequence_per_row["fasta_format_wt"] = ">" + mutations_with_exactly_1_wt_sequence_per_row["mcrs_id"] + "\n" + mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"] + "\n"
 
-    if fasta_out:
-        # Save mutated sequences in new fasta file
-        with open(fasta_out, "w") as fasta_file:
-            fasta_file.write("".join(mutations["fasta_format"].values))
+    # Save mutated sequences in new fasta file
+    with open(fasta_out, "w") as fasta_file:
+        fasta_file.write("".join(mutations["fasta_format"].values))
 
-        if create_wt_mcrs_counterpart_fa:
-            fasta_out_wt = fasta_out.replace(".fa", "_wt.fa")
-            with open(fasta_out_wt, "w") as fasta_file:
-                fasta_file.write("".join(mutations_with_exactly_1_wt_sequence_per_row["fasta_format_wt"].values))
+    create_mutant_t2g(fasta_out, mutation_reference_file_t2g)
 
-        start, peaks_list = report_time_and_memory(process_name="Wrote fasta file(s)", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
+    if verbose:
+        logger.info(f"FASTA file containing mutated sequences created at {fasta_out}.")
+        logger.info(f"t2g file containing mutated sequences created at {mutation_reference_file_t2g}.")
 
-        if verbose:
-            logger.info(f"FASTA file containing mutated sequences created at {fasta_out}.")
+    if create_wt_mcrs_counterpart_fa:
+        with open(fasta_out_wt, "w") as fasta_file:
+            fasta_file.write("".join(mutations_with_exactly_1_wt_sequence_per_row["fasta_format_wt"].values))
+        create_mutant_t2g(fasta_out_wt, mutation_reference_file_t2g_wt)  # separate t2g is needed because it may have a subset of the rows of mutant (because it doesn't contain any MCRSs with merged mutations and 2+ originating WT sequences)
 
-        if create_t2g:
-            mutation_reference_file_t2g = fasta_out.replace(".fa", "_t2g.txt")
-            create_mutant_t2g(fasta_out, mutation_reference_file_t2g)
+    start, peaks_list = report_time_and_memory(process_name="Wrote fasta file(s) and t2g(s)", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
 
-            if verbose:
-                logger.info(f"t2g file containing mutated sequences created at {mutation_reference_file_t2g}.")
-
-            # separate t2g is needed because it may have a subset of the rows of mutant (because it doesn't contain any MCRSs with merged mutations and 2+ originating WT sequences)
-            if create_wt_mcrs_counterpart_fa:
-                mutation_reference_file_t2g_wt = fasta_out_wt.replace(".fa", "_t2g.txt")
-                create_mutant_t2g(fasta_out_wt, mutation_reference_file_t2g_wt)
-
-            start, peaks_list = report_time_and_memory(process_name="Wrote t2g(s)", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
-
-    # When out=None, return list of mutated seqs
-    else:
+    # When stream_output is True, return list of mutated seqs
+    if stream_mutation_output:
         all_mut_seqs = []
         all_mut_seqs.extend(mutations["mutant_sequence"].values)
 

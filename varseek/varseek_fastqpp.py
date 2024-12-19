@@ -8,6 +8,7 @@ from .utils import (
     replace_low_quality_bases_with_N_list,
     split_reads_by_N_list,
     concatenate_fastqs,
+    save_params_to_config_file
 )
 
 logger = set_up_logger()
@@ -22,7 +23,6 @@ def fastqpp(
     technology="bulk",
     multiplexed=False,
     parity=None,
-    fastqc_out_dir=".",
     minimum_base_quality_trim_reads=0,
     qualified_quality_phred=0,
     unqualified_percent_limit=100,
@@ -32,6 +32,8 @@ def fastqpp(
     fastp="fastp",
     seqtk="seqtk",
     delete_intermediate_files=False,
+    out=".",
+    **kwargs
 ):
     """
     Required input argument:
@@ -54,6 +56,12 @@ def fastqpp(
     - seqtk                       (str)  Path to seqtk
     - delete_intermediate_files   (bool) If True, delete intermediate files
     """
+
+    if not os.path.exists(out):
+        os.makedirs(out)
+
+    config_file = os.path.join(out, "config", "vk_fastqpp_config.json")
+    save_params_to_config_file(config_file)
 
     rnaseq_fastq_files_list_dict = {}
     rnaseq_fastq_files_list_dict["original"] = rnaseq_fastq_files_list
@@ -78,11 +86,12 @@ def fastqpp(
             n_base_limit=n_base_limit,
             length_required=minimum_length,
             fastp=fastp,
+            out_dir=out
         )
         rnaseq_fastq_files_list_dict["quality_controlled"] = rnaseq_fastq_files_list
 
     if run_fastqc:
-        run_fastqc_and_multiqc(rnaseq_fastq_files_list, fastqc_out_dir)
+        run_fastqc_and_multiqc(rnaseq_fastq_files_list, out)
 
     if replace_low_quality_bases_with_N:
         print("Replacing low quality bases with N")
@@ -90,6 +99,7 @@ def fastqpp(
             rnaseq_fastq_files_quality_controlled=rnaseq_fastq_files_list,
             minimum_base_quality_replace_with_N=minimum_base_quality_replace_with_N,
             seqtk=seqtk,
+            out_dir=out
         )
         rnaseq_fastq_files_list_dict["replaced_with_N"] = rnaseq_fastq_files_list
 
@@ -99,6 +109,7 @@ def fastqpp(
             rnaseq_fastq_files_list,
             minimum_sequence_length=minimum_length,
             delete_original_files=delete_intermediate_files,
+            out_dir=out
         )
         rnaseq_fastq_files_list_dict["split_by_N"] = rnaseq_fastq_files_list
 
@@ -109,7 +120,7 @@ def fastqpp(
             file1 = rnaseq_fastq_files_list[i]
             file2 = rnaseq_fastq_files_list[i + 1]
             print(f"Concatenating {file1} and {file2}")
-            file_concatenated = concatenate_fastqs(file1, file2, delete_original_files=delete_intermediate_files)
+            file_concatenated = concatenate_fastqs(file1, file2, out_dir=out, delete_original_files=delete_intermediate_files)
             rnaseq_fastq_files_list_copy.append(file_concatenated)
         rnaseq_fastq_files_list = rnaseq_fastq_files_list_copy
         rnaseq_fastq_files_list_dict["concatenated"] = rnaseq_fastq_files_list

@@ -34,6 +34,7 @@ def ref(
     reference_cdna_fasta=None,
     reference_genome_fasta=None,
     gtf_path=None,
+    **kwargs
 ):
     out_dir_notebook = os.path.join(out_dir_base, run_name)
     reference_out_dir = os.path.join(out_dir_base, "reference")
@@ -167,10 +168,10 @@ def ref(
     vk_ref_output_dict = {}
     vk_ref_output_dict["index"] = mutation_index
     vk_ref_output_dict["t2g"] = t2g_vk_filter
-    vk_ref_output_dict["dlist"] = dlist_fasta_vk_filter
-    vk_ref_output_dict["id_to_header"] = id_to_header_csv_vk_filter
-    vk_ref_output_dict["mcrs_fasta"] = mcrs_fasta_vk_filter
-    vk_ref_output_dict["metadata_df"] = output_metadata_df_vk_filter
+    # vk_ref_output_dict["dlist"] = dlist_fasta_vk_filter
+    # vk_ref_output_dict["id_to_header"] = id_to_header_csv_vk_filter
+    # vk_ref_output_dict["mcrs_fasta"] = mcrs_fasta_vk_filter
+    # vk_ref_output_dict["metadata_df"] = output_metadata_df_vk_filter
 
     return vk_ref_output_dict
 

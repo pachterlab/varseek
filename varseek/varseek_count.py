@@ -38,6 +38,7 @@ def count(
     standard_index=None,
     standard_t2g=None,
     out_dir_base=".",
+    **kwargs
 ):
     """
     Required input arguments:

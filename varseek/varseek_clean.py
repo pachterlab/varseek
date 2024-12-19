@@ -15,7 +15,8 @@ from varseek.utils import (
     adjust_mutation_adata_by_normal_gene_matrix,
     match_adata_orders,
     write_to_vcf,
-    write_vcfs_for_rows
+    write_vcfs_for_rows,
+    save_params_to_config_file
 )
 
 def make_vcf():
@@ -25,7 +26,7 @@ def make_vcf():
 def clean(
     adata_path,
     adata_output_path=None,
-    output_figures_dir=None,
+    out=".",
     id_to_header_csv=None,
     mutation_metadata_df=None,
     mutation_metadata_df_columns=None,
@@ -70,6 +71,9 @@ def clean(
     verbose=False,
     **kwargs,
 ):
+    
+    config_file = os.path.join(out, "config", "vk_clean_config.json")
+    save_params_to_config_file(config_file)
 
     if isinstance(adata_path, anndata.AnnData):
         adata = adata_path
@@ -88,9 +92,7 @@ def clean(
     # else:
     #     adata_wt_mcrs = None
 
-    if not output_figures_dir:
-        output_figures_dir = os.path.join(adata_dir, "figures")
-
+    output_figures_dir = os.path.join(out, "figures")
     os.makedirs(output_figures_dir, exist_ok=True)
 
     if not adata_output_path:

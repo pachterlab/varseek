@@ -23,16 +23,16 @@ from varseek.utils import (
 def summarize(
     adata_path,
     technology="bulk",
-    output_dir=".",
+    out=".",
     overwrite=False,
     top_values=10,
     verbose=False,
     **kwargs,
 ):
-    os.makedirs(output_dir, exist_ok=True)
-    stats_file = os.path.join(output_dir, "varseek_summarize_stats.txt")
-    specific_stats_folder = os.path.join(output_dir, "specific_stats")
-    plots_folder = os.path.join(output_dir, "plots")
+    os.makedirs(out, exist_ok=True)
+    stats_file = os.path.join(out, "varseek_summarize_stats.txt")
+    specific_stats_folder = os.path.join(out, "specific_stats")
+    plots_folder = os.path.join(out, "plots")
 
     os.makedirs(specific_stats_folder, exist_ok=True)
     os.makedirs(plots_folder, exist_ok=True)

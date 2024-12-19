@@ -34,6 +34,7 @@ from varseek.utils import (
     calculate_nearby_mutations,
     align_to_normal_genome_and_build_dlist,
     safe_literal_eval,
+    save_params_to_config_file
 )
 
 tqdm.pandas()
@@ -95,7 +96,8 @@ def add_mutation_information(mutation_metadata_df, mutation_column="mutation", m
 
 
 def info(
-    mutations,
+    input_dir,
+    mutations=None,
     updated_df=None,
     id_to_header_csv=None,  # if none then assume no swapping occurred
     columns_to_include="all",
@@ -107,9 +109,13 @@ def info(
     mutation_cdna_column="mutation",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome
     mutation_genome_column="mutation_genome",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome
     gtf=None,  # for distance to nearest splice junction
-    mutation_metadata_df_out_path=None,
-    out_dir_notebook=".",
+    out=".",
     reference_out_dir=".",
+    mutation_metadata_df_out_path = None,
+    mutation_metadata_df_out_path_exploded = None,
+    dlist_genome_fasta_out = None,
+    dlist_cdna_fasta_out = None,
+    dlist_combined_fasta_out = None,
     dlist_reference_source="ensembl_grch37_release93",
     ref_prefix="index",
     w=30,
@@ -143,8 +149,7 @@ def info(
     - mutation_cdna_column               (str) Name of the column containing the cDNA mutations. Default: 'mutation'.
     - mutation_genome_column             (str) Name of the column containing the genome mutations. Default: 'mutation_genome'.
     - gtf                                (str) Path to the GTF file containing the gene annotations for the genome sequences. Default: None.
-    - mutation_metadata_df_out_path      (str) Path to save the mutation metadata dataframe output by this function. Default: 'out_dir_notebook'/mutation_metadata_df.csv.
-    - out_dir_notebook                   (str) Path to the directory where the output files will be saved. Default: '.'.
+    - out                   (str) Path to the directory where the output files will be saved. Default: '.'.
     - reference_out_dir                  (str) Path to the directory where the reference files will be saved. Default: '.'.
     - dlist_reference_source             (str) Source of the reference sequences for the d-list. Currently supported: ensembl_grchNUMBER_releaseNUMBER or t2t. Default: 'ensembl_grch37_release93'.
     - ref_prefix                         (str) Prefix for the bowtie index files for finding matches to human
@@ -162,14 +167,50 @@ def info(
     """
 
     # CELL
+    config_file = os.path.join(out, "config", "vk_info_config.json")
+    save_params_to_config_file(config_file)    
+    
     columns_to_explode = ["header", "order"]
     columns_not_successfully_added = []
 
-    os.makedirs(out_dir_notebook, exist_ok=True)
+    if not mutations:
+        mutations = os.path.join(input_dir, "mcrs.fa")
+    if not os.path.exists(mutations):
+        raise FileNotFoundError(f"File not found: {mutations}")
+    
+    if not updated_df:
+        updated_df = os.path.join(input_dir, "mutation_metadata_df.csv")
+    if not os.path.exists(updated_df):
+        logger.warning(f"File not found: {updated_df}")
+        updated_df = None
+    
+    if not id_to_header_csv:
+        id_to_header_csv = os.path.join(input_dir, "id_to_header_mapping.csv")
+    if not os.path.exists(id_to_header_csv):
+        logger.warning(f"File not found: {id_to_header_csv}")
+        id_to_header_csv = None
+
+    os.makedirs(out, exist_ok=True)
     os.makedirs(reference_out_dir, exist_ok=True)
 
-    if mutation_metadata_df_out_path is None:
-        mutation_metadata_df_out_path = os.path.join(out_dir_notebook, "mutation_metadata_df_vk_info.csv")
+    if not mutation_metadata_df_out_path:
+        mutation_metadata_df_out_path = os.path.join(out, "mutation_metadata_df_updated_vk_info.csv")
+    if not mutation_metadata_df_out_path_exploded:
+        mutation_metadata_df_out_path_exploded = os.path.join(out, "mutation_metadata_df_updated_vk_info_exploded.csv")
+    if not dlist_genome_fasta_out:
+        dlist_genome_fasta_out = os.path.join(out, "dlist_genome.fa")
+    if not dlist_cdna_fasta_out:
+        dlist_cdna_fasta_out = os.path.join(out, "dlist_cdna.fa")
+    if not dlist_combined_fasta_out:
+        dlist_combined_fasta_out = os.path.join(out, "dlist.fa")
+
+    # make sure directories of all output files exist
+    output_files = [mutation_metadata_df_out_path, mutation_metadata_df_out_path_exploded, dlist_genome_fasta_out, dlist_cdna_fasta_out, dlist_combined_fasta_out]
+    for output_file in output_files:
+        if output_file and os.path.dirname(output_file):
+            os.makedirs(os.path.dirname(output_file), exist_ok=True)
+
+
 
     if remove_Ns:
         N_penalty = 1
@@ -180,8 +221,8 @@ def info(
 
     k = w + 1
 
-    output_stat_folder = f"{out_dir_notebook}/stats"
-    output_plot_folder = f"{out_dir_notebook}/plots"
+    output_stat_folder = f"{out}/stats"
+    output_plot_folder = f"{out}/plots"
 
     os.makedirs(output_stat_folder, exist_ok=True)
     os.makedirs(output_plot_folder, exist_ok=True)
@@ -524,7 +565,10 @@ def info(
             ) = align_to_normal_genome_and_build_dlist(
                 mutations=mutations,
                 mcrs_id_column=mcrs_id_column,
-                out_dir_notebook=out_dir_notebook,
+                out_dir_notebook=out,
+                dlist_fasta_file_genome_full=dlist_genome_fasta_out,
+                dlist_fasta_file_cdna_full=dlist_cdna_fasta_out,
+                dlist_fasta_file=dlist_combined_fasta_out,
                 dlist_reference_source=dlist_reference_source,
                 ref_prefix=ref_prefix,
                 remove_Ns=remove_Ns,
@@ -552,7 +596,7 @@ def info(
             )
 
     # CELL
-    kat_output = f"{out_dir_notebook}/kat_output/kat.hist"
+    kat_output = f"{out}/kat_output/kat.hist"
     try:
         kat_hist_command = [
             "kat",
@@ -596,7 +640,7 @@ def info(
                 sequence_names_set=sequence_names_set_union_genome_and_cdna,
                 human_reference_genome_fa=ref_dlist_fa_genome,
                 human_reference_gtf=ref_dlist_gtf,
-                out_dir_notebook=out_dir_notebook,
+                out_dir_notebook=out,
                 ref_folder_kb=ref_folder_kb,
                 dlist_reference_source=dlist_reference_source,
                 header_column_name=mcrs_id_column,
@@ -618,7 +662,7 @@ def info(
             df_overlap_stat_file = f"{output_stat_folder}/df_overlap_stat.txt"
             df_overlap = get_df_overlap(
                 mutations,
-                out_dir_notebook=out_dir_notebook,
+                out_dir_notebook=out,
                 k=k,
                 strandedness=strandedness,
                 mcrs_id_column=mcrs_id_column,
@@ -720,7 +764,7 @@ def info(
 
     # Add metadata: mcrs substring and superstring (forward and rc)
     if columns_to_include == "all" or ("entries_for_which_this_mcrs_is_substring" in columns_to_include or "entries_for_which_this_mcrs_is_superstring" in columns_to_include or "mcrs_is_substring" in columns_to_include or "mcrs_is_superstring" in columns_to_include):
-        mcrs_to_mcrs_bowtie_folder = f"{out_dir_notebook}/bowtie_mcrs_to_mcrs"
+        mcrs_to_mcrs_bowtie_folder = f"{out}/bowtie_mcrs_to_mcrs"
         mcrs_sam_file = f"{mcrs_to_mcrs_bowtie_folder}/mutant_reads_to_mcrs_index.sam"
         substring_output_stat_file = f"{output_stat_folder}/substring_output_stat.txt"
 

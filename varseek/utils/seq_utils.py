@@ -194,7 +194,7 @@ import gzip
 import shutil
 
 
-def concatenate_fastqs(*input_files, output_file=None, delete_original_files=False):
+def concatenate_fastqs(*input_files, out_dir=".", delete_original_files=False):
     """
     Concatenate a variable number of FASTQ files (gzipped or not) into a single output file.
 
@@ -205,11 +205,11 @@ def concatenate_fastqs(*input_files, output_file=None, delete_original_files=Fal
     # Detect if the files are gzipped based on file extension of the first input
     if not input_files:
         raise ValueError("No input files provided.")
+    
+    os.makedirs(out_dir, exist_ok=True)
 
-    if not output_file:
-        parts_filename = input_files[0].split(".", 1)
-        input_files_dir = os.path.dirname(input_files[0])
-        output_file = f"{input_files_dir}/combined.{parts_filename[1]}"
+    parts_filename = input_files[0].split(".", 1)
+    output_file = os.path.join(out_dir, f"combined.{parts_filename[1]}")
 
     input_files_space_separated = " ".join(list(input_files))
     cat_command = f"cat {input_files_space_separated} > {output_file}"
@@ -813,22 +813,21 @@ def phred_to_error_rate(phred_score):
 def trim_edges_and_adaptors_off_fastq_reads(
     filename,
     filename_r2=None,
-    filename_filtered=None,
-    filename_filtered_r2=None,
     cut_mean_quality=13,
     qualified_quality_phred=None,
     unqualified_percent_limit=None,
     n_base_limit=None,
     length_required=None,
     fastp="fastp",
+    out_dir="."
 ):
 
-    output_dir = os.path.dirname(filename)
+    # output_dir = os.path.dirname(filename)
 
     # Define default output filenames if not provided
-    if not filename_filtered:
-        parts_filename = filename.split(".", 1)
-        filename_filtered = f"{parts_filename[0]}_filtered.{parts_filename[1]}"
+    os.makedirs(out_dir, exist_ok=True)
+    parts_filename = filename.split(".", 1)
+    filename_filtered = os.path.join(out_dir, f"{parts_filename[0]}_filtered.{parts_filename[1]}")
 
     try:
         fastp_command = [
@@ -844,9 +843,9 @@ def trim_edges_and_adaptors_off_fastq_reads(
             "--cut_mean_quality",
             str(int(cut_mean_quality)),
             "-h",
-            f"{output_dir}/fastp_report.html",
+            f"{out_dir}/fastp_report.html",
             "-j",
-            f"{output_dir}/fastp_report.json",
+            f"{out_dir}/fastp_report.json",
         ]
 
         # Add optional parameters
@@ -873,11 +872,8 @@ def trim_edges_and_adaptors_off_fastq_reads(
 
         # Paired-end handling
         if filename_r2:
-            if not filename_filtered_r2:
-                parts_filename_r2 = filename_r2.split(".", 1)
-                filename_filtered_r2 = (
-                    f"{parts_filename_r2[0]}_filtered.{parts_filename_r2[1]}"
-                )
+            parts_filename_r2 = filename_r2.split(".", 1)
+            filename_filtered_r2 = os.path.join(out_dir, f"{parts_filename_r2[0]}_filtered.{parts_filename_r2[1]}")
 
             fastp_command[3:3] = [
                 "-I",
@@ -996,12 +992,10 @@ def trim_edges_of_fastq_reads_seqtk(
 #     split_fastq_reads_by_N(input_fastq_file, output_fastq_file = output_fastq_file, minimum_sequence_length = minimum_sequence_length)
 
 
-def replace_low_quality_base_with_N(
-    filename, filename_filtered=None, seqtk="seqtk", minimum_base_quality=13
-):
+def replace_low_quality_base_with_N(filename, out_dir=".", seqtk="seqtk", minimum_base_quality=13):
+    os.makedirs(out_dir, exist_ok=True)
     parts = filename.split(".", 1)
-    if filename_filtered is None:
-        filename_filtered = f"{parts[0]}_with_more_Ns.{parts[1]}"
+    filename_filtered = os.path.join(out_dir, f"{parts[0]}_with_more_Ns.{parts[1]}")
     command = [
         seqtk,
         "seq",
@@ -1034,12 +1028,16 @@ def check_if_read_has_index_and_umi_smartseq3(sequence):
 
 def split_fastq_reads_by_N(
     input_fastq_file,
-    output_fastq_file=None,
-    minimum_sequence_length=31,
+    out_dir=".",
+    minimum_sequence_length=None,
     technology="bulk",
     contains_barcodes_or_umis = False,  # set to False for bulk and for the paired file of any single-cell technology
     seqtk = "seqtk"
 ):
+    os.makedirs(out_dir, exist_ok=True)
+    parts = input_fastq_file.split(".", 1)
+    output_fastq_file = os.path.join(out_dir, f"{parts[0]}_split_by_Ns.{parts[1]}")
+    
     if technology == "bulk":  # use seqtk
         split_reads_by_N_command = f"{seqtk} cutN -n 1 -p 1 {input_fastq_file} | sed '/^$/d' > {output_fastq_file}"
         subprocess.run(split_reads_by_N_command, shell=True, check=True)
@@ -1077,14 +1075,9 @@ def split_fastq_reads_by_N(
             prefix_len = barcode_length + umi_length
 
         prefix_len_original = prefix_len
-        
-        parts = input_fastq_file.split(".", 1)
 
         is_gzipped = ".gz" in parts[1]
         open_func = gzip.open if is_gzipped else open
-
-        if output_fastq_file is None:
-            output_fastq_file = f"{parts[0]}_split_by_Ns.{parts[1]}"
 
         regex = re.compile(r"[^Nn]+")
 
@@ -1136,7 +1129,7 @@ def split_fastq_reads_by_N(
 
                     number_of_subsequences = len(split_sequence)
                     for i in range(number_of_subsequences):
-                        if len(split_sequence[i]) < minimum_sequence_length:
+                        if minimum_sequence_length and (len(split_sequence[i]) < minimum_sequence_length):
                             continue
                         start = matches[i].start()
                         end = matches[i].end()
@@ -4715,6 +4708,9 @@ def align_to_normal_genome_and_build_dlist(
     bowtie2_build,
     bowtie2,
     reference_out_dir_sequences_dlist,
+    dlist_fasta_file_genome_full=None,
+    dlist_fasta_file_cdna_full=None,
+    dlist_fasta_file=None,
     logger=None,
 ):
     bowtie_stat_file = f"{output_stat_folder}/bowtie_alignment.txt"
@@ -4810,7 +4806,8 @@ def align_to_normal_genome_and_build_dlist(
         output_sam_file_genome, header_column_name=mcrs_id_column, k=k
     )
 
-    dlist_fasta_file_genome_full = f"{out_dir_notebook}/dlist_genome.fa"
+    if not dlist_fasta_file_genome_full:
+        dlist_fasta_file_genome_full = f"{out_dir_notebook}/dlist_genome.fa"
     if not os.path.exists(dlist_fasta_file_genome_full):
         parse_sam_and_extract_sequences(
             output_sam_file_genome,
@@ -4876,7 +4873,8 @@ def align_to_normal_genome_and_build_dlist(
         output_sam_file_cdna, header_column_name=mcrs_id_column, k=k
     )
 
-    dlist_fasta_file_cdna_full = f"{out_dir_notebook}/dlist_cdna.fa"
+    if not dlist_fasta_file_cdna_full:
+        dlist_fasta_file_cdna_full = f"{out_dir_notebook}/dlist_cdna.fa"
     if not os.path.exists(dlist_fasta_file_cdna_full):
         parse_sam_and_extract_sequences(
             output_sam_file_cdna,
@@ -4908,7 +4906,8 @@ def align_to_normal_genome_and_build_dlist(
     if remove_Ns:
         remove_Ns_fasta(dlist_fasta_file_cdna_full)
 
-    dlist_fasta_file = f"{out_dir_notebook}/dlist.fa"
+    if not dlist_fasta_file:
+        dlist_fasta_file = f"{out_dir_notebook}/dlist.fa"
 
     # concatenate d-lists into one file
     with open(dlist_fasta_file, "w") as outfile:
@@ -5574,21 +5573,22 @@ def trim_edges_off_reads_fastq_list(
     n_base_limit=None,
     length_required=None,
     fastp="fastp",
+    out_dir="."
 ):
+    os.makedirs(out_dir, exist_ok=True)
     rnaseq_fastq_files_quality_controlled = []
     if parity == "single":
         for i in range(len(rnaseq_fastq_files)):
             rnaseq_fastq_file, _ = trim_edges_and_adaptors_off_fastq_reads(
                 filename=rnaseq_fastq_files[i],
                 filename_r2=None,
-                filename_filtered=None,
-                filename_filtered_r2=None,
                 cut_mean_quality=minimum_base_quality_trim_reads,
                 qualified_quality_phred=qualified_quality_phred,
                 unqualified_percent_limit=unqualified_percent_limit,
                 n_base_limit=n_base_limit,
                 length_required=length_required,
                 fastp=fastp,
+                out_dir=out_dir
             )
             rnaseq_fastq_files_quality_controlled.append(rnaseq_fastq_file)
     elif parity == "paired":
@@ -5597,14 +5597,13 @@ def trim_edges_off_reads_fastq_list(
                 trim_edges_and_adaptors_off_fastq_reads(
                     filename=rnaseq_fastq_files[i],
                     filename_r2=rnaseq_fastq_files[i + 1],
-                    filename_filtered=None,
-                    filename_filtered_r2=None,
                     cut_mean_quality=minimum_base_quality_trim_reads,
                     qualified_quality_phred=qualified_quality_phred,
                     unqualified_percent_limit=unqualified_percent_limit,
                     n_base_limit=n_base_limit,
                     length_required=length_required,
                     fastp=fastp,
+                    out_dir=out_dir
                 )
             )
             rnaseq_fastq_files_quality_controlled.extend(
@@ -5615,6 +5614,7 @@ def trim_edges_off_reads_fastq_list(
 
 
 def run_fastqc_and_multiqc(rnaseq_fastq_files_quality_controlled, fastqc_out_dir):
+    os.makedirs(fastqc_out_dir, exist_ok=True)
     rnaseq_fastq_files_quality_controlled_string = " ".join(
         rnaseq_fastq_files_quality_controlled
     )
@@ -5635,13 +5635,12 @@ def run_fastqc_and_multiqc(rnaseq_fastq_files_quality_controlled, fastqc_out_dir
         print(e)
 
 
-def replace_low_quality_bases_with_N_list(rnaseq_fastq_files, minimum_base_quality, seqtk="seqtk", delete_original_files=False):
+def replace_low_quality_bases_with_N_list(rnaseq_fastq_files, minimum_base_quality, seqtk="seqtk", out_dir=".", delete_original_files=False):
+    os.makedirs(out_dir, exist_ok=True)
     rnaseq_fastq_files_replace_low_quality_bases_with_N = []
     for i in range(len(rnaseq_fastq_files)):
         rnaseq_fastq_file = rnaseq_fastq_files[i]
-        rnaseq_fastq_file = replace_low_quality_base_with_N(
-            rnaseq_fastq_file, seqtk=seqtk, minimum_base_quality=minimum_base_quality
-        )
+        rnaseq_fastq_file = replace_low_quality_base_with_N(rnaseq_fastq_file, seqtk=seqtk, minimum_base_quality=minimum_base_quality, out_dir=out_dir)
         rnaseq_fastq_files_replace_low_quality_bases_with_N.append(rnaseq_fastq_file)
         # delete the file in rnaseq_fastq_files[i]
         if delete_original_files:
@@ -5652,15 +5651,15 @@ def replace_low_quality_bases_with_N_list(rnaseq_fastq_files, minimum_base_quali
 # TODO: enable single vs paired end mode (single end works as-is; paired end requires 2 files as input, and for every line it splits in file 1, I will add a line of all Ns in file 2)
 def split_reads_by_N_list(
     rnaseq_fastq_files_replace_low_quality_bases_with_N,
-    minimum_sequence_length,
+    minimum_sequence_length=None,
+    out_dir=".",
     delete_original_files=True,
 ):
+    os.makedirs(out_dir, exist_ok=True)
     rnaseq_fastq_files_split_reads_by_N = []
     for i in range(len(rnaseq_fastq_files_replace_low_quality_bases_with_N)):
         rnaseq_fastq_file = rnaseq_fastq_files_replace_low_quality_bases_with_N[i]
-        rnaseq_fastq_file = split_fastq_reads_by_N(
-            rnaseq_fastq_file, minimum_sequence_length=minimum_sequence_length
-        )  # TODO: would need a way of postprocessing to make sure I don't double-count fragmented reads - I would need to see where each fragmented read aligns - perhaps with kb extract or pseudobam
+        rnaseq_fastq_file = split_fastq_reads_by_N(rnaseq_fastq_file, minimum_sequence_length=minimum_sequence_length, out_dir=out_dir)  # TODO: would need a way of postprocessing to make sure I don't double-count fragmented reads - I would need to see where each fragmented read aligns - perhaps with kb extract or pseudobam
         # replace_low_quality_base_with_N_and_split_fastq_reads_by_N(input_fastq_file = rnaseq_fastq_file, output_fastq_file = None, minimum_sequence_length=k, seqtk = seqtk, minimum_base_quality = minimum_base_quality_replace_with_N)
         rnaseq_fastq_files_split_reads_by_N.append(rnaseq_fastq_file)
         # # delete the file in rnaseq_fastq_files_replace_low_quality_bases_with_N[i]

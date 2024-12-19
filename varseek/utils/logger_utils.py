@@ -70,7 +70,13 @@ def load_params(file):
         print("config file format not recognized. currently supported are json and  yaml.")
         return {}
     
-def save_params_to_config_file(out_file="params.json"):
+def save_params_to_config_file(out_file="run_config.json"):
+    out_file_directory = os.path.dirname(out_file)
+    if not out_file_directory:
+        out_file_directory = "."
+    else:
+        os.makedirs(out_file_directory, exist_ok=True)
+
     # Collect parameters in a dictionary
     params = OrderedDict()
 
