@@ -20,10 +20,10 @@ logger = set_up_logger()
 
 
 def filter(
-    input_dir,
+    mutation_metadata_df_path,  # input mutation metadata df
     filters,
+    input_dir=None,
     out=".",
-    mutation_metadata_df_path=None,  # input mutation metadata df
     mutation_metadata_df_exploded_path=None,  # input exploded mutation metadata df
     id_to_header_csv=None,  # input id to header csv
     dlist_fasta=None,  # input dlist
