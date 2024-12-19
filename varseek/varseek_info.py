@@ -96,8 +96,8 @@ def add_mutation_information(mutation_metadata_df, mutation_column="mutation", m
 
 
 def info(
-    input_dir=None,
     mutations,
+    input_dir=None,
     updated_df=None,
     id_to_header_csv=None,  # if none then assume no swapping occurred
     columns_to_include="all",
