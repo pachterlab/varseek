@@ -1,102 +1,212 @@
 import os
 import subprocess
+import inspect
+from typing import Union, List, Optional
 import varseek as vk
+from varseek.utils import set_up_logger, save_params_to_config_file, return_kb_arguments
+from .constants import allowable_kwargs
 
+logger = set_up_logger()
+
+varseek_ref_unallowable_arguments = {
+    "varseek_build": {"return_mutation_output"},
+    "varseek_info": set(),
+    "varseek_filter": set(),
+    "kb_ref": set(),
+}
+
+varseek_ref_only_allowable_kb_ref_arguments = {
+    "zero_arguments": {"--keep-tmp", "--verbose", "--aa", "--overwrite"},
+    "one_argument": {"--tmp", "--kallisto", "--bustools"},
+    "multiple_arguments": set()
+}  # don't include d-list, t, i, k, workflow here because I do it myself later
 
 def ref(
-    mutations="cosmic_cmc",
-    sequences="cdna",
-    w=54,
-    k=59,
-    threads=4,
-    remove_Ns=True,
-    strandedness=False,
-    cosmic_version=100,
-    columns_to_include="all",
-    dlist_reference_source="t2t",
-    near_splice_junction_threshold=10,
-    save_exploded_df=False,
-    fasta_filters=[
-        "dlist_substring-equal=none",  # filter out mutations which are a substring of the reference genome
-        "pseudoaligned_to_human_reference_despite_not_truly_aligning-isnottrue",  # filter out mutations which pseudoaligned to human genome despite not truly aligning
-        "dlist-equal=none",  # *** erase eventually when I want to d-list  # filter out mutations which are capable of being d-listed (given that I filter out the substrings above)
-        "number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference-max=999999",  # filter out mutations which overlap with other MCRSs in the reference
-        "number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference-max=999999",  # filter out mutations which overlap with other MCRSs in the reference
-        "longest_homopolymer_length-max=999999",  # filters out MCRSs with repeating single nucleotide - eg 6
-        "triplet_complexity-min=0",  # filters out MCRSs with repeating triplets - eg 0.2
-    ],  # TODO: edit
+    sequences: Union[str, List[str]],
+    mutations: Union[str, List[str]],
+    mut_column: str = "mutation",
+    seq_id_column: str = "seq_ID",
+    mut_id_column: Optional[str] = None,
+    gtf: Optional[str] = None,
+    gtf_transcript_id_column: Optional[str] = None,
+    w: int = 30,
+    k: Optional[int] = None,
+    insertion_size_limit: Optional[int] = None,
+    min_seq_len: Optional[int] = None,
+    optimize_flanking_regions: bool = False,
+    remove_seqs_with_wt_kmers: bool = False,
+    max_ambiguous: Optional[int] = None,
+    required_insertion_overlap_length: Union[int, str, None] = None,
+    merge_identical: bool = False,
+    strandedness: bool = False,
+    keep_original_headers: bool = False,
+    save_wt_mcrs_fasta_and_t2g: bool = False,
+    save_mutations_updated_csv: bool = False,
+    store_full_sequences: bool = False,
+    translate: bool = False,
+    translate_start: Union[int, str, None] = None,
+    translate_end: Union[int, str, None] = None,
+    out: str = ".",
+    reference_out_dir: Optional[str] = None,
+    mcrs_fasta_out: Optional[str] = None,
+    mutations_updated_csv_out: Optional[str] = None,
+    id_to_header_csv_out: Optional[str] = None,
+    mcrs_t2g_out: Optional[str] = None,
+    wt_mcrs_fasta_out: Optional[str] = None,
+    wt_mcrs_t2g_out: Optional[str] = None,
+    # return_mutation_output: bool = False,
+    verbose: bool = True,
+    mcrs_index_out: Optional[str] = None,
     dlist=False,  # path to dlist fasta file or "None" (including the quotes)
-    out_dir_base=".",
-    run_name="kb_ref_run",
-    mutations_csv=None,
-    bowtie_path="bowtie2",
-    verbose=False,
-    reference_cdna_fasta=None,
-    reference_genome_fasta=None,
-    gtf_path=None,
     **kwargs
 ):
-    out_dir_notebook = os.path.join(out_dir_base, run_name)
-    reference_out_dir = os.path.join(out_dir_base, "reference")
 
-    os.makedirs(out_dir_base, exist_ok=True)
-    os.makedirs(out_dir_notebook, exist_ok=True)
+    # check if passed arguments are valid
+    function_name_and_key_list_of_tuples = [(vk.varseek_build.build, "varseek_build"), (vk.varseek_info.info, "varseek_info"), (vk.varseek_filter.filter, "varseek_filter")]
+
+    all_allowable_parameters = set()
+    function_name_to_dict_of_all_args = {}
+    function_name_to_dict_of_kwargs = {}
+
+    # add to allowable_kwargs_for_function. allowable_kwargs_for_function['varseek_build'] will have all kwargs for varseek_build, and analogously for info, filter, kb ref
+    for function_name, function_key in function_name_and_key_list_of_tuples:
+        function_parameters = set(inspect.signature(function_name).parameters.keys())
+        allowable_kwargs_for_function = allowable_kwargs[function_key]
+        kwargs_for_function = {}
+        all_args_for_function = {}
+        for key, value in kwargs.items():
+            if key in allowable_kwargs_for_function:
+                kwargs_for_function[key] = value
+            if (key in function_parameters or key in allowable_kwargs_for_function) and key not in varseek_ref_unallowable_arguments[key]:
+                all_args_for_function[key] = value
+
+        function_name_to_dict_of_kwargs[function_key] = kwargs_for_function
+        function_name_to_dict_of_all_args[function_key] = all_args_for_function
+
+        # add function_parameters to all_allowable_parameters
+        all_allowable_parameters = all_allowable_parameters | function_parameters
+
+    # handles kb ref
+    for argument_type_key in varseek_ref_only_allowable_kb_ref_arguments:
+        arguments_dashes_removed = {argument.lstrip('-').replace('-', '_') for argument in varseek_ref_only_allowable_kb_ref_arguments[argument_type_key]}
+        all_allowable_parameters = all_allowable_parameters | arguments_dashes_removed
+
+    # check if passed arguments are valid (which will automatically get passed to kwargs)
+    for key in kwargs:
+        if key not in all_allowable_parameters:
+            raise ValueError(f"Invalid parameter: {key}.")
+    
+    # Make assertions and exceptions
+    assert k >= w + 1, "k must be greater than or equal to w + 1"
+    if not os.path.exists(sequences):
+        raise FileNotFoundError(f"The file or path '{sequences}' does not exist")
+
+    # Save parameters to config file
+    config_file = os.path.join(out, "config", "vk_ref_config.json")
+    save_params_to_config_file(config_file)
+    
+    # Make directories
+    if not reference_out_dir:
+        reference_out_dir = os.path.join(out, "reference")
+
+    os.makedirs(out, exist_ok=True)
     os.makedirs(reference_out_dir, exist_ok=True)
 
-    if remove_Ns:
-        max_ambiguous_vk = 0
+    # get COSMIC info
+    cosmic_email = kwargs.get("cosmic_email", None)
+    if not cosmic_email:
+        cosmic_email = os.getenv("COSMIC_EMAIL")
+    if cosmic_email:
+        logger.info(f"Using COSMIC email from COSMIC_EMAIL environment variable: {cosmic_email}")
+        kwargs["cosmic_email"] = cosmic_email
+
+    cosmic_password = kwargs.get("cosmic_password", None)
+    if not cosmic_password:
+        cosmic_password = os.getenv("COSMIC_PASSWORD")
+    if cosmic_password:
+        logger.info("Using COSMIC password from COSMIC_PASSWORD environment variable")
+        kwargs["cosmic_password"] = cosmic_password
+
+    # define some more file paths
+    if not mcrs_index_out:
+        mcrs_index_out = os.path.join(out, "mcrs_index.idx")
+    os.makedirs(os.path.dirname(mcrs_index_out), exist_ok=True)
+
+    if not mcrs_fasta_out:
+        mcrs_fasta_out = os.path.join(out, "mcrs.fa")
+    if not mcrs_filtered_fasta_out:
+        mcrs_filtered_fasta_out = os.path.join(out, "mcrs_filtered.fa")
+    if not mcrs_t2g_out:
+        mcrs_t2g_out = os.path.join(out, "mcrs_t2g.txt")
+    if not mcrs_t2g_filtered_out:
+        mcrs_t2g_filtered_out = os.path.join(out, "mcrs_t2g_filtered.txt")
+
+    if not filters:
+        mcrs_fasta_for_index = mcrs_fasta_out
+        mcrs_t2g_for_alignment = mcrs_t2g_out
     else:
-        max_ambiguous_vk = None
+        mcrs_fasta_for_index = mcrs_filtered_fasta_out
+        mcrs_t2g_for_alignment = mcrs_t2g_filtered_out
 
-    merge_identical_rc = not strandedness
+    
+    # set d-list argument
+    if not dlist_genome_fasta_out:
+        dlist_genome_fasta_out = os.path.join(out, "dlist_genome.fa")
+    if not dlist_cdna_fasta_out:
+        dlist_cdna_fasta_out = os.path.join(out, "dlist_cdna.fa")
+    if not dlist_combined_fasta_out:
+        dlist_combined_fasta_out = os.path.join(out, "dlist.fa")
 
-    vk_build_mcrs_fa_path = os.path.join(out_dir_notebook, "mcrs.fa")
-    update_df_out = os.path.join(out_dir_notebook, "mutation_metadata_df.csv")
-    os.makedirs(out_dir_notebook, exist_ok=True)
-
-    assert k >= w + 1, "k must be greater than or equal to w + 1"
-
-    id_to_header_csv = os.path.join(out_dir_notebook, "id_to_header_mapping.csv")
-    mutation_metadata_df_out_path_vk_info = os.path.join(out_dir_notebook, "mutation_metadata_df_updated_vk_info.csv")
-    mutation_index = f"{out_dir_notebook}/mutation_reference.idx"
-    dlist_fasta = f"{out_dir_notebook}/dlist.fa"
-
-    mcrs_fasta_vk_filter = os.path.join(out_dir_notebook, "mcrs_filtered.fa")
-    output_metadata_df_vk_filter = os.path.join(out_dir_notebook, "mutation_metadata_df_filtered.csv")
-    dlist_fasta_vk_filter = os.path.join(out_dir_notebook, "dlist_filtered.fa")
-    t2g_vk_filter = os.path.join(out_dir_notebook, "t2g_filtered.txt")
-    id_to_header_csv_vk_filter = os.path.join(out_dir_notebook, "id_to_header_mapping_filtered.csv")
-
-    if dlist:
-        dlist_kb_argument = dlist_fasta_vk_filter
-    else:
+    if dlist == "genome":
+        dlist_kb_argument = dlist_genome_fasta_out
+    elif dlist == "transcriptome":
+        dlist_kb_argument = dlist_cdna_fasta_out
+    elif dlist == "genome_and_transcriptome":
+        dlist_kb_argument = dlist_combined_fasta_out
+    elif dlist == "None" or dlist is None:
         dlist_kb_argument = "None"
+    else:
+        raise ValueError("dlist must be 'genome', 'transcriptome', 'genome_and_transcriptome', or 'None'")
 
-    # # vk build
-
+    # vk build - if automating later, simply use vk.build(**function_name_to_dict_of_all_args['varseek_build'])
     vk.build(
         sequences=sequences,
         mutations=mutations,
-        out=out_dir_notebook,
-        reference_out=reference_out_dir,
+        mut_column=mut_column,
+        seq_id_column=seq_id_column,
+        mut_id_column=mut_id_column,
+        gtf=gtf,
+        gtf_transcript_id_column=gtf_transcript_id_column,
         w=w,
-        remove_seqs_with_wt_kmers=True,
-        optimize_flanking_regions=True,
-        min_seq_len=k,
-        max_ambiguous=max_ambiguous_vk,
-        merge_identical=True,
-        merge_identical_rc=merge_identical_rc,
-        cosmic_release=cosmic_version,
-        cosmic_email=os.getenv("COSMIC_EMAIL"),
-        cosmic_password=os.getenv("COSMIC_PASSWORD"),
-        create_t2g=True,
-        update_df=True,
-        update_df_out=update_df_out,
+        k=k,
+        insertion_size_limit=insertion_size_limit,
+        min_seq_len=min_seq_len,
+        optimize_flanking_regions=optimize_flanking_regions,
+        remove_seqs_with_wt_kmers=remove_seqs_with_wt_kmers,
+        max_ambiguous=max_ambiguous,
+        required_insertion_overlap_length=required_insertion_overlap_length,
+        merge_identical=merge_identical,
+        strandedness=strandedness,
+        keep_original_headers=keep_original_headers,
+        save_wt_mcrs_fasta_and_t2g=save_wt_mcrs_fasta_and_t2g,
+        save_mutations_updated_csv=save_mutations_updated_csv,
+        store_full_sequences=store_full_sequences,
+        translate=translate,
+        translate_start=translate_start,
+        translate_end=translate_end,
+        out=out,
+        reference_out_dir=reference_out_dir,
+        mcrs_fasta_out=mcrs_fasta_out,
+        mutations_updated_csv_out=mutations_updated_csv_out,
+        id_to_header_csv_out=id_to_header_csv_out,
+        mcrs_t2g_out=mcrs_t2g_out,
+        wt_mcrs_fasta_out=wt_mcrs_fasta_out,
+        wt_mcrs_t2g_out=wt_mcrs_t2g_out,
         verbose=verbose,
+        **function_name_to_dict_of_kwargs["varseek_build"],  # I use this rather than all kwargs to ensure that I only pass in the kwargs I expect
     )
 
-    # # vk info
-
+    # vk info
     vk.info(
         mutations=vk_build_mcrs_fa_path,
         updated_df=update_df_out,
@@ -128,46 +238,61 @@ def ref(
         verbose=verbose,
     )
 
-    # # vk filter
+    # vk filter
+    if filters:
+        vk.filter(
+            mutation_metadata_df_path=mutation_metadata_df_out_path_vk_info,
+            output_mcrs_fasta=mcrs_fasta_vk_filter,
+            output_metadata_df=output_metadata_df_vk_filter,
+            dlist_fasta=dlist_fasta,
+            output_dlist_fasta=dlist_fasta_vk_filter,
+            output_t2g=t2g_vk_filter,
+            id_to_header_csv=id_to_header_csv,
+            output_id_to_header_csv=id_to_header_csv_vk_filter,
+            verbose=True,
+            return_df=False,
+            filters=fasta_filters,
+        )
 
-    vk.filter(
-        mutation_metadata_df_path=mutation_metadata_df_out_path_vk_info,
-        output_mcrs_fasta=mcrs_fasta_vk_filter,
-        output_metadata_df=output_metadata_df_vk_filter,
-        dlist_fasta=dlist_fasta,
-        output_dlist_fasta=dlist_fasta_vk_filter,
-        create_t2g=True,
-        output_t2g=t2g_vk_filter,
-        id_to_header_csv=id_to_header_csv,
-        output_id_to_header_csv=id_to_header_csv_vk_filter,
-        verbose=True,
-        return_df=False,
-        filters=fasta_filters,
-    )
+    # kb ref
+    kb_ref_command = [
+        "kb",
+        "ref",
+        "--workflow",
+        "custom",
+        "-t",
+        str(threads),
+        "-i",
+        mcrs_index_out,
+        "--d-list",
+        dlist_kb_argument,
+        "-k",
+        str(k)
+    ]
 
-    # # kb ref
+    # assumes any argument in varseek ref matches kb ref identically, except dashes replaced with underscores
+    for dict_key in varseek_ref_only_allowable_kb_ref_arguments:
+        for argument in list(varseek_ref_only_allowable_kb_ref_arguments[dict_key]):
+            dash_count = len(argument) - len(argument.lstrip('-'))
+            leading_dashes = "-"*dash_count
+            argument = argument.lstrip('-').replace('-', '_')
+            if argument in kwargs:
+                value = kwargs[argument]
+                if dict_key == 'zero_arguments':
+                    if value:  # only add if value is True
+                        kb_ref_command.append(f"{leading_dashes}{argument}")
+                elif dict_key == 'one_argument':
+                    kb_ref_command.extend([f"{leading_dashes}{argument}", value])
+                else:  # multiple_arguments or something else
+                    pass
 
-    if not os.path.exists(mutation_index):
-        kb_ref_command = [
-            "kb",
-            "ref",
-            "--workflow",
-            "custom",
-            "-t",
-            str(threads),
-            "-i",
-            mutation_index,
-            "--d-list",
-            dlist_kb_argument,
-            "-k",
-            str(k),
-            mcrs_fasta_vk_filter,
-        ]
-        subprocess.run(kb_ref_command, check=True)
+    kb_ref_command.append(mcrs_fasta_for_index)
+    
+    subprocess.run(kb_ref_command, check=True)
 
     vk_ref_output_dict = {}
-    vk_ref_output_dict["index"] = mutation_index
-    vk_ref_output_dict["t2g"] = t2g_vk_filter
+    vk_ref_output_dict["index"] = mcrs_index_out
+    vk_ref_output_dict["t2g"] = mcrs_t2g_for_alignment
     # vk_ref_output_dict["dlist"] = dlist_fasta_vk_filter
     # vk_ref_output_dict["id_to_header"] = id_to_header_csv_vk_filter
     # vk_ref_output_dict["mcrs_fasta"] = mcrs_fasta_vk_filter

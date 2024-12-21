@@ -385,12 +385,11 @@ def main():
         help=extract_help_from_doc(build, "merge_identical"),
     )
     parser_build.add_argument(
-        "-mirc",
-        "--merge_identical_rc",
+        "--strandedness",
         default=False,
         action="store_true",
         required=False,
-        help=extract_help_from_doc(build, "merge_identical_rc"),
+        help=extract_help_from_doc(build, "strandedness"),
     )
     parser_build.add_argument(
         "-koh",
@@ -401,18 +400,11 @@ def main():
         help=extract_help_from_doc(build, "keep_original_headers"),
     )
     parser_build.add_argument(
-        "--create_t2g",
+        "--save_wt_mcrs_fasta_and_t2g",
         default=False,
         action="store_true",
         required=False,
-        help=extract_help_from_doc(build, "create_t2g"),
-    )
-    parser_build.add_argument(
-        "--create_wt_mcrs_counterpart_fa",
-        default=False,
-        action="store_true",
-        required=False,
-        help=extract_help_from_doc(build, "create_wt_mcrs_counterpart_fa"),
+        help=extract_help_from_doc(build, "save_wt_mcrs_fasta_and_t2g"),
     )
     parser_build.add_argument(
         "-udf",
@@ -454,11 +446,11 @@ def main():
     )
     parser_build.add_argument(
         "-ro",
-        "--reference_out",
+        "--reference_out_dir",
         default=None,
         type=str,
         required=False,
-        help=extract_help_from_doc(build, "reference_out"),
+        help=extract_help_from_doc(build, "reference_out_dir"),
     )
     parser_build.add_argument(
         "-o",
@@ -587,13 +579,6 @@ def main():
         help=extract_help_from_doc(info, "dlist_reference_source"),
     )
     parser_info.add_argument(
-        "--ref_prefix",
-        type=str,
-        required=False,
-        default="index",
-        help=extract_help_from_doc(info, "ref_prefix"),
-    )
-    parser_info.add_argument(
         "-w",
         type=int,
         required=False,
@@ -613,13 +598,6 @@ def main():
         action="store_true",
         required=False,
         help=extract_help_from_doc(info, "strandedness"),
-    )
-    parser_info.add_argument(
-        "--bowtie_path",
-        type=str,
-        required=False,
-        default=None,
-        help=extract_help_from_doc(info, "bowtie_path"),
     )
     parser_info.add_argument(
         "--near_splice_junction_threshold",
@@ -726,13 +704,6 @@ def main():
         type=str,
         required=False,
         help=extract_help_from_doc(filter, "output_dlist_fasta"),
-    )
-    parser_filter.add_argument(
-        "--create_t2g",
-        default=None,
-        type=str,
-        required=False,
-        help=extract_help_from_doc(filter, "create_t2g"),
     )
     parser_filter.add_argument(
         "--output_t2g",
@@ -1146,14 +1117,22 @@ def main():
             optimize_flanking_regions=args.optimize_flanking_regions,
             remove_seqs_with_wt_kmers=args.remove_seqs_with_wt_kmers,
             merge_identical=args.merge_identical,
-            merge_identical_rc=args.merge_identical_rc,
-            update_df=args.update_df,
+            strandedness=args.strandedness,
+            save_mutations_updated_csv=args.save_mutations_updated_csv,
+            save_wt_mcrs_fasta_and_t2g=args.save_wt_mcrs_fasta_and_t2g,
             store_full_sequences=args.store_full_sequences,
             translate=args.translate,
             translate_start=args.translate_start,
             translate_end=args.translate_end,
-            reference_out=args.reference_out,
+            reference_out_dir=args.reference_out_dir,
             out=args.out,
+            mcrs_fasta_out=args.mcrs_fasta_out,
+            mcrs_t2g_out=args.mcrs_t2g_out,
+            mutations_updated_csv_out=args.mutations_updated_csv_out,
+            id_to_header_csv_out=args.id_to_header_csv_out,
+            wt_mcrs_fasta_out=args.wt_mcrs_fasta_out,
+            wt_mcrs_t2g_out=args.wt_mcrs_t2g_out,
+            return_mutation_output=args.return_mutation_output,
             verbose=args.quiet,
             **kwargs,
         )
@@ -1183,7 +1162,6 @@ def main():
             dlist_reference_source=args.dlist_reference_source,
             id_to_header_csv=args.id_to_header_csv,
             updated_df=args.updated_df,
-            ref_prefix=args.ref_prefix,
             w=args.w,
             remove_Ns=args.remove_Ns,
             optimize_flanking_regions=args.optimize_flanking_regions,

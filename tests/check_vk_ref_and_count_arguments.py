@@ -1,6 +1,8 @@
 import inspect
 import varseek
 import pytest
+from varseek.varseek_ref import varseek_ref_only_allowable_kb_ref_arguments
+from varseek.varseek_count import varseek_ref_only_allowable_kb_count_arguments
 
 def check_parameter_consistency(ref_func, other_func):
     # Get the signatures of the reference function and the other function
@@ -27,6 +29,14 @@ def check_parameter_consistency(ref_func, other_func):
                 f"  {other_func.__name__} default: {other_param.default}\n"
             )
 
+def check_kb_parameter_consistency(ref_func, kb_dict_of_sets, kb_name):
+    ref_params = inspect.signature(ref_func).parameters
+    for argument_type_key in kb_dict_of_sets:
+            arguments_dashes_removed = {argument.lstrip('-').replace('-', '_') for argument in kb_dict_of_sets[argument_type_key]}
+            for param_name in list(arguments_dashes_removed):
+                if param_name not in ref_params:
+                    print(f"Parameter '{param_name}' in {kb_name} is missing in {ref_func.__name__}.")
+
 def test_ref_arguments():
     # Reference function (from varseek_ref)
     ref_function = varseek.varseek_ref.ref
@@ -42,7 +52,12 @@ def test_ref_arguments():
     for func in functions_to_check:
         print(f"Checking consistency between {ref_function.__name__} and {func.__name__}...")
         check_parameter_consistency(ref_function, func)
-        print("Check complete.\n")
+        print("Check complete for varseek.\n")
+
+    # check against kb ref
+    print(f"Checking consistency between {ref_function.__name__} and kb ref arguments...")
+    check_kb_parameter_consistency(ref_func = ref_function, kb_dict_of_sets = varseek_ref_only_allowable_kb_ref_arguments, kb_name = "kb ref")
+    print("Check complete for kb.\n")
 
 def test_count_arguments():
     # Reference function (from varseek_ref)
@@ -60,6 +75,11 @@ def test_count_arguments():
         print(f"Checking consistency between {ref_function.__name__} and {func.__name__}...")
         check_parameter_consistency(ref_function, func)
         print("Check complete.\n")
+
+    # check against kb count
+    print(f"Checking consistency between {ref_function.__name__} and kb count arguments...")
+    check_kb_parameter_consistency(ref_func = ref_function, kb_dict_of_sets = varseek_ref_only_allowable_kb_count_arguments, kb_name = "kb count")
+    print("Check complete for kb.\n")
 
 
 def main():

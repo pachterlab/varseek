@@ -1358,15 +1358,20 @@ def select_contiguous_substring(sequence, kmer, read_length=150):
     return selected_substring
 
 
-def remove_Ns_fasta(fasta_file):
+def remove_Ns_fasta(fasta_file, max_ambiguous_reference = 0):
     fasta_file_temp = fasta_file + ".tmp"
     i = 0
+    if max_ambiguous_reference == 0:  # no Ns allowed
+        condition = lambda sequence: "N" not in sequence.upper()
+    else:  # at most max_ambiguous_reference Ns
+        condition = lambda sequence: sequence.upper().count("N") <= max_ambiguous_reference
     with open(fasta_file, "r") as infile, open(fasta_file_temp, "w") as outfile:
-        for header, sequence in read_fasta(fasta_file):
-            if "N" not in sequence.upper():
+        for header, sequence in read_fasta(infile):
+            if condition(sequence):
                 outfile.write(f">{header}\n{sequence}\n")
             else:
                 i += 1
+
 
     os.replace(fasta_file_temp, fasta_file)
     print(f"Removed {i} sequences with Ns from {fasta_file}")
@@ -3125,15 +3130,19 @@ def create_df_of_mcrs_to_self_headers(
     mcrs_sam_file,
     mcrs_fa,
     bowtie_mcrs_reference_folder,
-    bowtie_path,
+    bowtie_path=None,
     threads=2,
     strandedness=False,
     mcrs_id_column="mcrs_id",
     output_stat_file=None,
 ):
 
-    bowtie2_build = f"{bowtie_path}/bowtie2-build"
-    bowtie2 = f"{bowtie_path}/bowtie2"
+    if not bowtie_path:
+        bowtie2_build = "bowtie2-build"
+        bowtie2 = "bowtie2"
+    else:
+        bowtie2_build = f"{bowtie_path}/bowtie2-build"
+        bowtie2 = f"{bowtie_path}/bowtie2"
 
     if not os.path.exists(mcrs_sam_file):
         if not os.path.exists(bowtie_mcrs_reference_folder) or not os.listdir(
@@ -3760,7 +3769,7 @@ def run_bowtie_alignment_dlist(
     k=31,
     strandedness=False,
     N_penalty=1,
-    max_Ns_per_read_length=0,
+    max_ambiguous_mcrs=0,
     output_stat_file=None,
 ):
     if not os.path.exists(output_sam_file):
@@ -3782,7 +3791,7 @@ def run_bowtie_alignment_dlist(
             "--np",
             str(N_penalty),  # No penalty for ambiguous matches
             "--n-ceil",
-            f"L,0,{max_Ns_per_read_length}",  # N-ceiling
+            f"C,0,{max_ambiguous_mcrs}",  # N-ceiling
             "-F",
             f"{k},1",
             "-R",
@@ -4697,11 +4706,11 @@ def align_to_normal_genome_and_build_dlist(
     out_dir_notebook,
     dlist_reference_source,
     ref_prefix,
-    remove_Ns,
     strandedness,
     threads,
     N_penalty,
-    max_Ns_per_read_length,
+    max_ambiguous_mcrs,
+    max_ambiguous_reference,
     k,
     output_stat_folder,
     mutation_metadata_df,
@@ -4798,7 +4807,7 @@ def align_to_normal_genome_and_build_dlist(
             threads=threads,
             strandedness=strandedness,
             N_penalty=N_penalty,
-            max_Ns_per_read_length=max_Ns_per_read_length,
+            max_ambiguous_mcrs=max_ambiguous_mcrs,
             output_stat_file=bowtie_stat_file,
         )
 
@@ -4836,8 +4845,8 @@ def align_to_normal_genome_and_build_dlist(
         False
     )
 
-    if remove_Ns:
-        remove_Ns_fasta(dlist_fasta_file_genome_full)
+    if max_ambiguous_reference < 9999:  #! be careful of changing this number - it is related to the condition in varseek info - max_ambiguous_reference = 99999
+        remove_Ns_fasta(dlist_fasta_file_genome_full, max_ambiguous_reference=max_ambiguous_reference)
 
     ref_folder_cdna_bowtie = f"{reference_out_dir_sequences_dlist}/bowtie_index_cdna"
     ref_prefix_cdna_full = f"{ref_folder_cdna_bowtie}/{ref_prefix}"
@@ -4865,7 +4874,7 @@ def align_to_normal_genome_and_build_dlist(
             threads=threads,
             strandedness=strandedness,
             N_penalty=N_penalty,
-            max_Ns_per_read_length=max_Ns_per_read_length,
+            max_ambiguous_mcrs=max_ambiguous_mcrs,
             output_stat_file=bowtie_stat_file,
         )
 
@@ -4903,8 +4912,8 @@ def align_to_normal_genome_and_build_dlist(
     )
     dlist_cdna_df["dlist_substring"] = dlist_cdna_df["dlist_substring"].fillna(False)
 
-    if remove_Ns:
-        remove_Ns_fasta(dlist_fasta_file_cdna_full)
+    if max_ambiguous_reference < 9999:  #! be careful of changing this number - it is related to the condition in varseek info - max_ambiguous_reference = 99999
+        remove_Ns_fasta(dlist_fasta_file_cdna_full, max_ambiguous_reference=max_ambiguous_reference)
 
     if not dlist_fasta_file:
         dlist_fasta_file = f"{out_dir_notebook}/dlist.fa"

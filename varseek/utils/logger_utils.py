@@ -1,5 +1,6 @@
 from datetime import datetime
 import logging
+import re
 import os
 import psutil
 import requests
@@ -100,6 +101,64 @@ def save_params_to_config_file(out_file="run_config.json"):
     # Write to JSON
     with open(out_file, "w") as file:
         json.dump(params, file, indent=4)
+
+
+
+def return_kb_arguments(command, remove_dashes = False):
+    # Run the help command and capture the output
+    result = subprocess.run(["kb", command, "--help"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+    help_output = result.stdout
+
+    # Regex pattern to match options (e.g., -x, --long-option)
+    options_pattern = r"(--?\w[\w-]*)"
+
+    # Find all matches in the help output
+    arguments = re.findall(options_pattern, help_output)
+
+    line_pattern = r"\n  (--?.*)"
+
+    # Categorize flags based on whether they have an argument
+    store_true_flags = []
+    flags_with_args = []
+
+    # Find all matching lines
+    matching_lines = re.findall(line_pattern, help_output)
+
+    # Determine the last character of the contiguous string for each match
+    for line in matching_lines:
+        # Split the line by the first space to isolate the flag
+        flag = line.split()[0]
+        if flag[-1] == ",":
+            len_first_flag = len(flag) + 1  # accounts for length of flag, comma, and space
+            flag = line.split()[1]  # only the long flag is valid
+        else:
+            len_first_flag = 0
+        # Get the last character of the contiguous string
+        if flag == '--help':
+            continue
+        last_char_pos = len_first_flag + len(flag) - 1
+        positional_arg_pos = last_char_pos + 2
+        if (positional_arg_pos >= len(line)) or (line[positional_arg_pos] == ' '):
+            store_true_flags.append(flag)
+        else:
+            flags_with_args.append(flag)
+
+    kb_arguments = {}
+    kb_arguments['store_true_flags'] = store_true_flags
+    kb_arguments['flags_with_args'] = flags_with_args
+
+    # remove dashes
+    if remove_dashes:
+        kb_arguments['store_true_flags'] = [
+            argument.lstrip('-').replace('-', '_') for argument in kb_arguments['store_true_flags']
+        ]
+
+        kb_arguments['flags_with_args'] = [
+            argument.lstrip('-').replace('-', '_') for argument in kb_arguments['flags_with_args']
+        ]
+
+    return kb_arguments
 
 
 # os.environ["REPORT_TIME_AND_MEMORY"] = "TRUE"

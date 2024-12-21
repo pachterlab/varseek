@@ -1,6 +1,28 @@
 import re
 from collections import defaultdict
 
+allowable_kwargs = {
+    "varseek_build": {"cosmic_release", "cosmic_grch", "cosmic_email", "cosmic_password", "do_not_save_files"},
+    "varseek_info": {"bowtie_path"},
+    "varseek_filter": {"filter_all_dlists", "dlist_genome_fasta", "dlist_cdna_fasta", "dlist_genome_filtered_fasta_out", "dlist_cdna_filtered_fasta_out"},
+    "kb_ref": set(),
+    "kb_count": {"union"},
+    "varseek_fastqpp": {"seqtk"},
+    "varseek_clean": set(),
+    "varseek_summarize": set(),
+    "varseek_ref": set(),
+    "varseek_count": set()
+}
+
+varseek_count_unallowable_arguments = {
+    "varseek_fastqpp": set(),
+    "kb_count": set(),
+    "varseek_clean": set(),
+    "varseek_summarize": set(),
+}
+
+
+
 # Get complement
 complement = {
     "A": "T",

@@ -180,18 +180,17 @@ def test_file_processing(cosmic_csv_path, cds_and_cdna_files, genome_and_gtf_fil
             sequences=cdna_file,
             mutations=cosmic_csv_path,
             out=out_dir_notebook,
-            reference_out=None,
+            reference_out_dir=None,
             w=w,
             remove_seqs_with_wt_kmers=True,
             optimize_flanking_regions=True,
             min_seq_len=k,
             max_ambiguous=max_ambiguous_vk,
             merge_identical=True,
-            merge_identical_rc=strandedness,
+            strandedness=strandedness,
             cosmic_email = os.getenv('COSMIC_EMAIL'),
             cosmic_password = os.getenv('COSMIC_PASSWORD'),
-            create_t2g=True,
-            update_df=True
+            save_mutations_updated_csv=True
         )
 
         vk_build_mcrs_fa_path = os.path.join(out_dir_notebook, "mcrs.fa")
@@ -284,7 +283,6 @@ def test_file_processing(cosmic_csv_path, cds_and_cdna_files, genome_and_gtf_fil
             output_metadata_df=output_metadata_df_vk_filter,
             dlist_fasta=dlist_fasta,
             output_dlist_fasta=dlist_fasta_vk_filter,
-            create_t2g=True,
             output_t2g=t2g_vk_filter,
             id_to_header_csv=id_to_header_csv,
             output_id_to_header_csv=id_to_header_csv_vk_filter,

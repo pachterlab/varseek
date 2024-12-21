@@ -292,23 +292,23 @@ def build(
     max_ambiguous: Optional[int] = None,
     required_insertion_overlap_length: Union[int, str, None] = None,
     merge_identical: bool = False,
-    merge_identical_rc: bool = False,
+    strandedness: bool = False,
     keep_original_headers: bool = False,
-    create_wt_mcrs_counterpart_fa: bool = False,
-    update_df: bool = False,
+    save_wt_mcrs_fasta_and_t2g: bool = False,
+    save_mutations_updated_csv: bool = False,
     store_full_sequences: bool = False,
     translate: bool = False,
     translate_start: Union[int, str, None] = None,
     translate_end: Union[int, str, None] = None,
     out: str = ".",
-    reference_out: Optional[str] = None,
-    fasta_out: Optional[str] = None,
-    update_df_out: Optional[str] = None,
+    reference_out_dir: Optional[str] = None,
+    mcrs_fasta_out: Optional[str] = None,
+    mutations_updated_csv_out: Optional[str] = None,
     id_to_header_csv_out: Optional[str] = None,
-    mutation_reference_file_t2g: Optional[str] = None,
-    fasta_out_wt: Optional[str] = None,
-    mutation_reference_file_t2g_wt: Optional[str] = None,
-    stream_mutation_output: bool = False,
+    mcrs_t2g_out: Optional[str] = None,
+    wt_mcrs_fasta_out: Optional[str] = None,
+    wt_mcrs_t2g_out: Optional[str] = None,
+    return_mutation_output: bool = False,
     verbose: bool = True,
     **kwargs,
 ):
@@ -383,14 +383,14 @@ def build(
     - required_insertion_overlap_length (int | str | None) Minimum number of nucleotides that must overlap between the inserted sequence and the flanking regions. Default: No checking. If "all", then require the entire insertion and the following nucleotide
     - merge_identical              (True/False) Whether to merge identical mutant sequences in the output (identical sequences will be merged by concatenating the sequence
                                    headers for all identical sequences). Default: False
-    - merge_identical_rc           (True/False) Whether to merge identical sequences and their reverse complements in the output. Only effective when merge_identical is also True. Default: False
+    - strandedness           (True/False) Whether to merge identical sequences and their reverse complements in the output. Only effective when merge_identical is also True. Default: False (ie do merge identical sequences and their reverse complements)
     - keep_original_headers        (True/False) Whether to keep the original sequence headers in the output fasta file. Default: False.
 
     # Optional arguments to generate additional output stored in a copy of the 'mutations' DataFrame
-    - update_df                    (True/False) Whether to update the input 'mutations' DataFrame to include additional columns with the mutation type,
+    - save_mutations_updated_csv                    (True/False) Whether to update the input 'mutations' DataFrame to include additional columns with the mutation type,
                                    wildtype nucleotide sequence, and mutant nucleotide sequence (only valid if 'mutations' is a csv or tsv file). Default: False
     - store_full_sequences         (True/False) Whether to also include the complete wildtype and mutant sequences in the updated 'mutations' DataFrame (not just the sub-sequence with
-                                   w-length flanks). Only valid if update_df=True. Default: False
+                                   w-length flanks). Only valid if save_mutations_updated_csv=True. Default: False
     - translate                    (True/False) Add additional columns to the 'mutations' DataFrame containing the wildtype and mutant amino acid sequences.
                                    Only valid if store_full_sequences=True. Default: False
     - translate_start              (int | str | None) The position in the input nucleotide sequence to start translating. If a string is provided, it should correspond
@@ -401,18 +401,18 @@ def build(
                                    Only valid if translate=True. Default: None (translate from to the end of the sequence)
 
     # Additional arguments affecting output:
-    - create_wt_mcrs_counterpart_fa (True/False) Whether to create a fasta file containing the wildtype sequences with the mutated coding regions (MCRs) replaced by the mutant sequences.
-    - stream_mutation_output    
+    - save_wt_mcrs_fasta_and_t2g (True/False) Whether to create a fasta file containing the wildtype sequences with the mutated coding regions (MCRs) replaced by the mutant sequences.
+    - return_mutation_output    
 
     # General arguments:
-    - reference_out                (str) Path to reference files to be downloaded if 'mutations' is a supported database and 'sequences' is not provided. Default: 'out' directory.
-    - out                          (str) Path to output folder to containing created files (if fasta_out and/or update_df_out not supplied) Default: None - will output mutation info to stdout, and any other files will be saved to ".".
+    - reference_out_dir                (str) Path to reference files to be downloaded if 'mutations' is a supported database and 'sequences' is not provided. Default: 'out' directory.
+    - out                          (str) Path to output folder to containing created files (if mcrs_fasta_out and/or mutations_updated_csv_out not supplied) Default: None - will output mutation info to stdout, and any other files will be saved to ".".
     - verbose                      (True/False) whether to print progress information. Default: True
 
     # Old arguments (now stored in kwargs):
-    - update_df_out                (str) Path to output csv file containing the updated DataFrame. Only valid if update_df=True.
+    - mutations_updated_csv_out                (str) Path to output csv file containing the updated DataFrame. Only valid if save_mutations_updated_csv=True.
                                    Default: None -> the new DataFrame will be saved in the same directory as the 'mutations' DataFrame with appendix '_updated'
-    - fasta_out                    (str) Path to output fasta file containing the mutated sequences, e.g., 'path/to/output_fasta.fa'.
+    - mcrs_fasta_out                    (str) Path to output fasta file containing the mutated sequences, e.g., 'path/to/output_fasta.fa'.
                                    Default: None -> returns a list of the mutated sequences to standard out.
                                    The identifiers (following the '>') of the mutated sequences in the output fasta will be '>[seq_ID]_[mut_ID]'.
     - id_to_header_csv_out         (str) File name of csv file containing the mapping of unique IDs to the original sequence headers. Default: "id_to_header_mapping.csv". None -> not saved
@@ -422,6 +422,7 @@ def build(
     - cosmic_grch                  (str) COSMIC genome reference version to download. Default: "37".
     - cosmic_email                 (str) Email address for COSMIC download. Default: None.
     - cosmic_password              (str) Password for COSMIC download. Default: None.
+    - do_not_save_files            (True/False) Whether to save the output files. Default: False.
 
 
     Saves mutated sequences in fasta format (or returns a list containing the mutated sequences if out=None).
@@ -436,32 +437,40 @@ def build(
     config_file = os.path.join(out, "config", "vk_build_config.json")
     save_params_to_config_file(config_file)
 
-    if reference_out is None:
-        reference_out = out
+    if not reference_out_dir:
+        reference_out_dir = os.path.join(out, "reference")
 
     os.makedirs(out, exist_ok=True)
-    os.makedirs(reference_out, exist_ok=True)
+    os.makedirs(reference_out_dir, exist_ok=True)
 
-    if not fasta_out:
-        fasta_out = os.path.join(out, "mcrs.fa")
-    if not update_df_out:
-        update_df_out = os.path.join(out, "mutation_metadata_df.csv")
+    if not mcrs_fasta_out:
+        mcrs_fasta_out = os.path.join(out, "mcrs.fa")
+    if not mutations_updated_csv_out:
+        mutations_updated_csv_out = os.path.join(out, "mutation_metadata_df.csv")
     if not id_to_header_csv_out:
         id_to_header_csv_out = os.path.join(out, "id_to_header_mapping.csv")
-    if not mutation_reference_file_t2g:
-        mutation_reference_file_t2g = os.path.join(out, "mcrs_t2g.txt")
-    if not fasta_out_wt:
-        fasta_out_wt = os.path.join(out, "wt_mcrs.fa")
-    if not mutation_reference_file_t2g_wt:
-        mutation_reference_file_t2g_wt = os.path.join(out, "wt_mcrs_t2g.txt")
+    if not mcrs_t2g_out:
+        mcrs_t2g_out = os.path.join(out, "mcrs_t2g.txt")
+    if not wt_mcrs_fasta_out:
+        wt_mcrs_fasta_out = os.path.join(out, "wt_mcrs.fa")
+    if not wt_mcrs_t2g_out:
+        wt_mcrs_t2g_out = os.path.join(out, "wt_mcrs_t2g.txt")
     
 
     # make sure directories of all output files exist
-    output_files = [fasta_out, update_df_out, id_to_header_csv_out, mutation_reference_file_t2g, fasta_out_wt, mutation_reference_file_t2g_wt]
+    output_files = [mcrs_fasta_out, mutations_updated_csv_out, id_to_header_csv_out, mcrs_t2g_out, wt_mcrs_fasta_out, wt_mcrs_t2g_out]
     for output_file in output_files:
         if output_file and os.path.dirname(output_file):
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
+    merge_identical_rc = not strandedness
+
+    do_not_save_files = kwargs.get("do_not_save_files", False)
+    cosmic_email = kwargs.get("cosmic_email", None)
+    cosmic_password = kwargs.get("cosmic_password", None)
+    cosmic_release = kwargs.get("cosmic_release", None)
+    cosmic_grch = kwargs.get("cosmic_grch", None)
+    
     if not k:
         k = w + 1
 
@@ -478,29 +487,25 @@ def build(
         "actual_mutation",
     ]
 
-    # keep_original_headers = kwargs.get("keep_original_headers", False)
     sequences_original = ""
 
     if isinstance(mutations, str):
         if mutations in supported_databases_and_corresponding_reference_sequence_type and "cosmic" in mutations:
-            if not kwargs.get("cosmic_release", None):
+            if not cosmic_release:
                 cosmic_release = "100"
-            if not kwargs.get("cosmic_grch", None):
+            if not cosmic_grch:
                 grch_dict = supported_databases_and_corresponding_reference_sequence_type[mutations]["database_version_to_reference_assembly_build"]
                 largest_key = max(int(k) for k in grch_dict.keys())
                 grch = grch_dict[str(largest_key)]
             else:
-                assert kwargs.get("cosmic_grch", None) in supported_databases_and_corresponding_reference_sequence_type[mutations]["database_version_to_reference_assembly_build"], "The 'cosmic_grch' argument must be supported by the corresponding database."
-                grch = kwargs.get("cosmic_grch", None)
+                grch = cosmic_grch
+                assert grch in supported_databases_and_corresponding_reference_sequence_type[mutations]["database_version_to_reference_assembly_build"], "The 'cosmic_grch' argument must be supported by the corresponding database."
             if grch == "37":
                 gget_cosmic_grch = "human_grch37"
             elif grch == "38":
                 gget_cosmic_grch = "human"
             else:
                 gget_cosmic_grch = grch
-
-            cosmic_email = kwargs.get("cosmic_email", None)
-            cosmic_password = kwargs.get("cosmic_password", None)
 
     # Load input sequences and their identifiers from fasta file
     if isinstance(sequences, str) and ("." in sequences or (mutations in supported_databases_and_corresponding_reference_sequence_type and sequences in supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_download_commands"])):
@@ -510,11 +515,8 @@ def build(
             # TODO: expand beyond COSMIC
             sequences_original = sequences
             if "cosmic" in mutations:
-                cosmic_email = kwargs.get("cosmic_email", None)
-                cosmic_password = kwargs.get("cosmic_password", None)
-
                 ensembl_version = supported_databases_and_corresponding_reference_sequence_type[mutations]["database_version_to_reference_release"][cosmic_release]
-                reference_out_sequences = f"{reference_out}/ensembl_grch{grch}_release{ensembl_version}"
+                reference_out_sequences = f"{reference_out_dir}/ensembl_grch{grch}_release{ensembl_version}"
 
                 sequences_download_command = supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_download_commands"][sequences]
                 sequences_download_command = sequences_download_command.replace("OUT_DIR", reference_out_sequences)
@@ -609,7 +611,7 @@ def build(
     if isinstance(mutations, str) and mutations in supported_databases_and_corresponding_reference_sequence_type:
         # TODO: expand beyond COSMIC
         if "cosmic" in mutations:
-            reference_out_cosmic = f"{reference_out}/cosmic"
+            reference_out_cosmic = f"{reference_out_dir}/cosmic"
             mutations = f"{reference_out_cosmic}/CancerMutationCensus_AllData_Tsv_v{cosmic_release}_GRCh{grch}/CancerMutationCensus_AllData_v{cosmic_release}_GRCh{grch}_mutation_workflow.csv"
 
             if not os.path.exists(mutations):
@@ -960,7 +962,7 @@ def build(
 
     mut_apply = (lambda *args, **kwargs: mutations.progress_apply(*args, **kwargs)) if verbose else mutations.apply
 
-    if update_df and store_full_sequences:
+    if save_mutations_updated_csv and store_full_sequences:
         # Extract flank sequences
         if verbose:
             tqdm.pandas(desc="Extracting full left flank sequences")
@@ -1112,7 +1114,7 @@ def build(
 
         start, peaks_list = report_time_and_memory(process_name="Removed MCRSs with WT k-mers (even after flank optimization, if enabled)", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
 
-    if update_df and store_full_sequences:
+    if save_mutations_updated_csv and store_full_sequences:
         columns_to_keep.extend(["wt_sequence_full", "mutant_sequence_full"])
 
         # Create full sequences (substitution and non-substitution)
@@ -1177,7 +1179,7 @@ def build(
     else:
         logger.info("All mutations correctly recorded")
 
-    if translate and update_df and store_full_sequences:
+    if translate and save_mutations_updated_csv and store_full_sequences:
         columns_to_keep.extend(["wt_sequence_aa_full", "mutant_sequence_aa_full"])
 
         if not mutations_path:
@@ -1241,7 +1243,7 @@ def build(
 
     mutations = mutations[columns_to_keep]
 
-    if update_df:
+    if save_mutations_updated_csv:
         # recalculate start_mutation_position and end_mutation_position due to messing with it above
         mutations.drop(
             columns=["start_mutation_position", "end_mutation_position"],
@@ -1283,8 +1285,8 @@ def build(
             columns_not_to_semicolon_join = []
             agg_columns = [col for col in mutations.columns if col != "mutant_sequence"]
 
-        if update_df:
-            logger.warning("Merging identical mutated sequences can take a while if update_df=True since it will concatenate all MCRSs too)")
+        if save_mutations_updated_csv:
+            logger.warning("Merging identical mutated sequences can take a while if save_mutations_updated_csv=True since it will concatenate all MCRSs too)")
             mutations = (
                 mutations.groupby(group_key, sort=False).agg({col: ("first" if col in columns_not_to_semicolon_join else (";".join if col == "header" else lambda x: list(x.fillna(np.nan)))) for col in agg_columns}).reset_index(drop=merge_identical_rc)
             )  # lambda x: list(x) will make simple list, but lengths will be inconsistent with NaN values  # concatenate values with semicolons: lambda x: `";".join(x.astype(str))`   # drop if merging by mutant_sequence_and_rc_tuple, but not if merging by mutant_sequence
@@ -1334,23 +1336,24 @@ def build(
 
     if not keep_original_headers or (mut_id_column in mutations.columns and not merge_identical):
         mutations["mcrs_id"] = generate_unique_ids(len(mutations))
-        mutations[["mcrs_id", "header"]].to_csv(id_to_header_csv_out, index=False)  # make the mapping csv
-        start, peaks_list = report_time_and_memory(process_name="Saved ID to header file", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
+        if not do_not_save_files:
+            mutations[["mcrs_id", "header"]].to_csv(id_to_header_csv_out, index=False)  # make the mapping csv
+            start, peaks_list = report_time_and_memory(process_name="Saved ID to header file", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
     else:
         mutations["mcrs_id"] = mutations["header"]
 
-    if update_df:  # use update_df_out if present,
+    if save_mutations_updated_csv:  # use mutations_updated_csv_out if present,
         logger.info("Saving dataframe with updated mutation info...")
         logger.warning("File size can be very large if the number of mutations is large.")
-        mutations.to_csv(update_df_out, index=False)
-        print(f"Updated mutation info has been saved to {update_df_out}")
+        mutations.to_csv(mutations_updated_csv_out, index=False)
+        print(f"Updated mutation info has been saved to {mutations_updated_csv_out}")
         start, peaks_list = report_time_and_memory(process_name="Saved updated df", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
 
     if len(mutations) > 0:
         mutations["fasta_format"] = ">" + mutations["mcrs_id"] + "\n" + mutations["mutant_sequence"] + "\n"
 
-        if create_wt_mcrs_counterpart_fa:
-            assert update_df, "update_df must be True to create wt_mcrs_counterpart_fa"
+        if save_wt_mcrs_fasta_and_t2g:
+            assert save_mutations_updated_csv, "save_mutations_updated_csv must be True to create wt_mcrs_counterpart_fa"
 
             mutations_with_exactly_1_wt_sequence_per_row = mutations[["mcrs_id", "wt_sequence"]].copy()
 
@@ -1364,24 +1367,25 @@ def build(
             mutations_with_exactly_1_wt_sequence_per_row["fasta_format_wt"] = ">" + mutations_with_exactly_1_wt_sequence_per_row["mcrs_id"] + "\n" + mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"] + "\n"
 
     # Save mutated sequences in new fasta file
-    with open(fasta_out, "w") as fasta_file:
-        fasta_file.write("".join(mutations["fasta_format"].values))
+    if not do_not_save_files:
+        with open(mcrs_fasta_out, "w") as fasta_file:
+            fasta_file.write("".join(mutations["fasta_format"].values))
 
-    create_mutant_t2g(fasta_out, mutation_reference_file_t2g)
+        create_mutant_t2g(mcrs_fasta_out, mcrs_t2g_out)
 
     if verbose:
-        logger.info(f"FASTA file containing mutated sequences created at {fasta_out}.")
-        logger.info(f"t2g file containing mutated sequences created at {mutation_reference_file_t2g}.")
+        logger.info(f"FASTA file containing mutated sequences created at {mcrs_fasta_out}.")
+        logger.info(f"t2g file containing mutated sequences created at {mcrs_t2g_out}.")
 
-    if create_wt_mcrs_counterpart_fa:
-        with open(fasta_out_wt, "w") as fasta_file:
+    if save_wt_mcrs_fasta_and_t2g:
+        with open(wt_mcrs_fasta_out, "w") as fasta_file:
             fasta_file.write("".join(mutations_with_exactly_1_wt_sequence_per_row["fasta_format_wt"].values))
-        create_mutant_t2g(fasta_out_wt, mutation_reference_file_t2g_wt)  # separate t2g is needed because it may have a subset of the rows of mutant (because it doesn't contain any MCRSs with merged mutations and 2+ originating WT sequences)
+        create_mutant_t2g(wt_mcrs_fasta_out, wt_mcrs_t2g_out)  # separate t2g is needed because it may have a subset of the rows of mutant (because it doesn't contain any MCRSs with merged mutations and 2+ originating WT sequences)
 
     start, peaks_list = report_time_and_memory(process_name="Wrote fasta file(s) and t2g(s)", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
 
     # When stream_output is True, return list of mutated seqs
-    if stream_mutation_output:
+    if return_mutation_output:
         all_mut_seqs = []
         all_mut_seqs.extend(mutations["mutant_sequence"].values)
 

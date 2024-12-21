@@ -66,7 +66,8 @@ def test_single_substitution(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.35G>A",
-        id_to_header_csv_out=None
+        do_not_save_files=True,
+        return_mutation_output=True
     )
 
     assert result[0] == "GCCCCACCCCGCCCCTCCCCGCCCCACCCCACCCCTCCCCGCCCCACCCCGCCCCTCCCCG"
@@ -78,7 +79,8 @@ def test_single_substitution_near_right_end(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.65G>A",
-        id_to_header_csv_out=None
+        do_not_save_files=True,
+        return_mutation_output=True
     )
 
     assert result[0] == "GCCCCTCCCCGCCCCACCCCGCCCCTCCCCACCCCACCCCG"
@@ -91,7 +93,8 @@ def test_single_substitution_near_left_end(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.5G>A",
-        id_to_header_csv_out=None
+        do_not_save_files=True,
+        return_mutation_output=True
     )
 
     assert result[0] == "CCCCACCCCACCCCGCCCCTCCCCGCCCCACCCCG"
@@ -104,7 +107,8 @@ def test_single_deletion(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.35del",  # del the G
-        id_to_header_csv_out=None
+        do_not_save_files=True,
+        return_mutation_output=True
     )
 
     assert result[0] == "GCCCCACCCCGCCCCTCCCCGCCCCACCCCCCCCTCCCCGCCCCACCCCGCCCCTCCCCG"
@@ -117,7 +121,8 @@ def test_multi_deletion(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.35_40del",
-        id_to_header_csv_out=None
+        do_not_save_files=True,
+        return_mutation_output=True
     )
 
     assert result[0] == "GCCCCACCCCGCCCCTCCCCGCCCCACCCCCCCCGCCCCACCCCGCCCCTCCCCGCCCCA"
@@ -129,7 +134,8 @@ def test_single_deletion_with_right_repeats(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.31del",
-        id_to_header_csv_out=None
+        do_not_save_files=True,
+        return_mutation_output=True
     )
 
     assert result[0] == "CGCCCCACCCCGCCCCTCCCCGCCCCACCCGCCCCTCCCCGCCCCACCCCGCCCCTC"
@@ -141,7 +147,8 @@ def test_single_deletion_with_left_repeats(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.34del",
-        id_to_header_csv_out=None
+        do_not_save_files=True,
+        return_mutation_output=True
     )
 
     assert result[0] == "CGCCCCACCCCGCCCCTCCCCGCCCCACCCGCCCCTCCCCGCCCCACCCCGCCCCTC"
@@ -153,7 +160,8 @@ def test_multi_deletion_with_right_repeats(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.31_32del",
-        id_to_header_csv_out=None
+        do_not_save_files=True,
+        return_mutation_output=True
     )
 
     assert result[0] == "CCGCCCCACCCCGCCCCTCCCCGCCCCACCGCCCCTCCCCGCCCCACCCCGCCCCTCC"
@@ -165,7 +173,8 @@ def test_single_insertion(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.4_5insT",
-        id_to_header_csv_out=None
+        do_not_save_files=True,
+        return_mutation_output=True
     )
 
     assert result[0] == "CCCCTGCCCCACCCCGCCCCTCCCCGCCCCACCC"
@@ -178,7 +187,8 @@ def test_single_insertion_mid_sequence_small_w(long_sequence):
         optimize_flanking_regions = True,
         mutations="c.20_21insA", # --> 19_20 (index 0) --> start at 15, end at 24 (0-index positions, inclusive, from original sequence)
         w=5,
-        id_to_header_csv_out=None
+        do_not_save_files=True,
+        return_mutation_output=True
     )
 
     # CCCCGCCCCACCCCGCCCCTCCCCGCCCCACCCCGCCCCTCCCCGCCCCACCCCGCCCCTCCCCGCCCCACCCCG
@@ -193,7 +203,8 @@ def test_multi_insertion(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.65_66insTTTTT",
-        id_to_header_csv_out=None
+        do_not_save_files=True,
+        return_mutation_output=True
     )
 
     assert result[0] == "CCCCGCCCCACCCCGCCCCTCCCCGTTTTTCCCCACCCCG"
@@ -206,7 +217,8 @@ def test_multi_insertion_with_left_repeats(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.20_21insCCAAA",
-        id_to_header_csv_out=None
+        do_not_save_files=True,
+        return_mutation_output=True
     )
 
     assert result[0] == "CCCCGCCCCACCCCGCCCCTCCAAACCCCGCCCCACCCCGCCCCTCCCCG"
@@ -219,7 +231,8 @@ def test_single_delins(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.38delinsAAA",
-        id_to_header_csv_out=None
+        do_not_save_files=True,
+        return_mutation_output=True
     )
 
     assert result[0] == "CCCCGCCCCTCCCCGCCCCACCCCGCCAAACTCCCCGCCCCACCCCGCCCCTCCCCG"
@@ -232,7 +245,8 @@ def test_multi_delins(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.38_40delinsAAA",
-        id_to_header_csv_out=None
+        do_not_save_files=True,
+        return_mutation_output=True
     )
 
     assert result[0] == "CCCCGCCCCTCCCCGCCCCACCCCGCCAAACCCCGCCCCACCCCGCCCCTCCCCGCC"
@@ -245,7 +259,8 @@ def test_multi_delins_with_psuedo_left_repeats(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.36_37delinsAG",
-        id_to_header_csv_out=None
+        do_not_save_files=True,
+        return_mutation_output=True
     )
 
     assert result[0] == "CCACCCCGCCCCTCCCCGCCCCACCCCGAGCCTCCCCGCCCCACCCCGCCCCTCCCCG"
@@ -257,7 +272,8 @@ def test_multi_delins_with_true_left_repeats(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.36_37delinsAC",
-        id_to_header_csv_out=None
+        do_not_save_files=True,
+        return_mutation_output=True
     )
 
     assert result[0] == "CCACCCCGCCCCTCCCCGCCCCACCCCGACCCTCCCCGCCCCACCCCGCCCCTCCCCG"
@@ -270,7 +286,8 @@ def test_multi_delins_with_true_right_repeats(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.36_37delinsCA",
-        id_to_header_csv_out=None
+        do_not_save_files=True,
+        return_mutation_output=True
     )
 
     assert result[0] == "CCACCCCGCCCCTCCCCGCCCCACCCCGCACCTCCCCGCCCCACCCCGCCCCTCCCCG"
@@ -282,7 +299,8 @@ def test_single_dup(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.35dup",
-        id_to_header_csv_out=None
+        do_not_save_files=True,
+        return_mutation_output=True
     )
 
     assert result[0] == "CCCCACCCCGCCCCTCCCCGCCCCACCCCGGCCCCTCCCCGCCCCACCCCGCCCCTCCCC"
@@ -294,7 +312,8 @@ def test_multi_dup(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.35_37dup",
-        id_to_header_csv_out=None
+        do_not_save_files=True,
+        return_mutation_output=True
     )
 
     assert result[0] == "CCACCCCGCCCCTCCCCGCCCCACCCCGCCGCCCCTCCCCGCCCCACCCCGCCCCTCC"
@@ -306,7 +325,8 @@ def test_inversion_with_overlaps(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.35_38inv",
-        id_to_header_csv_out=None
+        do_not_save_files=True,
+        return_mutation_output=True
     )
 
     assert result[0] == "CCCCACCCCGCCCCTCCCCGCCCCACCCCGGGCCTCCCCGCCCCACCCCGCCCCTCCCCGCC"
@@ -323,7 +343,8 @@ def test_list_of_mutations(long_sequence):
     result = vk.build(
         sequences=sequence_list,
         mutations=mutation_list,
-        id_to_header_csv_out=None
+        do_not_save_files=True,
+        return_mutation_output=True
     )
 
     assert result == ["GCCCCACCCCGCCCCTCCCCGCCCCACCCCACCCCTCCCCGCCCCACCCCGCCCCTCCCCG", "GCCCCTCCCCGCCCCACCCCGCCCCTCCCCACCCCACCCCG", "GCCCCACCCCGCCCCTCCCCGCCCCACCCCCCCCTCCCCGCCCCACCCCGCCCCTCCCCG", "CCCCTGCCCCACCCCGCCCCTCCCCGCCCCACCCC"]
@@ -337,7 +358,8 @@ def test_csv_of_mutations(create_temp_files):
     result = vk.build(
         sequences=sequence_temp_fasta_path,
         mutations=mutation_temp_csv_file,
-        id_to_header_csv_out=None
+        do_not_save_files=True,
+        return_mutation_output=True
     )
 
     assert result == ["GCCCCACCCCGCCCCTCCCCGCCCCACCCCACCCCTCCCCGCCCCACCCCGCCCCTCCCCG", "GCCCCTCCCCGCCCCACCCCGCCCCTCCCCACCCCACCCCG", "GCCCCACCCCGCCCCTCCCCGCCCCACCCCCCCCTCCCCGCCCCACCCCGCCCCTCCCCG", "CCCCTGCCCCACCCCGCCCCTCCCCGCCCCACCCC"]
@@ -351,7 +373,8 @@ def test_intron_mutation_plus(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.20+3T>A",
-        id_to_header_csv_out=None)
+        do_not_save_files=True
+    )
     
     assert_global_variables_zero(number_intronic_position_mutations=1)
 
@@ -360,7 +383,8 @@ def test_intron_mutation_minus(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.20-3T>A",
-        id_to_header_csv_out=None)
+        do_not_save_files=True
+    )
 
     assert_global_variables_zero(number_intronic_position_mutations=1)
 
@@ -370,7 +394,7 @@ def test_posttranslational_mutation(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.20*5T>A",
-        id_to_header_csv_out=None)
+        do_not_save_files=True)
 
     assert_global_variables_zero(number_posttranslational_region_mutations=1)
 
@@ -380,7 +404,7 @@ def test_uncertain_mutation(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.?",
-        id_to_header_csv_out=None)
+        do_not_save_files=True)
 
     assert_global_variables_zero(number_uncertain_mutations=1)
 
@@ -390,7 +414,7 @@ def test_ambiguous_mutation(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.(20_28)del",
-        id_to_header_csv_out=None)
+        do_not_save_files=True)
 
     assert_global_variables_zero(number_ambiguous_position_mutations=1)
 
@@ -400,7 +424,7 @@ def test_index_error(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.99999999C>A",
-        id_to_header_csv_out=None)
+        do_not_save_files=True)
 
     assert_global_variables_zero(number_index_errors=1)
 
@@ -410,7 +434,7 @@ def test_mismatch_error(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.2G>A",
-        id_to_header_csv_out=None)
+        do_not_save_files=True)
     
     assert vk.varseek_build.cosmic_incorrect_wt_base == 1   
 
@@ -423,7 +447,8 @@ def test_large_w(extra_long_sequence):
         optimize_flanking_regions = True,
         mutations="c.40T>G",
         w=54,
-        id_to_header_csv_out=None
+        do_not_save_files=True,
+        return_mutation_output=True
     )
 
     assert result[0] == "CCCCGCCCCACCCCGCCCCTCCCCGCCCCACCCCGCCCCGCCCCGCCCCACCCCGCCCCTCCCCGCCCCACCCCGCCCCTCCCCGCCCCACCCC"
@@ -437,7 +462,8 @@ def test_large_min_seq_length(long_sequence):
         optimize_flanking_regions = True,
         mutations="c.35G>A",
         min_seq_len=100,
-        id_to_header_csv_out=None
+        do_not_save_files=True,
+        return_mutation_output=True
     )
 
     assert result is None
@@ -448,7 +474,8 @@ def test_single_deletion_with_right_repeats_and_unoptimized_flanks(long_sequence
         sequences=long_sequence,
         optimize_flanking_regions = False,
         mutations="c.31del",
-        id_to_header_csv_out=None
+        do_not_save_files=True,
+        return_mutation_output=True
     )
 
     assert result[0] == "CCCCGCCCCACCCCGCCCCTCCCCGCCCCACCCGCCCCTCCCCGCCCCACCCCGCCCCTC"
@@ -460,7 +487,8 @@ def test_single_deletion_with_right_repeats_and_removing_seqs_with_wt_kmers(long
         optimize_flanking_regions = False,
         mutations="c.31del",
         remove_seqs_with_wt_kmers = True,
-        id_to_header_csv_out=None
+        do_not_save_files=True,
+        return_mutation_output=True
     )
 
     assert result is None
@@ -472,7 +500,8 @@ def test_sequence_with_N(long_sequence_with_N):
         optimize_flanking_regions = True,
         mutations="c.35G>A",
         max_ambiguous = 0,
-        id_to_header_csv_out=None
+        do_not_save_files=True,
+        return_mutation_output=True
     )
 
     assert result is None
@@ -487,7 +516,8 @@ def test_semicolon_merging(long_sequence):
         sequences=sequence_list,
         mutations=mutation_list,
         merge_identical=True,
-        id_to_header_csv_out=None
+        do_not_save_files=True,
+        return_mutation_output=True
     )
 
     assert result == ["GCCCCACCCCGCCCCTCCCCGCCCCACCCCACCCCTCCCCGCCCCACCCCGCCCCTCCCCG"]
@@ -501,9 +531,10 @@ def test_semicolon_merging(long_sequence):
 #         optimize_flanking_regions = True,
 #         mutations="c.35G>A",
 #         translate = True,
-#         update_df = True,
+#         save_mutations_updated_csv = True,
 #         store_full_sequences=True,
-#         id_to_header_csv_out=None
+#         do_not_save_files=True,
+#         return_mutation_output=True
 #     )
 
 #     assert result[0] == "APPRPSPPHPTPPRPTPPLP"  #* translate is not returned by gget mutate; only stored in update_df
