@@ -503,21 +503,22 @@ def build(
     Mutant sequence generation/filtering options:
     - w                                  (int) Length of sequence windows flanking the mutation. Default: 30.
                                          If w > total length of the sequence, the entire sequence will be kept.
-    - k                                  (int) Length of the k-mers to be considered when removed remove_seqs_with_wt_kmers.
-                                         If using kallisto in a later workflow, then this should correspond to kallisto k).
+    - k                                  (int) Length of the k-mers to be considered in remove_seqs_with_wt_kmers.
+                                         If using kallisto in a later workflow, then this should correspond to kallisto k.
                                          Must be greater than the value passed in for w. Default: w+1.
     - insertion_size_limit               (int) Maximum number of nucleotides allowed in an insertion-type mutation. Mutations with insertions larger than this will be dropped.
                                          Default: None (no insertion size limit will be applied)
-    - min_seq_len                        (int) Minimum length of the mutant output sequence. Mutant sequences smaller than this will be dropped. Default: None (No length filter will be applied)
+    - min_seq_len                        (int) Minimum length of the variant output sequence. Mutant sequences smaller than this will be dropped. Default: None (No length filter will be applied)
     - optimize_flanking_regions          (True/False) Whether to remove nucleotides from either end of the mutant sequence to ensure (when possible)
-                                         that the mutant sequence does not contain any w-mers (where a w-mer is a subsequence of length w) also found in the wildtype/input sequence. Default: False
-    - remove_seqs_with_wt_kmers          (True/False) Removes output sequences where at least one (w+1)-mer (where a w-mer is a subsequence of length w) is also present in the wildtype/input sequence in the same region.
-                                         If optimize_flanking_regions=True, only sequences for which a wildtype w-mer is still present after optimization will be removed.
+                                         that the mutant sequence does not contain any k-mers also found in the wildtype/input sequence. Default: False
+    - remove_seqs_with_wt_kmers          (True/False) Removes output sequences where at least one k-mer is also present in the wildtype/input sequence in the same region.
+                                         If optimize_flanking_regions=True, only sequences for which a wildtype k-mer is still present after optimization will be removed.
                                          Default: False
-    - max_ambiguous                      (int) Maximum number of 'N' (or 'n') characters allowed in the output sequence. Default: None (no 'N' filter will be applied)
-    - required_insertion_overlap_length  (int | str | None) Sets the Minimum number of nucleotides that must overlap between the inserted sequence and the flanking regions after flank optimization. Only effective when optimize_flanking_regions is also True.
+    - max_ambiguous                      (int) Maximum number of 'N' (or 'n') characters allowed in a VCRS. Default: None (no 'N' filter will be applied)
+    - required_insertion_overlap_length  (int | str | None) Sets the minimum number of nucleotides that must overlap between the 
+                                         inserted sequence and the flanking regions after flank optimization. Only effective when optimize_flanking_regions is also True.
                                          Default: None (No checking). If "all", then require the entire insertion and the following nucleotide
-    - merge_identical                    (True/False) Whether to merge identical mutant sequences in the output (identical sequences will be merged by concatenating the sequence
+    - merge_identical                    (True/False) Whether to merge sequence-identical VCRSs in the output (identical VCRSs will be merged by concatenating the sequence
                                          headers for all identical sequences with semicolons). Default: False
     - strandedness                       (True/False) Whether to consider the forward and reverse-complement mutant sequences as distinct if merging identical sequences. Only effective when merge_identical is also True.
                                          Default: False (ie do not consider forward and reverse-complement sequences to be equivalent)

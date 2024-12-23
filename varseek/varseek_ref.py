@@ -25,12 +25,18 @@ varseek_ref_only_allowable_kb_ref_arguments = {
 # TODO: write
 def validate_input_ref():
     # make sure k is odd and <= 63
+    # assert dlist in {genome, transcriptome, genome_and_transcriptome, 'None', None}
     pass
 
 def ref(
-    sequences: Union[str, List[str]],
+    sequences: Union[str, List[str]],  #* required inputs
     mutations: Union[str, List[str]],
-    mut_column: str = "mutation",
+    mcrs_index_out: Optional[str] = None,  #* vk ref specific
+    dlist=False,  # path to dlist fasta file or "None" (including the quotes)
+    config=None,
+    minimum_info_columns=True,
+    download=False,
+    mut_column: str = "mutation",  #* vk build
     seq_id_column: str = "seq_ID",
     mut_id_column: Optional[str] = None,
     gtf: Optional[str] = None,
@@ -64,8 +70,6 @@ def ref(
     overwrite: bool = False,
     dry_run: bool = False,
     verbose: bool = True,
-    mcrs_index_out: Optional[str] = None,
-    dlist=False,  # path to dlist fasta file or "None" (including the quotes)
     **kwargs
 ):
 
@@ -135,7 +139,7 @@ def ref(
         reference_out_dir = os.path.join(out, "reference")
 
     os.makedirs(out, exist_ok=True)
-    os.makedirs(reference_out_dir, exist_ok=True)
+    os.makedirs(reference_out_dir, exist_ok=True)        
 
     # get COSMIC info
     cosmic_email = kwargs.get("cosmic_email", None)
@@ -177,6 +181,15 @@ def ref(
     else:
         mcrs_fasta_for_index = mcrs_filtered_fasta_out
         mcrs_t2g_for_alignment = mcrs_t2g_filtered_out
+
+    # download if download argument is True
+    if download:
+        #!! download based on the set of args passed in
+        
+        vk_ref_output_dict = {}
+        vk_ref_output_dict["index"] = mcrs_index_out
+        vk_ref_output_dict["t2g"] = mcrs_t2g_for_alignment
+        return vk_ref_output_dict
     
 
     
@@ -234,6 +247,7 @@ def ref(
         wt_mcrs_fasta_out=wt_mcrs_fasta_out,
         wt_mcrs_t2g_out=wt_mcrs_t2g_out,
         dry_run=dry_run,
+        overwrite=overwrite,
         verbose=verbose,
         **function_name_to_dict_of_kwargs["varseek_build"],  # I use this rather than all kwargs to ensure that I only pass in the kwargs I expect
     )

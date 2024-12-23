@@ -26,7 +26,7 @@ def summarize(
     out=".",
     overwrite=False,
     top_values=10,
-    verbose=False,
+    verbose=True,
     **kwargs,
 ):
     os.makedirs(out, exist_ok=True)

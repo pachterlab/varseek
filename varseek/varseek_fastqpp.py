@@ -14,23 +14,46 @@ from .utils import (
 logger = set_up_logger()
 
 
+#* ORIGINAL
+# def fastqpp(
+#     rnaseq_fastq_files_list,
+#     trim_edges_off_reads=False,
+#     run_fastqc=False,
+#     replace_low_quality_bases_with_N=False,
+#     split_reads_by_Ns=False,
+#     technology="bulk",
+#     multiplexed=False,
+#     parity="single",
+#     minimum_base_quality_trim_reads=0,
+#     qualified_quality_phred=0,
+#     unqualified_percent_limit=100,
+#     n_base_limit=None,
+#     minimum_length=None,
+#     minimum_base_quality_replace_with_N=13,
+#     fastp="fastp",
+#     seqtk="seqtk",
+#     delete_intermediate_files=False,
+#     out=".",
+#     **kwargs
+# ):
+
+
 def fastqpp(
     rnaseq_fastq_files_list,
-    trim_edges_off_reads=False,
-    run_fastqc=False,
+    quality_control_fastq_files=False,
+    run_fastqc_and_multiqc=False,
     replace_low_quality_bases_with_N=False,
     split_reads_by_Ns=False,
     technology="bulk",
     multiplexed=False,
-    parity=None,
-    minimum_base_quality_trim_reads=0,
+    parity="single",
+    cut_mean_quality=0,
+    cut_window_size=4,  # new
     qualified_quality_phred=0,
     unqualified_percent_limit=100,
-    n_base_limit=None,
-    minimum_length=None,
-    minimum_base_quality_replace_with_N=13,
-    fastp="fastp",
-    seqtk="seqtk",
+    max_ambiguous=None,
+    min_read_len=None,
+    min_base_quality=13,
     delete_intermediate_files=False,
     out=".",
     **kwargs
@@ -59,6 +82,9 @@ def fastqpp(
 
     if not os.path.exists(out):
         os.makedirs(out)
+
+    fastp = kwargs.get("fastp_path", "fastp")
+    seqtk = kwargs.get("seqtk_path", "seqtk")
 
     config_file = os.path.join(out, "config", "vk_fastqpp_config.json")
     save_params_to_config_file(config_file)

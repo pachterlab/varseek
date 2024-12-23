@@ -159,9 +159,6 @@ def validate_input_info(input_dir, mcrs_fasta, mutations_updated_csv, id_to_head
 # TODO: finish implementing the cdna/genome column stuff, and remove hard-coding of some column names
 def info(
     input_dir: str,
-    mcrs_fasta: Optional[str] = None,
-    mutations_updated_csv: Optional[str] = None,
-    id_to_header_csv: Optional[str] = None,  # if none then assume no swapping occurred
     columns_to_include: Optional[Union[str, List[str]]] = None,
     mcrs_id_column: str = "mcrs_id",
     mcrs_sequence_column: str = "mutant_sequence",
@@ -172,12 +169,6 @@ def info(
     mutation_genome_column: str = "mutation_genome",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome
     gtf: Optional[str] = None,  # for distance to nearest splice junction
     out: str = ".",
-    reference_out_dir: Optional[str] = None,
-    mutations_updated_vk_info_csv_out: Optional[str] = None,
-    mutations_updated_exploded_vk_info_csv_out: Optional[str] = None,
-    dlist_genome_fasta_out: Optional[str] = None,
-    dlist_cdna_fasta_out: Optional[str] = None,
-    dlist_combined_fasta_out: Optional[str] = None,
     dlist_reference_source: str = "ensembl_grch37_release93",
     w: int = 30,
     max_ambiguous_mcrs: Optional[int] = None,
@@ -192,6 +183,15 @@ def info(
     overwrite: bool = False,
     dry_run: bool = False,
     verbose: bool = True,
+    mcrs_fasta: Optional[str] = None,
+    mutations_updated_csv: Optional[str] = None,
+    id_to_header_csv: Optional[str] = None,  # if none then assume no swapping occurred
+    reference_out_dir: Optional[str] = None,
+    mutations_updated_vk_info_csv_out: Optional[str] = None,
+    mutations_updated_exploded_vk_info_csv_out: Optional[str] = None,
+    dlist_genome_fasta_out: Optional[str] = None,
+    dlist_cdna_fasta_out: Optional[str] = None,
+    dlist_combined_fasta_out: Optional[str] = None,
     **kwargs,
 ):
     """
