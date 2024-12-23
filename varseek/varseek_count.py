@@ -2,6 +2,13 @@ import os
 import subprocess
 import varseek as vk
 
+varseek_count_unallowable_arguments = {
+    "varseek_fastqpp": set(),
+    "kb_count": set(),
+    "varseek_clean": set(),
+    "varseek_summarize": set(),
+}
+
 
 def count(
     rnaseq_fastq_files,

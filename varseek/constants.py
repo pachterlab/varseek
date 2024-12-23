@@ -14,13 +14,6 @@ allowable_kwargs = {
     "varseek_count": set()
 }
 
-varseek_count_unallowable_arguments = {
-    "varseek_fastqpp": set(),
-    "kb_count": set(),
-    "varseek_clean": set(),
-    "varseek_summarize": set(),
-}
-
 
 
 # Get complement

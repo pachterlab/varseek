@@ -9,7 +9,7 @@ import json
 from datetime import datetime
 
 from .__init__ import __version__
-from .varseek_build import build
+from .varseek_build import build, print_valid_values_for_mutations_and_sequences_in_varseek_build
 from .varseek_summarize import summarize
 from .varseek_filter import filter
 from .varseek_clean import clean
@@ -259,18 +259,25 @@ def main():
     # NEW PARSER
     # build parser arguments
     build_desc = "Build a mutation-containing reference sequence (MCRS) file."
+
+    # prints additional info at the end of the help message for varseek build
+    vk_build_end_help_message = print_valid_values_for_mutations_and_sequences_in_varseek_build(return_message=True)
+
     parser_build = parent_subparsers.add_parser(
         "build",
         parents=[parent],
         description=build_desc,
         help=build_desc,
+        epilog=vk_build_end_help_message,
         add_help=True,
         formatter_class=CustomHelpFormatter,
     )
     parser_build.add_argument(
-        "sequences",
+        "-s",
+        "--sequences",
         type=str,
         nargs="+",
+        required=True,
         help=extract_help_from_doc(build, "sequences"),
     )
     parser_build.add_argument(
@@ -353,14 +360,6 @@ def main():
         help=extract_help_from_doc(build, "min_seq_len"),
     )
     parser_build.add_argument(
-        "-ma",
-        "--max_ambiguous",
-        default=None,
-        type=int,
-        required=False,
-        help=extract_help_from_doc(build, "max_ambiguous"),
-    )
-    parser_build.add_argument(
         "-ofr",
         "--optimize_flanking_regions",
         default=False,
@@ -375,6 +374,22 @@ def main():
         action="store_true",
         required=False,
         help=extract_help_from_doc(build, "remove_seqs_with_wt_kmers"),
+    )
+    parser_build.add_argument(
+        "-ma",
+        "--max_ambiguous",
+        default=None,
+        type=int,
+        required=False,
+        help=extract_help_from_doc(build, "max_ambiguous"),
+    )
+    parser_build.add_argument(
+        "-riol",
+        "--required_insertion_overlap_length",
+        default=None,
+        type=int_or_str,
+        required=False,
+        help=extract_help_from_doc(build, "required_insertion_overlap_length"),
     )
     parser_build.add_argument(
         "-mi",
@@ -400,19 +415,20 @@ def main():
         help=extract_help_from_doc(build, "keep_original_headers"),
     )
     parser_build.add_argument(
-        "--save_wt_mcrs_fasta_and_t2g",
-        default=False,
-        action="store_true",
-        required=False,
-        help=extract_help_from_doc(build, "save_wt_mcrs_fasta_and_t2g"),
-    )
-    parser_build.add_argument(
-        "-udf",
-        "--update_df",
+        "-smuc",
+        "--save_mutations_updated_csv",
         default=False,
         action="store_true",
         required=False,
         help=extract_help_from_doc(build, "update_df"),
+    )
+    parser_build.add_argument(
+        "-sfs",
+        "--store_full_sequences",
+        default=False,
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(build, "store_full_sequences"),
     )
     parser_build.add_argument(
         "--translate",
@@ -437,12 +453,27 @@ def main():
         help=extract_help_from_doc(build, "translate_end"),
     )
     parser_build.add_argument(
-        "-sfs",
-        "--store_full_sequences",
+        "--save_wt_mcrs_fasta_and_t2g",
         default=False,
         action="store_true",
         required=False,
-        help=extract_help_from_doc(build, "store_full_sequences"),
+        help=extract_help_from_doc(build, "save_wt_mcrs_fasta_and_t2g"),
+    )
+    parser_build.add_argument(
+        "-rmo",
+        "--return_mutation_output",
+        default=False,
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(build, "return_mutation_output"),
+    )
+    parser_build.add_argument(
+        "-o",
+        "--out",
+        default=".",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(build, "out"),
     )
     parser_build.add_argument(
         "-ro",
@@ -453,12 +484,60 @@ def main():
         help=extract_help_from_doc(build, "reference_out_dir"),
     )
     parser_build.add_argument(
-        "-o",
-        "--out",
+        "--mcrs_fasta_out",
         default=None,
         type=str,
         required=False,
-        help=extract_help_from_doc(build, "out"),
+        help=extract_help_from_doc(build, "mcrs_fasta_out"),
+    )
+    parser_build.add_argument(
+        "--mutations_updated_csv_out",
+        default=None,
+        type=str,
+        required=False,
+        help=extract_help_from_doc(build, "mutations_updated_csv_out"),
+    )
+    parser_build.add_argument(
+        "--id_to_header_csv_out",
+        default=None,
+        type=str,
+        required=False,
+        help=extract_help_from_doc(build, "id_to_header_csv_out"),
+    )
+    parser_build.add_argument(
+        "--mcrs_t2g_out",
+        default=None,
+        type=str,
+        required=False,
+        help=extract_help_from_doc(build, "mcrs_t2g_out"),
+    )
+    parser_build.add_argument(
+        "--wt_mcrs_fasta_out",
+        default=None,
+        type=str,
+        required=False,
+        help=extract_help_from_doc(build, "wt_mcrs_fasta_out"),
+    )
+    parser_build.add_argument(
+        "--wt_mcrs_t2g_out",
+        default=None,
+        type=str,
+        required=False,
+        help=extract_help_from_doc(build, "wt_mcrs_t2g_out"),
+    )
+    parser_build.add_argument(
+        "--dry_run",
+        default=False,
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(build, "dry_run"),
+    )
+    parser_build.add_argument(
+        "--overwrite",
+        default=False,
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(build, "overwrite"),
     )
     parser_build.add_argument(
         "-q",
@@ -1075,6 +1154,9 @@ def main():
     if len(sys.argv) == 2:
         if sys.argv[1] in command_to_parser:
             command_to_parser[sys.argv[1]].print_help(sys.stderr)
+            if sys.argv[1] == "build":  # print the valid options for mutations and sequences supported internally
+                print("\nSupported values internally for mutations and sequences (outside of user-provided files or strings containing mutations and their corresponding reference sequences)")
+                print_valid_values_for_mutations_and_sequences_in_varseek_build()
         else:
             parent_parser.print_help(sys.stderr)
         sys.exit(1)    

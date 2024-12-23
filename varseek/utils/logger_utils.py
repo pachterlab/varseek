@@ -59,6 +59,34 @@ def set_up_logger(logging_level_name=None, save_logs=False, log_dir=None):
 
     return logger
 
+
+def check_file_path_is_string_with_valid_extension(file_path, variable_name, file_type, required=False):
+    valid_extensions = {
+        "json": {".json"},
+        "yaml": {".yaml", ".yml"},
+        "csv": {".csv"},
+        "tsv": {".tsv"},
+        "txt": {".txt"},
+        "fasta": {".fasta", ".fa", ".fna", ".ffn"},
+        "fastq": {".fastq", ".fq"},
+        "bam": {".bam"},
+        "bed": {".bed"},
+        "vcf": {".vcf"},
+        "gtf": {".gtf"},
+        "t2g": {".txt"},
+        "index": {".idx"},
+    }
+    if file_path:  # skip if None or empty string, as I will provide the default path in this case
+        if not isinstance(file_path, str):
+            raise ValueError(f"{variable_name} must be a string, got {type(file_path)}")
+        if not any(file_path.lower().endswith(ext) for ext in valid_extensions[file_type]):
+            raise ValueError(
+                f"Invalid file extension for {variable_name}. Must be one of {valid_extensions[file_type]}"
+            )
+    else:
+        if required:
+            raise ValueError(f"{file_type} file path is required")
+
 def load_params(file):
     if file.endswith(".json"):
         with open(file, "r") as f:
@@ -68,21 +96,21 @@ def load_params(file):
         with open(file, "r") as f:
             return yaml.safe_load(f)
     else:
-        print("config file format not recognized. currently supported are json and  yaml.")
+        print("config file format not recognized. currently supported are json and yaml.")
         return {}
     
-def save_params_to_config_file(out_file="run_config.json"):
-    out_file_directory = os.path.dirname(out_file)
-    if not out_file_directory:
-        out_file_directory = "."
-    else:
-        os.makedirs(out_file_directory, exist_ok=True)
-
+def make_function_parameter_to_value_dict(levels_up = 1):
     # Collect parameters in a dictionary
     params = OrderedDict()
 
     # Get the caller's frame (one level up in the stack)
-    frame = inspect.currentframe().f_back
+    frame = inspect.currentframe()
+
+    for _ in range(levels_up):
+        if frame is None:
+            break
+        frame = frame.f_back
+
     function_args, varargs, varkw, values = inspect.getargvalues(frame)
 
     # handle explicit function arguments
@@ -97,6 +125,19 @@ def save_params_to_config_file(out_file="run_config.json"):
     if varkw:
         for key, value in values[varkw].items():
             params[key] = value
+    
+    return params
+
+
+def save_params_to_config_file(out_file="run_config.json"):
+    out_file_directory = os.path.dirname(out_file)
+    if not out_file_directory:
+        out_file_directory = "."
+    else:
+        os.makedirs(out_file_directory, exist_ok=True)
+
+    # Collect parameters in a dictionary
+    params = make_function_parameter_to_value_dict(levels_up = 2)
 
     # Write to JSON
     with open(out_file, "w") as file:
@@ -159,6 +200,17 @@ def return_kb_arguments(command, remove_dashes = False):
         ]
 
     return kb_arguments
+
+
+def print_varseek_dry_run(params, function_name=None):
+    if function_name:
+        assert function_name in {"build", "info", "filter", "fastqpp", "clean", "summarize", "ref", "count"}
+        end="\n  "
+        print(f"varseek.varseek_{function_name}.{function_name}(", end=end)
+    for param_key, param_value in params.items():
+        print(f"{param_key} = {param_value}", end=end)
+    if function_name:
+        print(")")
 
 
 # os.environ["REPORT_TIME_AND_MEMORY"] = "TRUE"
