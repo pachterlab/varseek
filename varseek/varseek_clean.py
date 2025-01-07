@@ -80,7 +80,7 @@ def clean(
     id_to_header_csv=None,
     mutation_metadata_df=None,
     mutation_metadata_df_columns=None,
-    min_counts=0,
+    min_counts=1,
     use_binary_matrix=False,
     drop_empty_columns=False,
     technology="bulk",

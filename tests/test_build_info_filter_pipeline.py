@@ -187,7 +187,7 @@ def test_file_processing(cosmic_csv_path, cds_and_cdna_files, genome_and_gtf_fil
             min_seq_len=k,
             max_ambiguous=max_ambiguous_vk,
             merge_identical=True,
-            strandedness=strandedness,
+            vcrs_strandedness=strandedness,
             cosmic_email = os.getenv('COSMIC_EMAIL'),
             cosmic_password = os.getenv('COSMIC_PASSWORD'),
             save_mutations_updated_csv=True

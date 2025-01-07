@@ -66,7 +66,7 @@ def test_single_substitution(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.35G>A",
-        do_not_save_files=True,
+        save_files=False,
         return_mutation_output=True
     )
 
@@ -79,7 +79,7 @@ def test_single_substitution_near_right_end(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.65G>A",
-        do_not_save_files=True,
+        save_files=False,
         return_mutation_output=True
     )
 
@@ -93,7 +93,7 @@ def test_single_substitution_near_left_end(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.5G>A",
-        do_not_save_files=True,
+        save_files=False,
         return_mutation_output=True
     )
 
@@ -107,7 +107,7 @@ def test_single_deletion(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.35del",  # del the G
-        do_not_save_files=True,
+        save_files=False,
         return_mutation_output=True
     )
 
@@ -121,7 +121,7 @@ def test_multi_deletion(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.35_40del",
-        do_not_save_files=True,
+        save_files=False,
         return_mutation_output=True
     )
 
@@ -134,7 +134,7 @@ def test_single_deletion_with_right_repeats(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.31del",
-        do_not_save_files=True,
+        save_files=False,
         return_mutation_output=True
     )
 
@@ -147,7 +147,7 @@ def test_single_deletion_with_left_repeats(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.34del",
-        do_not_save_files=True,
+        save_files=False,
         return_mutation_output=True
     )
 
@@ -160,7 +160,7 @@ def test_multi_deletion_with_right_repeats(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.31_32del",
-        do_not_save_files=True,
+        save_files=False,
         return_mutation_output=True
     )
 
@@ -173,7 +173,7 @@ def test_single_insertion(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.4_5insT",
-        do_not_save_files=True,
+        save_files=False,
         return_mutation_output=True
     )
 
@@ -187,7 +187,7 @@ def test_single_insertion_mid_sequence_small_w(long_sequence):
         optimize_flanking_regions = True,
         mutations="c.20_21insA", # --> 19_20 (index 0) --> start at 15, end at 24 (0-index positions, inclusive, from original sequence)
         w=5,
-        do_not_save_files=True,
+        save_files=False,
         return_mutation_output=True
     )
 
@@ -203,7 +203,7 @@ def test_multi_insertion(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.65_66insTTTTT",
-        do_not_save_files=True,
+        save_files=False,
         return_mutation_output=True
     )
 
@@ -217,7 +217,7 @@ def test_multi_insertion_with_left_repeats(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.20_21insCCAAA",
-        do_not_save_files=True,
+        save_files=False,
         return_mutation_output=True
     )
 
@@ -231,7 +231,7 @@ def test_single_delins(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.38delinsAAA",
-        do_not_save_files=True,
+        save_files=False,
         return_mutation_output=True
     )
 
@@ -245,7 +245,7 @@ def test_multi_delins(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.38_40delinsAAA",
-        do_not_save_files=True,
+        save_files=False,
         return_mutation_output=True
     )
 
@@ -259,7 +259,7 @@ def test_multi_delins_with_psuedo_left_repeats(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.36_37delinsAG",
-        do_not_save_files=True,
+        save_files=False,
         return_mutation_output=True
     )
 
@@ -272,7 +272,7 @@ def test_multi_delins_with_true_left_repeats(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.36_37delinsAC",
-        do_not_save_files=True,
+        save_files=False,
         return_mutation_output=True
     )
 
@@ -286,7 +286,7 @@ def test_multi_delins_with_true_right_repeats(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.36_37delinsCA",
-        do_not_save_files=True,
+        save_files=False,
         return_mutation_output=True
     )
 
@@ -299,7 +299,7 @@ def test_single_dup(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.35dup",
-        do_not_save_files=True,
+        save_files=False,
         return_mutation_output=True
     )
 
@@ -312,7 +312,7 @@ def test_multi_dup(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.35_37dup",
-        do_not_save_files=True,
+        save_files=False,
         return_mutation_output=True
     )
 
@@ -325,7 +325,7 @@ def test_inversion_with_overlaps(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.35_38inv",
-        do_not_save_files=True,
+        save_files=False,
         return_mutation_output=True
     )
 
@@ -343,7 +343,7 @@ def test_list_of_mutations(long_sequence):
     result = vk.build(
         sequences=sequence_list,
         mutations=mutation_list,
-        do_not_save_files=True,
+        save_files=False,
         return_mutation_output=True
     )
 
@@ -358,7 +358,7 @@ def test_csv_of_mutations(create_temp_files):
     result = vk.build(
         sequences=sequence_temp_fasta_path,
         mutations=mutation_temp_csv_file,
-        do_not_save_files=True,
+        save_files=False,
         return_mutation_output=True
     )
 
@@ -373,7 +373,7 @@ def test_intron_mutation_plus(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.20+3T>A",
-        do_not_save_files=True
+        save_files=False
     )
     
     assert_global_variables_zero(number_intronic_position_mutations=1)
@@ -383,7 +383,7 @@ def test_intron_mutation_minus(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.20-3T>A",
-        do_not_save_files=True
+        save_files=False
     )
 
     assert_global_variables_zero(number_intronic_position_mutations=1)
@@ -394,7 +394,7 @@ def test_posttranslational_mutation(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.20*5T>A",
-        do_not_save_files=True)
+        save_files=False)
 
     assert_global_variables_zero(number_posttranslational_region_mutations=1)
 
@@ -404,7 +404,7 @@ def test_uncertain_mutation(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.?",
-        do_not_save_files=True)
+        save_files=False)
 
     assert_global_variables_zero(number_uncertain_mutations=1)
 
@@ -414,7 +414,7 @@ def test_ambiguous_mutation(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.(20_28)del",
-        do_not_save_files=True)
+        save_files=False)
 
     assert_global_variables_zero(number_ambiguous_position_mutations=1)
 
@@ -424,7 +424,7 @@ def test_index_error(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.99999999C>A",
-        do_not_save_files=True)
+        save_files=False)
 
     assert_global_variables_zero(number_index_errors=1)
 
@@ -434,7 +434,7 @@ def test_mismatch_error(long_sequence):
         sequences=long_sequence,
         optimize_flanking_regions = True,
         mutations="c.2G>A",
-        do_not_save_files=True)
+        save_files=False)
     
     assert vk.varseek_build.cosmic_incorrect_wt_base == 1   
 
@@ -447,7 +447,7 @@ def test_large_w(extra_long_sequence):
         optimize_flanking_regions = True,
         mutations="c.40T>G",
         w=54,
-        do_not_save_files=True,
+        save_files=False,
         return_mutation_output=True
     )
 
@@ -462,7 +462,7 @@ def test_large_min_seq_length(long_sequence):
         optimize_flanking_regions = True,
         mutations="c.35G>A",
         min_seq_len=100,
-        do_not_save_files=True,
+        save_files=False,
         return_mutation_output=True
     )
 
@@ -474,7 +474,7 @@ def test_single_deletion_with_right_repeats_and_unoptimized_flanks(long_sequence
         sequences=long_sequence,
         optimize_flanking_regions = False,
         mutations="c.31del",
-        do_not_save_files=True,
+        save_files=False,
         return_mutation_output=True
     )
 
@@ -487,7 +487,7 @@ def test_single_deletion_with_right_repeats_and_removing_seqs_with_wt_kmers(long
         optimize_flanking_regions = False,
         mutations="c.31del",
         remove_seqs_with_wt_kmers = True,
-        do_not_save_files=True,
+        save_files=False,
         return_mutation_output=True
     )
 
@@ -500,7 +500,7 @@ def test_sequence_with_N(long_sequence_with_N):
         optimize_flanking_regions = True,
         mutations="c.35G>A",
         max_ambiguous = 0,
-        do_not_save_files=True,
+        save_files=False,
         return_mutation_output=True
     )
 
@@ -516,7 +516,7 @@ def test_semicolon_merging(long_sequence):
         sequences=sequence_list,
         mutations=mutation_list,
         merge_identical=True,
-        do_not_save_files=True,
+        save_files=False,
         return_mutation_output=True
     )
 
@@ -533,7 +533,7 @@ def test_semicolon_merging(long_sequence):
 #         translate = True,
 #         save_mutations_updated_csv = True,
 #         store_full_sequences=True,
-#         do_not_save_files=True,
+#         save_files=False,
 #         return_mutation_output=True
 #     )
 

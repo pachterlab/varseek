@@ -30,7 +30,7 @@ def process_filters(filters):
         return prepare_filters_list(filters)
 
 
-def extract_help_from_doc(module, arg_name):
+def extract_help_from_doc(module, arg_name, disable=False):
     """
     Extracts the help message for a given argument from the module's docstring, handling multi-line descriptions.
     Requires a docstring line of the following format:
@@ -74,6 +74,8 @@ def extract_help_from_doc(module, arg_name):
                     help_message.append(match.group(2).strip())
 
     if help_message:
+        if disable:
+            help_message = [f"Disable {arg_name}, described below:"] + help_message
         return "\n".join(help_message).strip()
     else:
         return "Help message not found in docstring."
@@ -289,6 +291,30 @@ def main():
         help=extract_help_from_doc(build, "mutations"),
     )
     parser_build.add_argument(
+        "-w",
+        "--w",
+        default=54,
+        type=int,
+        required=False,
+        help=extract_help_from_doc(build, "w"),
+    )
+    parser_build.add_argument(
+        "-k",
+        "--k",
+        default=None,
+        type=int,
+        required=False,
+        help=extract_help_from_doc(build, "k"),
+    )
+    parser_build.add_argument(
+        "-ma",
+        "--max_ambiguous",
+        default=0,
+        type=int,
+        required=False,
+        help=extract_help_from_doc(build, "max_ambiguous"),
+    )
+    parser_build.add_argument(
         "-mc",
         "--mut_column",
         default="mutation",
@@ -327,145 +353,6 @@ def main():
         type=str,
         required=False,
         help=extract_help_from_doc(build, "gtf_transcript_id_column"),
-    )
-    parser_build.add_argument(
-        "-w",
-        "--w",
-        default=30,
-        type=int,
-        required=False,
-        help=extract_help_from_doc(build, "w"),
-    )
-    parser_build.add_argument(
-        "-k",
-        "--k",
-        default=None,
-        type=int,
-        required=False,
-        help=extract_help_from_doc(build, "k"),
-    )
-    parser_build.add_argument(
-        "--insertion_size_limit",
-        default=None,
-        type=int,
-        required=False,
-        help=extract_help_from_doc(build, "insertion_size_limit"),
-    )
-    parser_build.add_argument(
-        "-msl",
-        "--min_seq_len",
-        default=None,
-        type=int,
-        required=False,
-        help=extract_help_from_doc(build, "min_seq_len"),
-    )
-    parser_build.add_argument(
-        "-ofr",
-        "--optimize_flanking_regions",
-        default=False,
-        action="store_true",
-        required=False,
-        help=extract_help_from_doc(build, "optimize_flanking_regions"),
-    )
-    parser_build.add_argument(
-        "-rswk",
-        "--remove_seqs_with_wt_kmers",
-        default=False,
-        action="store_true",
-        required=False,
-        help=extract_help_from_doc(build, "remove_seqs_with_wt_kmers"),
-    )
-    parser_build.add_argument(
-        "-ma",
-        "--max_ambiguous",
-        default=None,
-        type=int,
-        required=False,
-        help=extract_help_from_doc(build, "max_ambiguous"),
-    )
-    parser_build.add_argument(
-        "-riol",
-        "--required_insertion_overlap_length",
-        default=None,
-        type=int_or_str,
-        required=False,
-        help=extract_help_from_doc(build, "required_insertion_overlap_length"),
-    )
-    parser_build.add_argument(
-        "-mi",
-        "--merge_identical",
-        default=False,
-        action="store_true",
-        required=False,
-        help=extract_help_from_doc(build, "merge_identical"),
-    )
-    parser_build.add_argument(
-        "--strandedness",
-        default=False,
-        action="store_true",
-        required=False,
-        help=extract_help_from_doc(build, "strandedness"),
-    )
-    parser_build.add_argument(
-        "-koh",
-        "--keep_original_headers",
-        default=False,
-        action="store_true",
-        required=False,
-        help=extract_help_from_doc(build, "keep_original_headers"),
-    )
-    parser_build.add_argument(
-        "-smuc",
-        "--save_mutations_updated_csv",
-        default=False,
-        action="store_true",
-        required=False,
-        help=extract_help_from_doc(build, "update_df"),
-    )
-    parser_build.add_argument(
-        "-sfs",
-        "--store_full_sequences",
-        default=False,
-        action="store_true",
-        required=False,
-        help=extract_help_from_doc(build, "store_full_sequences"),
-    )
-    parser_build.add_argument(
-        "--translate",
-        default=None,
-        action="store_true",
-        required=False,
-        help="Translate the mutated sequences to amino acids. Only valid when used with `--update_df`.",
-    )
-    parser_build.add_argument(
-        "-ts",
-        "--translate_start",
-        default=None,
-        type=int_or_str,
-        required=False,
-        help=extract_help_from_doc(build, "translate_start"),
-    )
-    parser_build.add_argument(
-        "--translate_end",
-        default=None,
-        type=int_or_str,
-        required=False,
-        help=extract_help_from_doc(build, "translate_end"),
-    )
-    parser_build.add_argument(
-        "--save_wt_mcrs_fasta_and_t2g",
-        default=False,
-        action="store_true",
-        required=False,
-        help=extract_help_from_doc(build, "save_wt_mcrs_fasta_and_t2g"),
-    )
-    parser_build.add_argument(
-        "-rmo",
-        "--return_mutation_output",
-        default=False,
-        action="store_true",
-        required=False,
-        help=extract_help_from_doc(build, "return_mutation_output"),
     )
     parser_build.add_argument(
         "-o",
@@ -526,11 +413,83 @@ def main():
         help=extract_help_from_doc(build, "wt_mcrs_t2g_out"),
     )
     parser_build.add_argument(
-        "--dry_run",
+        "--removed_variants_text_out",
+        default=None,
+        type=str,
+        required=False,
+        help=extract_help_from_doc(build, "removed_variants_text_out"),
+    )
+    parser_build.add_argument(
+        "--filtering_report_text_out",
+        default=None,
+        type=str,
+        required=False,
+        help=extract_help_from_doc(build, "filtering_report_text_out"),
+    )
+    parser_build.add_argument(
+        "-rmo",
+        "--return_mutation_output",
         default=False,
         action="store_true",
         required=False,
-        help=extract_help_from_doc(build, "dry_run"),
+        help=extract_help_from_doc(build, "return_mutation_output"),
+    )
+    parser_build.add_argument(
+        "-smuc",
+        "--save_mutations_updated_csv",
+        default=False,
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(build, "update_df"),
+    )
+    parser_build.add_argument(
+        "--save_wt_mcrs_fasta_and_t2g",
+        default=False,
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(build, "save_wt_mcrs_fasta_and_t2g"),
+    )
+    parser_build.add_argument(
+        "--disable_save_removed_variants_text",
+        action="store_false",
+        required=False,
+        help=extract_help_from_doc(build, "save_removed_variants_text"),
+    )
+    parser_build.add_argument(
+        "--disable_save_filtering_report_text",
+        action="store_false",
+        required=False,
+        help=extract_help_from_doc(build, "save_filtering_report_text"),
+    )    
+    parser_build.add_argument(
+        "-sfs",
+        "--store_full_sequences",
+        default=False,
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(build, "store_full_sequences"),
+    )
+    parser_build.add_argument(
+        "--translate",
+        default=None,
+        action="store_true",
+        required=False,
+        help="Translate the mutated sequences to amino acids. Only valid when used with `--update_df`.",
+    )
+    parser_build.add_argument(
+        "-ts",
+        "--translate_start",
+        default=None,
+        type=int_or_str,
+        required=False,
+        help=extract_help_from_doc(build, "translate_start"),
+    )
+    parser_build.add_argument(
+        "--translate_end",
+        default=None,
+        type=int_or_str,
+        required=False,
+        help=extract_help_from_doc(build, "translate_end"),
     )
     parser_build.add_argument(
         "--overwrite",
@@ -540,12 +499,110 @@ def main():
         help=extract_help_from_doc(build, "overwrite"),
     )
     parser_build.add_argument(
+        "--dry_run",
+        default=False,
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(build, "dry_run"),
+    )
+    parser_build.add_argument(
         "-q",
         "--quiet",
         default=True,
         action="store_false",
         required=False,
         help="Do not print progress information.",
+    )
+
+    # Additional kwargs arguments that I still want as command-line options
+    parser_build.add_argument(
+        "--insertion_size_limit",
+        default=None,
+        type=int,
+        required=False,
+        help=extract_help_from_doc(build, "insertion_size_limit"),
+    )
+    parser_build.add_argument(
+        "-msl",
+        "--min_seq_len",
+        default=0,
+        type=int,
+        required=False,
+        help=extract_help_from_doc(build, "min_seq_len"),
+    )
+    parser_build.add_argument(
+        "-dofr",
+        "--disable_optimize_flanking_regions",
+        action="store_false",
+        required=False,
+        help=extract_help_from_doc(build, "optimize_flanking_regions", disable=True),
+    )
+    parser_build.add_argument(
+        "-drswk",
+        "--disable_remove_seqs_with_wt_kmers",
+        action="store_false",
+        required=False,
+        help=extract_help_from_doc(build, "remove_seqs_with_wt_kmers", disable=True),
+    )
+    parser_build.add_argument(
+        "-riol",
+        "--required_insertion_overlap_length",
+        default=6,
+        type=int_or_str,
+        required=False,
+        help=extract_help_from_doc(build, "required_insertion_overlap_length"),
+    )
+    parser_build.add_argument(
+        "-dmi",
+        "--disable_merge_identical",
+        action="store_false",
+        required=False,
+        help=extract_help_from_doc(build, "merge_identical", disable=True),
+    )
+    parser_build.add_argument(
+        "-dvs",
+        "--vcrs_strandedness",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(build, "vcrs_strandedness"),
+    )
+    parser_build.add_argument(
+        "-droh",
+        "--disable_replace_original_headers",
+        action="store_false",
+        required=False,
+        help=extract_help_from_doc(build, "replace_original_headers", disable=True),
+    )
+    parser_build.add_argument(
+        "--cosmic_release",
+        type=int,
+        required=False,
+        help=extract_help_from_doc(build, "cosmic_release"),
+    )
+    parser_build.add_argument(
+        "--cosmic_grch",
+        type=int,
+        required=False,
+        help=extract_help_from_doc(build, "cosmic_grch"),
+    )
+    parser_build.add_argument(
+        "--cosmic_email",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(build, "cosmic_email"),
+    )
+    parser_build.add_argument(
+        "--cosmic_password",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(build, "cosmic_password"),
+    )
+    parser_build.add_argument(
+        "-dsf",
+        "--disable_save_files",
+        action="store_false",
+        required=False,
+        help=extract_help_from_doc(build, "save_files", disable=True),
     )
 
     # NEW PARSER
@@ -1188,34 +1245,45 @@ def main():
         build_results = build(
             sequences=seqs,
             mutations=muts,
+            w=args.w,
+            k=args.k,
+            max_ambiguous=args.max_ambiguous,
+            mut_column=args.mut_column,
+            seq_id_column=args.seq_id_column,
+            mut_id_column=args.mut_id_column,
             gtf=args.gtf,
             gtf_transcript_id_column=args.gtf_transcript_id_column,
-            w=args.w,
-            mut_column=args.mut_column,
-            mut_id_column=args.mut_id_column,
-            seq_id_column=args.seq_id_column,
-            min_seq_len=args.min_seq_len,
-            max_ambiguous=args.max_ambiguous,
-            optimize_flanking_regions=args.optimize_flanking_regions,
-            remove_seqs_with_wt_kmers=args.remove_seqs_with_wt_kmers,
-            merge_identical=args.merge_identical,
-            strandedness=args.strandedness,
+            out=args.out,
+            reference_out_dir=args.reference_out_dir,
+            mcrs_fasta_out=args.mcrs_fasta_out,
+            mutations_updated_csv_out=args.mutations_updated_csv_out,
+            id_to_header_csv_out=args.id_to_header_csv_out,
+            mcrs_t2g_out=args.mcrs_t2g_out,
+            wt_mcrs_fasta_out=args.wt_mcrs_fasta_out,
+            wt_mcrs_t2g_out=args.wt_mcrs_t2g_out,
+            return_mutation_output=args.return_mutation_output,
             save_mutations_updated_csv=args.save_mutations_updated_csv,
             save_wt_mcrs_fasta_and_t2g=args.save_wt_mcrs_fasta_and_t2g,
             store_full_sequences=args.store_full_sequences,
             translate=args.translate,
             translate_start=args.translate_start,
             translate_end=args.translate_end,
-            reference_out_dir=args.reference_out_dir,
-            out=args.out,
-            mcrs_fasta_out=args.mcrs_fasta_out,
-            mcrs_t2g_out=args.mcrs_t2g_out,
-            mutations_updated_csv_out=args.mutations_updated_csv_out,
-            id_to_header_csv_out=args.id_to_header_csv_out,
-            wt_mcrs_fasta_out=args.wt_mcrs_fasta_out,
-            wt_mcrs_t2g_out=args.wt_mcrs_t2g_out,
-            return_mutation_output=args.return_mutation_output,
+            overwrite=args.overwrite,
+            dry_run=args.dry_run,
             verbose=args.quiet,
+            insertion_size_limit=args.insertion_size_limit,
+            min_seq_len=args.min_seq_len,
+            optimize_flanking_regions=args.disable_optimize_flanking_regions,
+            remove_seqs_with_wt_kmers=args.disable_remove_seqs_with_wt_kmers,
+            required_insertion_overlap_length=args.required_insertion_overlap_length,
+            merge_identical=args.disable_merge_identical,
+            vcrs_strandedness=args.vcrs_strandedness,
+            replace_original_headers=args.disable_replace_original_headers,
+            cosmic_release=args.cosmic_release,
+            cosmic_grch=args.cosmic_grch,
+            cosmic_email=args.cosmic_email,
+            cosmic_password=args.cosmic_password,
+            save_files=args.disable_save_files,
             **kwargs,
         )
 

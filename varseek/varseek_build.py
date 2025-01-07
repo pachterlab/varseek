@@ -68,6 +68,8 @@ def reverse_complement(seq):
 
 
 def merge_gtf_transcript_locations_into_cosmic_csv(mutations, gtf_path, gtf_transcript_id_column, output_mutations_path=None):
+    mutations = mutations.copy()
+    
     gtf_df = pd.read_csv(
         gtf_path,
         sep="\t",
@@ -292,7 +294,7 @@ def calculate_end_mutation_overlap_with_left_flank(row):
 
     return end_mut_nucleotides_with_left_flank(sequence_to_check, original_sequence)
 
-def validate_input_build(sequences, mutations, mut_column, seq_id_column, mut_id_column, gtf, gtf_transcript_id_column, w, k, insertion_size_limit, min_seq_len, optimize_flanking_regions, remove_seqs_with_wt_kmers, max_ambiguous, required_insertion_overlap_length, merge_identical, strandedness, keep_original_headers, save_wt_mcrs_fasta_and_t2g, save_mutations_updated_csv, store_full_sequences, translate, translate_start, translate_end, out, reference_out_dir, mcrs_fasta_out, mutations_updated_csv_out, id_to_header_csv_out, mcrs_t2g_out, wt_mcrs_fasta_out, wt_mcrs_t2g_out, return_mutation_output, verbose, **kwargs,):
+def validate_input_build(sequences, mutations, mut_column, seq_id_column, mut_id_column, gtf, gtf_transcript_id_column, w, k, insertion_size_limit, min_seq_len, optimize_flanking_regions, remove_seqs_with_wt_kmers, max_ambiguous, required_insertion_overlap_length, merge_identical, vcrs_strandedness, replace_original_headers, save_wt_mcrs_fasta_and_t2g, save_mutations_updated_csv, store_full_sequences, translate, translate_start, translate_end, out, reference_out_dir, mcrs_fasta_out, mutations_updated_csv_out, id_to_header_csv_out, mcrs_t2g_out, wt_mcrs_fasta_out, wt_mcrs_t2g_out, return_mutation_output, save_files, verbose, **kwargs,):
     # Validate sequences
     if not (isinstance(sequences, str) or isinstance(sequences, list)):
         raise ValueError(f"sequences must be a nucleotide string, a path, or a list of nucleotide strings. Got {type(sequences)}.")
@@ -371,13 +373,14 @@ def validate_input_build(sequences, mutations, mut_column, seq_id_column, mut_id
         "optimize_flanking_regions": optimize_flanking_regions,
         "remove_seqs_with_wt_kmers": remove_seqs_with_wt_kmers,
         "merge_identical": merge_identical,
-        "strandedness": strandedness,
-        "keep_original_headers": keep_original_headers,
+        "vcrs_strandedness": vcrs_strandedness,
+        "replace_original_headers": replace_original_headers,
         "save_wt_mcrs_fasta_and_t2g": save_wt_mcrs_fasta_and_t2g,
         "save_mutations_updated_csv": save_mutations_updated_csv,
         "store_full_sequences": store_full_sequences,
         "translate": translate,
         "return_mutation_output": return_mutation_output,
+        "save_files": save_files,
         "verbose": verbose,
     }.items():
         if not isinstance(param_value, bool):
@@ -397,50 +400,47 @@ def validate_input_build(sequences, mutations, mut_column, seq_id_column, mut_id
 
 
 def build(
-    sequences: Union[str, List[str]],
-    mutations: Union[str, List[str]],
-    mut_column: str = "mutation",
-    seq_id_column: str = "seq_ID",
-    mut_id_column: Optional[str] = None,
-    gtf: Optional[str] = None,
-    gtf_transcript_id_column: Optional[str] = None,
-    w: int = 30,
-    k: Optional[int] = None,
-    insertion_size_limit: Optional[int] = None,
-    min_seq_len: Optional[int] = None,
-    optimize_flanking_regions: bool = False,
-    remove_seqs_with_wt_kmers: bool = False,
-    max_ambiguous: Optional[int] = None,
-    required_insertion_overlap_length: Union[int, str, None] = None,
-    merge_identical: bool = False,
-    strandedness: bool = False,
-    keep_original_headers: bool = False,
-    save_wt_mcrs_fasta_and_t2g: bool = False,
-    save_mutations_updated_csv: bool = False,
-    store_full_sequences: bool = False,
-    translate: bool = False,
-    translate_start: Union[int, str, None] = None,
-    translate_end: Union[int, str, None] = None,
-    out: str = ".",
-    reference_out_dir: Optional[str] = None,
-    mcrs_fasta_out: Optional[str] = None,
-    mutations_updated_csv_out: Optional[str] = None,
-    id_to_header_csv_out: Optional[str] = None,
-    mcrs_t2g_out: Optional[str] = None,
-    wt_mcrs_fasta_out: Optional[str] = None,
-    wt_mcrs_t2g_out: Optional[str] = None,
-    return_mutation_output: bool = False,
-    overwrite: bool = False,
-    dry_run: bool = False,
-    verbose: bool = True,
+    sequences,
+    mutations,
+    w = 54,
+    k = None,
+    max_ambiguous = 0,
+    mut_column = "mutation",
+    seq_id_column = "seq_ID",
+    mut_id_column = None,
+    gtf = None,
+    gtf_transcript_id_column = None,
+    out = ".",
+    reference_out_dir = None,
+    mcrs_fasta_out = None,
+    mutations_updated_csv_out = None,
+    id_to_header_csv_out = None,
+    mcrs_t2g_out = None,
+    wt_mcrs_fasta_out = None,
+    wt_mcrs_t2g_out = None,
+    removed_variants_text_out = None,
+    filtering_report_text_out = None,
+    return_mutation_output = False,
+    save_mutations_updated_csv = False,
+    save_wt_mcrs_fasta_and_t2g = False,
+    save_removed_variants_text = True,
+    save_filtering_report_text = True,
+    store_full_sequences = False,
+    translate = False,
+    translate_start = None,
+    translate_end = None,
+    overwrite = False,
+    dry_run = False,
+    verbose = True,
     **kwargs,
 ):
     """
-    Takes in nucleotide sequences and mutations (in standard mutation annotation - see below)
-    and returns mutated versions of the input sequences according to the provided mutations.
+    Takes in nucleotide sequences and variants (in standard mutation annotation - see below)
+    and returns sequences containing the variants and the surrounding local context, dubbed variant-containing reference sequences (VCRSs),
+    compatible with k-mer-based methods (i.e., kallisto | bustools) for variant detection.
 
     Required input argument:
-    - sequences     (str) Path to the fasta file containing the sequences to be mutated, e.g., 'seqs.fa'.
+    - sequences     (str) Path to the fasta file containing the sequences to have the mutations added, e.g., 'seqs.fa'.
                     Sequence identifiers following the '>' character must correspond to the identifiers
                     in the seq_ID column of 'mutations'.
 
@@ -490,44 +490,48 @@ def build(
                     1) run `vk build --help` from the command line, or
                     2) run varseek.varseek_build.print_valid_values_for_mutations_and_sequences_in_varseek_build() in python
 
-    Additional input arguments:
-    - mut_column                         (str) Name of the column containing the mutations to be performed in 'mutations'. Default: 'mutation'.
+    # Parameters affecting VCRS creation
+    - w                                  (int) Length of sequence windows flanking the variant. Default: 30.
+                                         If w > total length of the sequence, the entire sequence will be kept.
+    - k                                  (int) Length of the k-mers to be considered in remove_seqs_with_wt_kmers, and the default minimum value for the minimum sequence length (which can be changed with 'min_seq_len').
+                                         If using kallisto in a later workflow, then this should correspond to kallisto k.
+                                         Must be greater than the value passed in for w. Default: w+1.
+    - max_ambiguous                      (int) Maximum number of 'N' (or 'n') characters allowed in a VCRS. Default: None (no 'N' filter will be applied)
+
+    # Additional input files and associated parameters
+    - mut_column                         (str) Name of the column containing the variants to be introduced in 'mutations'. Default: 'mutation'.
     - seq_id_column                      (str) Name of the column containing the IDs of the sequences to be mutated in 'mutations'. Default: 'seq_ID'.
-    - mut_id_column                      (str) Name of the column containing the IDs of each mutation in 'mutations'. Optional. Default: use <seq_ID>_<mutation> for each row.
+    - mut_id_column                      (str) Name of the column containing the IDs of each variant in 'mutations'. Optional. Default: use <seq_ID>_<mutation> for each row.
     - gtf                                (str) Path to .gtf file. When providing a genome fasta file as input for 'sequences', you can provide a .gtf file here
                                          and the input sequences will be defined according to the transcript boundaries. Default: None
     - gtf_transcript_id_column           (str) Column name in the input 'mutations' file containing the transcript ID. 
                                          In this case, column seq_id_column should contain the chromosome number.
                                          Required when 'gtf' is provided. Default: None
+    
+    # Output paths and associated parameters
+    - out                                (str) Path to default output directory to containing created files. Any individual output file path can be overriden if the specific file path is provided
+                                         as an argument. Default: "." (current directory).
+    - reference_out_dir                  (str) Path to reference file directory to be downloaded if 'mutations' is a supported database and the file corresponding to 'sequences' does not exist.
+                                         Default: <out>/reference.
+    - mcrs_fasta_out                     (str) Path to output fasta file containing the VCRSs. 
+                                         If replace_original_headers=False, then the fasta headers will be the values in the column 'mut_ID' (semicolon-jooined if merge_identical=True).
+                                         Otherwise, if replace_original_headers=True (default), then the fasta headers will be of the form 'vcrs_<int>' where <int> is a unique integer. Default: "<out>/mcrs.fa"
+    - mutations_updated_csv_out          (str) Path to output csv file containing the updated DataFrame. Only valid if save_mutations_updated_csv=True. Default: "<out>/mutation_metadata_df.csv"
+    - id_to_header_csv_out               (str) File name of csv file containing the mapping of unique IDs to the original sequence headers if replace_original_headers=True. Default: "<out>/id_to_header_mapping.csv"
+    - mcrs_t2g_out                       (str) Path to output t2g file containing the transcript-to-gene mapping for the MCRSs. Used in kallisto | bustools workflow. Default: "<out>/mcrs_t2g.txt"
+    - wt_mcrs_fasta_out                  (str) Path to output fasta file containing the wildtype sequence counterparts of the mutation-containing reference sequences (MCRSs). Default: "<out>/wt_mcrs.fa"
+    - wt_mcrs_t2g_out                    (str) Path to output t2g file containing the transcript-to-gene mapping for the wildtype MCRSs. Default: "<out>/wt_mcrs_t2g.txt"
+    - removed_variants_text_out          (str) Path to output text file containing the removed variants. Default: "<out>/removed_variants.txt"
+    - filtering_report_text_out          (str) Path to output text file containing the filtering report. Default: "<out>/filtering_report.txt"
 
-    Mutant sequence generation/filtering options:
-    - w                                  (int) Length of sequence windows flanking the mutation. Default: 30.
-                                         If w > total length of the sequence, the entire sequence will be kept.
-    - k                                  (int) Length of the k-mers to be considered in remove_seqs_with_wt_kmers.
-                                         If using kallisto in a later workflow, then this should correspond to kallisto k.
-                                         Must be greater than the value passed in for w. Default: w+1.
-    - insertion_size_limit               (int) Maximum number of nucleotides allowed in an insertion-type mutation. Mutations with insertions larger than this will be dropped.
-                                         Default: None (no insertion size limit will be applied)
-    - min_seq_len                        (int) Minimum length of the variant output sequence. Mutant sequences smaller than this will be dropped. Default: None (No length filter will be applied)
-    - optimize_flanking_regions          (True/False) Whether to remove nucleotides from either end of the mutant sequence to ensure (when possible)
-                                         that the mutant sequence does not contain any k-mers also found in the wildtype/input sequence. Default: False
-    - remove_seqs_with_wt_kmers          (True/False) Removes output sequences where at least one k-mer is also present in the wildtype/input sequence in the same region.
-                                         If optimize_flanking_regions=True, only sequences for which a wildtype k-mer is still present after optimization will be removed.
-                                         Default: False
-    - max_ambiguous                      (int) Maximum number of 'N' (or 'n') characters allowed in a VCRS. Default: None (no 'N' filter will be applied)
-    - required_insertion_overlap_length  (int | str | None) Sets the minimum number of nucleotides that must overlap between the 
-                                         inserted sequence and the flanking regions after flank optimization. Only effective when optimize_flanking_regions is also True.
-                                         Default: None (No checking). If "all", then require the entire insertion and the following nucleotide
-    - merge_identical                    (True/False) Whether to merge sequence-identical VCRSs in the output (identical VCRSs will be merged by concatenating the sequence
-                                         headers for all identical sequences with semicolons). Default: False
-    - strandedness                       (True/False) Whether to consider the forward and reverse-complement mutant sequences as distinct if merging identical sequences. Only effective when merge_identical is also True.
-                                         Default: False (ie do not consider forward and reverse-complement sequences to be equivalent)
-    - keep_original_headers              (True/False) Whether to keep the original sequence headers in the output fasta file, or to replace them with unique IDs of the form 'vcrs_<int>.
-                                         If False, then an additional file at the path <id_to_header_csv_out> will be formed that maps sequence IDs from the fasta file to the <mut_id_column>. Default: False.
-
-    # Optional arguments to generate additional output stored in a copy of the 'mutations' DataFrame
+    # Returning and saving of optional output
+    - return_mutation_output             (True/False) Whether to return the mutation output saved in the fasta file. Default: False.
     - save_mutations_updated_csv         (True/False) Whether to update the input 'mutations' DataFrame to include additional columns with the mutation type,
                                          wildtype nucleotide sequence, and mutant nucleotide sequence (only valid if 'mutations' is a csv or tsv file). Default: False
+    - save_wt_mcrs_fasta_and_t2g         (True/False) Whether to create a fasta file containing the wildtype sequence counterparts of the mutation-containing reference sequences (MCRSs)
+                                         and the corresponding t2g. Default: False.
+    - save_removed_variants_text         (True/False) Whether to save a text file containing the removed variants. Default: True.
+    - save_filtering_report_text         (True/False) Whether to save a text file containing the filtering report. Default: True.
     - store_full_sequences               (True/False) Whether to also include the complete wildtype and mutant sequences in the updated 'mutations' DataFrame (not just the sub-sequence with
                                          w-length flanks). Only valid if save_mutations_updated_csv=True. Default: False
     - translate                          (True/False) Add additional columns to the 'mutations' DataFrame containing the wildtype and mutant amino acid sequences.
@@ -539,34 +543,40 @@ def build(
                                          to a column name in 'mutations' containing the open reading frame end positions for each sequence/mutation.
                                          Only valid if translate=True. Default: None (translate from to the end of the sequence)
 
-    # Additional arguments affecting output:
-    - save_wt_mcrs_fasta_and_t2g         (True/False) Whether to create a fasta file containing the wildtype sequence counterparts of the mutation-containing reference sequences (MCRSs)
-                                         and the corresponding t2g. Default: False.
-    - return_mutation_output             (True/False) Whether to return the mutation output saved in the fasta file. Default: False.
-
     # General arguments:
-    - out                                (str) Path to default output directory to containing created files. Any individual output file path can be overriden if the specific file path is provided
-                                         as an argument. Default: "." (current directory).
-    - reference_out_dir                  (str) Path to reference file directory to be downloaded if 'mutations' is a supported database and the file corresponding to 'sequences' does not exist.
-                                         Default: <out>/reference directory.
-    - mcrs_fasta_out                     (str) Path to output fasta file containing the mutation-containing reference sequences (MCRSs). 
-                                         If keep_original_headers=True, then the fasta headers will be the values in the column 'mut_ID' (semicolon-jooined if merge_identical=True).
-                                         Otherwise, if keep_original_headers=False (default), then the fasta headers will be of the form 'vcrs_<int>' where <int> is a unique integer. Default: "<out>/mcrs.fa"
-    - mutations_updated_csv_out          (str) Path to output csv file containing the updated DataFrame. Only valid if save_mutations_updated_csv=True. Default: "<out>/mutation_metadata_df.csv"
-    - id_to_header_csv_out               (str) File name of csv file containing the mapping of unique IDs to the original sequence headers if keep_original_headers=False. Default: "<out>/id_to_header_mapping.csv"
-    - mcrs_t2g_out                       (str) Path to output t2g file containing the transcript-to-gene mapping for the MCRSs. Used in kallisto | bustools workflow. Default: "<out>/mcrs_t2g.txt"
-    - wt_mcrs_fasta_out                  (str) Path to output fasta file containing the wildtype sequence counterparts of the mutation-containing reference sequences (MCRSs). Default: "<out>/wt_mcrs.fa"
-    - wt_mcrs_t2g_out                    (str) Path to output t2g file containing the transcript-to-gene mapping for the wildtype MCRSs. Default: "<out>/wt_mcrs_t2g.txt"
-    - dry_run                            (True/False) Whether to simulate the function call without executing it. Default: False.
     - overwrite                          (True/False) Whether to overwrite existing output files. Will return if any output file already exists. Default: False.
+    - dry_run                            (True/False) Whether to simulate the function call without executing it. Default: False.
     - verbose                            (True/False) whether to print progress information. Default: True
-
-    # kwargs options (related to specific databases or meant primarily for debugging purposes):
+    
+    # Hidden arguments (for niche use cases, specific databases, or debugging):
+    # # niche use cases
+    - insertion_size_limit               (int) Maximum number of nucleotides allowed in an insertion-type variant. Variants with insertions larger than this will be dropped.
+                                         Default: None (no insertion size limit will be applied)
+    - min_seq_len                        (int) Minimum length of the variant output sequence. Mutant sequences smaller than this will be dropped. None means no length filter will be applied. Default: k (from the "k" parameter)
+    - optimize_flanking_regions          (True/False) Whether to remove nucleotides from either end of the mutant sequence to ensure (when possible)
+                                         that the mutant sequence does not contain any (w+1)-mers (where a (w+1)-mer is a subsequence of length w+1, with w defined by the 'w' argument) also found in the wildtype/input sequence. Default: False
+    - remove_seqs_with_wt_kmers          (True/False) Removes output sequences where at least one k-mer is also present in the wildtype/input sequence in the same region.
+                                         If optimize_flanking_regions=True, only sequences for which a wildtype k-mer (with k defined by the 'k' argument) is still present after optimization will be removed.
+                                         Default: False
+    
+    - required_insertion_overlap_length  (int | str | None) Enforces the minimum number of bases included in the inserted region for all (w+1)-mers (where a (w+1)-mer is a subsequence of length w+1, with w defined by the 'w' argument),
+                                         or that all (w+1)-mers contain the entire inserted sequence (whatever is smaller). Only effective when optimize_flanking_regions is also True.
+                                         Default: None (Flank optimization occurs only until there is no shared k-mer in the VCRS and the reference sequence). If "all", then require the entire insertion and the following nucleotide (and filter out insertions of length >= 2*w)
+    - merge_identical                    (True/False) Whether to merge sequence-identical VCRSs in the output (identical VCRSs will be merged by concatenating the sequence
+                                         headers for all identical sequences with semicolons). Default: False
+    - vcrs_strandedness                  (True/False) Whether to consider the forward and reverse-complement mutant sequences as distinct if merging identical sequences. Only effective when merge_identical is also True. Default: False
+                                         Default: False (ie do not consider forward and reverse-complement sequences to be equivalent)
+    - replace_original_headers           (True/False) Whether to keep the original sequence headers in the output fasta file, or to replace them with unique IDs of the form 'vcrs_<int>.
+                                         If False, then an additional file at the path <id_to_header_csv_out> will be formed that maps sequence IDs from the fasta file to the <mut_id_column>. Default: True.
+    
+    # # specific databases
     - cosmic_release                     (str) COSMIC release version to download. Default: "100".
     - cosmic_grch                        (str) COSMIC genome reference version to download. Default: "37".
     - cosmic_email                       (str) Email address for COSMIC download. Default: None.
     - cosmic_password                    (str) Password for COSMIC download. Default: None.
-    - do_not_save_files                  (True/False) Whether to save the output files. Default: False.
+
+    # # debugging
+    - save_files                         (True/False) Whether to save the output files. Default: True.
 
 
     Saves mutated sequences in fasta format (or returns a list containing the mutated sequences if out=None).
@@ -606,26 +616,46 @@ def build(
         wt_mcrs_fasta_out = os.path.join(out, "wt_mcrs.fa")
     if not wt_mcrs_t2g_out:
         wt_mcrs_t2g_out = os.path.join(out, "wt_mcrs_t2g.txt")
+    if not removed_variants_text_out:
+        removed_variants_text_out = os.path.join(out, "removed_variants.txt")
+    if not filtering_report_text_out:
+        filtering_report_text_out = os.path.join(out, "filtering_report.txt")
     
 
     # make sure directories of all output files exist
-    output_files = [mcrs_fasta_out, mutations_updated_csv_out, id_to_header_csv_out, mcrs_t2g_out, wt_mcrs_fasta_out, wt_mcrs_t2g_out]
+    output_files = [mcrs_fasta_out, mutations_updated_csv_out, id_to_header_csv_out, mcrs_t2g_out, wt_mcrs_fasta_out, wt_mcrs_t2g_out, removed_variants_text_out, filtering_report_text_out]
     for output_file in output_files:
         if os.path.isfile(output_file) and not overwrite:
             raise ValueError(f"Output file '{output_file}' already exists. Set 'overwrite=True' to overwrite it.")
         if os.path.dirname(output_file):
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
-    merge_identical_rc = not strandedness
-
-    do_not_save_files = kwargs.get("do_not_save_files", False)
-    cosmic_email = kwargs.get("cosmic_email", None)
-    cosmic_password = kwargs.get("cosmic_password", None)
+    # define kwargs
     cosmic_release = kwargs.get("cosmic_release", None)
     cosmic_grch = kwargs.get("cosmic_grch", None)
+    cosmic_email = kwargs.get("cosmic_email", None)
+    cosmic_password = kwargs.get("cosmic_password", None)
+    save_files = kwargs.get("save_files", True)
+    insertion_size_limit = kwargs.get("insertion_size_limit", None)
+    min_seq_len = kwargs.get("min_seq_len", k)
+    optimize_flanking_regions = kwargs.get("optimize_flanking_regions", True)
+    remove_seqs_with_wt_kmers = kwargs.get("remove_seqs_with_wt_kmers", True)
+    required_insertion_overlap_length = kwargs.get("required_insertion_overlap_length", 6)  # set to None for original vk build
+    merge_identical = kwargs.get("merge_identical", True)
+    vcrs_strandedness = kwargs.get("vcrs_strandedness", False)
+    replace_original_headers = kwargs.get("replace_original_headers", True)
+
+    # # rather than rename mutations to variants throughout the code, simply do the reassignment here
+    # if isinstance(variants, pd.DataFrame):
+    #     mutations = variants.copy()
+    #     del variants
+    # else:
+    #     mutations = variants
     
     if not k:
         k = w + 1
+
+    merge_identical_rc = not vcrs_strandedness
 
     columns_to_keep = [
         "header",
@@ -821,6 +851,8 @@ def build(
 
             start, peaks_list = report_time_and_memory(process_name="Download and preprocess COSMIC", start=start, peaks_list=peaks_list, logger=logger, report=True)
 
+    original_mutations_type = "string"
+
     # Read in 'mutations' if passed as filepath to comma-separated csv
     if isinstance(mutations, str) and mutations.endswith(".csv"):
         mutations_path = mutations
@@ -838,6 +870,7 @@ def build(
 
     # Handle mutations passed as a list
     elif isinstance(mutations, list):
+        original_mutations_type = "list"
         if len(mutations) > 1:
             if len(mutations) != len(seqs):
                 raise ValueError("If a list is passed, the number of mutations must equal the number of input sequences.")
@@ -964,6 +997,11 @@ def build(
         mutations["header"] = ">" + mutations[mut_id_column]
     else:
         mutations["header"] = ">" + mutations[seq_id_column] + ":" + mutations[mut_column]
+
+    # make a set of all initial mutation IDs
+    mutations["header_temp"] = mutations["header"].str[1:]
+    initial_mutation_id_set = set(mutations["header_temp"].dropna())
+    mutations.drop(columns=["header_temp"], inplace=True)
 
     # Calculate number of bad mutations
     uncertain_mutations = mutations[mut_column].str.contains(r"\?").sum()
@@ -1332,6 +1370,11 @@ def build(
     else:
         logger.info("All mutations correctly recorded")
 
+    # Save the report string to the specified path
+    if save_filtering_report_text:
+        with open(filtering_report_text_out, 'w') as file:
+            file.write(report)
+
     if translate and save_mutations_updated_csv and store_full_sequences:
         columns_to_keep.extend(["wt_sequence_aa_full", "mutant_sequence_aa_full"])
 
@@ -1396,6 +1439,19 @@ def build(
 
     mutations = mutations[columns_to_keep]
 
+    # save text files of mutations filtered out
+    mutations["header_temp"] = mutations["header"].str[1:]
+    final_mutation_id_set = set(mutations["header_temp"].dropna())
+    mutations.drop(columns=["header_temp"], inplace=True)
+
+    removed_mutation_set = initial_mutation_id_set - final_mutation_id_set
+
+    # Save as a newline-separated text file
+    if save_removed_variants_text and save_files:
+        with open(removed_variants_text_out, "w") as file:
+            for mutation in removed_mutation_set:
+                file.write(f"{mutation}\n")
+
     if save_mutations_updated_csv:
         # recalculate start_mutation_position and end_mutation_position due to messing with it above
         mutations.drop(
@@ -1413,6 +1469,9 @@ def build(
 
     if merge_identical:
         logger.info("Merging identical mutated sequences")
+
+        # total mutations
+        number_of_mutations_total = len(mutations)
 
         if merge_identical_rc:
             mutations["mutant_sequence_rc"] = mutations["mutant_sequence"].apply(reverse_complement)
@@ -1465,18 +1524,41 @@ def build(
         # Calculate the number of semicolons in each entry
         mutations["semicolon_count"] = mutations["header"].str.count(";")
 
-        mutations["semicolon_count"] += 1
+        # number of VCRSs
+        number_of_vcrss = len(mutations)
 
-        # Convert all 1 values to NaN
-        mutations["semicolon_count"] = mutations["semicolon_count"].replace(1, np.nan)
+        # number_of_unique_mutations
+        number_of_unique_mutations = (mutations["semicolon_count"] == 0).sum()
 
-        # Take the sum across all rows of the new column
-        total_semicolons = int(mutations["semicolon_count"].sum())
+        number_of_merged_mutations = number_of_mutations_total - number_of_unique_mutations
+
+        # equivalent code to calculate number_of_merged_mutations
+        # mutations["semicolon_count"] += 1
+
+        # # Convert all 1 values to NaN
+        # mutations["semicolon_count"] = mutations["semicolon_count"].replace(1, np.nan)
+
+        # # Take the sum across all rows of the new column
+        # number_of_merged_mutations = int(mutations["semicolon_count"].sum())
 
         mutations = mutations.drop(columns=["semicolon_count"])
 
+        merging_report = f"""
+        Number of mutations total: {number_of_mutations_total}
+        Number of mutations merged: {number_of_merged_mutations}
+        Number of unique mutations: {number_of_unique_mutations}
+        Number of VCRSs: {number_of_vcrss}
+        """
+
+        # Save the report string to the specified path
+        if save_filtering_report_text:
+            filtering_report_write_mode = "a" if os.path.exists(filtering_report_text_out) else "w"
+            with open(filtering_report_text_out, filtering_report_write_mode) as file:
+                file.write(merging_report)
+
         if verbose:
-            logger.info(f"{total_semicolons} identical mutated sequences were merged (headers were combined and separated using a semicolon (;). Occurences of identical mutated sequences may be reduced by increasing w.")
+            logger.info(merging_report)
+            logger.info("Merged headers were combined and separated using a semicolon (;). Occurences of identical mutated sequences may be reduced by increasing w.")
 
     empty_kmer_count = (mutations["mutant_sequence"] == "").sum()
 
@@ -1487,9 +1569,9 @@ def build(
 
     mutations["header"] = mutations["header"].str[1:]  # remove the > character
 
-    if not keep_original_headers:  # or (mut_id_column in mutations.columns and not merge_identical):
+    if replace_original_headers:  # or (mut_id_column in mutations.columns and not merge_identical):
         mutations["mcrs_id"] = generate_unique_ids(len(mutations))
-        if not do_not_save_files:
+        if save_files:
             mutations[["mcrs_id", "header"]].to_csv(id_to_header_csv_out, index=False)  # make the mapping csv
             start, peaks_list = report_time_and_memory(process_name="Saved ID to header file", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
     else:
@@ -1520,7 +1602,7 @@ def build(
             mutations_with_exactly_1_wt_sequence_per_row["fasta_format_wt"] = ">" + mutations_with_exactly_1_wt_sequence_per_row["mcrs_id"] + "\n" + mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"] + "\n"
 
     # Save mutated sequences in new fasta file
-    if not do_not_save_files:
+    if save_files:
         with open(mcrs_fasta_out, "w") as fasta_file:
             fasta_file.write("".join(mutations["fasta_format"].values))
 
@@ -1539,15 +1621,18 @@ def build(
 
     # When stream_output is True, return list of mutated seqs
     if return_mutation_output:
-        all_mut_seqs = []
-        all_mut_seqs.extend(mutations["mutant_sequence"].values)
+        if original_mutations_type == "list":
+            all_mut_seqs = []
+            all_mut_seqs.extend(mutations["mutant_sequence"].values)
 
-        # Remove empty strings from final list of mutated sequences
-        # (these are introduced when unknown mutations are encountered)
-        while "" in all_mut_seqs:
-            all_mut_seqs.remove("")
+            # Remove empty strings from final list of mutated sequences
+            # (these are introduced when unknown mutations are encountered)
+            while "" in all_mut_seqs:
+                all_mut_seqs.remove("")
 
-        if len(all_mut_seqs) > 0:
-            return all_mut_seqs
+            if len(all_mut_seqs) > 0:
+                return all_mut_seqs
+        else:
+            return mutations
         
     start, peaks_list = report_time_and_memory(start=start_overall, peaks_list=peaks_list, logger=logger, report=True, final_call=True, dfs={"mutations": mutations}, cols=True)

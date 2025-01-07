@@ -2,7 +2,7 @@ import re
 from collections import defaultdict
 
 allowable_kwargs = {
-    "varseek_build": {"cosmic_release", "cosmic_grch", "cosmic_email", "cosmic_password", "do_not_save_files"},
+    "varseek_build": {"insertion_size_limit", "min_seq_len", "optimize_flanking_regions", "remove_seqs_with_wt_kmers", "required_insertion_overlap_length", "merge_identical", "merge_identical_strandedness", "replace_original_headers", "cosmic_release", "cosmic_grch", "cosmic_email", "cosmic_password", "save_files"},
     "varseek_info": {"bowtie_path"},
     "varseek_filter": {"filter_all_dlists", "dlist_genome_fasta", "dlist_cdna_fasta", "dlist_genome_filtered_fasta_out", "dlist_cdna_filtered_fasta_out"},
     "kb_ref": set(),
@@ -13,8 +13,6 @@ allowable_kwargs = {
     "varseek_ref": set(),
     "varseek_count": set()
 }
-
-
 
 # Get complement
 complement = {
@@ -109,6 +107,18 @@ codon_to_amino_acid = {
 # reference_sequence should be a dict of reference_sequence_type:download_info
 # download_info should be a string of the command to download the reference sequence - use OUT_DIR as the output directory, and replace in the script
 
+
+# a dictionary that maps from dict[mutations][sequences][mode] to a dict of files {"index": index_url, "t2g": t2g_url}
+prebuilt_vk_ref_files = {
+    "cosmic_cmc": {
+        "cdna": {
+            "very_specific": {
+                "index": "",
+                "t2g": "",
+            },
+        }
+    }
+}
 
 supported_databases_and_corresponding_reference_sequence_type = {
     "cosmic_cmc": {

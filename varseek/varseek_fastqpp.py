@@ -40,22 +40,23 @@ logger = set_up_logger()
 
 def fastqpp(
     rnaseq_fastq_files_list,
-    quality_control_fastq_files=False,
+    quality_control_fastq_files=True,
     run_fastqc_and_multiqc=False,
-    replace_low_quality_bases_with_N=False,
-    split_reads_by_Ns=False,
+    replace_low_quality_bases_with_N=True,
+    split_reads_by_Ns=True,
     technology="bulk",
     multiplexed=False,
     parity="single",
-    cut_mean_quality=0,
+    cut_mean_quality=13,
     cut_window_size=4,  # new
     qualified_quality_phred=0,
     unqualified_percent_limit=100,
-    max_ambiguous=None,
+    max_ambiguous=50,
     min_read_len=None,
     min_base_quality=13,
     delete_intermediate_files=False,
     out=".",
+    threads=8,
     **kwargs
 ):
     """
@@ -107,12 +108,14 @@ def fastqpp(
             rnaseq_fastq_files=rnaseq_fastq_files_list,
             parity=parity,
             minimum_base_quality_trim_reads=minimum_base_quality_trim_reads,
+            cut_window_size=cut_window_size,
             qualified_quality_phred=qualified_quality_phred,
             unqualified_percent_limit=unqualified_percent_limit,
             n_base_limit=n_base_limit,
             length_required=minimum_length,
             fastp=fastp,
-            out_dir=out
+            out_dir=out,
+            threads=threads
         )
         rnaseq_fastq_files_list_dict["quality_controlled"] = rnaseq_fastq_files_list
 

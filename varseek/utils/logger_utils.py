@@ -212,6 +212,46 @@ def print_varseek_dry_run(params, function_name=None):
     if function_name:
         print(")")
 
+def download_varseek_files(urls_dict, out="."):
+    filtype_to_filename_dict = {}
+    for filetype, url in urls_dict.items():
+        # url = "https://caltech.box.com/shared/static/rjav3mcwgj3hp1vhqjr7v8o153ful716.txt"  # example
+
+        # Modify URL for direct download
+        download_url = url + "?download=1"
+
+        # Perform the GET request
+        response = requests.get(download_url, stream=True)
+
+        # Check for successful response
+        if response.status_code == 200:
+            # Extract the filename from the Content-Disposition header
+            content_disposition = response.headers.get("Content-Disposition", "")
+            filename = (
+                content_disposition.split("filename=")[-1].strip('"') 
+                if "filename=" in content_disposition 
+                else "downloaded_file.rds"
+            )
+            
+            # Save the file with the extracted filename
+            output_file = os.path.join(out, filename.split('";')[0])
+            if not output_file:
+                ext = filename.split('.')[-1]
+                output_file = os.path.join(out, f"default_filename.{ext}")
+            
+            with open(output_file, "wb") as file:
+                for chunk in response.iter_content(chunk_size=8192):
+                    file.write(chunk)
+
+            filtype_to_filename_dict[filetype] = output_file
+            
+            print(f"File downloaded successfully as '{output_file.name}'")
+        else:
+            print(f"Failed to download file. Status code: {response.status_code}")
+
+    return filtype_to_filename_dict
+
+
 
 # os.environ["REPORT_TIME_AND_MEMORY"] = "TRUE"
 # os.environ["REPORT_TIME_AND_MEMORY_TOTAL_ONLY"] = "FALSE"

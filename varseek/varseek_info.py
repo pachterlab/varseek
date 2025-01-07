@@ -158,40 +158,40 @@ def validate_input_info(input_dir, mcrs_fasta, mutations_updated_csv, id_to_head
 
 # TODO: finish implementing the cdna/genome column stuff, and remove hard-coding of some column names
 def info(
-    input_dir: str,
-    columns_to_include: Optional[Union[str, List[str]]] = None,
-    mcrs_id_column: str = "mcrs_id",
-    mcrs_sequence_column: str = "mutant_sequence",
-    mcrs_source_column: str = "mcrs_source",  # if input df has concatenated cdna and header MCRS's, then I want to know whether it came from cdna or genome
-    seqid_cdna_column: str = "seq_ID",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome
-    seqid_genome_column: str = "chromosome",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome
-    mutation_cdna_column: str = "mutation",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome
-    mutation_genome_column: str = "mutation_genome",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome
-    gtf: Optional[str] = None,  # for distance to nearest splice junction
-    out: str = ".",
-    dlist_reference_source: str = "ensembl_grch37_release93",
-    w: int = 30,
-    max_ambiguous_mcrs: Optional[int] = None,
-    max_ambiguous_reference: Optional[int] = None,
-    strandedness: bool = False,
-    near_splice_junction_threshold: int = 10,
-    threads: int = 2,
-    reference_cdna_fasta: Optional[str] = None,
-    reference_genome_fasta: Optional[str] = None,
-    mutations_csv: Optional[str] = None,
-    save_mutations_updated_exploded_vk_info_csv: bool = False,
-    overwrite: bool = False,
-    dry_run: bool = False,
-    verbose: bool = True,
-    mcrs_fasta: Optional[str] = None,
-    mutations_updated_csv: Optional[str] = None,
-    id_to_header_csv: Optional[str] = None,  # if none then assume no swapping occurred
-    reference_out_dir: Optional[str] = None,
-    mutations_updated_vk_info_csv_out: Optional[str] = None,
-    mutations_updated_exploded_vk_info_csv_out: Optional[str] = None,
-    dlist_genome_fasta_out: Optional[str] = None,
-    dlist_cdna_fasta_out: Optional[str] = None,
-    dlist_combined_fasta_out: Optional[str] = None,
+    input_dir,
+    columns_to_include = None,
+    mcrs_id_column = "mcrs_id",
+    mcrs_sequence_column = "mutant_sequence",
+    mcrs_source_column = "mcrs_source",  # if input df has concatenated cdna and header MCRS's, then I want to know whether it came from cdna or genome
+    seqid_cdna_column = "seq_ID",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome
+    seqid_genome_column = "chromosome",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome
+    mutation_cdna_column = "mutation",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome
+    mutation_genome_column = "mutation_genome",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome
+    gtf = None,  # for distance to nearest splice junction
+    out = ".",
+    dlist_reference_source = "ensembl_grch37_release93",
+    w = 30,
+    max_ambiguous_mcrs = None,
+    max_ambiguous_reference = None,
+    strandedness = False,
+    near_splice_junction_threshold = 10,
+    threads = 2,
+    reference_cdna_fasta = None,
+    reference_genome_fasta = None,
+    mutations_csv = None,
+    save_mutations_updated_exploded_vk_info_csv = False,
+    overwrite = False,
+    dry_run = False,
+    verbose = True,
+    mcrs_fasta = None,
+    mutations_updated_csv = None,
+    id_to_header_csv = None,  # if none then assume no swapping occurred
+    reference_out_dir = None,
+    mutations_updated_vk_info_csv_out = None,
+    mutations_updated_exploded_vk_info_csv_out = None,
+    dlist_genome_fasta_out = None,
+    dlist_cdna_fasta_out = None,
+    dlist_combined_fasta_out = None,
     **kwargs,
 ):
     """
@@ -217,7 +217,7 @@ def info(
     - dlist_reference_source             (str) Source of the reference sequences for the d-list. Currently supported: ensembl_grchNUMBER_releaseNUMBER or t2t. Default: 'ensembl_grch37_release93'.
     - w                                  (int) Length of the flanking regions to be optimized. Default: 30.
     - max_ambiguous                      (int) Maximum number of 'N' characters allowed in the matching d-list entry. Default: None (no 'N' filter will be applied)
-    - strandedness                       (bool) Whether to consider MCRSs as stranded when aligning to the human reference and comparing MCRS k-mers to each other. strandedness True corresponds to treating forward and reverse-complement as distinct; False corresponds to treating them as the same. Should match the varseek build merge_identical_rc argument. Default: False.
+    - vcrs_strandedness                       (bool) Whether to consider MCRSs as stranded when aligning to the human reference and comparing MCRS k-mers to each other. strandedness True corresponds to treating forward and reverse-complement as distinct; False corresponds to treating them as the same. Should match the varseek build merge_identical_rc argument. Default: False.
     - near_splice_junction_threshold     (int) Maximum distance from a splice junction to be considered "near" a splice junction. Default: 10.
     - threads                            (int) Number of threads to use for bowtie2 and bowtie2-build. Default: 2.
     - reference_cdna_fasta               (str) Path to the cDNA reference fasta file. Default: None.

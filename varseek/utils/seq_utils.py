@@ -814,12 +814,14 @@ def trim_edges_and_adaptors_off_fastq_reads(
     filename,
     filename_r2=None,
     cut_mean_quality=13,
+    cut_window_size=4,
     qualified_quality_phred=None,
     unqualified_percent_limit=None,
     n_base_limit=None,
     length_required=None,
     fastp="fastp",
-    out_dir="."
+    out_dir=".",
+    threads=8
 ):
 
     # output_dir = os.path.dirname(filename)
@@ -839,13 +841,15 @@ def trim_edges_and_adaptors_off_fastq_reads(
             "--cut_front",
             "--cut_tail",
             "--cut_window_size",
-            "4",
+            str(cut_window_size),
             "--cut_mean_quality",
             str(int(cut_mean_quality)),
             "-h",
             f"{out_dir}/fastp_report.html",
             "-j",
             f"{out_dir}/fastp_report.json",
+            "--thread",
+            str(threads),
         ]
 
         # Add optional parameters
@@ -2619,7 +2623,10 @@ def compare_cdna_and_genome(
                 w=w,
                 remove_seqs_with_wt_kmers=False,
                 optimize_flanking_regions=False,
+                min_seq_len=None,
                 max_ambiguous=None,
+                required_insertion_overlap_length=None,
+                merge_identical=False,
                 cosmic_email=os.getenv("COSMIC_EMAIL"),
                 cosmic_password=os.getenv("COSMIC_PASSWORD"),
                 save_mutations_updated_csv=True,
@@ -2653,7 +2660,10 @@ def compare_cdna_and_genome(
                 w=w,
                 remove_seqs_with_wt_kmers=False,
                 optimize_flanking_regions=False,
+                min_seq_len=None,
                 max_ambiguous=None,
+                required_insertion_overlap_length=None,
+                merge_identical=False,
                 cosmic_email=os.getenv("COSMIC_EMAIL"),
                 cosmic_password=os.getenv("COSMIC_PASSWORD"),
                 save_mutations_updated_csv=True,
@@ -4152,6 +4162,8 @@ from pdb import set_trace as st
 
 
 def apply_filters(df, filters, verbose=False, logger=None):
+    len_df_initial = len(df)
+    
     for filter in filters:
         column = filter["column"]
         rule = filter["rule"]
@@ -4225,6 +4237,13 @@ def apply_filters(df, filters, verbose=False, logger=None):
                 logger.info(message)
             else:
                 print(message)
+
+    if verbose:
+        message = f"Total mutations filtered: {len_df_initial - len(df)}"
+        if logger:
+            logger.info(message)
+        else:
+            print(message)
 
     return df
 
@@ -5573,12 +5592,14 @@ def trim_edges_off_reads_fastq_list(
     rnaseq_fastq_files,
     parity,
     minimum_base_quality_trim_reads=0,
+    cut_window_size=4,
     qualified_quality_phred=0,
     unqualified_percent_limit=100,
     n_base_limit=None,
     length_required=None,
     fastp="fastp",
-    out_dir="."
+    out_dir=".",
+    threads=8,
 ):
     os.makedirs(out_dir, exist_ok=True)
     rnaseq_fastq_files_quality_controlled = []
@@ -5588,12 +5609,14 @@ def trim_edges_off_reads_fastq_list(
                 filename=rnaseq_fastq_files[i],
                 filename_r2=None,
                 cut_mean_quality=minimum_base_quality_trim_reads,
+                cut_window_size=cut_window_size,
                 qualified_quality_phred=qualified_quality_phred,
                 unqualified_percent_limit=unqualified_percent_limit,
                 n_base_limit=n_base_limit,
                 length_required=length_required,
                 fastp=fastp,
-                out_dir=out_dir
+                out_dir=out_dir,
+                threads=threads
             )
             rnaseq_fastq_files_quality_controlled.append(rnaseq_fastq_file)
     elif parity == "paired":
@@ -5603,12 +5626,14 @@ def trim_edges_off_reads_fastq_list(
                     filename=rnaseq_fastq_files[i],
                     filename_r2=rnaseq_fastq_files[i + 1],
                     cut_mean_quality=minimum_base_quality_trim_reads,
+                    cut_window_size=cut_window_size,
                     qualified_quality_phred=qualified_quality_phred,
                     unqualified_percent_limit=unqualified_percent_limit,
                     n_base_limit=n_base_limit,
                     length_required=length_required,
                     fastp=fastp,
-                    out_dir=out_dir
+                    out_dir=out_dir,
+                    threads=threads
                 )
             )
             rnaseq_fastq_files_quality_controlled.extend(

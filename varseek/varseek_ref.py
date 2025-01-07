@@ -3,10 +3,18 @@ import subprocess
 import inspect
 from typing import Union, List, Optional
 import varseek as vk
-from varseek.utils import set_up_logger, save_params_to_config_file, return_kb_arguments, make_function_parameter_to_value_dict
-from .constants import allowable_kwargs
+from varseek.utils import set_up_logger, save_params_to_config_file, return_kb_arguments, make_function_parameter_to_value_dict, download_varseek_files
+from .constants import allowable_kwargs, prebuilt_vk_ref_files
 
 logger = set_up_logger()
+
+mode_parameters = {
+    "very_sensitive": {},
+    "sensitive": {},
+    "balanced": {},
+    "specific": {},
+    "very_specific": {},
+}
 
 varseek_ref_unallowable_arguments = {
     "varseek_build": {"return_mutation_output"},
@@ -23,55 +31,67 @@ varseek_ref_only_allowable_kb_ref_arguments = {
 
 # covers both varseek ref AND kb ref, but nothing else (i.e., all of the arguments that are not contained in varseek build, info, or filter)
 # TODO: write
-def validate_input_ref():
+def validate_input_ref(w, k, dlist, mode):
     # make sure k is odd and <= 63
-    # assert dlist in {genome, transcriptome, genome_and_transcriptome, 'None', None}
-    pass
+    if k % 2 != 0 or k < 1 or k > 63 or not isinstance(k, int):
+        raise ValueError("k must be odd, positive, integer, and less than or equal to 63")
+    
+    if k < w + 1:
+        raise ValueError("k must be greater than or equal to w + 1")
+    
+    dlist_valid_values = {"genome", "transcriptome", "genome_and_transcriptome", 'None', None}
+    if dlist not in dlist_valid_values:
+        raise ValueError(f"dlist must be one of {dlist_valid_values}")
+    
+    mode_valid_values = {"very_sensitive", "sensitive", "balanced", "specific", "very_specific", None}
+    if mode not in mode_valid_values:
+        raise ValueError(f"mode must be one of {mode_valid_values}")
+    
+    # TODO: config, download, minimum_info_columns, and all kb ref-specific stuff
 
 def ref(
-    sequences: Union[str, List[str]],  #* required inputs
-    mutations: Union[str, List[str]],
-    mcrs_index_out: Optional[str] = None,  #* vk ref specific
+    sequences,  #* required inputs
+    mutations,
+    mcrs_index_out = None,  #* vk ref specific
     dlist=False,  # path to dlist fasta file or "None" (including the quotes)
     config=None,
     minimum_info_columns=True,
     download=False,
-    mut_column: str = "mutation",  #* vk build
-    seq_id_column: str = "seq_ID",
-    mut_id_column: Optional[str] = None,
-    gtf: Optional[str] = None,
-    gtf_transcript_id_column: Optional[str] = None,
-    w: int = 30,
-    k: Optional[int] = None,
-    insertion_size_limit: Optional[int] = None,
-    min_seq_len: Optional[int] = None,
-    optimize_flanking_regions: bool = False,
-    remove_seqs_with_wt_kmers: bool = False,
-    max_ambiguous: Optional[int] = None,
-    required_insertion_overlap_length: Union[int, str, None] = None,
-    merge_identical: bool = False,
-    strandedness: bool = False,
-    keep_original_headers: bool = False,
-    save_wt_mcrs_fasta_and_t2g: bool = False,
-    save_mutations_updated_csv: bool = False,
-    store_full_sequences: bool = False,
-    translate: bool = False,
-    translate_start: Union[int, str, None] = None,
-    translate_end: Union[int, str, None] = None,
-    out: str = ".",
-    reference_out_dir: Optional[str] = None,
-    mcrs_fasta_out: Optional[str] = None,
-    mutations_updated_csv_out: Optional[str] = None,
-    id_to_header_csv_out: Optional[str] = None,
-    mcrs_t2g_out: Optional[str] = None,
-    wt_mcrs_fasta_out: Optional[str] = None,
-    wt_mcrs_t2g_out: Optional[str] = None,
-    # return_mutation_output: bool = False,
-    overwrite: bool = False,
-    dry_run: bool = False,
-    verbose: bool = True,
+    mode=None,
+    w = 54,  #* vk build specific
+    k = None,
+    max_ambiguous = 0,
+    mut_column = "mutation",
+    seq_id_column = "seq_ID",
+    mut_id_column = None,
+    gtf = None,
+    gtf_transcript_id_column = None,
+    out = ".",
+    reference_out_dir = None,
+    mcrs_fasta_out = None,
+    mutations_updated_csv_out = None,
+    id_to_header_csv_out = None,
+    mcrs_t2g_out = None,
+    wt_mcrs_fasta_out = None,
+    wt_mcrs_t2g_out = None,
+    # return_mutation_output = False,
+    save_mutations_updated_csv = False,
+    save_wt_mcrs_fasta_and_t2g = False,
+    store_full_sequences = False,
+    translate = False,
+    translate_start = None,
+    translate_end = None,
+    overwrite = False,
+    dry_run = False,
+    verbose = True,
     **kwargs
 ):
+    if isinstance(config, str) and os.path.isfile(config):
+        vk_ref_config_file_input = vk.utils.load_params(config)
+
+        # overwrite any parameters passed in with those from the config file
+        for k, v in vk_ref_config_file_input.items():
+            exec("%s = %s" % (k, v))
 
     # check if passed arguments are valid
     function_name_and_key_list_of_tuples = [(vk.varseek_build.build, "varseek_build"), (vk.varseek_info.info, "varseek_info"), (vk.varseek_filter.filter, "varseek_filter")]
@@ -82,6 +102,18 @@ def ref(
     vk.varseek_info.validate_input_info(**params_dict)
     vk.varseek_filter.validate_input_filter(**params_dict)
     validate_input_ref(**params_dict)
+
+    varseek_specific_args = set()  # not passed into vk build, info, or filter
+    frame = inspect.currentframe()
+    function_args, varargs, varkw, vk_ref_arg_to_value_dict = inspect.getargvalues(frame)
+    # if varkw:
+    #     del vk_ref_arg_to_value_dict[varkw]  # removes kwargs
+    
+    validate_input_ref(**vk_ref_arg_to_value_dict)
+
+    #!!! CONTINUE HERE
+    if mode:
+        myvariable = mode_parameters[mode]["myvariable"]  # repeat for each variable of interest
 
     all_allowable_parameters = set()
     all_allowable_kwargs = set()
@@ -126,7 +158,6 @@ def ref(
             raise ValueError(f"Invalid kwarg: {key}.")
     
     # Make assertions and exceptions
-    assert k >= w + 1, "k must be greater than or equal to w + 1"
     if not os.path.exists(sequences):
         raise FileNotFoundError(f"The file or path '{sequences}' does not exist")
 
@@ -184,12 +215,19 @@ def ref(
 
     # download if download argument is True
     if download:
-        #!! download based on the set of args passed in
+        file_dict = prebuilt_vk_ref_files.get(mutations, {}).get(sequences, {}).get(mode, [])
+        if file_dict:
+            vk_ref_output_dict = download_varseek_files(file_dict, out=out)  # TODO: replace with DOI download (will need to replace prebuilt_vk_ref_files urls with DOIs)
+            if mcrs_index_out and vk_ref_output_dict['index'] != mcrs_index_out:
+                os.rename(vk_ref_output_dict['index'], mcrs_index_out)
+                vk_ref_output_dict['index'] = mcrs_index_out
+            if mcrs_t2g_out and vk_ref_output_dict['t2g'] != mcrs_t2g_out:
+                os.rename(vk_ref_output_dict['t2g'], mcrs_t2g_out)
+                vk_ref_output_dict['t2g'] = mcrs_t2g_out
         
-        vk_ref_output_dict = {}
-        vk_ref_output_dict["index"] = mcrs_index_out
-        vk_ref_output_dict["t2g"] = mcrs_t2g_for_alignment
-        return vk_ref_output_dict
+            return vk_ref_output_dict
+        else:
+            raise ValueError(f"No prebuilt files found for the given arguments:\nmutations: {mutations}\nsequences: {sequences}\nmode: {mode}")
     
 
     
