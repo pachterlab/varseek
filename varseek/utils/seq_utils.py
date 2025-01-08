@@ -4174,7 +4174,6 @@ def apply_filters(df, filters, verbose=False, logger=None):
             continue
 
         len_df_start = len(df)
-        # TODO: if I want number of mutations (in addition to number of MCRSs), then calculate the length of the df exploded by header
 
         if rule == "min":
             df = df.loc[(df[column].astype(float) >= float(value)) | (df[column].isnull())]

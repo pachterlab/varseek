@@ -16,6 +16,7 @@ import anndata as ad
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator, MultipleLocator
 from matplotlib.patches import Rectangle
+from matplotlib.ticker import LogLocator, FuncFormatter
 from matplotlib_venn import venn2
 import seaborn as sns
 
@@ -722,8 +723,57 @@ def plot_descending_bar_plot(
     plt.show()
     plt.close()
 
+def draw_confusion_matrix(metric_dictionary_reads, title = "Confusion Matrix", title_color = "black", suffix = "", additional_fp_key = "", output_file = None, show = True):
+    confusion_matrix = {
+        "TP": str(metric_dictionary_reads[f"TP{suffix}"]),  # True Positive
+        "TN": str(metric_dictionary_reads[f"TN{suffix}"]),  # True Negative
+        "FP": str(metric_dictionary_reads[f"FP{suffix}"]),  # False Positive
+        "FN": str(metric_dictionary_reads[f"FN{suffix}"]),  # False Negative
+    }
 
-def draw_confusion_matrix(metric_dictionary_reads, title = "Confusion Matrix", suffix = ""):
+    if additional_fp_key in metric_dictionary_reads:
+        additional_fp_text = " ".join(additional_fp_key.split()[1:])  # so if the key is FP including non-cosmic, then the text will be non-cosmic
+        confusion_matrix['FP'] += f"\n{additional_fp_text}: {metric_dictionary_reads[additional_fp_key]}"
+
+    # Convert confusion matrix into a 2x2 format
+    data = [
+        [confusion_matrix["TP"], confusion_matrix["FN"]],  # Actual Positive
+        [confusion_matrix["FP"], confusion_matrix["TN"]],  # Actual Negative
+    ]
+
+    # Row and column labels
+    rows = ["Actual Positive", "Actual Negative"]
+    columns = ["Predicted Positive", "Predicted Negative"]
+
+    # Create a pandas DataFrame for easier handling
+    df = pd.DataFrame(data, index=rows, columns=columns)
+
+    # Plot the table
+    fig, ax = plt.subplots(figsize=(6, 3))  # Adjust size as needed
+    ax.axis("off")  # Turn off the axis
+
+    # Create the table
+    table = ax.table(
+        cellText=df.values,
+        rowLabels=df.index,
+        colLabels=df.columns,
+        loc="center",
+        cellLoc="center",
+    )
+
+    table.scale(1, 2)  # Adjust scaling of the table (optional)
+    ax.text(0.5, 0.75, title, transform=ax.transAxes, ha="center", fontsize=14, color=title_color)
+    table.set_fontsize(10)
+
+    # Save the table as a PDF
+    plt.tight_layout()
+    if output_file:
+        plt.savefig(output_file, bbox_inches="tight", pad_inches=0.5)
+    if show:
+        plt.show()
+        plt.close()
+
+def draw_confusion_matrix_rich(metric_dictionary_reads, title = "Confusion Matrix", suffix = "", additional_fp_key = ""):
     # Sample dictionary with confusion matrix values
     confusion_matrix = {
         "TP": metric_dictionary_reads[f"TP{suffix}"],  # True Positive
@@ -740,16 +790,34 @@ def draw_confusion_matrix(metric_dictionary_reads, title = "Confusion Matrix", s
     table.add_column("Predicted Positive", justify="center")
     table.add_column("Predicted Negative", justify="center")
 
+    fp_line = str(confusion_matrix["FP"])
+    if additional_fp_key in metric_dictionary_reads:
+        additional_fp_text = " ".join(additional_fp_key.split()[1:])  # so if the key is FP including non-cosmic, then the text will be non-cosmic
+        fp_line += " (" + additional_fp_text + ": " + str(metric_dictionary_reads[additional_fp_key]) + ")"
+
     # Add rows for the confusion matrix
     table.add_row(
         "Actual Positive", str(confusion_matrix["TP"]), str(confusion_matrix["FN"])
     )
     table.add_row(
-        "Actual Negative", str(confusion_matrix["FP"]), str(confusion_matrix["TN"])
+        "Actual Negative", fp_line, str(confusion_matrix["TN"])
     )
 
     # Display the table
     console.print(table)
+
+
+def find_specific_value_from_metric_text_file(file_path, line):
+    # file must be \n-separated and have the format "line: value"
+    
+    value = None
+
+    # Read the file and extract the value
+    with open(file_path, 'r') as file:
+        for looping_line in file:
+            if line in looping_line:
+                value = int(looping_line.split(":")[1].strip())
+                return value
 
 
 def plot_kat_histogram(kat_hist, out_path=None):
@@ -1095,7 +1163,7 @@ def plot_overall_metrics(metric_dict_collection, primary_metrics = ("accuracy", 
         if display_numbers:
             for bar, value in zip(bars_primary, y_values_primary):
                 ax1.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
-                        f"{value:.2f}", ha="center", va="bottom", fontsize=10)
+                        f"{value:.3f}", ha="center", va="bottom", fontsize=10)
                 
         y_values_primary_total.extend(y_values_primary)
 
@@ -1247,10 +1315,19 @@ def calculate_grouped_metric(grouped_df, y_metric, tool):
 
     return grouped_df
 
-def create_stratified_metric_line_plot(unique_mcrs_df, x_stratification, y_metric, tools, bins = None, show_p_values = False, show_confidence_intervals = False, bonferroni = True, output_file = None, show = True, output_file_p_values = None, filter_real_negatives = False):
+def create_stratified_metric_line_plot(unique_mcrs_df, x_stratification, y_metric, tools, bins = None, keep_strict_bins = False, show_p_values = False, show_confidence_intervals = False, bonferroni = True, output_file = None, show = True, output_file_p_values = None, filter_real_negatives = False):
     assert x_stratification in unique_mcrs_df.columns, f"Invalid x_stratification: {x_stratification}"
-    
-    unique_mcrs_df = unique_mcrs_df.copy()  # make a copy to avoid modifying the original DataFrame
+
+    # removes unnecessary columns for the function
+    columns_to_keep_for_function = list(set([x_stratification, 'included_in_synthetic_reads_mutant', 'number_of_reads_mutant']))
+    for tool in tools:
+        columns_to_keep_for_function.extend([f"TP_{tool}", f"TN_{tool}", f"FP_{tool}", f"FN_{tool}", f"mutation_expression_prediction_error_{tool}", f"mutation_detected_{tool}", f"DP_{tool}"])
+    for column in columns_to_keep_for_function:
+        if column not in unique_mcrs_df.columns:
+            columns_to_keep_for_function.remove(column)
+
+    unique_mcrs_df = unique_mcrs_df.loc[:, columns_to_keep_for_function].copy()  # make a copy to avoid modifying the original DataFrame
+    # unique_mcrs_df = unique_mcrs_df.copy()  # make a copy to avoid modifying the original DataFrame
 
     if "expression_error" in y_metric and not filter_real_negatives and x_stratification not in {"number_of_reads_mutant"}:
         print("Warning: filtering real negatives is recommended when using expression error as a primary metric and stratifying by something other than number_of_reads_mutant, but this setting is not currently enabled. Recommended: filter_real_negatives = True.")
@@ -1260,6 +1337,9 @@ def create_stratified_metric_line_plot(unique_mcrs_df, x_stratification, y_metri
     elif y_metric == "specificity":
         unique_mcrs_df = unique_mcrs_df[(unique_mcrs_df['included_in_synthetic_reads_mutant'] == False) & (unique_mcrs_df['number_of_reads_mutant'] == 0)]
 
+    if keep_strict_bins:
+        unique_mcrs_df = unique_mcrs_df[unique_mcrs_df[x_stratification].astype(int).isin(bins)]
+
     # Prepare for plotting
     plt.figure(figsize=(10, 6))
 
@@ -1267,7 +1347,7 @@ def create_stratified_metric_line_plot(unique_mcrs_df, x_stratification, y_metri
 
     x_stratification_original = x_stratification  # to label x-axis, as x_stratification may be changed to "bin"
 
-    if bins:  # remember bins are left-inclusive and right-exclusive
+    if bins and not keep_strict_bins:  # remember bins are left-inclusive and right-exclusive
         if bins[-2] > x_values_raw[-1]:
             raise ValueError(f"Invalid bins: {bins}. The 2nd to last bin value {bins[-2]} is greater than the maximum value in the data {x_values_raw[-1]}")
         # list comprehension to assign labels list
@@ -1295,7 +1375,10 @@ def create_stratified_metric_line_plot(unique_mcrs_df, x_stratification, y_metri
     else:
         x_values = x_values_raw
 
-    x_indices = range(len(x_values))
+    if not keep_strict_bins:
+        x_indices = range(len(x_values))
+    else:
+        x_indices = x_values
     
     if y_metric == "mutation_expression_prediction_error":
         for tool in tools:
@@ -1310,7 +1393,7 @@ def create_stratified_metric_line_plot(unique_mcrs_df, x_stratification, y_metri
 
         # Use the default sum for all other columns
         grouped_df = unique_mcrs_df.groupby(x_stratification).agg(
-            {col: aggregation_functions.get(col, "sum") for col in unique_mcrs_df.columns}  # sum is the default aggregation function
+            {col: aggregation_functions.get(col, "sum") for col in unique_mcrs_df.columns if col != x_stratification}  # sum is the default aggregation function
         )
     else:  # including if y_metric == mean_expression_error:  # calculate sum for all columns
         grouped_df = unique_mcrs_df.groupby(x_stratification).sum(numeric_only = True)
@@ -1618,8 +1701,21 @@ def compute_95_confidence_interval_margin_of_error(values, take_absolute_value =
 
 def create_stratified_metric_bar_plot_updated(unique_mcrs_df, x_stratification, y_metric, tools, display_numbers = False, show_p_values = False, show_confidence_intervals = True, bonferroni = True, output_file = None, show = True, output_file_p_values = None, filter_real_negatives = False):
     assert x_stratification in unique_mcrs_df.columns, f"Invalid x_stratification: {x_stratification}"
+
+    # removes unnecessary columns for the function
+    columns_to_keep_for_function = list(set([x_stratification, 'included_in_synthetic_reads_mutant', 'number_of_reads_mutant']))
+    for tool in tools:
+        columns_to_keep_for_function.extend([f"TP_{tool}", f"TN_{tool}", f"FP_{tool}", f"FN_{tool}", f"mutation_expression_prediction_error_{tool}", f"mutation_detected_{tool}", f"DP_{tool}"])
+    for column in columns_to_keep_for_function:
+        if column not in unique_mcrs_df.columns:
+            columns_to_keep_for_function.remove(column)
     
-    unique_mcrs_df = unique_mcrs_df.copy()  # make a copy to avoid modifying the original DataFrame
+    unique_mcrs_df = unique_mcrs_df.loc[:, columns_to_keep_for_function].copy()  # make a copy to avoid modifying the original DataFrame
+    # unique_mcrs_df = unique_mcrs_df.copy()  # make a copy to avoid modifying the original DataFrame
+
+    if x_stratification == "mcrs_mutation_type":
+        # remove any values in "mcrs_mutation_type" equal to "mixed"
+        unique_mcrs_df = unique_mcrs_df[unique_mcrs_df['mcrs_mutation_type'] != "mixed"]
 
     if "expression_error" in y_metric and not filter_real_negatives and x_stratification not in {"number_of_reads_mutant"}:
         print("Warning: filtering real negatives is recommended when using expression error as a primary metric and stratifying by something other than number_of_reads_mutant, but this setting is not currently enabled. Recommended: filter_real_negatives = True.")
@@ -1645,7 +1741,7 @@ def create_stratified_metric_bar_plot_updated(unique_mcrs_df, x_stratification, 
 
         # Use the default sum for all other columns
         grouped_df = unique_mcrs_df.groupby(x_stratification).agg(
-            {col: aggregation_functions.get(col, "sum") for col in unique_mcrs_df.columns}  # sum is the default aggregation function
+            {col: aggregation_functions.get(col, "sum") for col in unique_mcrs_df.columns if col != x_stratification}  # sum is the default aggregation function
         )
     else:  # including if y_metric == mean_expression_error:  # calculate sum for all columns
         grouped_df = unique_mcrs_df.groupby(x_stratification).sum(numeric_only = True)
@@ -1685,7 +1781,7 @@ def create_stratified_metric_bar_plot_updated(unique_mcrs_df, x_stratification, 
         if display_numbers:
             for bar, value in zip(bars_primary, y_values_primary):
                 plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
-                        f"{value:.2f}", ha="center", va="bottom", fontsize=10)
+                        f"{value:.3f}", ha="center", va="bottom", fontsize=10)
                 
         y_values_primary_total.extend(y_values_primary)
                 
@@ -1797,6 +1893,52 @@ def create_stratified_metric_bar_plot_updated(unique_mcrs_df, x_stratification, 
     # Show the plot
     plt.grid(axis="y", linestyle="--", alpha=0.7)
     plt.tight_layout()
+    if output_file:
+        plt.savefig(output_file)
+    if show:
+        plt.show()
+        plt.close()
+
+
+
+def plot_frequency_histogram(unique_mcrs_df, column_base, tools, fraction = False, output_file = None, show = True):
+    """
+    Plots a histogram of the mutation expression prediction errors for each tool.
+    """
+    errors_dict = {}
+
+    plt.figure(figsize=(10, 6))
+    for index, tool in enumerate(tools):
+        errors_dict[tool] = unique_mcrs_df.loc[unique_mcrs_df[f'FP_{tool}'], f'{column_base}_{tool}']
+        if fraction:
+            total_count = len(errors_dict[tool])  # Total number of errors for this tool
+            weights = [1 / total_count] * total_count  # Fractional weights for each error
+            y_axis_label = "Fraction of FPs"
+        else:
+            weights = None  # No weights for absolute counts
+            y_axis_label = "Number of FPs"
+        plt.hist(errors_dict[tool], bins=30, alpha=0.6, label=tool, color=color_map_20[index], weights=weights)
+
+    # Add labels, legend, and title
+    plt.xscale('log', base=2)
+
+    # Customize ticks to show all powers of 2
+    log_locator = LogLocator(base=2.0, subs=[], numticks=30)  # `subs=[]` means only major ticks are shown
+    log_formatter = FuncFormatter(lambda x, _: f'{int(x)}' if x >= 1 else '')
+
+    ax = plt.gca()
+    ax.xaxis.set_major_locator(log_locator)
+    ax.xaxis.set_major_formatter(log_formatter)
+
+
+    plt.xlabel('Counts Detected')
+    plt.ylabel(y_axis_label)
+    plt.title('Histogram of Counts Detected for FPs')
+    plt.legend(loc='upper right')
+
+    # Show the plot
+    plt.tight_layout()
+
     if output_file:
         plt.savefig(output_file)
     if show:

@@ -1,5 +1,6 @@
 import os
 import csv
+import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from pdb import set_trace as st
@@ -209,9 +210,35 @@ def filter(
         mutation_metadata_df = mutations_updated_vk_info_csv
 
     if verbose:
-        number_of_mutations_initial = len(mutation_metadata_df)
-        # TODO: if I want number of mutations (in addition to number of MCRSs), then calculate the length of the df exploded by header
-        logger.info(f"Initial number of mutations: {number_of_mutations_initial}")
+        def make_filtering_report(mutation_metadata_df, logger = None, save_filtering_report_text = False, filtering_report_text_out = None):
+            # number of VCRSs
+            number_of_vcrss_initial = len(mutation_metadata_df)
+
+            # number of unique mutations
+            mutation_metadata_df["semicolon_count"] = mutation_metadata_df["mcrs_header"].str.count(";")
+            number_of_unique_mutations_initial = (mutation_metadata_df["semicolon_count"] == 0).sum()
+
+            # number of merged mutations
+            mutation_metadata_df["semicolon_count"] += 1
+            mutation_metadata_df["semicolon_count"] = mutation_metadata_df["semicolon_count"].replace(1, np.nan)
+            number_of_merged_mutations_initial= int(mutation_metadata_df["semicolon_count"].sum())
+            mutation_metadata_df = mutation_metadata_df.drop(columns=["semicolon_count"])
+
+            # number of total mutations
+            number_of_mutations_total_initial = number_of_unique_mutations_initial + number_of_merged_mutations_initial
+
+            filtering_report = f"Initial number of mutations: {number_of_mutations_total_initial}; VCRSs: {number_of_vcrss_initial}; unique mutations: {number_of_unique_mutations_initial}\n"
+
+            if logger:
+                logger.info(filtering_report)
+            else:
+                print(filtering_report)
+
+            # Save the report string to the specified path
+            if save_filtering_report_text:
+                filtering_report_write_mode = "a" if os.path.exists(filtering_report_text_out) else "w"
+                with open(filtering_report_text_out, filtering_report_write_mode) as file:
+                    file.write(filtering_report)
 
     filtered_df = apply_filters(mutation_metadata_df, filters, verbose=verbose, logger=logger)
     filtered_df = filtered_df.copy()  # here to avoid pandas warning about assigning to a slice rather than a copy
