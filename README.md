@@ -56,7 +56,7 @@ conda install -c bioconda varseek
 For use in Python:
 ```python
 # Python
-import varseek
+import varseek as vk
 ```
 
 # 🪄 Quick start guide

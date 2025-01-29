@@ -23,11 +23,14 @@ from .utils import (
     wt_fragment_and_mutant_fragment_share_kmer,
     create_mutant_t2g,
     add_mutation_type,
-    report_time_and_memory,
     save_params_to_config_file,
     make_function_parameter_to_value_dict,
     check_file_path_is_string_with_valid_extension,
-    print_varseek_dry_run
+    print_varseek_dry_run,
+    report_time_elapsed,
+    is_valid_int,
+    vcf_to_dataframe,
+    generate_mutation_notation_from_vcf_columns
 )
 
 # from gget.utils import read_fasta
@@ -341,22 +344,15 @@ def validate_input_build(sequences, mutations, mut_column, seq_id_column, mut_id
         if param_value is not None and not isinstance(param_value, str):
             raise ValueError(f"{param_name} must be a string or None. Got {type(param_value)}.")
 
-    # Validate numeric parameters
-    # Required
-    for param_name, param_value, min_value in [
-        ("w", w, 1),
+    # Validate int parameters
+    for param_name, param_value, min_value, optional_value in [
+        ("w", w, 1, False),
+        ("k", k, 1, True),
+        ("insertion_size_limit", insertion_size_limit, 1, True),
+        ("min_seq_len", min_seq_len, 1, True),
+        ("max_ambiguous", max_ambiguous, 0, True),
     ]:
-        if not isinstance(param_value, int) or param_value < min_value:
-            raise ValueError(f"{param_name} must be an integer >= {min_value} or None. Got {param_value}.")
-    
-    # Optional
-    for param_name, param_value, min_value in [
-        ("k", k, 1),
-        ("insertion_size_limit", insertion_size_limit, 1),
-        ("min_seq_len", min_seq_len, 1),
-        ("max_ambiguous", max_ambiguous, 0),
-    ]:
-        if param_value is not None and (not isinstance(param_value, int) or param_value < min_value):
+        if not is_valid_int(param_value, ">=", min_value, optional=optional_value):
             raise ValueError(f"{param_name} must be an integer >= {min_value} or None. Got {param_value}.")
 
     # Validate required_insertion_overlap_length
@@ -439,7 +435,7 @@ def build(
     and returns sequences containing the variants and the surrounding local context, dubbed variant-containing reference sequences (VCRSs),
     compatible with k-mer-based methods (i.e., kallisto | bustools) for variant detection.
 
-    Required input argument:
+    # Required input argument:
     - sequences     (str) Path to the fasta file containing the sequences to have the mutations added, e.g., 'seqs.fa'.
                     Sequence identifiers following the '>' character must correspond to the identifiers
                     in the seq_ID column of 'mutations'.
@@ -496,7 +492,7 @@ def build(
     - k                                  (int) Length of the k-mers to be considered in remove_seqs_with_wt_kmers, and the default minimum value for the minimum sequence length (which can be changed with 'min_seq_len').
                                          If using kallisto in a later workflow, then this should correspond to kallisto k.
                                          Must be greater than the value passed in for w. Default: w+1.
-    - max_ambiguous                      (int) Maximum number of 'N' (or 'n') characters allowed in a VCRS. Default: None (no 'N' filter will be applied)
+    - max_ambiguous                      (int) Maximum number of 'N' (or 'n') characters allowed in a VCRS. None means no 'N' filter will be applied. Default: 0.
 
     # Additional input files and associated parameters
     - mut_column                         (str) Name of the column containing the variants to be introduced in 'mutations'. Default: 'mutation'.
@@ -546,9 +542,9 @@ def build(
     # General arguments:
     - overwrite                          (True/False) Whether to overwrite existing output files. Will return if any output file already exists. Default: False.
     - dry_run                            (True/False) Whether to simulate the function call without executing it. Default: False.
-    - verbose                            (True/False) whether to print progress information. Default: True
+    - verbose                            (True/False) Whether to print progress information. Default: True
     
-    # Hidden arguments (for niche use cases, specific databases, or debugging):
+    # # Hidden arguments (part of kwargs) - for niche use cases, specific databases, or debugging:
     # # niche use cases
     - insertion_size_limit               (int) Maximum number of nucleotides allowed in an insertion-type variant. Variants with insertions larger than this will be dropped.
                                          Default: None (no insertion size limit will be applied)
@@ -583,21 +579,27 @@ def build(
     """
 
     global intronic_mutations, posttranslational_region_mutations, unknown_mutations, uncertain_mutations, ambiguous_position_mutations, cosmic_incorrect_wt_base, mut_idx_outside_seq
+    
+    #* 1. Start timer
+    start_time = time.perf_counter()
 
-    # enforce type-checking of parameters
+    #* 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
+    validate_input_build(**params_dict)
+
+    #* 3. Dry-run
     if dry_run:
         print_varseek_dry_run(params_dict, function_name="build")
         return None
-    validate_input_build(**params_dict)
 
-    # begin tracking time and memory
-    start_overall, peaks_list = report_time_and_memory(logger=logger, report=True)
-    start = start_overall
-
+    #* 4. Save params to config file
     config_file = os.path.join(out, "config", "vk_build_config.json")
     save_params_to_config_file(config_file)
 
+    #* 5. Set up default folder/file input paths, and make sure the necessary ones exist
+    # all input files for vk build are required in the varseek workflow, so this is skipped
+
+    #* 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
     if not reference_out_dir:
         reference_out_dir = os.path.join(out, "reference")
 
@@ -621,7 +623,6 @@ def build(
     if not filtering_report_text_out:
         filtering_report_text_out = os.path.join(out, "filtering_report.txt")
     
-
     # make sure directories of all output files exist
     output_files = [mcrs_fasta_out, mutations_updated_csv_out, id_to_header_csv_out, mcrs_t2g_out, wt_mcrs_fasta_out, wt_mcrs_t2g_out, removed_variants_text_out, filtering_report_text_out]
     for output_file in output_files:
@@ -630,6 +631,7 @@ def build(
         if os.path.dirname(output_file):
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
+    #* 7. Define kwargs defaults
     # define kwargs
     cosmic_release = kwargs.get("cosmic_release", None)
     cosmic_grch = kwargs.get("cosmic_grch", None)
@@ -652,6 +654,7 @@ def build(
     # else:
     #     mutations = variants
     
+    #* 8. Start the actual function
     if not k:
         k = w + 1
 
@@ -684,17 +687,15 @@ def build(
                 grch = cosmic_grch
                 assert grch in supported_databases_and_corresponding_reference_sequence_type[mutations]["database_version_to_reference_assembly_build"], "The 'cosmic_grch' argument must be supported by the corresponding database."
             if grch == "37":
-                gget_cosmic_grch = "human_grch37"
+                gget_ref_grch = "human_grch37"
             elif grch == "38":
-                gget_cosmic_grch = "human"
+                gget_ref_grch = "human"
             else:
-                gget_cosmic_grch = grch
+                gget_ref_grch = grch
 
     # Load input sequences and their identifiers from fasta file
     if isinstance(sequences, str) and ("." in sequences or (mutations in supported_databases_and_corresponding_reference_sequence_type and sequences in supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_download_commands"])):
         if mutations in supported_databases_and_corresponding_reference_sequence_type and sequences in supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_download_commands"]:
-            start, peaks_list = report_time_and_memory(report=False, peaks_list=peaks_list)
-
             # TODO: expand beyond COSMIC
             sequences_original = sequences
             if "cosmic" in mutations:
@@ -707,7 +708,7 @@ def build(
                     "ENSEMBL_VERSION",
                     ensembl_version,
                 )
-                sequences_download_command = sequences_download_command.replace("GRCH_NUMBER", gget_cosmic_grch)
+                sequences_download_command = sequences_download_command.replace("GRCH_NUMBER", gget_ref_grch)
                 sequences_download_command_list = sequences_download_command.split(" ")
 
                 if sequences == "genome":
@@ -717,7 +718,7 @@ def build(
                     gtf_file = supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_file_names"]["gtf"]
                     gtf_file = gtf_file.replace("GRCH_NUMBER", grch)
                     gtf_file = f"{reference_out_sequences}/{gtf_file}"
-                    gtf_transcript_id_column = "seq_ID"
+                    gtf_transcript_id_column = seq_id_column
                     gtf = gtf_file
 
                     if not os.path.isfile(genome_file) or not os.path.isfile(gtf_file):
@@ -752,22 +753,16 @@ def build(
                     else:
                         sequences = cds_file
 
-                start, peaks_list = report_time_and_memory(process_name="Downloaded reference genome", start=start, peaks_list=peaks_list, logger=logger, report=True)
-
         titles, seqs = [], []
         for title, seq in read_fasta(sequences):
             titles.append(title)
             seqs.append(seq)
         # titles, seqs = read_fasta(sequences)  # when using gget.utils.read_fasta()
 
-        start, peaks_list = report_time_and_memory(process_name="Loaded in reference sequence", start=start, peaks_list=peaks_list, logger=logger, report=True)
-
     # Handle input sequences passed as a list
     elif isinstance(sequences, list):
         titles = [f"seq{i+1}" for i in range(len(sequences))]
         seqs = sequences
-
-        start, peaks_list = report_time_and_memory(process_name="Loaded in reference sequence", start=start, peaks_list=peaks_list, logger=logger, report=True)
 
     # Handle a single sequence passed as a string
     elif isinstance(sequences, str) and "." not in sequences:
@@ -788,8 +783,6 @@ def build(
     mutations_path = None
 
     # logger.warning("Always ensure that the 'sequences' and 'mutations' are compatible with each other. This generally requires the correct source (e.g., Ensembl, RefSeq), version (e.g., GRCh37, GRCh38), and release (e.g., Ensembl release 112 - for transcript locations in particular).")
-
-    start, peaks_list = report_time_and_memory(report=False, peaks_list=peaks_list)
 
     if isinstance(mutations, str) and mutations in supported_databases_and_corresponding_reference_sequence_type:
         # TODO: expand beyond COSMIC
@@ -849,8 +842,6 @@ def build(
 
                 mutations = mutations_no_duplications
 
-            start, peaks_list = report_time_and_memory(process_name="Download and preprocess COSMIC", start=start, peaks_list=peaks_list, logger=logger, report=True)
-
     original_mutations_type = "string"
 
     # Read in 'mutations' if passed as filepath to comma-separated csv
@@ -868,6 +859,11 @@ def build(
             if col not in columns_to_keep:
                 columns_to_keep.append(col)  # append "mutation_aa", "gene_name", "mutation_id"
 
+    elif isinstance(mutations, str) and (mutations.endswith(".vcf") or mutations.endswith(".vcf.gz")):
+        mutations = vcf_to_dataframe(mutations, additional_columns = save_mutations_updated_csv, explode_alt = True, filter_empty_alt = True)  # only load in additional columns if I plan to later save this updated csv
+        mutations.rename(columns={"CHROM": seq_id_column, "ID": mut_id_column}, inplace=True)
+        mutations[mut_column] = mutations.apply(generate_mutation_notation_from_vcf_columns, axis=1)  #!! untested
+
     # Handle mutations passed as a list
     elif isinstance(mutations, list):
         original_mutations_type = "list"
@@ -876,15 +872,15 @@ def build(
                 raise ValueError("If a list is passed, the number of mutations must equal the number of input sequences.")
 
             temp = pd.DataFrame()
-            temp["mutation"] = mutations
-            temp["mut_ID"] = [f"mut{i+1}" for i in range(len(mutations))]
-            temp["seq_ID"] = [f"seq{i+1}" for i in range(len(mutations))]
+            temp[mut_column] = mutations
+            temp[mut_id_column] = [f"mut{i+1}" for i in range(len(mutations))]
+            temp[seq_id_column] = [f"seq{i+1}" for i in range(len(mutations))]
             mutations = temp
         else:
             temp = pd.DataFrame()
-            temp["mutation"] = [mutations[0]] * len(seqs)
-            temp["mut_ID"] = [f"mut{i+1}" for i in range(len(seqs))]
-            temp["seq_ID"] = [f"seq{i+1}" for i in range(len(seqs))]
+            temp[mut_column] = [mutations[0]] * len(seqs)
+            temp[mut_id_column] = [f"mut{i+1}" for i in range(len(seqs))]
+            temp[seq_id_column] = [f"seq{i+1}" for i in range(len(seqs))]
             mutations = temp
 
     # Handle single mutation passed as a string
@@ -892,13 +888,15 @@ def build(
         # This will work for one mutation for one sequence as well as one mutation for multiple sequences
         mutations_path = mutations
         temp = pd.DataFrame()
-        temp["mutation"] = [mutations] * len(seqs)
-        temp["mut_ID"] = [f"mut{i+1}" for i in range(len(seqs))]
-        temp["seq_ID"] = [f"seq{i+1}" for i in range(len(seqs))]
+        temp[mut_column] = [mutations[0]] * len(seqs)
+        temp[mut_id_column] = [f"mut{i+1}" for i in range(len(seqs))]
+        temp[seq_id_column] = [f"seq{i+1}" for i in range(len(seqs))]
         mutations = temp
 
     elif isinstance(mutations, pd.DataFrame):
-        pass
+        for col in mutations.columns:
+            if col not in columns_to_keep:
+                columns_to_keep.append(col)  # append "mutation_aa", "gene_name", "mutation_id"
 
     else:
         raise ValueError(
@@ -911,8 +909,6 @@ def build(
             - A list of mutations (the number of mutations must equal the number of input sequences) (e.g. ['c.2C>T', 'c.1A>C'])
             """
         )
-    
-    start, peaks_list = report_time_and_memory(process_name="Loaded in mutations dataframe", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
 
     # Set of possible nucleotides (- and . are gap annotations)
     nucleotides = set("ATGCUNatgcun.-")
@@ -936,6 +932,13 @@ def build(
             """
         )
 
+    # remove duplicate entries from the mutations dataframe, keeping the ones with the most information
+    duplicate_count = (mutations.duplicated(subset=[seq_id_column, mut_column], keep=False).sum() // 2)
+    mutations["non_na_count"] = mutations.notna().sum(axis=1)
+    mutations = mutations.sort_values(by="non_na_count", ascending=False)
+    mutations = mutations.drop_duplicates(subset=[seq_id_column, mut_column], keep="first")
+    mutations = mutations.drop(columns=["non_na_count"])
+
     number_of_missing_seq_ids = mutations[seq_id_column].isna().sum()
 
     if number_of_missing_seq_ids > 0:
@@ -953,12 +956,9 @@ def build(
 
     mutations = add_mutation_type(mutations, mut_column)
 
-    start, peaks_list = report_time_and_memory(process_name="Added in mutation types", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
-
     # Link sequences to their mutations using the sequence identifiers
     if store_full_sequences:
         mutations["wt_sequence_full"] = mutations[seq_id_column].map(seq_dict)
-        start, peaks_list = report_time_and_memory(process_name="Stored WT full sequences in df", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
 
     # Handle sequences that were not found based on their sequence IDs
     seqs_not_found = mutations[~mutations[seq_id_column].isin(seq_dict.keys())]
@@ -1106,8 +1106,6 @@ def build(
     # Extract the WT nucleotides for the non-substitution rows from the Mutation CDS (i.e., COSMIC)
     mutations.loc[non_substitution_mask, "wt_nucleotides_ensembl"] = mutations.loc[non_substitution_mask].apply(lambda row: extract_sequence(row, seq_dict, seq_id_column), axis=1)
 
-    start, peaks_list = report_time_and_memory(process_name="Various string extractions", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
-
     # Apply mutations to the sequences
     mutations["mut_nucleotides"] = None
     mutations.loc[substitution_mask, "mut_nucleotides"] = mutations.loc[substitution_mask, "actual_mutation"].str[-1]
@@ -1133,15 +1131,12 @@ def build(
     mutations["end_kmer_position_max"] = mutations["end_mutation_position"] + w
     mutations["end_kmer_position"] = mutations[["end_kmer_position_max", "sequence_length"]].min(axis=1)  # don't forget to increment by 1 later on
 
-    start, peaks_list = report_time_and_memory(process_name="Extracting mutational info", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
-
     if gtf is not None:
         assert mutations_path.endswith(".csv") or mutations_path.endswith(".tsv"), "Mutations must be a CSV or TSV file"
         if "start_transcript_position" not in mutations.columns and "end_transcript_position" not in mutations.columns:  # * currently hard-coded column names, but optionally can be changed to arguments later
             mutations = merge_gtf_transcript_locations_into_cosmic_csv(mutations, gtf, gtf_transcript_id_column=gtf_transcript_id_column)
 
             columns_to_keep.extend(["start_transcript_position", "end_transcript_position", "strand"])
-            start, peaks_list = report_time_and_memory(process_name="Merged gtf", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
         else:
             logger.warning("Transcript positions already present in the input mutations file. Skipping GTF file merging.")
 
@@ -1201,8 +1196,6 @@ def build(
     mutations["beginning_mutation_overlap_with_right_flank"] = 0
     mutations["end_mutation_overlap_with_left_flank"] = 0
 
-    start, peaks_list = report_time_and_memory(process_name="Extracted flank regions", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
-
     # Rules for shaving off kmer ends - r1 = left flank, r2 = right flank, d = deleted portion, i = inserted portion
     # Substitution: N/A
     # Deletion:
@@ -1256,8 +1249,6 @@ def build(
         mutations["updated_left_flank_start"] = mutations["updated_left_flank_start"].fillna(0).astype(int)
         mutations["updated_right_flank_end"] = mutations["updated_right_flank_end"].fillna(0).astype(int)
 
-        start, peaks_list = report_time_and_memory(process_name="Optimized flank regions", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
-
     else:
         mutations["updated_left_flank_start"] = 0
         mutations["updated_right_flank_end"] = 0
@@ -1284,8 +1275,6 @@ def build(
             axis=1,
         )
 
-    start, peaks_list = report_time_and_memory(process_name="Created wt/mutant mutation-containing reference sequences", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
-
     if remove_seqs_with_wt_kmers:
         if verbose:
             tqdm.pandas(desc="Removing mutant fragments that share a kmer with wt fragments")
@@ -1303,15 +1292,11 @@ def build(
 
         mutations = mutations[~mutations["wt_fragment_and_mutant_fragment_share_kmer"]]
 
-        start, peaks_list = report_time_and_memory(process_name="Removed MCRSs with WT k-mers (even after flank optimization, if enabled)", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
-
     if save_mutations_updated_csv and store_full_sequences:
         columns_to_keep.extend(["wt_sequence_full", "mutant_sequence_full"])
 
         # Create full sequences (substitution and non-substitution)
         mutations["mutant_sequence_full"] = mutations["left_flank_region_full"] + mutations["mut_nucleotides"] + mutations["right_flank_region_full"]
-
-        start, peaks_list = report_time_and_memory(process_name="Stored mutant full sequences in df", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
 
     if min_seq_len:
         # Calculate k-mer lengths (where k=w) and report the distribution
@@ -1323,8 +1308,6 @@ def build(
 
         if verbose:
             logger.info(f"Removed {rows_less_than_minimum} mutant kmers with length less than {min_seq_len}...")
-
-        start, peaks_list = report_time_and_memory(process_name="Removed short sequences", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
 
     if max_ambiguous is not None:
         # Get number of 'N' or 'n' occuring in the sequence
@@ -1343,6 +1326,7 @@ def build(
 
     report = f"""
         {good_mutations} mutations correctly recorded ({good_mutations/total_mutations*100:.2f}%)
+        {duplicate_count} duplicate entries found ({duplicate_count/total_mutations*100:.2f}%)
         {intronic_mutations} intronic mutations found ({intronic_mutations/total_mutations*100:.2f}%)
         {posttranslational_region_mutations} posttranslational region mutations found ({posttranslational_region_mutations/total_mutations*100:.2f}%)
         {unknown_mutations} unknown mutations found ({unknown_mutations/total_mutations*100:.2f}%)
@@ -1434,8 +1418,6 @@ def build(
                 ),
                 axis=1,
             )
-        
-        start, peaks_list = report_time_and_memory(process_name="Translated mutations", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
 
     mutations = mutations[columns_to_keep]
 
@@ -1513,8 +1495,6 @@ def build(
 
             mutations = mutations_temp
 
-        start, peaks_list = report_time_and_memory(process_name="Merged by identical MCRSs", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
-
         if "mutant_sequence_and_rc_tuple" in mutations.columns:
             mutations = mutations.drop(columns=["mutant_sequence_and_rc_tuple"])
 
@@ -1573,7 +1553,6 @@ def build(
         mutations["mcrs_id"] = generate_unique_ids(len(mutations))
         if save_files:
             mutations[["mcrs_id", "header"]].to_csv(id_to_header_csv_out, index=False)  # make the mapping csv
-            start, peaks_list = report_time_and_memory(process_name="Saved ID to header file", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
     else:
         mutations["mcrs_id"] = mutations["header"]
 
@@ -1582,7 +1561,6 @@ def build(
         logger.warning("File size can be very large if the number of mutations is large.")
         mutations.to_csv(mutations_updated_csv_out, index=False)
         print(f"Updated mutation info has been saved to {mutations_updated_csv_out}")
-        start, peaks_list = report_time_and_memory(process_name="Saved updated df", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
 
     if len(mutations) > 0:
         mutations["fasta_format"] = ">" + mutations["mcrs_id"] + "\n" + mutations["mutant_sequence"] + "\n"
@@ -1617,8 +1595,6 @@ def build(
             fasta_file.write("".join(mutations_with_exactly_1_wt_sequence_per_row["fasta_format_wt"].values))
         create_mutant_t2g(wt_mcrs_fasta_out, wt_mcrs_t2g_out)  # separate t2g is needed because it may have a subset of the rows of mutant (because it doesn't contain any MCRSs with merged mutations and 2+ originating WT sequences)
 
-    start, peaks_list = report_time_and_memory(process_name="Wrote fasta file(s) and t2g(s)", start=start, peaks_list=peaks_list, logger=logger, report=True, dfs={"mutations": mutations}, cols=True)
-
     # When stream_output is True, return list of mutated seqs
     if return_mutation_output:
         if original_mutations_type == "list":
@@ -1631,8 +1607,10 @@ def build(
                 all_mut_seqs.remove("")
 
             if len(all_mut_seqs) > 0:
+                report_time_elapsed(start_time)
                 return all_mut_seqs
         else:
+            report_time_elapsed(start_time)
             return mutations
-        
-    start, peaks_list = report_time_and_memory(start=start_overall, peaks_list=peaks_list, logger=logger, report=True, final_call=True, dfs={"mutations": mutations}, cols=True)
+    
+    report_time_elapsed(start_time)

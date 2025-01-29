@@ -56,8 +56,32 @@ dlist_pattern_utils = re.compile(
 )
 
 
+def read_fastq(fastq_file):
+    is_gzipped = fastq_file.endswith(".gz")
+    open_func = gzip.open if is_gzipped else open
+    open_mode = "rt" if is_gzipped else "r"
+
+    try:
+        with open_func(fastq_file, open_mode) as file:
+            while True:
+                header = file.readline().strip()
+                sequence = file.readline().strip()
+                plus_line = file.readline().strip()
+                quality = file.readline().strip()
+
+                if not header:
+                    break
+
+                yield header, sequence, plus_line, quality
+    except Exception as e:
+        raise RuntimeError(f"Error reading FASTQ file '{fastq_file}': {e}")
+    
 def read_fasta(file_path, semicolon_split=False):
-    with open(file_path, "r") as file:
+    is_gzipped = file_path.endswith(".gz")
+    open_func = gzip.open if is_gzipped else open
+    open_mode = "rt" if is_gzipped else "r"
+
+    with open_func(file_path, open_mode) as file:
         header = None
         sequence_lines = []
         for line in file:
@@ -172,22 +196,24 @@ def fasta_to_fastq(
 
 
 def read_fastq(fastq_file):
-    if fastq_file.endswith(".gz"):
-        file = gzip.open(fastq_file, "rt")  # 'rt' mode is for reading text
-    else:
-        file = open(fastq_file, "r")  # 'r' mode is for reading text
+    is_gzipped = fastq_file.endswith(".gz")
+    open_func = gzip.open if is_gzipped else open
+    open_mode = "rt" if is_gzipped else "r"
 
-    with file:
-        while True:
-            header = file.readline().strip()
-            sequence = file.readline().strip()
-            plus_line = file.readline().strip()
-            quality = file.readline().strip()
+    try:
+        with open_func(fastq_file, open_mode) as file:
+            while True:
+                header = file.readline().strip()
+                sequence = file.readline().strip()
+                plus_line = file.readline().strip()
+                quality = file.readline().strip()
 
-            if not header:
-                break
+                if not header:
+                    break
 
-            yield header, sequence, plus_line, quality
+                yield header, sequence, plus_line, quality
+    except Exception as e:
+        raise RuntimeError(f"Error reading FASTQ file '{fastq_file}': {e}")
 
 
 import gzip
@@ -2597,6 +2623,10 @@ def compare_cdna_and_genome(
     w=30,
     mcrs_source="cdna",
     columns_to_explode=None,
+    seq_id_column_cdna="seq_ID",
+    mut_column_cdna="mutation",
+    seq_id_column_genome="chromosome",
+    mut_column_genome="mutation_genome"
 ):
     from varseek.varseek_build import build
 
@@ -2606,19 +2636,14 @@ def compare_cdna_and_genome(
         columns_to_explode = columns_to_explode.copy()
 
     with tempfile.TemporaryDirectory() as gget_mutate_temp_folder:
-
         reference_out_dir_temp = f"{gget_mutate_temp_folder}/reference_out"
-
-        gget_mutate_cdna_out_fasta = (
-            f"{gget_mutate_temp_folder}/gget_mutate_cdna_{w}.fa"
-        )
         gget_mutate_cdna_out_df = f"{gget_mutate_temp_folder}/gget_mutate_cdna_{w}.csv"
 
         if not os.path.exists(gget_mutate_cdna_out_df):
             build(
                 sequences=reference_cdna_fasta,
                 mutations=mutations_csv,
-                out=gget_mutate_cdna_out_fasta,
+                out=gget_mutate_temp_folder,
                 reference_out_dir=reference_out_dir_temp,
                 w=w,
                 remove_seqs_with_wt_kmers=False,
@@ -2631,6 +2656,8 @@ def compare_cdna_and_genome(
                 cosmic_password=os.getenv("COSMIC_PASSWORD"),
                 save_mutations_updated_csv=True,
                 mutations_updated_csv_out=gget_mutate_cdna_out_df,
+                seq_id_column=seq_id_column_cdna,
+                mut_column=mut_column_cdna,
             )
 
         cdna_updated_df = pd.read_csv(
@@ -2644,9 +2671,6 @@ def compare_cdna_and_genome(
             ],
         )
 
-        gget_mutate_genome_out_fasta = (
-            f"{gget_mutate_temp_folder}/gget_mutate_genome_{w}.fa"
-        )
         gget_mutate_genome_out_df = (
             f"{gget_mutate_temp_folder}/gget_mutate_genome_{w}.csv"
         )
@@ -2655,7 +2679,7 @@ def compare_cdna_and_genome(
             build(
                 sequences=reference_genome_fasta,
                 mutations=mutations_csv,
-                out=gget_mutate_genome_out_fasta,
+                out=gget_mutate_temp_folder,
                 reference_out_dir=reference_out_dir_temp,
                 w=w,
                 remove_seqs_with_wt_kmers=False,
@@ -2668,8 +2692,8 @@ def compare_cdna_and_genome(
                 cosmic_password=os.getenv("COSMIC_PASSWORD"),
                 save_mutations_updated_csv=True,
                 mutations_updated_csv_out=gget_mutate_genome_out_df,
-                seq_id_column="chromosome",
-                mut_column="mutation_genome",
+                seq_id_column=seq_id_column_genome,
+                mut_column=mut_column_genome,
             )
 
         genome_updated_df = pd.read_csv(
@@ -4161,8 +4185,11 @@ def get_df_overlap(
 from pdb import set_trace as st
 
 
-def apply_filters(df, filters, verbose=False, logger=None):
-    len_df_initial = len(df)
+def apply_filters(df, filters, verbose=False, logger=None, filtering_report_text_out=None):
+    from varseek.varseek_filter import make_filtering_report
+    logger.info("Initial mutation report")
+    filtering_report_dict = make_filtering_report(df, logger=logger, verbose=verbose, filtering_report_text_out=filtering_report_text_out)
+    initial_filtering_report_dict = filtering_report_dict.copy()
     
     for filter in filters:
         column = filter["column"]
@@ -4173,7 +4200,8 @@ def apply_filters(df, filters, verbose=False, logger=None):
             # skip this iteration
             continue
 
-        len_df_start = len(df)
+        message = f"{column} {rule} {value}"
+        print(message) if not logger else logger.info(message)
 
         if rule == "min":
             df = df.loc[(df[column].astype(float) >= float(value)) | (df[column].isnull())]
@@ -4226,23 +4254,17 @@ def apply_filters(df, filters, verbose=False, logger=None):
             df = df.loc[(df[column] != False) | df[column].isnull()]
         else:
             raise ValueError(f"Rule '{rule}' not recognized")
-
-        len_df_end = len(df)
-        number_filtered = len_df_start - len_df_end
-
-        if verbose:
-            message = f"Filtered {number_filtered} mutations {column} with {rule} {value} - {len_df_end} mutations remaining"
-            if logger:
-                logger.info(message)
-            else:
-                print(message)
+        
+        filtering_report_dict = make_filtering_report(df, logger=logger, verbose=verbose, filtering_report_text_out=filtering_report_text_out, prior_filtering_report_dict=filtering_report_dict)
 
     if verbose:
-        message = f"Total mutations filtered: {len_df_initial - len(df)}"
-        if logger:
-            logger.info(message)
-        else:
-            print(message)
+        number_of_mutations_total_difference = initial_filtering_report_dict["number_of_mutations_total"] - filtering_report_dict["number_of_mutations_total"]
+        number_of_vcrss_total_difference = initial_filtering_report_dict["number_of_vcrss_total"] - filtering_report_dict["number_of_vcrss_total"]
+        number_of_unique_mutations_difference = initial_filtering_report_dict["number_of_unique_mutations"] - filtering_report_dict["number_of_unique_mutations"]
+        number_of_merged_mutations_difference = initial_filtering_report_dict["number_of_merged_mutations"] - filtering_report_dict["number_of_merged_mutations"]
+
+        message = f"Total mutations filtered: {number_of_mutations_total_difference}; total VCRSs filtered: {number_of_vcrss_total_difference}; unique mutations filtered: {number_of_unique_mutations_difference}; merged mutations filtered: {number_of_merged_mutations_difference}"
+        print(message) if not logger else logger.info(message)
 
     return df
 
@@ -6273,7 +6295,7 @@ def make_vaf_matrix(adata_mutant_mcrs_path, adata_wt_mcrs_path, adata_vaf_output
 
 
 # convert gatk output vcf to pandas df
-def vcf_to_dataframe(vcf_file, additional_columns = True):
+def vcf_to_dataframe(vcf_file, additional_columns = True, explode_alt = True, filter_empty_alt = True):
     """Convert a VCF file to a Pandas DataFrame."""    
     vcf = pysam.VariantFile(vcf_file)
     
@@ -6283,12 +6305,14 @@ def vcf_to_dataframe(vcf_file, additional_columns = True):
     # Fetch each record in the VCF
     for record in vcf.fetch():
         # For each record, extract the desired fields
+        alts = ','.join(record.alts) if isinstance(record.alts, tuple) else record.alts  # alternate case includes None (when it is simply ".")
+
         vcf_row = {
             'CHROM': record.chrom,
             'POS': record.pos,
             'ID': record.id,
             'REF': record.ref,
-            'ALT': ','.join(record.alts),  # ALT can be multiple
+            'ALT': alts,  # ALT can be multiple
         }
 
         if additional_columns:
@@ -6310,6 +6334,14 @@ def vcf_to_dataframe(vcf_file, additional_columns = True):
     
     # Convert the list to a Pandas DataFrame
     df = pd.DataFrame(vcf_data)
+
+    if filter_empty_alt:
+        df = df[~df["ALT"].isin([None, "", "."])]
+
+    if explode_alt:
+        df["ALT_ORIGINAL"] = df["ALT"]
+        df["ALT"] = df["ALT"].str.split(",")  # Split ALT column into lists
+        df = df.explode("ALT", ignore_index=True)  # Expand the DataFrame
     
     return df
 
@@ -6603,6 +6635,38 @@ def add_mutation_type_gatk(df):
     ] = df['ALT'].str[1:]
 
     return df
+
+def generate_mutation_notation_from_vcf_columns(row):
+    pos = row["POS"]
+    ref = row["REF"]
+    alt = row["ALT"]
+
+    if not isinstance(pos, int) or not isinstance(ref, str) or not isinstance(alt, str):
+        return "g.UNKNOWN"
+    
+    # Start with "g."
+    if len(ref) == 1 and len(alt) == 1:
+        return f"g.{pos}{ref}>{alt}"  # Substitution case
+    
+    elif len(ref) > 1 and len(alt) == 1:  # Deletion case
+        pos_start = pos + 1 if pos != 1 else pos  # eg CAG --> C, where C is at position 40 - this is a 41_42del
+        if len(ref) == 2:
+            return f"g.{pos_start}del"
+        else:
+            pos_end = pos + len(ref) - 1
+            return f"g.{pos_start}_{pos_end}del"
+
+    elif len(ref) == 1 and len(alt) > 1:  # Insertion case
+        if pos == 1:
+            return "g.UNKNOWN"  # Can't handle insertions at the beginning of the sequence
+        inserted = alt[1:]  # The inserted sequence (excluding the common base)
+        return f"g.{pos}_{pos+1}ins{inserted}"
+    elif len(ref) > 1 and len(alt) > 1:  # Delins case
+        pos_start = pos
+        pos_end = pos + len(ref) - 1
+        return f"g.{pos_start}_{pos_end}delins{alt}"
+    else:
+        return "g.UNKNOWN"
 
 
 def merge_gatk_and_cosmic(df_mut, cosmic_df, exact_position = False):

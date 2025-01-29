@@ -1,5 +1,6 @@
 import os
 import csv
+import time
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
@@ -17,10 +18,52 @@ from .utils import (
     save_params_to_config_file,
     make_function_parameter_to_value_dict,
     check_file_path_is_string_with_valid_extension,
-    print_varseek_dry_run
+    print_varseek_dry_run,
+    report_time_elapsed
 )
 
 logger = set_up_logger()
+
+def make_filtering_report(mutation_metadata_df, logger = None, verbose = False, filtering_report_text_out = None, prior_filtering_report_dict = None):
+    if "semicolon_count" not in mutation_metadata_df.columns:
+        mutation_metadata_df["semicolon_count"] = mutation_metadata_df["mcrs_header"].str.count(";")
+    
+    # number of VCRSs
+    number_of_vcrss = len(mutation_metadata_df)
+
+    # number of unique mutations
+    number_of_unique_mutations = (mutation_metadata_df["semicolon_count"] == 0).sum()
+
+    # number of merged mutations
+    number_of_merged_mutations = (mutation_metadata_df.loc[mutation_metadata_df["semicolon_count"] > 0, "semicolon_count"] + 1).sum()  # equivalent to doing (1) mutation_metadata_df["semicolon_count"] += 1, (2) mutation_metadata_df.loc[mutation_metadata_df["semicolon_count"] == 1, "semicolon_count"] = np.nan, and (3) number_of_merged_mutations = int(mutation_metadata_df["semicolon_count"].sum())
+    
+    # number of total mutations
+    number_of_mutations_total = number_of_unique_mutations + number_of_merged_mutations
+
+    if prior_filtering_report_dict:
+        number_of_mutations_total_difference = prior_filtering_report_dict["number_of_mutations_total"] - number_of_mutations_total
+        number_of_vcrss_difference = prior_filtering_report_dict["number_of_vcrss"] - number_of_vcrss
+        number_of_unique_mutations_difference = prior_filtering_report_dict["number_of_unique_mutations"] - number_of_unique_mutations
+        number_of_merged_mutations_difference = prior_filtering_report_dict["number_of_merged_mutations"] - number_of_merged_mutations
+        filtering_report = f"Number of total mutations: {number_of_mutations_total} ({number_of_mutations_total_difference} filtered); VCRSs: {number_of_vcrss} ({number_of_vcrss_difference} filtered); unique mutations: {number_of_unique_mutations} ({number_of_unique_mutations_difference} filtered); merged mutations: {number_of_merged_mutations} ({number_of_merged_mutations_difference} filtered)\n"
+    else:
+        filtering_report = f"Number of total mutations: {number_of_mutations_total}; VCRSs: {number_of_vcrss}; unique mutations: {number_of_unique_mutations}; merged mutations: {number_of_merged_mutations}\n"
+
+    if verbose:
+        if logger:
+            logger.info(filtering_report)
+        else:
+            print(filtering_report)
+
+    # Save the report string to the specified path
+    if isinstance(filtering_report_text_out, str):
+        if os.path.dirname(filtering_report_text_out):
+            os.makedirs(os.path.dirname(filtering_report_text_out), exist_ok=True)
+        filtering_report_write_mode = "a" if os.path.exists(filtering_report_text_out) else "w"
+        with open(filtering_report_text_out, filtering_report_write_mode) as file:
+            file.write(filtering_report)
+    
+    return {"number_of_vcrss": number_of_vcrss, "number_of_unique_mutations": number_of_unique_mutations, "number_of_merged_mutations": number_of_merged_mutations, "number_of_mutations_total": number_of_mutations_total}
 
 def validate_input_filter(
     input_dir,
@@ -115,16 +158,23 @@ def filter(
     - id_to_header_csv              (str) Path to the id to header csv file.
     - verbose                       (bool) Whether to print the logs or not.
     """
-    # enforce type-checking
+    #* 1. Start timer
+    start_time = time.perf_counter()
+
+    #* 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
     validate_input_filter(**params_dict)
+
+    #* 3. Dry-run
     if dry_run:
         print_varseek_dry_run(params_dict, function_name="filter")
         return None
     
+    #* 4. Save params to config file
     config_file = os.path.join(out, "config", "vk_filter_config.json")
     save_params_to_config_file(config_file)
-    
+
+    #* 5. Set up default folder/file input paths, and make sure the necessary ones exist
     os.makedirs(out, exist_ok=True)
 
     # have the option to filter other dlists as kwargs
@@ -170,6 +220,7 @@ def filter(
         logger.warning(f"ID to header csv file not found at {id_to_header_csv}. Skipping filtering of ID to header csv.")
         id_to_header_csv = None
 
+    #* 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
     # define output file names if not provided
     if not mutations_updated_filtered_csv_out:  # mutations_updated_vk_info_csv must exist or else an exception will be raised from earlier
         mutations_updated_filtered_csv_out = os.path.join(out, "mutation_metadata_df_filtered.csv")
@@ -196,6 +247,7 @@ def filter(
         if os.path.dirname(output_file):
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
         
+    #* 7. Start the actual function
     # filters must either be a dict (as described in docs) or a path to a JSON file
     if type(filters) == str and filters.endswith(".json"):
         filters = prepare_filters_json(filters)
@@ -209,39 +261,15 @@ def filter(
     else:
         mutation_metadata_df = mutations_updated_vk_info_csv
 
-    if verbose:
-        def make_filtering_report(mutation_metadata_df, logger = None, save_filtering_report_text = False, filtering_report_text_out = None):
-            # number of VCRSs
-            number_of_vcrss_initial = len(mutation_metadata_df)
+    if "semicolon_count" not in mutation_metadata_df.columns:  # adding for reporting purposes
+        mutation_metadata_df["semicolon_count"] = mutation_metadata_df["mcrs_header"].str.count(";")
 
-            # number of unique mutations
-            mutation_metadata_df["semicolon_count"] = mutation_metadata_df["mcrs_header"].str.count(";")
-            number_of_unique_mutations_initial = (mutation_metadata_df["semicolon_count"] == 0).sum()
-
-            # number of merged mutations
-            mutation_metadata_df["semicolon_count"] += 1
-            mutation_metadata_df["semicolon_count"] = mutation_metadata_df["semicolon_count"].replace(1, np.nan)
-            number_of_merged_mutations_initial= int(mutation_metadata_df["semicolon_count"].sum())
-            mutation_metadata_df = mutation_metadata_df.drop(columns=["semicolon_count"])
-
-            # number of total mutations
-            number_of_mutations_total_initial = number_of_unique_mutations_initial + number_of_merged_mutations_initial
-
-            filtering_report = f"Initial number of mutations: {number_of_mutations_total_initial}; VCRSs: {number_of_vcrss_initial}; unique mutations: {number_of_unique_mutations_initial}\n"
-
-            if logger:
-                logger.info(filtering_report)
-            else:
-                print(filtering_report)
-
-            # Save the report string to the specified path
-            if save_filtering_report_text:
-                filtering_report_write_mode = "a" if os.path.exists(filtering_report_text_out) else "w"
-                with open(filtering_report_text_out, filtering_report_write_mode) as file:
-                    file.write(filtering_report)
-
-    filtered_df = apply_filters(mutation_metadata_df, filters, verbose=verbose, logger=logger)
+    filtering_report_text_out = os.path.join(out, "filtering_report.txt")
+    filtered_df = apply_filters(mutation_metadata_df, filters, verbose=verbose, logger=logger, filtering_report_text_out=filtering_report_text_out)
     filtered_df = filtered_df.copy()  # here to avoid pandas warning about assigning to a slice rather than a copy
+
+    if "semicolon_count" in mutation_metadata_df.columns:
+        mutation_metadata_df = mutation_metadata_df.drop(columns=["semicolon_count"])
 
     if save_mutations_updated_filtered_csvs:
         filtered_df.to_csv(mutations_updated_filtered_csv_out, index=False)
@@ -319,7 +347,9 @@ def filter(
         if dlist_filtered_fasta_out and os.path.isfile(dlist_filtered_fasta_out):
             logger.info(f"Filtered dlist fasta created at {dlist_filtered_fasta_out}.")
 
+    # Report time
+    report_time_elapsed(start_time)
+
     if return_mutations_updated_filtered_csv_df:
         return filtered_df
-    else:
-        return None
+

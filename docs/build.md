@@ -3,7 +3,23 @@
 Takes in nucleotide sequences and mutations (in [standard mutation annotation](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1867422/) and returns mutated versions of the input sequences according to the provided mutations.  
 Return format: Saves mutated sequences in FASTA format.
 
-![alt text](https://github.com/pachterlab/varseek/blob/main/figures/varseek_build.png?raw=true)
+Input table
+| Parameter                                                           | File type         | Required?           | Description             |
+|----------------------------------------------------------------|--------------------|------------------------|---------------------------|
+| variants                                                               | .csv or string   | True                    | ...                             |
+| sequences                                                           | .fa/.fasta         | True                    | ...                             |
+
+Output table
+| Parameter                                                           | File type         | Flag                                                        | Default Path                                                        | Description           |
+|----------------------------------------------------------------|--------------------|-----------------------------------------------------|----------------------------------------------------------------|-------------------------|
+| out                                                                       | directory         | N/A                                                        | .                                                                           | ...                          |
+| mcrs_fasta_out                                                    | .fa                  | N/A                                                        | <out>/mcrs.fa                                                      | ...                          |
+| id_to_header_csv_out                                         | .csv                | N/A                                                        | <out>/id_to_header_mapping.csv                      | ...                          |
+| mutations_updated_csv_out                               | .csv                 | save_mutations_updated_csv=True     | <out>/mutation_metadata_df.csv                       | ...                          |
+| mcrs_t2g_out                                                      | .txt                  | N/A                                                        | <out>/mcrs_t2g.txt                                              | ...                          |
+| wt_mcrs_fasta_out                                              | .txt                  | save_wt_mcrs_fasta_and_t2g=True     | <out>/wt_mcrs.fa                                                | ...                          |
+| wt_mcrs_t2g_out                                                 | .txt                  | save_wt_mcrs_fasta_and_t2g=True     | <out>/wt_mcrs_t2g.txt                                        | ...                          |
+| removed_variants_text_out                                 | .txt                  | save_removed_variants_text=True      | <out>/removed_variants.txt                                | ...                          |
 
 **Required arguments**  
 `-s` `--sequences`
@@ -122,35 +138,6 @@ Whether to update the input `mutations` DataFrame to include additional columns 
 `--save_wt_mcrs_fasta_and_t2g`
 Whether to create a fasta file containing the wildtype sequence counterparts of the mutation-containing reference sequences (MCRSs) and the corresponding t2g. Default: False.
 
-`--return_mutation_output`
-Whether to return the mutation output saved in the fasta file. Default: False.
-
-**Optional arguments to set output file paths**
-`-o` `--out`   
-Path to default output directory to containing created files. Any individual output file path can be overriden if the specific file path is provided as an argument. Default: "." (current directory).
-
-`-ro` `--reference_out_dir`
-Path to reference file directory to be downloaded if `--mutations` is a supported database and the file corresponding to `--sequences` does not exist. Default: `out`/reference directory. 
-
-`--mcrs_fasta_out`
-Path to output fasta file containing the mutation-containing reference sequences (MCRSs). If `--keep_original_headers`, then the fasta headers will be the values in the column 'mut_ID' (semicolon-jooined if `--merge_identical`). Otherwise, if `--keep_original_headers` (default), then the fasta headers will be of the form 'vcrs_<int>' where <int> is a unique integer. Default: "`out`/mcrs.fa"
-
-`--mutations_updated_csv_out`
-Path to output csv file containing the updated DataFrame. Only valid if `--save_mutations_updated_csv`. Default: "`out`/mutation_metadata_df.csv"
-
-`--id_to_header_csv_out`
-File name of csv file containing the mapping of unique IDs to the original sequence headers if `--keep_original_headers`. Default: "`out`/id_to_header_mapping.csv"
-
-`--mcrs_t2g_out`
-Path to output t2g file containing the transcript-to-gene mapping for the MCRSs. Used in kallisto | bustools workflow. Default: "`out`/mcrs_t2g.txt"
-
-`wt_mcrs_fasta_out`
-Path to output fasta file containing the wildtype sequence counterparts of the mutation-containing reference sequences (MCRSs). Default: "`out`/wt_mcrs.fa"
-
-`wt_mcrs_t2g_out`
-Path to output t2g file containing the transcript-to-gene mapping for the wildtype MCRSs. Default: "`out`/wt_mcrs_t2g.txt"
-
-
 **Optional flags to modify additional output**  
 `-sfs` `--store_full_sequences`         
 Includes the complete wildtype and mutant sequences in the updated `mutations` DataFrame (not just the sub-sequence with k-length flanks). Only valid when used with `--update_df`.   
@@ -167,12 +154,13 @@ Default: translates from the beginning of each sequence
 Default: translates until the end of each sequence  
                                   
 **Optional general arguments**
-`--dry_run`
-Whether to simulate the function call without executing it. Default: False.
+`-ro` `--reference_out`
+Path to reference files to be downloaded if 'mutations' is a supported database and 'sequences' is not provided. Default: 'out' directory.  
 
-`--overwrite`
-Whether to overwrite existing output files. Will return if any output file already exists. Default: False.
-
+`-o` `--out`   
+Path to output folder containing created files (if fasta_out and/or update_df_out not supplied) Default: '.'.
+Default: None -> returns a list of the mutated sequences to standard out.    
+The identifiers (following the '>') of the mutated sequences in the output FASTA will be '>[seq_ID]_[mut_ID]'. 
 
 **Optional general flags**  
 `-q` `--quiet`   
@@ -181,11 +169,11 @@ Python: Use `verbose=False` to prevent progress information from being displayed
 
 ### Examples
 ```bash
-varseek build ATCGCTAAGCT -m 'c.4G>T' --return_mutation_output
+varseek build ATCGCTAAGCT -m 'c.4G>T'
 ```
 ```python
 # Python
-varseek.build("ATCGCTAAGCT", "c.4G>T", return_mutation_output=True)
+varseek.build("ATCGCTAAGCT", "c.4G>T")
 ```
 &rarr; Returns ATCTCTAAGCT.  
 
@@ -211,11 +199,11 @@ GATCTA
 
 **One mutation applied to several sequences with adjusted `k`:**  
 ```bash
-varseek build ATCGCTAAGCT TAGCTA -m 'c.1_3inv' -k 3 --return_mutation_output
+varseek build ATCGCTAAGCT TAGCTA -m 'c.1_3inv' -k 3
 ```
 ```python
 # Python
-varseek.build(["ATCGCTAAGCT", "TAGCTA"], "c.1_3inv", k=3, return_mutation_output=True)
+varseek.build(["ATCGCTAAGCT", "TAGCTA"], "c.1_3inv", k=3)
 ```
 &rarr; Returns ['CTAGCT', 'GATCTA'].  
 

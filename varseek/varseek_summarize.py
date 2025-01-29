@@ -17,7 +17,10 @@ from varseek.utils import (
     increment_adata_based_on_dlist_fns,
     decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_mode,
     remove_adata_columns,
+    set_up_logger,
 )
+
+logger = set_up_logger()
 
 
 def summarize(
@@ -29,6 +32,9 @@ def summarize(
     verbose=True,
     **kwargs,
 ):
+    # begin timer
+
+
     os.makedirs(out, exist_ok=True)
     stats_file = os.path.join(out, "varseek_summarize_stats.txt")
     specific_stats_folder = os.path.join(out, "specific_stats")
@@ -181,6 +187,9 @@ def summarize(
         f.write("Gene\tNumber_of_Samples\tTotal_mcrs_count\n")
         for gene, row in top_genes_mcrs_count.iterrows():
             f.write(f"{gene}\t{row['number_of_samples_in_which_the_gene_is_detected']}\t{row['total_mcrs_count']}\n")
+
+    # report overall time and memory usage
+
 
     # TODO: things to add
     # differentially expressed mutations/mutated genes

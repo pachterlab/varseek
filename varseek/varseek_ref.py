@@ -1,10 +1,10 @@
 import os
 import subprocess
-import inspect
-from typing import Union, List, Optional
+import time
 import varseek as vk
-from varseek.utils import set_up_logger, save_params_to_config_file, return_kb_arguments, make_function_parameter_to_value_dict, download_varseek_files
-from .constants import allowable_kwargs, prebuilt_vk_ref_files
+from varseek.utils import set_up_logger, save_params_to_config_file, make_function_parameter_to_value_dict, download_varseek_files, report_time_elapsed, is_valid_int, check_file_path_is_string_with_valid_extension
+from .constants import prebuilt_vk_ref_files
+import inspect
 
 logger = set_up_logger()
 
@@ -30,141 +30,127 @@ varseek_ref_only_allowable_kb_ref_arguments = {
 }  # don't include d-list, t, i, k, workflow here because I do it myself later
 
 # covers both varseek ref AND kb ref, but nothing else (i.e., all of the arguments that are not contained in varseek build, info, or filter)
-# TODO: write
-def validate_input_ref(w, k, dlist, mode):
-    # make sure k is odd and <= 63
-    if k % 2 != 0 or k < 1 or k > 63 or not isinstance(k, int):
-        raise ValueError("k must be odd, positive, integer, and less than or equal to 63")
+def validate_input_ref(dlist, mode, threads, mcrs_index_out, config, minimum_info_columns, download, dry_run, **kwargs):
+    build_signature = inspect.signature(vk.varseek_build.build)
+    k = kwargs.get("k", None)
+    w = kwargs.get("w", None)
     
-    if k < w + 1:
-        raise ValueError("k must be greater than or equal to w + 1")
+    if k is None:
+        k = build_signature.parameters["k"].default
+    if w is None:
+        w = build_signature.parameters["w"].default
+    
+    # make sure k is odd and <= 63
+    if k is not None:
+        if not isinstance(k, int) or k % 2 != 0 or k < 1 or k > 63:
+            raise ValueError("k must be odd, positive, integer, and less than or equal to 63")
+    
+        if (w is not None) and (k < w + 1):
+            raise ValueError("k must be greater than or equal to w + 1")
     
     dlist_valid_values = {"genome", "transcriptome", "genome_and_transcriptome", 'None', None}
     if dlist not in dlist_valid_values:
         raise ValueError(f"dlist must be one of {dlist_valid_values}")
     
-    mode_valid_values = {"very_sensitive", "sensitive", "balanced", "specific", "very_specific", None}
-    if mode not in mode_valid_values:
-        raise ValueError(f"mode must be one of {mode_valid_values}")
+    if mode is not None and mode not in mode_parameters:
+        raise ValueError(f"mode must be one of {mode_parameters.keys()}")
     
-    # TODO: config, download, minimum_info_columns, and all kb ref-specific stuff
+    # sequences, mutations, out handled by vk build
+
+    check_file_path_is_string_with_valid_extension(mcrs_index_out, "mcrs_index_out", "index")
+    check_file_path_is_string_with_valid_extension(config, "config", ["json", "yaml"])
+    
+    if not is_valid_int(threads, threshold_type=">=", threshold_value=1):
+        raise ValueError(f"Threads must be a positive integer, got {threads}")
+    
+    if not isinstance(minimum_info_columns, bool):
+        raise ValueError(f"minimum_info_columns must be a boolean. Got {type(minimum_info_columns)}.")
+    if not isinstance(download, bool):
+        raise ValueError(f"download must be a boolean. Got {type(download)}.")
+    if not isinstance(dry_run, bool):
+        raise ValueError(f"dry_run must be a boolean. Got {type(dry_run)}.")
+    
+    # kb ref stuff
+    for argument_type, argument_set in varseek_ref_only_allowable_kb_ref_arguments.items():
+        for argument in argument_set:
+            argument = argument[2:]
+            if argument in kwargs:
+                argument_value = kwargs[argument]
+                if argument_type == "zero_arguments":
+                    if not isinstance(argument_value, bool):  # all zero-arguments are bool
+                        raise ValueError(f"{argument} must be a boolean. Got {type(argument_value)}.")
+                elif argument_type == "one_argument":
+                    if not isinstance(argument_value, str):  # all one-arguments are string
+                        raise ValueError(f"{argument} must be a string. Got {type(argument_value)}.")
+                elif argument_type == "multiple_arguments":
+                    pass
 
 def ref(
-    sequences,  #* required inputs
+    sequences,
     mutations,
-    mcrs_index_out = None,  #* vk ref specific
+    out = ".",
+    mcrs_index_out = None,
     dlist=False,  # path to dlist fasta file or "None" (including the quotes)
     config=None,
     minimum_info_columns=True,
     download=False,
     mode=None,
-    w = 54,  #* vk build specific
-    k = None,
-    max_ambiguous = 0,
-    mut_column = "mutation",
-    seq_id_column = "seq_ID",
-    mut_id_column = None,
-    gtf = None,
-    gtf_transcript_id_column = None,
-    out = ".",
-    reference_out_dir = None,
-    mcrs_fasta_out = None,
-    mutations_updated_csv_out = None,
-    id_to_header_csv_out = None,
-    mcrs_t2g_out = None,
-    wt_mcrs_fasta_out = None,
-    wt_mcrs_t2g_out = None,
-    # return_mutation_output = False,
-    save_mutations_updated_csv = False,
-    save_wt_mcrs_fasta_and_t2g = False,
-    store_full_sequences = False,
-    translate = False,
-    translate_start = None,
-    translate_end = None,
-    overwrite = False,
-    dry_run = False,
-    verbose = True,
-    **kwargs
+    threads=2,
+    dry_run=False,
+    **kwargs  #* including all arguments for vk build, info, and filter
 ):
-    if isinstance(config, str) and os.path.isfile(config):
-        vk_ref_config_file_input = vk.utils.load_params(config)
+    #* 1. Start timer
+    start_time = time.perf_counter()
 
-        # overwrite any parameters passed in with those from the config file
-        for k, v in vk_ref_config_file_input.items():
-            exec("%s = %s" % (k, v))
-
-    # check if passed arguments are valid
-    function_name_and_key_list_of_tuples = [(vk.varseek_build.build, "varseek_build"), (vk.varseek_info.info, "varseek_info"), (vk.varseek_filter.filter, "varseek_filter")]
-
-    # check if passed arguments are valid (ie pass type-checking)
+    #* 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
     vk.varseek_build.validate_input_build(**params_dict)  # this passes all vk ref parameters to the function - I could only pass in the vk build parameters here if desired (and likewise below), but there should be no naming conflicts anyways
     vk.varseek_info.validate_input_info(**params_dict)
     vk.varseek_filter.validate_input_filter(**params_dict)
     validate_input_ref(**params_dict)
 
-    varseek_specific_args = set()  # not passed into vk build, info, or filter
-    frame = inspect.currentframe()
-    function_args, varargs, varkw, vk_ref_arg_to_value_dict = inspect.getargvalues(frame)
-    # if varkw:
-    #     del vk_ref_arg_to_value_dict[varkw]  # removes kwargs
-    
-    validate_input_ref(**vk_ref_arg_to_value_dict)
+    #* 3. Dry-run
+    # handled within child functions
 
-    #!!! CONTINUE HERE
-    if mode:
-        myvariable = mode_parameters[mode]["myvariable"]  # repeat for each variable of interest
+    #* 3.5. Load in parameters from a config file if provided
+    if isinstance(config, str) and os.path.isfile(config):
+        vk_ref_config_file_input = vk.utils.load_params(config)
 
-    all_allowable_parameters = set()
-    all_allowable_kwargs = set()
-    function_name_to_dict_of_all_args = {}
-    function_name_to_dict_of_kwargs = {}
+        # overwrite any parameters passed in with those from the config file
+        ref_signature = inspect.signature(ref)
+        for k, v in vk_ref_config_file_input.items():
+            if k in ref_signature.parameters.keys():
+                exec("%s = %s" % (k, v))  # assign the value to the variable name
+            else:
+                kwargs[k] = v  # if the variable is not in the function signature, then add it to kwargs
 
-    # add to allowable_kwargs_for_function. allowable_kwargs_for_function['varseek_build'] will have all kwargs for varseek_build, and analogously for info, filter, kb ref
-    for function_name, function_key in function_name_and_key_list_of_tuples:
-        function_parameters = set(inspect.signature(function_name).parameters.keys())
-        allowable_kwargs_for_function = allowable_kwargs[function_key]
-        kwargs_for_function = {}
-        all_args_for_function = {}
-        for key, value in kwargs.items():
-            if key in allowable_kwargs_for_function:
-                kwargs_for_function[key] = value
-            #* # uncomment the lines below if replacing all arguments of varseek ref with **kwargs
-            # if (key in function_parameters or key in allowable_kwargs_for_function) and key not in varseek_ref_unallowable_arguments[key]:
-            #     all_args_for_function[key] = value
-        # function_name_to_dict_of_all_args[function_key] = all_args_for_function
+    #* 3.75 Pop out any unallowable arguments
+    for key, unallowable_set in varseek_ref_unallowable_arguments.items():
+        for unallowable_key in unallowable_set:
+            kwargs.pop(unallowable_key, None)
 
-        function_name_to_dict_of_kwargs[function_key] = kwargs_for_function
+    #* 3.8 Set kwargs to default values of children functions (not strictly necessary, as if these arguments are not in kwargs then it will use the default values anyways, but important if I need to rely on these default values within vk ref)
+    # ref_signature = inspect.signature(ref)
+    # for function in (vk.varseek_build.build, vk.varseek_info.info, vk.varseek_filter.filter):
+    #     signature = inspect.signature(function)
+    #     for key in signature.parameters.keys():
+    #         if key not in kwargs and key not in ref_signature.parameters.keys():
+    #             kwargs[key] = signature.parameters[key].default
 
-        # add function_parameters to all_allowable_parameters
-        all_allowable_parameters = all_allowable_parameters | function_parameters
-        all_allowable_kwargs = all_allowable_kwargs | allowable_kwargs_for_function
-
-    # handles kb ref
-    for argument_type_key in varseek_ref_only_allowable_kb_ref_arguments:
-        arguments_dashes_removed = {argument.lstrip('-').replace('-', '_') for argument in varseek_ref_only_allowable_kb_ref_arguments[argument_type_key]}
-        all_allowable_parameters = all_allowable_parameters | arguments_dashes_removed
-
-    #* # uncomment the lines below if replacing all arguments of varseek ref with **kwargs  # check if passed arguments are valid (which will automatically get passed to kwargs)
-    # varseek_specific_args = {}  # add varseek specific args here eg dry_run, config, etc
-    # all_allowable_parameters = all_allowable_parameters | set(varseek_specific_args.keys())
-    # for key in kwargs:
-    #     if key not in all_allowable_parameters:
-    #         raise ValueError(f"Invalid parameter: {key}.")
-    
-    # check if passed arguments are valid (which will automatically get passed to kwargs)
-    for key in kwargs:
-        if key not in all_allowable_kwargs:
-            raise ValueError(f"Invalid kwarg: {key}.")
-    
-    # Make assertions and exceptions
-    if not os.path.exists(sequences):
-        raise FileNotFoundError(f"The file or path '{sequences}' does not exist")
-
+    #* 4. Save params to config file
     # Save parameters to config file
     config_file = os.path.join(out, "config", "vk_ref_config.json")
     save_params_to_config_file(config_file)
+
+    #* 5. Set up default folder/file input paths, and make sure the necessary ones exist
+    # all input files for vk build are required in the varseek workflow, so this is skipped
     
+    #* 5.5 Setting up modes
+    if mode:
+        for key in mode_parameters[mode]:
+            kwargs[key] = mode_parameters[mode][key]
+    
+    #* 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
     # Make directories
     if not reference_out_dir:
         reference_out_dir = os.path.join(out, "reference")
@@ -172,6 +158,21 @@ def ref(
     os.makedirs(out, exist_ok=True)
     os.makedirs(reference_out_dir, exist_ok=True)        
 
+    # define some more file paths
+    if not mcrs_index_out:
+        mcrs_index_out = os.path.join(out, "mcrs_index.idx")
+    os.makedirs(os.path.dirname(mcrs_index_out), exist_ok=True)
+
+    if not mcrs_fasta_out:  # make sure this matches vk build
+        mcrs_fasta_out = os.path.join(out, "mcrs.fa")
+    if not mcrs_filtered_fasta_out:  # make sure this matches vk filter
+        mcrs_filtered_fasta_out = os.path.join(out, "mcrs_filtered.fa")
+    if not mcrs_t2g_out:  # make sure this matches vk build
+        mcrs_t2g_out = os.path.join(out, "mcrs_t2g.txt")
+    if not mcrs_t2g_filtered_out:  # make sure this matches vk filter
+        mcrs_t2g_filtered_out = os.path.join(out, "mcrs_t2g_filtered.txt")
+
+    #* 7. Start the actual function
     # get COSMIC info
     cosmic_email = kwargs.get("cosmic_email", None)
     if not cosmic_email:
@@ -186,27 +187,13 @@ def ref(
     if cosmic_password:
         logger.info("Using COSMIC password from COSMIC_PASSWORD environment variable")
         kwargs["cosmic_password"] = cosmic_password
-
-    # define some more file paths
-    if not mcrs_index_out:
-        mcrs_index_out = os.path.join(out, "mcrs_index.idx")
-    os.makedirs(os.path.dirname(mcrs_index_out), exist_ok=True)
-
-    if not mcrs_fasta_out:
-        mcrs_fasta_out = os.path.join(out, "mcrs.fa")
-    if not mcrs_filtered_fasta_out:
-        mcrs_filtered_fasta_out = os.path.join(out, "mcrs_filtered.fa")
-    if not mcrs_t2g_out:
-        mcrs_t2g_out = os.path.join(out, "mcrs_t2g.txt")
-    if not mcrs_t2g_filtered_out:
-        mcrs_t2g_filtered_out = os.path.join(out, "mcrs_t2g_filtered.txt")
     
     # decide whether to skip vk info and vk filter
     # filters_column_names = list({filter.split('-')[0] for filter in filters})
-    skip_filtering = not bool(filters)  # skip filtering if no filters provided
-    skip_info = (minimum_info_columns and skip_filtering)  # skip vk info if no filtering will be performed and one specifies minimum info columns
+    skip_filter = not bool(kwargs.get("filters"))  # skip filtering if no filters provided
+    skip_info = (minimum_info_columns and skip_filter)  # skip vk info if no filtering will be performed and one specifies minimum info columns
 
-    if skip_filtering:
+    if skip_filter:
         mcrs_fasta_for_index = mcrs_fasta_out
         mcrs_t2g_for_alignment = mcrs_t2g_out
     else:
@@ -215,7 +202,7 @@ def ref(
 
     # download if download argument is True
     if download:
-        file_dict = prebuilt_vk_ref_files.get(mutations, {}).get(sequences, {}).get(mode, [])
+        file_dict = prebuilt_vk_ref_files.get(mutations, {}).get(sequences, {})  # when I add mode: file_dict = prebuilt_vk_ref_files.get(mutations, {}).get(sequences, {}).get(mode, {})
         if file_dict:
             vk_ref_output_dict = download_varseek_files(file_dict, out=out)  # TODO: replace with DOI download (will need to replace prebuilt_vk_ref_files urls with DOIs)
             if mcrs_index_out and vk_ref_output_dict['index'] != mcrs_index_out:
@@ -227,7 +214,7 @@ def ref(
         
             return vk_ref_output_dict
         else:
-            raise ValueError(f"No prebuilt files found for the given arguments:\nmutations: {mutations}\nsequences: {sequences}\nmode: {mode}")
+            raise ValueError(f"No prebuilt files found for the given arguments:\nmutations: {mutations}\nsequences: {sequences}")  # \nmode: {mode}"
     
 
     
@@ -249,95 +236,32 @@ def ref(
         dlist_kb_argument = "None"
     else:
         raise ValueError("dlist must be 'genome', 'transcriptome', 'genome_and_transcriptome', or 'None'")
+    
+    # define the vk build, info, and filter arguments (explicit arguments and allowable kwargs)
+    explicit_parameters_vk_build = vk.utils.get_set_of_parameters_from_function_signature(vk.varseek_build.build)
+    allowable_kwargs_vk_build = vk.utils.get_set_of_allowable_kwargs(vk.varseek_build.build)
 
-    # vk build - if automating later, simply use vk.build(**function_name_to_dict_of_all_args['varseek_build'])
-    vk.build(
-        sequences=sequences,
-        mutations=mutations,
-        mut_column=mut_column,
-        seq_id_column=seq_id_column,
-        mut_id_column=mut_id_column,
-        gtf=gtf,
-        gtf_transcript_id_column=gtf_transcript_id_column,
-        w=w,
-        k=k,
-        insertion_size_limit=insertion_size_limit,
-        min_seq_len=min_seq_len,
-        optimize_flanking_regions=optimize_flanking_regions,
-        remove_seqs_with_wt_kmers=remove_seqs_with_wt_kmers,
-        max_ambiguous=max_ambiguous,
-        required_insertion_overlap_length=required_insertion_overlap_length,
-        merge_identical=merge_identical,
-        strandedness=strandedness,
-        keep_original_headers=keep_original_headers,
-        save_wt_mcrs_fasta_and_t2g=save_wt_mcrs_fasta_and_t2g,
-        save_mutations_updated_csv=save_mutations_updated_csv,
-        store_full_sequences=store_full_sequences,
-        translate=translate,
-        translate_start=translate_start,
-        translate_end=translate_end,
-        out=out,
-        reference_out_dir=reference_out_dir,
-        mcrs_fasta_out=mcrs_fasta_out,
-        mutations_updated_csv_out=mutations_updated_csv_out,
-        id_to_header_csv_out=id_to_header_csv_out,
-        mcrs_t2g_out=mcrs_t2g_out,
-        wt_mcrs_fasta_out=wt_mcrs_fasta_out,
-        wt_mcrs_t2g_out=wt_mcrs_t2g_out,
-        dry_run=dry_run,
-        overwrite=overwrite,
-        verbose=verbose,
-        **function_name_to_dict_of_kwargs["varseek_build"],  # I use this rather than all kwargs to ensure that I only pass in the kwargs I expect
-    )
+    explicit_parameters_vk_info = vk.utils.get_set_of_parameters_from_function_signature(vk.varseek_info.info)
+    allowable_kwargs_vk_info = vk.utils.get_set_of_allowable_kwargs(vk.varseek_info.info)
+
+    explicit_parameters_vk_filter = vk.utils.get_set_of_parameters_from_function_signature(vk.varseek_filter.filter)
+    allowable_kwargs_vk_filter = vk.utils.get_set_of_allowable_kwargs(vk.varseek_filter.filter)
+
+    function_name_to_dict_of_all_args = {}
+    function_name_to_dict_of_all_args['varseek_build'] = explicit_parameters_vk_build | allowable_kwargs_vk_build
+    function_name_to_dict_of_all_args['varseek_info'] = explicit_parameters_vk_info | allowable_kwargs_vk_info
+    function_name_to_dict_of_all_args['varseek_filter'] = explicit_parameters_vk_filter | allowable_kwargs_vk_filter
+
+    # vk build
+    vk.build(**kwargs) if not kwargs.get("dry_run", False) else vk.build(**function_name_to_dict_of_all_args['varseek_build'])  # best of both worlds - will only pass in defined arguments if dry run is True (which is good so that I don't show each function with a bunch of args it never uses), but will pass in all arguments if dry run is False (which is good if I run vk ref with a new parameter that I have not included in docstrings yet, as I only get usable kwargs list from docstrings)
 
     # vk info
     if not skip_info:
-        vk.info(
-            mutations=vk_build_mcrs_fa_path,
-            updated_df=update_df_out,
-            id_to_header_csv=id_to_header_csv,  # if none then assume no swapping occurred
-            columns_to_include=columns_to_include,
-            mcrs_id_column="mcrs_id",
-            mcrs_sequence_column="mutant_sequence",
-            mcrs_source_column="mcrs_source",  # if input df has concatenated cdna and header MCRS's, then I want to know whether it came from cdna or genome
-            seqid_cdna_column="seq_ID",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome  # TODO: implement these 4 column name arguments
-            seqid_genome_column="chromosome",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome
-            mutation_cdna_column="mutation",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome
-            mutation_genome_column="mutation_genome",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome
-            gtf=gtf_path,  # for distance to nearest splice junction
-            mutation_metadata_df_out_path=mutation_metadata_df_out_path_vk_info,
-            out_dir_notebook=out_dir_notebook,
-            reference_out_dir=reference_out_dir,
-            dlist_reference_source=dlist_reference_source,
-            ref_prefix="index",
-            w=w,
-            remove_Ns=remove_Ns,
-            strandedness=strandedness,
-            bowtie_path=bowtie_path,
-            near_splice_junction_threshold=near_splice_junction_threshold,
-            threads=threads,
-            reference_cdna_fasta=reference_cdna_fasta,
-            reference_genome_fasta=reference_genome_fasta,
-            mutations_csv=mutations_csv,
-            save_exploded_df=save_exploded_df,
-            verbose=verbose,
-        )
+        vk.info(**kwargs) if not kwargs.get("dry_run", False) else vk.info(**function_name_to_dict_of_all_args['varseek_info'])
 
     # vk filter
     if not skip_filter:
-        vk.filter(
-            mutation_metadata_df_path=mutation_metadata_df_out_path_vk_info,
-            output_mcrs_fasta=mcrs_fasta_vk_filter,
-            output_metadata_df=output_metadata_df_vk_filter,
-            dlist_fasta=dlist_fasta,
-            output_dlist_fasta=dlist_fasta_vk_filter,
-            output_t2g=t2g_vk_filter,
-            id_to_header_csv=id_to_header_csv,
-            output_id_to_header_csv=id_to_header_csv_vk_filter,
-            verbose=True,
-            return_df=False,
-            filters=fasta_filters,
-        )
+        vk.filter(**kwargs) if not kwargs.get("dry_run", False) else vk.filter(**function_name_to_dict_of_all_args['varseek_filter'])
 
     # kb ref
     kb_ref_command = [
@@ -383,10 +307,9 @@ def ref(
     vk_ref_output_dict = {}
     vk_ref_output_dict["index"] = mcrs_index_out
     vk_ref_output_dict["t2g"] = mcrs_t2g_for_alignment
-    # vk_ref_output_dict["dlist"] = dlist_fasta_vk_filter
-    # vk_ref_output_dict["id_to_header"] = id_to_header_csv_vk_filter
-    # vk_ref_output_dict["mcrs_fasta"] = mcrs_fasta_vk_filter
-    # vk_ref_output_dict["metadata_df"] = output_metadata_df_vk_filter
+
+    # Report time
+    report_time_elapsed(start_time)
 
     return vk_ref_output_dict
 

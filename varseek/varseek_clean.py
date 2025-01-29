@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 import anndata
 
+import gget
+
 import scipy as sp
 import pysam
 
@@ -16,8 +18,11 @@ from varseek.utils import (
     match_adata_orders,
     write_to_vcf,
     write_vcfs_for_rows,
-    save_params_to_config_file
+    save_params_to_config_file,
+    set_up_logger
 )
+
+logger = set_up_logger()
 
 def make_vcf():
     pass
@@ -121,7 +126,8 @@ def clean(
     verbose=False,
     **kwargs,
 ):
-    
+    # begin timer
+
     config_file = os.path.join(out, "config", "vk_clean_config.json")
     save_params_to_config_file(config_file)
 
@@ -414,6 +420,7 @@ def clean(
         adata_normal_genome.write(adata_normal_genome_output_path)
 
     adata.write(adata_output_path)
+
 
     if output_type == "path":
         return adata_output_path

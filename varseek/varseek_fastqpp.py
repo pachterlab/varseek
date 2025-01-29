@@ -8,7 +8,7 @@ from .utils import (
     replace_low_quality_bases_with_N_list,
     split_reads_by_N_list,
     concatenate_fastqs,
-    save_params_to_config_file
+    save_params_to_config_file,
 )
 
 logger = set_up_logger()
@@ -80,6 +80,8 @@ def fastqpp(
     - seqtk                       (str)  Path to seqtk
     - delete_intermediate_files   (bool) If True, delete intermediate files
     """
+
+    # begin timer
 
     if not os.path.exists(out):
         os.makedirs(out)

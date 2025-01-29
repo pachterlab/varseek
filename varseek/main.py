@@ -15,6 +15,9 @@ from .varseek_filter import filter
 from .varseek_clean import clean
 from .varseek_info import info
 from .varseek_sim import sim
+from .varseek_fastqpp import fastqpp
+from .varseek_ref import ref
+from .varseek_count import count
 from .utils import set_up_logger, prepare_filters_json, prepare_filters_list, load_params
 
 # Get current date and time for alphafold default foldername
@@ -40,6 +43,9 @@ def extract_help_from_doc(module, arg_name, disable=False):
     ...
     - ARGUMENT2    (TYPE1 or TYPE2 or ...) DESCRIPTION
     ...
+    # Another block of arguments
+    - ARGUMENT3    (TYPE1 or TYPE2 or ...) DESCRIPTION
+    ...
     """
     docstring = inspect.getdoc(module)
     help_message = []
@@ -48,7 +54,7 @@ def extract_help_from_doc(module, arg_name, disable=False):
     arg_pattern = rf"-\s*{arg_name}\s*\((.*?)\)\s*(.*)"
 
     # Regular expression to match the start of a new argument or 'Additional input arguments:'
-    new_arg_pattern = r"-\s*[a-zA-Z_]\w*\s*\(.*?\)|Additional input arguments:"
+    new_arg_pattern = r"-\s*[a-zA-Z_]\w*\s*\(.*?\)|\n\n# "
 
     capturing = False  # Flag to check if we are reading the target argument's help message
 

@@ -5,6 +5,7 @@ import varseek
 import os
 import subprocess
 import re
+import time
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
@@ -41,7 +42,9 @@ from varseek.utils import (
     save_params_to_config_file,
     make_function_parameter_to_value_dict,
     check_file_path_is_string_with_valid_extension,
-    print_varseek_dry_run
+    print_varseek_dry_run,
+    report_time_elapsed,
+    is_valid_int
 )
 
 tqdm.pandas()
@@ -101,14 +104,15 @@ def add_mutation_information(mutation_metadata_df, mutation_column="mutation", m
 
     return mutation_metadata_df
 
-def validate_input_info(input_dir, mcrs_fasta, mutations_updated_csv, id_to_header_csv, columns_to_include, mcrs_id_column, mcrs_sequence_column, mcrs_source_column, seqid_cdna_column, seqid_genome_column, mutation_cdna_column, mutation_genome_column, gtf, out, reference_out_dir, mutations_updated_vk_info_csv_out, mutations_updated_exploded_vk_info_csv_out, dlist_genome_fasta_out, dlist_cdna_fasta_out, dlist_combined_fasta_out, dlist_reference_source, w, max_ambiguous_mcrs, max_ambiguous_reference, strandedness, near_splice_junction_threshold, threads, reference_cdna_fasta, reference_genome_fasta, mutations_csv, save_mutations_updated_exploded_vk_info_csv, verbose, **kwargs,):
+
+def validate_input_info(input_dir, mcrs_fasta, mutations_updated_csv, id_to_header_csv, columns_to_include, mcrs_id_column, mcrs_sequence_column, mcrs_source_column, seqid_cdna_column, seqid_genome_column, mutation_cdna_column, mutation_genome_column, gtf, out, reference_out, mutations_updated_vk_info_csv_out, mutations_updated_exploded_vk_info_csv_out, dlist_genome_fasta_out, dlist_cdna_fasta_out, dlist_combined_fasta_out, dlist_reference_source, w, max_ambiguous_mcrs, max_ambiguous_reference, strandedness, near_splice_junction_threshold, threads, reference_cdna_fasta, reference_genome_fasta, mutations_csv, save_mutations_updated_exploded_vk_info_csv, verbose, **kwargs,):
     # Type-checking for paths
     if not isinstance(input_dir, str) or not os.path.isdir(input_dir):
         raise ValueError(f"Invalid input directory: {input_dir}")
     if not isinstance(out, str) or not os.path.isdir(out):
         raise ValueError(f"Invalid input directory: {out}")
-    if reference_out_dir and (not isinstance(reference_out_dir, str) or not os.path.isdir(reference_out_dir)):
-        raise ValueError(f"Invalid reference output directory: {reference_out_dir}")
+    if reference_out and (not isinstance(reference_out, str) or not os.path.isdir(reference_out)):
+        raise ValueError(f"Invalid reference output directory: {reference_out}")
     
     # Checking paths (all optional because I will provide defaults if they are not provided)
     check_file_path_is_string_with_valid_extension(mcrs_fasta, "mcrs_fasta", "fasta")
@@ -130,17 +134,16 @@ def validate_input_info(input_dir, mcrs_fasta, mutations_updated_csv, id_to_head
     if isinstance(columns_to_include, list) and not all(isinstance(col, str) for col in columns_to_include):
         raise ValueError("All elements in columns_to_include must be strings.")
     
-    # Type-checking for numeric values
-    if not isinstance(w, int) or w <= 0:
-        raise ValueError(f"Window size w must be a positive integer, got {w}")
-    if max_ambiguous_mcrs is not None and (not isinstance(max_ambiguous_mcrs, int) or max_ambiguous_mcrs < 0):
-        raise ValueError(f"max_ambiguous_mcrs must be a non-negative integer, got {max_ambiguous_mcrs}")
-    if max_ambiguous_reference is not None and (not isinstance(max_ambiguous_reference, int) or max_ambiguous_reference < 0):
-        raise ValueError(f"max_ambiguous_reference must be a non-negative integer, got {max_ambiguous_reference}")
-    if not isinstance(threads, int) or threads <= 0:
-        raise ValueError(f"Threads must be a positive integer, got {threads}")
-    if not isinstance(near_splice_junction_threshold, int) or near_splice_junction_threshold < 0:
-        raise ValueError(f"near_splice_junction_threshold must be a non-negative integer, got {near_splice_junction_threshold}")
+    # Type-checking for int values
+    for param_name, param_value, min_value, optional_value in [
+        ("w", w, 1, False),
+        ("max_ambiguous_mcrs", max_ambiguous_mcrs, 0, True),
+        ("max_ambiguous_reference", max_ambiguous_reference, 0, True),
+        ("threads", threads, 1, True),
+        ("near_splice_junction_threshold", near_splice_junction_threshold, 1, True),
+    ]:
+        if not is_valid_int(param_value, ">=", min_value, optional=optional_value):
+            raise ValueError(f"{param_name} must be an integer >= {min_value} or None. Got {param_value}.")
 
     # Validate boolean parameters
     for param_name, param_value in {
@@ -162,17 +165,18 @@ def info(
     columns_to_include = None,
     mcrs_id_column = "mcrs_id",
     mcrs_sequence_column = "mutant_sequence",
+    seq_id_cdna_column="seq_ID",
+    mutation_cdna_column="mutation",
+    seq_id_genome_column="chromosome",
+    mutation_genome_column="mutation_genome",
     mcrs_source_column = "mcrs_source",  # if input df has concatenated cdna and header MCRS's, then I want to know whether it came from cdna or genome
-    seqid_cdna_column = "seq_ID",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome
-    seqid_genome_column = "chromosome",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome
-    mutation_cdna_column = "mutation",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome
-    mutation_genome_column = "mutation_genome",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome
     gtf = None,  # for distance to nearest splice junction
     out = ".",
     dlist_reference_source = "ensembl_grch37_release93",
     w = 30,
-    max_ambiguous_mcrs = None,
-    max_ambiguous_reference = None,
+    k = 31,
+    max_ambiguous_mcrs = 0,
+    max_ambiguous_reference = 0,
     strandedness = False,
     near_splice_junction_threshold = 10,
     threads = 2,
@@ -186,7 +190,7 @@ def info(
     mcrs_fasta = None,
     mutations_updated_csv = None,
     id_to_header_csv = None,  # if none then assume no swapping occurred
-    reference_out_dir = None,
+    reference_out = None,
     mutations_updated_vk_info_csv_out = None,
     mutations_updated_exploded_vk_info_csv_out = None,
     dlist_genome_fasta_out = None,
@@ -213,7 +217,7 @@ def info(
     - mutation_genome_column             (str) Name of the column containing the genome mutations. Default: 'mutation_genome'.
     - gtf                                (str) Path to the GTF file containing the gene annotations for the genome sequences. Default: None.
     - out                   (str) Path to the directory where the output files will be saved. Default: '.'.
-    - reference_out_dir                  (str) Path to the directory where the reference files will be saved. Default: '.'.
+    - reference_out                  (str) Path to the directory where the reference files will be saved. Default: '.'.
     - dlist_reference_source             (str) Source of the reference sequences for the d-list. Currently supported: ensembl_grchNUMBER_releaseNUMBER or t2t. Default: 'ensembl_grch37_release93'.
     - w                                  (int) Length of the flanking regions to be optimized. Default: 30.
     - max_ambiguous                      (int) Maximum number of 'N' characters allowed in the matching d-list entry. Default: None (no 'N' filter will be applied)
@@ -226,25 +230,32 @@ def info(
     - save_exploded_df                   (bool) Whether to save the exploded dataframe. Default: False.
     - verbose                            (bool) Whether to print verbose output. Default: False.
 
-    Part of kwargs:
+    # Hidden arguments (part of kwargs):
     - bowtie_path                        (str) Path to the directory containing the bowtie2 and bowtie2-build executables. Default: None.
+    - seq_id_cdna_column
+    - mutation_cdna_column
+    - seq_id_genome_column
+    - mutation_genome_column
     """
 
     # CELL
-    # enforce type-checking
+    #* 1. Start timer
+    start_time = time.perf_counter()
+    
+    #* 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
     validate_input_info(**params_dict)
 
+    #* 3. Dry-run
     if dry_run:
         print_varseek_dry_run(params_dict, function_name="info")
         return None
     
+    #* 4. Save params to config file
     config_file = os.path.join(out, "config", "vk_info_config.json")
     save_params_to_config_file(config_file)
     
-    columns_to_explode = ["header", "order"]
-    columns_not_successfully_added = []
-
+    #* 5. Set up default folder/file input paths, and make sure the necessary ones exist
     if not mcrs_fasta:
         mcrs_fasta = os.path.join(input_dir, "mcrs.fa")
     if not os.path.isfile(mcrs_fasta):
@@ -262,11 +273,12 @@ def info(
         logger.warning(f"File not found: {id_to_header_csv}")
         id_to_header_csv = None
 
-    if not reference_out_dir:
-        reference_out_dir = os.path.join(out, "reference")
+    #* 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
+    if not reference_out:
+        reference_out = os.path.join(out, "reference")
 
     os.makedirs(out, exist_ok=True)
-    os.makedirs(reference_out_dir, exist_ok=True)
+    os.makedirs(reference_out, exist_ok=True)
 
     if not mutations_updated_vk_info_csv_out:
         mutations_updated_vk_info_csv_out = os.path.join(out, "mutation_metadata_df_updated_vk_info.csv")
@@ -287,7 +299,11 @@ def info(
         if os.path.dirname(output_file):
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
+    #* 7. Define kwargs defaults
 
+    #* 8. Start the actual function
+    columns_to_explode = ["header", "order"]
+    columns_not_successfully_added = []
     bowtie_path = kwargs.get("bowtie_path", None)
 
     # --np (N penalty) caps number of Ns in read (MCRS), reference (human reference genome/transcriptome), or both
@@ -303,7 +319,8 @@ def info(
     else:
         N_penalty = 0
 
-    k = w + 1
+    if not k:
+        k = w + 1
 
     output_stat_folder = f"{out}/stats"
     output_plot_folder = f"{out}/plots"
@@ -403,11 +420,7 @@ def info(
                 mutation_metadata_df[column] = mutation_metadata_df[column].apply(lambda x: (safe_literal_eval(x) if isinstance(x, str) and x.startswith("[") and x.endswith("]") else x))
 
         columns_to_explode.extend(
-            [
-                col
-                for col in mutation_metadata_df.columns
-                if col
-                not in [
+            [col for col in mutation_metadata_df.columns if col not in [
                     mcrs_id_column,
                     "mcrs_header",
                     "mcrs_sequence",
@@ -521,20 +534,27 @@ def info(
 
     # CELL
     if not columns_to_include or "cdna_and_genome_same" in columns_to_include:
-        try:
-            logger.info("Comparing cDNA and genome")
-            mutation_metadata_df_exploded, columns_to_explode = compare_cdna_and_genome(
-                mutation_metadata_df_exploded,
-                reference_cdna_fasta=reference_cdna_fasta,
-                reference_genome_fasta=reference_genome_fasta,
-                mutations_csv=mutations_csv,
-                w=w,
-                mcrs_source=mcrs_source,
-                columns_to_explode=columns_to_explode,
-            )
-        except Exception as e:
-            logger.error(f"Error comparing cDNA and genome: {e}")
-            columns_not_successfully_added.append("cdna_and_genome_same")
+        if "cdna_and_genome_same" in mutation_metadata_df_exploded.columns:  #! "cdna_and_genome_same" corresponds to column name in vk build
+            columns_to_explode.append("cdna_and_genome_same")
+        else:
+            try:
+                logger.info("Comparing cDNA and genome")
+                mutation_metadata_df_exploded, columns_to_explode = compare_cdna_and_genome(
+                    mutation_metadata_df_exploded,
+                    reference_cdna_fasta=reference_cdna_fasta,
+                    reference_genome_fasta=reference_genome_fasta,
+                    mutations_csv=mutations_csv,
+                    w=w,
+                    mcrs_source=mcrs_source,
+                    columns_to_explode=columns_to_explode,
+                    seq_id_column_cdna=seq_id_cdna_column,
+                    mutation_cdna_column=mutation_cdna_column,
+                    seq_id_column_genome=seq_id_genome_column,
+                    mutation_genome_column=mutation_genome_column,
+                )
+            except Exception as e:
+                logger.error(f"Error comparing cDNA and genome: {e}")
+                columns_not_successfully_added.append("cdna_and_genome_same")
 
     # CELL
 
@@ -632,9 +652,9 @@ def info(
         bowtie2 = "bowtie2"
 
     if "ensembl" in dlist_reference_source:
-        reference_out_dir_sequences_dlist = f"{reference_out_dir}/{dlist_reference_source}"
+        reference_out_dir_sequences_dlist = f"{reference_out}/{dlist_reference_source}"
     elif dlist_reference_source == "t2t":
-        reference_out_dir_sequences_dlist = f"{reference_out_dir}/T2T/GCF_009914755.1"
+        reference_out_dir_sequences_dlist = f"{reference_out}/T2T/GCF_009914755.1"
     os.makedirs(reference_out_dir_sequences_dlist, exist_ok=True)
 
     # TODO: have more columns_to_include options that allows me to do cdna alone, genome alone, or both combined - currently it is either cdna+genome or nothing
@@ -902,3 +922,6 @@ def info(
         logger.info(f"Columns: {mutation_metadata_df.columns}")
         logger.info(f"Columns successfully added: {set(mutation_metadata_df.columns.tolist()) - set(columns_original)}")
         logger.info(f"Columns not successfully added: {columns_not_successfully_added}")
+
+    # Report time
+    report_time_elapsed(start_time)

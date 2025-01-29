@@ -43,7 +43,6 @@ def sim(
     max_errors=float("inf"),
     with_replacement=False,
     sequences=None,
-    mutation_metadata_df_path=None,
     reference_out_dir=".",
     out_dir_vk_build=".",
     seq_id_column="seq_ID",
@@ -113,10 +112,10 @@ def sim(
         number_of_reads_per_sample_w = number_of_reads_per_sample
         number_of_reads_per_sample_m = 0
 
-    if type(mutation_metadata_df) == str and os.path.exists(mutation_metadata_df):
+    if isinstance(mutation_metadata_df, str) and os.path.exists(mutation_metadata_df):
         mutation_metadata_df = pd.read_csv(mutation_metadata_df)
 
-    if (type(mutation_metadata_df) == str and not os.path.exists(mutation_metadata_df)) or "mutant_sequence_read_parent" not in mutation_metadata_df.columns or "wt_sequence_read_parent" not in mutation_metadata_df.columns:  # TODO: debug when a subset of columns is already in df
+    if (isinstance(mutation_metadata_df, str) and not os.path.exists(mutation_metadata_df)) or "mutant_sequence_read_parent" not in mutation_metadata_df.columns or "wt_sequence_read_parent" not in mutation_metadata_df.columns:  # TODO: debug when a subset of columns is already in df
         print("cannot find mutant sequence read parent")
         update_df_out = f"{out_dir_vk_build}/sim_data_df.csv"
 
@@ -131,7 +130,7 @@ def sim(
             if not os.path.exists(update_df_out_cdna):
                 varseek.build(
                     sequences=sequences_cdna,
-                    mutations=mutation_metadata_df_path,
+                    mutations=mutation_metadata_df,
                     out=out_dir_vk_build,
                     reference_out_dir=reference_out_dir,
                     w=read_w,
@@ -154,7 +153,7 @@ def sim(
             if not os.path.exists(update_df_out_genome):
                 varseek.build(
                     sequences=sequences_genome,
-                    mutations=mutation_metadata_df_path,
+                    mutations=mutation_metadata_df,
                     out=out_dir_vk_build,
                     reference_out_dir=reference_out_dir,
                     w=read_w,
@@ -190,7 +189,7 @@ def sim(
                 print("running varseek build")
                 varseek.build(
                     sequences=sequences,
-                    mutations=mutation_metadata_df_path,
+                    mutations=mutation_metadata_df,
                     out=out_dir_vk_build,
                     reference_out_dir=reference_out_dir,
                     w=read_w,
@@ -587,7 +586,7 @@ def sim(
             parent_file.write(file_content_new)
 
     if read_df_parent is not None:
-        if type(read_df_parent) == str:
+        if isinstance(read_df_parent, str):
             read_df_parent = pd.read_csv(read_df_parent)
         read_df = pd.concat([read_df_parent, read_df], ignore_index=True)
 

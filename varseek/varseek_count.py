@@ -1,6 +1,10 @@
 import os
 import subprocess
 import varseek as vk
+import time
+from varseek.utils import set_up_logger
+
+logger = set_up_logger()
 
 varseek_count_unallowable_arguments = {
     "varseek_fastqpp": set(),
@@ -9,11 +13,41 @@ varseek_count_unallowable_arguments = {
     "varseek_summarize": set(),
 }
 
+#* currently tailored to 10x file naming format
+def custom_sort(filepath):
+    # Define order for file types
+    file_type_order = {'R1': 0, 'R2': 1, 'I1': 2, 'I2': 3}
+
+    # Split the filepath into parts by '/'
+    path_parts = filepath.split("/")
+    
+    # Extract the parent folder (2nd to last part)
+    parent_folder = path_parts[-2]
+
+    # Extract the filename (last part of the path)
+    filename = path_parts[-1]
+
+    # Split filename by '_' to extract file type and lane information
+    parts = filename.split("_")
+
+    # Extract lane number; assuming lane info is of the format 'L00X'
+    lane = int(parts[-3][1:4])  # e.g., extracts '001' from 'L001'
+
+    # Get the order value for the file type, e.g., 'R1'
+    file_type = parts[-2].split(".")[0]  # e.g., extracts 'R1' from 'R1_001.fastq.gz'
+
+    # Return a tuple to sort by:
+    # 1. Alphabetically by parent folder
+    # 2. Numerically by lane
+    # 3. Order of file type (R1, R2)
+    return (parent_folder, lane, file_type_order.get(file_type, 999))
+
 
 def count(
-    rnaseq_fastq_files,
+    *rnaseq_fastq_files,
     mutation_index,
     t2g_vk,
+    technology,
     k=31,
     threads=2,
     trim_edges_off_reads=True,
@@ -87,6 +121,8 @@ def count(
     - out_dir_base           (str)  Output directory
     """
 
+    start_overall = time.perf_counter()
+
     # mutation_index = f"{out_dir_notebook}/mutation_reference.idx"
     # t2g_vk = os.path.join(out_dir_notebook, "t2g_filtered.txt")
 
@@ -103,8 +139,31 @@ def count(
     os.makedirs(vk_summarize_output_dir, exist_ok=True)
     os.makedirs(fastqc_out_dir, exist_ok=True)
 
-    if type(rnaseq_fastq_files) is str:
-        rnaseq_fastq_files = [rnaseq_fastq_files]
+    valid_fastq_endings = [".fastq", ".fq", ".fastq.gz", ".fq.gz"]
+    if isinstance(rnaseq_fastq_files, tuple):
+        rnaseq_fastq_files = list(rnaseq_fastq_files)
+    if isinstance(rnaseq_fastq_files, str):
+        if os.path.isdir(rnaseq_fastq_files):
+            # list all files in a list
+            rnaseq_fastq_files = [
+                os.path.join(rnaseq_fastq_files, f)
+                for f in os.listdir(rnaseq_fastq_files)
+                if f.endswith(ext for ext in valid_fastq_endings)
+            ]
+        elif os.path.isfile(rnaseq_fastq_files) and rnaseq_fastq_files.endswith(ext for ext in valid_fastq_endings):
+            rnaseq_fastq_files = [rnaseq_fastq_files]
+        else:
+            raise ValueError("rnaseq_fastq_files must be a directory storing fastq files, a single fastq file, or a list of fastq files")
+        
+    # remove the I1 and I2 files if not 10xv1
+    if technology != "10xv1":
+        rnaseq_fastq_files = [
+            f for f in rnaseq_fastq_files
+            if not any(x in os.path.basename(f) for x in ['I1', 'I2'])
+        ]
+
+    # sort by R1, R2, I1, I2
+    rnaseq_fastq_files = sorted(rnaseq_fastq_files, key=custom_sort)
 
     adata_path = f"{kb_count_out}/counts_unfiltered/adata.h5ad"
     adata_path_normal_genome = f"{kb_count_out_standard_index}/counts_unfiltered/adata.h5ad"
@@ -259,5 +318,10 @@ def count(
     vk_count_output_dict["adata_path_clean"] = adata_path_clean
     vk_count_output_dict["adata_path_normal_genome_clean"] = adata_normal_genome_output_path
     vk_count_output_dict["vk_summarize_output_dir"] = vk_summarize_output_dir
+
+    # Report time
+    elapsed = time.perf_counter() - start_overall
+    message = f"Total runtime for vk count\n: {int(elapsed // 60)}m, {elapsed % 60:.2f}s"
+    logger.info(message)
 
     return vk_count_output_dict
