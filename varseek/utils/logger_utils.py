@@ -273,6 +273,8 @@ def download_varseek_files(urls_dict, out="."):
 
     return filetype_to_filename_dict
 
+def is_program_installed(program):
+    return os.system(f"which {program}") == 0 or os.path.exists(program)
 
 def report_time_and_memory_of_script(script_path, argparse_flags=None, output_file=None):
     # Run the command and capture stderr, where `/usr/bin/time -l` outputs its results

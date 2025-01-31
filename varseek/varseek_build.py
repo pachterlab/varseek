@@ -425,8 +425,8 @@ def build(
     translate = False,
     translate_start = None,
     translate_end = None,
-    overwrite = False,
     dry_run = False,
+    overwrite = False,
     verbose = True,
     **kwargs,
 ):
@@ -540,8 +540,8 @@ def build(
                                          Only valid if translate=True. Default: None (translate from to the end of the sequence)
 
     # General arguments:
-    - overwrite                          (True/False) Whether to overwrite existing output files. Will return if any output file already exists. Default: False.
     - dry_run                            (True/False) Whether to simulate the function call without executing it. Default: False.
+    - overwrite                          (True/False) Whether to overwrite existing output files. Will return if any output file already exists. Default: False.
     - verbose                            (True/False) Whether to print progress information. Default: True
     
     # # Hidden arguments (part of kwargs) - for niche use cases, specific databases, or debugging:

@@ -155,7 +155,8 @@ def fasta_to_fastq(
     add_noise=False,
     average_quality_for_noisy_reads=30,
     sd_quality_for_noisy_reads=5,
-    seed=None
+    seed=None,
+    gzip_output=False
 ):
     """
     Convert a FASTA file to a FASTQ file with a default quality score
@@ -166,7 +167,9 @@ def fasta_to_fastq(
     """
     if seed:
         random.seed(seed)
-    with open(fastq_file, "w") as fastq:
+    open_func = gzip.open if gzip_output else open
+    mode = "wt" if gzip_output else "w"
+    with open_func(fastq_file, mode) as fastq:
         for sequence_id, sequence in read_fasta(fasta_file):
             if k is None or k >= len(sequence):
                 if add_noise:
@@ -1890,8 +1893,9 @@ def compute_distance_to_closest_splice_junction(
         mutation_metadata_df_exploded.iterrows(),
         total=len(mutation_metadata_df_exploded),
     ):
+        # TODO: stop hard-coding column names
         if (
-            pd.isna(row["chromosome"])
+            pd.isna(row["chromosome"])  
             or pd.isna(row["start_mutation_position_genome"])
             or pd.isna(row["end_mutation_position_genome"])
         ):
@@ -4007,7 +4011,6 @@ def get_mcrss_that_pseudoalign_but_arent_dlisted(
     human_reference_gtf,
     out_dir_notebook=".",
     ref_folder_kb=None,
-    dlist_reference_source="",
     header_column_name="mcrs_id",
     additional_kb_extract_filtering_workflow="nac",
     k=31,
@@ -4019,7 +4022,7 @@ def get_mcrss_that_pseudoalign_but_arent_dlisted(
         ref_folder_kb = out_dir_notebook
     mcrs_fa_filtered_bowtie = mcrs_fa.replace(".fa", "_filtered_bowtie.fa")
     mcrs_fQ_filtered_bowtie = mcrs_fa_filtered_bowtie.replace(".fa", ".fq")
-    kb_ref_wt = f"{ref_folder_kb}/{dlist_reference_source}_reference"
+    kb_ref_wt = f"{ref_folder_kb}/reference"
     os.makedirs(kb_ref_wt, exist_ok=True)
     kb_human_reference_index_file = f"{kb_ref_wt}/index.idx"
     kb_human_reference_t2g_file = f"{kb_ref_wt}/t2g.txt"
@@ -4740,7 +4743,7 @@ def align_to_normal_genome_and_build_dlist(
     mutations,
     mcrs_id_column,
     out_dir_notebook,
-    dlist_reference_source,
+    reference_out,
     ref_prefix,
     strandedness,
     threads,
@@ -4752,7 +4755,8 @@ def align_to_normal_genome_and_build_dlist(
     mutation_metadata_df,
     bowtie2_build,
     bowtie2,
-    reference_out_dir_sequences_dlist,
+    dlist_reference_genome_fasta,
+    dlist_reference_cdna_fasta,
     dlist_fasta_file_genome_full=None,
     dlist_fasta_file_cdna_full=None,
     dlist_fasta_file=None,
@@ -4760,61 +4764,8 @@ def align_to_normal_genome_and_build_dlist(
 ):
     bowtie_stat_file = f"{output_stat_folder}/bowtie_alignment.txt"
 
-    if "ensembl" in dlist_reference_source:
-        match = re.search(
-            r"grch(\d+)_release(\d+)", dlist_reference_source, re.IGNORECASE
-        )
-        ensembl_grch = match.group(1)
-        ensembl_release = match.group(2)
-        if ensembl_grch == "37":
-            ensembl_grch_gget = "human_grch37"
-        else:
-            ensembl_grch_gget = ensembl_grch
-        if ensembl_grch == "37" and ensembl_release == "93":
-            ensembl_release_gtf = "87"
-        else:
-            ensembl_release_gtf = ensembl_release
-
-        # TODO: add each of these as arguments
-        ref_dlist_fa_genome = f"{reference_out_dir_sequences_dlist}/Homo_sapiens.GRCh{ensembl_grch}.dna.primary_assembly.fa"
-        ref_dlist_fa_cdna = f"{reference_out_dir_sequences_dlist}/Homo_sapiens.GRCh{ensembl_grch}.cdna.all.fa"
-        ref_dlist_gtf = f"{reference_out_dir_sequences_dlist}/Homo_sapiens.GRCh{ensembl_grch}.{ensembl_release_gtf}.gtf"
-
-        files_to_download_list = []
-        file_dict = {
-            "dna": ref_dlist_fa_genome,
-            "cdna": ref_dlist_fa_cdna,
-            "gtf": ref_dlist_gtf,
-        }
-        for file in file_dict:
-            if not os.path.exists(file_dict[file]):
-                files_to_download_list.append(file)
-        if files_to_download_list:
-            files_to_download = ",".join(files_to_download_list)
-            gget_ref_command_dlist = [
-                "gget",
-                "ref",
-                "-w",
-                files_to_download,
-                "-r",
-                ensembl_release,
-                "--out_dir",
-                reference_out_dir_sequences_dlist,
-                "-d",
-                ensembl_grch_gget,
-            ]
-            subprocess.run(gget_ref_command_dlist, check=True)
-            for file in files_to_download_list:
-                subprocess.run(["gunzip", f"{file_dict[file]}.gz"])
-
-    elif dlist_reference_source == "t2t":
-        # TODO: check if these files already exist in reference_out_dir, and if so, skip downloading
-        ref_dlist_fa_genome, ref_dlist_fa_cdna, ref_dlist_gtf = (
-            download_t2t_reference_files(reference_out_dir_sequences_dlist)
-        )
-
     ref_folder_genome_bowtie = (
-        f"{reference_out_dir_sequences_dlist}/bowtie_index_genome"
+        f"{reference_out}/bowtie_index_genome"
     )
     ref_prefix_genome_full = f"{ref_folder_genome_bowtie}/{ref_prefix}"
     output_sam_file_genome = (
@@ -4825,7 +4776,7 @@ def align_to_normal_genome_and_build_dlist(
         ref_folder_genome_bowtie
     ):
         run_bowtie_build_dlist(
-            ref_fa=ref_dlist_fa_genome,
+            ref_fa=dlist_reference_genome_fasta,
             ref_folder=ref_folder_genome_bowtie,
             ref_prefix=ref_prefix_genome_full,
             bowtie2_build=bowtie2_build,
@@ -4856,7 +4807,7 @@ def align_to_normal_genome_and_build_dlist(
     if not os.path.exists(dlist_fasta_file_genome_full):
         parse_sam_and_extract_sequences(
             output_sam_file_genome,
-            ref_dlist_fa_genome,
+            dlist_reference_genome_fasta,
             dlist_fasta_file_genome_full,
             k=k,
             capitalize=True,
@@ -4884,7 +4835,7 @@ def align_to_normal_genome_and_build_dlist(
     if max_ambiguous_reference < 9999:  #! be careful of changing this number - it is related to the condition in varseek info - max_ambiguous_reference = 99999
         remove_Ns_fasta(dlist_fasta_file_genome_full, max_ambiguous_reference=max_ambiguous_reference)
 
-    ref_folder_cdna_bowtie = f"{reference_out_dir_sequences_dlist}/bowtie_index_cdna"
+    ref_folder_cdna_bowtie = f"{reference_out}/bowtie_index_cdna"
     ref_prefix_cdna_full = f"{ref_folder_cdna_bowtie}/{ref_prefix}"
     output_sam_file_cdna = f"{out_dir_notebook}/bowtie_mcrs_kmers_to_cdna/alignment.sam"
 
@@ -4892,7 +4843,7 @@ def align_to_normal_genome_and_build_dlist(
         ref_folder_cdna_bowtie
     ):
         run_bowtie_build_dlist(
-            ref_fa=ref_dlist_fa_cdna,
+            ref_fa=dlist_reference_cdna_fasta,
             ref_folder=ref_folder_cdna_bowtie,
             ref_prefix=ref_prefix_cdna_full,
             bowtie2_build=bowtie2_build,
@@ -4923,7 +4874,7 @@ def align_to_normal_genome_and_build_dlist(
     if not os.path.exists(dlist_fasta_file_cdna_full):
         parse_sam_and_extract_sequences(
             output_sam_file_cdna,
-            ref_dlist_fa_cdna,
+            dlist_reference_cdna_fasta,
             dlist_fasta_file_cdna_full,
             k=k,
             capitalize=True,
@@ -5132,12 +5083,7 @@ def align_to_normal_genome_and_build_dlist(
     sequence_names_set_union_genome_and_cdna = (
         sequence_names_set_genome | sequence_names_set_cdna
     )
-    return (
-        mutation_metadata_df,
-        ref_dlist_fa_genome,
-        ref_dlist_gtf,
-        sequence_names_set_union_genome_and_cdna,
-    )
+    return (mutation_metadata_df, sequence_names_set_union_genome_and_cdna)
 
 
 def download_t2t_reference_files(reference_out_dir_sequences_dlist):
@@ -5146,6 +5092,9 @@ def download_t2t_reference_files(reference_out_dir_sequences_dlist):
     )
     ref_dlist_fa_cdna = f"{reference_out_dir_sequences_dlist}/rna.fna"
     ref_dlist_gtf = f"{reference_out_dir_sequences_dlist}/genomic.gtf"
+
+    if os.path.exists(ref_dlist_fa_genome) and os.path.exists(ref_dlist_fa_cdna) and os.path.exists(ref_dlist_gtf):
+        return ref_dlist_fa_genome, ref_dlist_fa_cdna, ref_dlist_gtf
 
     # Step 1: Download the ZIP file using wget
     download_url = "https://api.ncbi.nlm.nih.gov/datasets/v2alpha/genome/accession/GCF_009914755.1/download?include_annotation_type=GENOME_FASTA&include_annotation_type=RNA_FASTA&include_annotation_type=GENOME_GTF&hydrated=FULLY_HYDRATED"

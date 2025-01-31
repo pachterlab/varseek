@@ -5,13 +5,13 @@ import subprocess
 import pandas as pd
 import numpy as np
 import varseek as vk
-from varseek.utils import report_time_and_memory_of_script, run_command_with_error_logging
+from varseek.utils import report_time_and_memory_of_script, run_command_with_error_logging, is_program_installed
 all_supported_tools_to_benchmark = {"varseek", "gatk_haplotypecaller", "gatk_mutect2", "strelka2", "varscan"}
+tools_that_require_star_alignment = {"gatk_haplotypecaller", "gatk_mutect2", "strelka2", "varscan"}
 
 ### ARGUMENTS ###
 number_of_reads_list = [1, 4, 16, 64, 256, 1024]  # number of reads, in millions
-tools_to_benchmark = ["varseek", "gatk_haplotypecaller", "gatk_mutect2", "strelka2", "varscan"]
-run_alternative_variant_calling = True
+tools_to_benchmark = {"varseek", "gatk_haplotypecaller", "gatk_mutect2", "strelka2", "varscan"}
 
 read_length = 150
 k = 59
@@ -37,9 +37,10 @@ reference_genome_gtf = "/Users/joeyrich/Documents/Caltech/Pachter/reference/ense
 genomes1000_vcf = "/home/jrich/data/varseek_data/reference/ensembl/grch37_release93/1000GENOMES-phase_3.vcf"
 
 opt_dir = "/home/jrich/opt"
+seqtk = "seqtk"
 STAR = os.path.join(opt_dir, "STAR-2.7.11b/bin/Linux_x86_64/STAR")
 java = "/home/jrich/opt/java/jdk-17.0.12+7/bin/java"
-picard_jar = "/home/jrich/opt/picard/build/libs/picard.jar"
+picard_jar = "/home/jrich/opt/picard.jar"
 gatk = "/home/jrich/opt/gatk-4.6.0.0/gatk"
 STRELKA_INSTALL_PATH = os.path.join(opt_dir, "strelka-2.9.10.centos6_x86_64")
 VARSCAN_INSTALL_PATH = os.path.join(opt_dir, "VarScan.v2.3.9.jar")
@@ -49,9 +50,9 @@ output_dir = "/Users/joeyrich/Desktop/local/varseek/logs"
 reference_out_dir = "/Users/joeyrich/Documents/Caltech/Pachter/reference"
 ### ARGUMENTS ###
 
-# set random seeds
-random.seed(random_seed)
-np.random.seed(random_seed)
+# # set random seeds
+# random.seed(random_seed)
+# np.random.seed(random_seed)
 
 os.makedirs(opt_dir, exist_ok=True)
 
@@ -78,40 +79,39 @@ else:
 for tool in tools_to_benchmark:
     if tool not in all_supported_tools_to_benchmark:
         raise ValueError(f"Tool {tool} is not supported. Supported tools are: {all_supported_tools_to_benchmark}")
-run_alternative_variant_calling = True if tools_to_benchmark != ["varseek"] else False
 
-# make the read parent df
-vk.build(
+
+#* Make synthetic reads corresponding to the largest value in number_of_reads_list - if desired, I can replace this with real data
+cosmic_mutations = pd.read_csv(cosmic_mutations_path)
+number_of_mutations_to_sample = cosmic_mutations // 200
+number_of_reads_max = max(number_of_reads_list) * 10**6  # convert to millions
+fastq_output_path_max_reads = os.path.join(tmp_dir, f"reads_{number_of_reads_max}_fastq.fastq")
+
+print(f"Building synthetic reads for {number_of_reads_max} reads")
+_ = vk.sim(
+    mutation_metadata_df = cosmic_mutations,
+    fastq_output_path = fastq_output_path_max_reads,
+    sample_type="all",
+    number_of_mutations_to_sample=number_of_mutations_to_sample,
+    strand=strand,
+    number_of_reads_per_sample=100,  # 100 mutant, 100 wild-type
+    read_length=read_length,
+    seed=random_seed,
+    add_noise_sequencing_error=add_noise_sequencing_error,
+    add_noise_base_quality=add_noise_base_quality,
+    error_rate=error_rate,
+    error_distribution=error_distribution,
+    max_errors=max_errors,
+    with_replacement=False,
+    gzip_output_fastq=False,
     sequences=reference_cdna_path,
-    mutations=cosmic_mutations_path,
-    out=out_dir_vk_build,
-    reference_out_dir=reference_out_dir,
-    w=read_w,
-    k=k,
-    remove_seqs_with_wt_kmers=False,
-    optimize_flanking_regions=False,
-    required_insertion_overlap_length=None,
-    max_ambiguous=None,
-    merge_identical=False,
-    min_seq_len=read_length,
-    cosmic_email=os.getenv("COSMIC_EMAIL"),
-    cosmic_password=os.getenv("COSMIC_PASSWORD"),
-    save_mutations_updated_csv=True,
-    mutations_updated_csv_out=update_df_out,
-    seq_id_column=seq_id_column,  # uncomment for genome support
+    seq_id_column=seq_id_column,
     mut_column=mut_column,
+    reference_out_dir=reference_out_dir,
+    out_dir_vk_build=out_dir_vk_build,
+    k=k,
+    w=w
 )
-
-mutation_metadata_df = pd.read_csv(update_df_out)
-
-mutation_metadata_df.rename(columns={"mutant_sequence": "mutant_sequence_read_parent", "wt_sequence": "wt_sequence_read_parent"}, inplace=True)
-mutation_metadata_df["mutant_sequence_read_parent_rc"] = mutation_metadata_df["mutant_sequence_read_parent"].apply(vk.varseek_build.reverse_complement)
-mutation_metadata_df["mutant_sequence_read_parent_length"] = mutation_metadata_df["mutant_sequence_read_parent"].str.len()
-
-mutation_metadata_df["wt_sequence_read_parent_rc"] = mutation_metadata_df["wt_sequence_read_parent"].apply(vk.varseek_build.reverse_complement)
-mutation_metadata_df["wt_sequence_read_parent_length"] = mutation_metadata_df["wt_sequence_read_parent"].str.len()
-
-mutation_metadata_df_length = len(mutation_metadata_df)
 
 #* Download varseek index
 if not os.path.exists(vk_ref_index_path) or not os.path.exists(vk_ref_t2g_path):
@@ -121,8 +121,14 @@ if not os.path.exists(vk_ref_index_path) or not os.path.exists(vk_ref_t2g_path):
     print(f"Downloading varseek index to {vk_ref_index_dir}")
     vk.ref(download="cosmic_cmc_cdna", out=vk_ref_index_dir)
 
-#* Download/build alternative variant calling tools
-if run_alternative_variant_calling:
+#* install seqtk if not installed
+if not is_program_installed(seqtk):
+    subprocess.run("git clone https://github.com/lh3/seqtk.git", shell=True, check=True)
+    subprocess.run("cd seqtk && make", shell=True, check=True)
+    seqtk = os.path.join(script_dir, "seqtk/seqtk")
+
+#* Download/build necessary files for alternative variant calling tools
+if any(tool in tools_that_require_star_alignment for tool in tools_to_benchmark):  # check if any tool in tools_to_benchmark requires STAR alignment
     #* Download reference genome information
     reference_genome_fasta_url = "https://ftp.ensembl.org/pub/grch37/release-93/fasta/homo_sapiens/dna/Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz"
     reference_genome_gtf_url = "https://ftp.ensembl.org/pub/grch37/release-93/gtf/homo_sapiens/Homo_sapiens.GRCh37.87.gtf.gz"
@@ -130,15 +136,15 @@ if run_alternative_variant_calling:
 
     os.makedirs(os.path.dirname(reference_genome_fasta), exist_ok=True)
     download_reference_genome_fasta_command = ["wget", "-O", f"{reference_genome_fasta}.gz", reference_genome_fasta_url]
-    unzip_reference_genome_fasta_command = ["gunzip", "-O", f"{reference_genome_fasta}.gz"]
+    unzip_reference_genome_fasta_command = ["gunzip", f"{reference_genome_fasta}.gz"]
 
     os.makedirs(os.path.dirname(reference_genome_gtf), exist_ok=True)
     download_reference_genome_gtf_command = ["wget", "-O", f"{reference_genome_gtf}.gz", reference_genome_gtf_url]
-    unzip_reference_genome_gtf_command = ["gunzip", "-O", f"{reference_genome_gtf}.gz"]
+    unzip_reference_genome_gtf_command = ["gunzip", f"{reference_genome_gtf}.gz"]
 
     os.makedirs(os.path.dirname(genomes1000_vcf), exist_ok=True)
     download_1000_genomes_command = ["wget", "-O", f"{genomes1000_vcf}.gz", genomes1000_vcf_url]
-    unzip_1000_genomes_command = ["gunzip", "-O", f"{genomes1000_vcf}.gz"]
+    unzip_1000_genomes_command = ["gunzip", f"{genomes1000_vcf}.gz"]
 
     if not os.path.exists(reference_genome_fasta):
         run_command_with_error_logging(download_reference_genome_fasta_command)
@@ -188,39 +194,39 @@ if run_alternative_variant_calling:
     if not os.path.exists(f"{genomes1000_vcf}.idx"):
         run_command_with_error_logging(index_feature_file_command)
 
-    if not os.path.exists(STRELKA_INSTALL_PATH):
-        strelka_tarball = f"{STRELKA_INSTALL_PATH}.tar.bz2"
-        subprocess.run(["wget", "-O", strelka_tarball, "https://github.com/Illumina/strelka/releases/download/v2.9.10/strelka-2.9.10.centos6_x86_64.tar.bz2"], check=True)
-        subprocess.run(["tar", "-xvjf", strelka_tarball, "-C", opt_dir], check=True)
+if ("gatk_haplotypecaller" in tools_to_benchmark or "gatk_mutect2" in tools_to_benchmark):
+    if not is_program_installed(java):
+        raise ValueError("Java is required to run GATK. Please install Java and ensure that it is in your PATH.")
+        # below are commands that will install it on x64_linux
+        # wget https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.12%2B7/OpenJDK17U-jdk_x64_linux_hotspot_17.0.12_7.tar.gz
+        # tar -xvf OpenJDK17U-jdk_x64_linux_hotspot_17.0.12_7.tar.gz
+    if not os.path.exists(picard_jar):
+        subprocess.run(["wget", "https://github.com/broadinstitute/picard/releases/download/3.3.0/picard.jar", "-O", picard_jar], check=True)
+    if not os.path.exists(gatk):
+        os.chdir(opt_dir)
+        gatk_dir_name = os.path.join(opt_dir, "gatk-4.6.0.0")
+        subprocess.run(["wget", "https://github.com/broadinstitute/gatk/releases/download/4.6.0.0/gatk-4.6.0.0.zip", "-O", "gatk-4.6.0.0.zip"], check=True)
+        subprocess.run(["unzip", "gatk-4.6.0.0.zip"], check=True)
+        os.environ['PATH'] = f"{gatk_dir_name}:{os.environ['PATH']}"
 
-    if not os.path.exists(VARSCAN_INSTALL_PATH):
-        subprocess.run(["wget", "-O", VARSCAN_INSTALL_PATH, "https://sourceforge.net/projects/varscan/files/VarScan.v2.3.9.jar/download"], check=True)
+
+if "strelka2" in tools_to_benchmark and not os.path.exists(STRELKA_INSTALL_PATH):
+    strelka_tarball = f"{STRELKA_INSTALL_PATH}.tar.bz2"
+    subprocess.run(["wget", "-O", strelka_tarball, "https://github.com/Illumina/strelka/releases/download/v2.9.10/strelka-2.9.10.centos6_x86_64.tar.bz2"], check=True)
+    subprocess.run(["tar", "-xvjf", strelka_tarball, "-C", opt_dir], check=True)
+
+if "varscan" in tools_to_benchmark and not os.path.exists(VARSCAN_INSTALL_PATH):
+    subprocess.run(["wget", "-O", VARSCAN_INSTALL_PATH, "https://sourceforge.net/projects/varscan/files/VarScan.v2.3.9.jar/download"], check=True)
 
 
 #* Run variant calling tools
 for number_of_reads in number_of_reads_list:
-    #* Building synthetic reads
     number_of_reads *= 10**6  # convert to millions
-    number_of_mutations_to_sample = mutation_metadata_df_length // 200
-    fastq_output_path = os.path.join(tmp_dir, f"reads_{number_of_reads}_fastq.fastq")
-
-    print(f"Building synthetic reads for {number_of_reads} reads")
-    _ = vk.sim(
-        mutation_metadata_df = mutation_metadata_df,
-        fastq_output_path = fastq_output_path,
-        sample_type="all",
-        number_of_mutations_to_sample=number_of_mutations_to_sample,
-        strand=strand,
-        number_of_reads_per_sample=100,  # 100 mutant, 100 wild-type
-        read_length=read_length,
-        seed=None,
-        add_noise_sequencing_error=add_noise_sequencing_error,
-        add_noise_base_quality=add_noise_base_quality,
-        error_rate=error_rate,
-        error_distribution=error_distribution,
-        max_errors=max_errors,
-        with_replacement=False,
-    )
+    if number_of_reads != number_of_reads_max:
+        number_of_reads_fraction = number_of_reads / number_of_reads_max
+        fastq_output_path = os.path.join(tmp_dir, f"reads_{number_of_reads}_fastq.fastq")
+        seqtk_sample_command = f"{seqtk} sample -s {random_seed} {fastq_output_path_max_reads} {number_of_reads_fraction} > {fastq_output_path}"
+        subprocess.run(seqtk_sample_command, shell=True, check=True)
 
     #* Variant calling: varseek
     if "varseek" in tools_to_benchmark:

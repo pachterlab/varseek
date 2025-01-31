@@ -56,6 +56,7 @@ def sim(
     seq_id_column_genome=None,  # "chromosome",
     mut_column_genome=None,  # "mutation_genome",
     filters=None,
+    gzip_output_fastq=False,
     verbose=True,
     **kwargs,
 ):
@@ -569,7 +570,7 @@ def sim(
     elif wt_list_of_dicts:
         read_df = pd.DataFrame(wt_list_of_dicts)
 
-    fasta_to_fastq(fasta_output_path_temp, fastq_output_path, add_noise=add_noise_base_quality)
+    fasta_to_fastq(fasta_output_path_temp, fastq_output_path, add_noise=add_noise_base_quality, gzip_output=gzip_output_fastq)
 
     # Read the contents of the files first
     if fastq_parent_path:

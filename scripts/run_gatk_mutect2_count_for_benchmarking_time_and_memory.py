@@ -224,13 +224,13 @@ select_variants_command = [
 # genomes1000_vcf_url = "https://ftp.ensembl.org/pub/grch37/release-93/variation/vcf/homo_sapiens/1000GENOMES-phase_3.vcf.gz"
 
 # download_reference_genome_fasta_command = ["wget", "-O", f"{reference_genome_fasta}.gz", reference_genome_fasta_url]
-# unzip_reference_genome_fasta_command = ["gunzip", "-O", f"{reference_genome_fasta}.gz"]
+# unzip_reference_genome_fasta_command = ["gunzip", f"{reference_genome_fasta}.gz"]
 
 # download_reference_genome_gtf_command = ["wget", "-O", f"{reference_genome_gtf}.gz", reference_genome_gtf_url]
-# unzip_reference_genome_gtf_command = ["gunzip", "-O", f"{reference_genome_gtf}.gz"]
+# unzip_reference_genome_gtf_command = ["gunzip", f"{reference_genome_gtf}.gz"]
 
 # download_1000_genomes_command = ["wget", "-O", f"{genomes1000_vcf}.gz", genomes1000_vcf_url]
-# unzip_1000_genomes_command = ["gunzip", "-O", f"{genomes1000_vcf}.gz"]
+# unzip_1000_genomes_command = ["gunzip", f"{genomes1000_vcf}.gz"]
 
 # if not os.path.exists(reference_genome_fasta):
 #     run_command_with_error_logging(download_reference_genome_fasta_command)
