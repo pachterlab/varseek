@@ -158,13 +158,13 @@ def test_file_processing(cosmic_csv_path, cds_and_cdna_files, genome_and_gtf_fil
     max_ambiguous_vk = 0
     strandedness = False
     fasta_filters = [
-        "dlist_substring-equal=none",  # filter out mutations which are a substring of the reference genome
-        "pseudoaligned_to_human_reference_despite_not_truly_aligning-isnottrue",  # filter out mutations which pseudoaligned to human genome despite not truly aligning
-        "dlist-equal=none",  #*** erase eventually when I want to d-list  # filter out mutations which are capable of being d-listed (given that I filter out the substrings above)
-        "number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference-max=999999",  # filter out mutations which overlap with other MCRSs in the reference
-        "number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference-max=999999",  # filter out mutations which overlap with other MCRSs in the reference
-        "longest_homopolymer_length-max=6",  # filters out MCRSs with repeating single nucleotide - eg 6
-        "triplet_complexity-min=0.2"  # filters out MCRSs with repeating triplets - eg 0.2
+        "dlist_substring:equal=none",  # filter out mutations which are a substring of the reference genome
+        "pseudoaligned_to_human_reference_despite_not_truly_aligning:is_not_true",  # filter out mutations which pseudoaligned to human genome despite not truly aligning
+        "dlist:equal=none",  #*** erase eventually when I want to d-list  # filter out mutations which are capable of being d-listed (given that I filter out the substrings above)
+        "number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference:less_than=999999",  # filter out mutations which overlap with other MCRSs in the reference
+        "number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference:less_than=999999",  # filter out mutations which overlap with other MCRSs in the reference
+        "longest_homopolymer_length:less_or_equal=6",  # filters out MCRSs with repeating single nucleotide - eg 6
+        "triplet_complexity:greater_or_equal=0.2"  # filters out MCRSs with repeating triplets - eg 0.2
     ]
 
     
@@ -219,9 +219,7 @@ def test_file_processing(cosmic_csv_path, cds_and_cdna_files, genome_and_gtf_fil
         compare_two_dataframes_without_regard_for_order_of_rows_or_columns(update_df_out, update_df_out_ground_truth)
 
         vk.info(
-            mutations = vk_build_mcrs_fa_path,
-            updated_df=update_df_out,
-            id_to_header_csv=id_to_header_csv,  # if none then assume no swapping occurred
+            input_dir=out_dir_notebook,
             columns_to_include="all",
             mcrs_id_column="mcrs_id",
             mcrs_sequence_column="mutant_sequence",
@@ -232,13 +230,12 @@ def test_file_processing(cosmic_csv_path, cds_and_cdna_files, genome_and_gtf_fil
             mutation_genome_column="mutation_genome",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome
             gtf=gtf_path,  # for distance to nearest splice junction
             mutation_metadata_df_out_path=None,
-            out_dir_notebook=out_dir_notebook,
-            reference_out_dir=reference_folder_parent,
-            dlist_reference_source="ensembl_grch37_release93",
-            ref_prefix="index",
+            out=out_dir_notebook,
+            reference_out=reference_folder_parent,
             w=w,
-            remove_Ns=True,
-            strandedness=strandedness,
+            vcrs_strandedness=strandedness,
+            max_ambiguous_mcrs=max_ambiguous_vk,
+            max_ambiguous_reference=max_ambiguous_vk,
             bowtie_path=bowtie_path,
             near_splice_junction_threshold=10,
             threads=8,
@@ -278,17 +275,18 @@ def test_file_processing(cosmic_csv_path, cds_and_cdna_files, genome_and_gtf_fil
         compare_two_dataframes_without_regard_for_order_of_rows_or_columns(mutation_metadata_df_out_exploded_path, mutation_metadata_df_out_exploded_path_ground_truth, columns_to_drop = columns_to_drop_info_filter)
 
 
-        vk.filter(mutation_metadata_df_path = mutation_metadata_df_out_path,
-            output_mcrs_fasta=mcrs_fasta_vk_filter,
-            output_metadata_df=output_metadata_df_vk_filter,
+        vk.filter(
+            input_dir=out_dir_notebook,
+            filters = fasta_filters,
+            mutations_updated_vk_info_csv = mutation_metadata_df_out_path,
+            mcrs_filtered_fasta_out=mcrs_fasta_vk_filter,
+            mutations_updated_filtered_csv_out=output_metadata_df_vk_filter,
             dlist_fasta=dlist_fasta,
-            output_dlist_fasta=dlist_fasta_vk_filter,
+            dlist_filtered_fasta_out=dlist_fasta_vk_filter,
             output_t2g=t2g_vk_filter,
             id_to_header_csv=id_to_header_csv,
-            output_id_to_header_csv=id_to_header_csv_vk_filter,
+            id_to_header_filtered_csv_out=id_to_header_csv_vk_filter,
             verbose=True,
-            return_df=False,
-            filters = fasta_filters
         )
 
         if make_new_gt:

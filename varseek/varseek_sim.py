@@ -245,7 +245,7 @@ def sim(
             suffixes=("", "_read_parent"),
         )
 
-    filters.extend(["mutant_sequence_read_parent-isnotnull", "wt_sequence_read_parent-isnotnull"])
+    filters.extend(["mutant_sequence_read_parent:is_not_null", "wt_sequence_read_parent:is_not_null"])
     filters = list(set(filters))
 
     # TODO: stop hard-coding this
@@ -256,10 +256,11 @@ def sim(
 
     if filters:
         filtered_df = varseek.filter(
-            mutation_metadata_df,
+            input_dir=".",
+            mutations_updated_vk_info_csv=mutation_metadata_df,
             filters=filters,
-            return_df=True,
-            output_mcrs_fasta=None,
+            return_mutations_updated_filtered_csv_df=True,
+            save_mcrs_filtered_fasta_and_t2g=False,
         )  # filter to include only rows not already in mutation and whatever condition I would like
     else:
         filtered_df = mutation_metadata_df

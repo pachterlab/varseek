@@ -10,6 +10,7 @@ parser.add_argument("--synthetic_read_fastq", help="Path to synthetic read FASTQ
 parser.add_argument("--reference_genome_fasta", help="Path to reference genome fasta")
 parser.add_argument("--reference_genome_gtf", help="Path to reference genome GTF")
 parser.add_argument("--star_genome_dir", default="", help="Path to star_genome_dir")
+parser.add_argument("--aligned_and_unmapped_bam", default="", help="Path to aligned_and_unmapped_bam. If not provided, will be created")
 parser.add_argument("--tmp", default="tmp", help="Path to temp folder")
 
 # Parameters
@@ -29,17 +30,16 @@ reference_genome_gtf = args.reference_genome_gtf
 threads = args.threads
 read_length_minus_one = args.read_length - 1
 synthetic_read_fastq = args.synthetic_read_fastq
+aligned_and_unmapped_bam = args.aligned_and_unmapped_bam
 
 STAR = args.STAR
 STRELKA_INSTALL_PATH = args.STRELKA_INSTALL_PATH
 
-alignment_folder = f"{strelka2_output_dir}/alignment"
 os.makedirs(strelka2_output_dir, exist_ok=True)
 os.makedirs(star_genome_dir, exist_ok=True)
-os.makedirs(alignment_folder, exist_ok=True)
 
+alignment_folder = f"{strelka2_output_dir}/alignment"
 out_file_name_prefix = f"{alignment_folder}/sample_"
-aligned_and_unmapped_bam = f"{out_file_name_prefix}Aligned.sortedByCoord.out.bam"
 
 #* Genome alignment with STAR
 star_build_command = [
@@ -89,7 +89,13 @@ strelka2_run_command = [
 #     _ = pysam.faidx(reference_genome_fasta)
 
 if not os.path.exists(aligned_and_unmapped_bam):
+    aligned_and_unmapped_bam = f"{out_file_name_prefix}Aligned.sortedByCoord.out.bam"
+    os.makedirs(alignment_folder, exist_ok=True)
     run_command_with_error_logging(star_align_command)
+
+bam_index_file = f"{aligned_and_unmapped_bam}.bai"
+if not os.path.exists(bam_index_file):
+    _ = pysam.index(aligned_and_unmapped_bam)
 
 run_command_with_error_logging(strelka2_configure_command)
 

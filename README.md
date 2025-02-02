@@ -105,7 +105,42 @@ vk.sim(...)
 ```
 
 
+# Quick start guide
+1. Acquire a reference - follow one of the below options:
+a. Download pre-built reference – standard workflow
+View all downloadable references: `vk ref --list_downloadable_references`
+`vk ref --download --mutations MUTATIONS --sequences SEQUENCES`
+
+b. Make custom reference – screen for user-defined variants
+`vk ref --mutations MUTATIONS --sequences SEQUENCES ...`
+
+c. Customize reference building process – customize the VCRS filtering process (e.g., add additional information by which to filter, add custom filtering logic, tune filtering parameters based on the results of intermediate steps, etc.)
+`vk build --mutations MUTATIONS --sequences SEQUENCES ...`
+(optional) `vk info --input_dir INPUT_DIR ...`
+(optional) `vk filter --input_dir INPUT_DIR ...`
+`kb ref --workflow custom --index INDEX ...`
+
+
+2. Screen for variants - follow one of the below options:
+a. Standard workflow
+(optional) fastq quality control
+`vk count --index INDEX --t2g T2G ... --fastqs FASTQ1 FASTQ2...`
+
+b. Customize variant screening process - additional fastq preprocessing, custom count matrix processing
+(optional) fastq quality control
+(optional) `vk fastqpp ... --fastqs FASTQ1 FASTQ2...`
+`kb count --index INDEX --t2g T2G ... --fastqs FASTQ1 FASTQ2...`
+(optional) `vk clean --adata ADATA ...`
+(optional) `vk summarize --adata ADATA ...`
+
+
+3. Analyze results
+a. View results of vk summarize (txt, vcf, Anndata - in OUT from vk count)
+b. Jupyter - see varseek/notebooks for examples to get started, and XXXXX for figures from our first preprint
 
 
 
 
+FAQs:
+- Q: I want to add a custom filter to my VCRS index. How can I do this?
+- A: First run vk build with the desired parameters to generate the vcrs.fa file. Optionally run this file through vk info and vk filter if any filtering performed by these steps is desired. Then, write any necessary logic to filter undesired entries out of the VCRS reference file. Generate a new file with vk.utils.create_mutant_t2g. Then pass the filtered vcrs fasta file into kb ref with --workflow custom.

@@ -11,26 +11,20 @@ from datetime import datetime
 from .__init__ import __version__
 from .varseek_build import build, print_valid_values_for_mutations_and_sequences_in_varseek_build
 from .varseek_summarize import summarize
-from .varseek_filter import filter
+from .varseek_filter import filter, prepare_filters_list
 from .varseek_clean import clean
 from .varseek_info import info
 from .varseek_sim import sim
 from .varseek_fastqpp import fastqpp
 from .varseek_ref import ref
 from .varseek_count import count
-from .utils import set_up_logger, prepare_filters_json, prepare_filters_list, load_params
+from .utils import set_up_logger, load_params
 
 # Get current date and time for alphafold default foldername
 dt_string = datetime.now().strftime("%Y_%m_%d-%H_%M")
 
 logger = set_up_logger(logging_level_name=None, save_logs=False, log_dir="logs")
 
-
-def process_filters(filters):
-    if len(filters) == 1 and os.path.isfile(filters[0]) and filters[0].endswith(".json"):
-        return prepare_filters_json(filters[0])
-    else:
-        return prepare_filters_list(filters)
 
 
 def extract_help_from_doc(module, arg_name, disable=False):
@@ -170,18 +164,15 @@ def int_or_float(value):
 def is_int_or_float_or_inf(value):
     return int_or_float(value) or (isinstance(value, float) and math.isinf(value))
 
-
+valid_df_file_extensions = [".csv", ".tsv", ".xls", ".xlsx", ".parquet", ".h5"]
 def strpath_or_df(value):
-    # List of valid file extensions
-    valid_file_extensions = [".csv", ".tsv", ".xls", ".xlsx", ".parquet", ".h5"]
-
     # Check if the input is a pandas DataFrame
     if isinstance(value, pd.DataFrame):
         return value
 
     # Check if the input is a string (potential file path) and has a valid extension
     if isinstance(value, str) and os.path.isfile(value):
-        if any(value.endswith(extension) for extension in valid_file_extensions):
+        if any(value.endswith(extension) for extension in valid_df_file_extensions):
             return value
         else:
             raise ValueError(f"File has an unsupported extension: {value}")
@@ -191,9 +182,6 @@ def strpath_or_df(value):
 
 
 def strpath_or_strnonpath_or_df(value):
-    # List of valid file extensions
-    valid_file_extensions = [".csv", ".tsv", ".xls", ".xlsx", ".parquet", ".h5"]
-
     # Check if the input is a pandas DataFrame
     if isinstance(value, pd.DataFrame):
         return value
@@ -203,7 +191,7 @@ def strpath_or_strnonpath_or_df(value):
 
     # Check if the input is a string (potential file path) and has a valid extension
     if isinstance(value, str) and os.path.isfile(value):
-        if any(value.endswith(extension) for extension in valid_file_extensions):
+        if any(value.endswith(extension) for extension in valid_df_file_extensions):
             return value
         else:
             raise ValueError(f"File has an unsupported extension: {value}")
@@ -218,11 +206,17 @@ def int_or_str(value):
     except ValueError:
         return value
 
+def strpath_or_list_like_of_strings(value):
+    if isinstance(value, str):
+        return value
+
+    if isinstance(value, list) or isinstance(value, set) or isinstance(value, tuple):
+        for v in value:
+            if not isinstance(v, str):
+                raise ValueError(f"All elements in the list must be strings. Found: {v}")
+        return value
 
 def strpath_or_str_or_list_or_df(value):
-    # List of valid file extensions
-    valid_file_extensions = [".csv", ".tsv", ".xls", ".xlsx", ".parquet", ".h5"]
-
     # Check if the input is a DataFrame
     if isinstance(value, pd.DataFrame):
         return value
@@ -238,7 +232,7 @@ def strpath_or_str_or_list_or_df(value):
 
     # Check if the input is a string that is also a valid file path
     if isinstance(value, str) and os.path.isfile(value):
-        if any(value.endswith(extension) for extension in valid_file_extensions):
+        if any(value.endswith(extension) for extension in valid_df_file_extensions):
             return value
         else:
             raise ValueError(f"File has an unsupported extension: {value}")
@@ -269,14 +263,14 @@ def main():
     build_desc = "Build a mutation-containing reference sequence (MCRS) file."
 
     # prints additional info at the end of the help message for varseek build
-    vk_build_end_help_message = print_valid_values_for_mutations_and_sequences_in_varseek_build(return_message=True)
+    # vk_build_end_help_message = print_valid_values_for_mutations_and_sequences_in_varseek_build(return_message=True)
 
     parser_build = parent_subparsers.add_parser(
         "build",
         parents=[parent],
         description=build_desc,
         help=build_desc,
-        epilog=vk_build_end_help_message,
+        # epilog=vk_build_end_help_message,
         add_help=True,
         formatter_class=CustomHelpFormatter,
     )
@@ -359,17 +353,31 @@ def main():
         type=str,
         required=False,
         help=extract_help_from_doc(build, "gtf_transcript_id_column"),
+    )    
+    parser_build.add_argument(
+        "-tb",
+        "--transcript_boundaries",
+        default=None,
+        type=str,
+        required=False,
+        help=extract_help_from_doc(build, "transcript_boundaries"),
+    )
+    parser_build.add_argument(
+        "--identify_all_spliced_from_genome",
+        default=None,
+        type=str,
+        required=False,
+        help=extract_help_from_doc(build, "identify_all_spliced_from_genome"),
     )
     parser_build.add_argument(
         "-o",
         "--out",
-        default=".",
         type=str,
         required=False,
         help=extract_help_from_doc(build, "out"),
     )
     parser_build.add_argument(
-        "-ro",
+        "-r",
         "--reference_out_dir",
         default=None,
         type=str,
@@ -377,6 +385,7 @@ def main():
         help=extract_help_from_doc(build, "reference_out_dir"),
     )
     parser_build.add_argument(
+        "-mfo",
         "--mcrs_fasta_out",
         default=None,
         type=str,
@@ -435,7 +444,6 @@ def main():
     parser_build.add_argument(
         "-rmo",
         "--return_mutation_output",
-        default=False,
         action="store_true",
         required=False,
         help=extract_help_from_doc(build, "return_mutation_output"),
@@ -443,25 +451,26 @@ def main():
     parser_build.add_argument(
         "-smuc",
         "--save_mutations_updated_csv",
-        default=False,
         action="store_true",
         required=False,
-        help=extract_help_from_doc(build, "update_df"),
+        help=extract_help_from_doc(build, "save_mutations_updated_csv"),
     )
     parser_build.add_argument(
+        "-swmfat",
         "--save_wt_mcrs_fasta_and_t2g",
-        default=False,
         action="store_true",
         required=False,
         help=extract_help_from_doc(build, "save_wt_mcrs_fasta_and_t2g"),
     )
     parser_build.add_argument(
+        "-dsrvt",
         "--disable_save_removed_variants_text",
         action="store_false",
         required=False,
         help=extract_help_from_doc(build, "save_removed_variants_text"),
     )
     parser_build.add_argument(
+        "-dsfrt",
         "--disable_save_filtering_report_text",
         action="store_false",
         required=False,
@@ -470,17 +479,15 @@ def main():
     parser_build.add_argument(
         "-sfs",
         "--store_full_sequences",
-        default=False,
         action="store_true",
         required=False,
         help=extract_help_from_doc(build, "store_full_sequences"),
     )
     parser_build.add_argument(
         "--translate",
-        default=None,
         action="store_true",
         required=False,
-        help="Translate the mutated sequences to amino acids. Only valid when used with `--update_df`.",
+        help=extract_help_from_doc(build, "translate"),
     )
     parser_build.add_argument(
         "-ts",
@@ -491,6 +498,7 @@ def main():
         help=extract_help_from_doc(build, "translate_start"),
     )
     parser_build.add_argument(
+        "-te",
         "--translate_end",
         default=None,
         type=int_or_str,
@@ -498,18 +506,22 @@ def main():
         help=extract_help_from_doc(build, "translate_end"),
     )
     parser_build.add_argument(
-        "--overwrite",
-        default=False,
-        action="store_true",
-        required=False,
-        help=extract_help_from_doc(build, "overwrite"),
-    )
-    parser_build.add_argument(
         "--dry_run",
-        default=False,
         action="store_true",
         required=False,
         help=extract_help_from_doc(build, "dry_run"),
+    )
+    parser_build.add_argument(
+        "--list_supported_databases",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(build, "list_supported_databases"),
+    )
+    parser_build.add_argument(
+        "--overwrite",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(build, "overwrite"),
     )
     parser_build.add_argument(
         "-q",
@@ -529,7 +541,6 @@ def main():
         help=extract_help_from_doc(build, "insertion_size_limit"),
     )
     parser_build.add_argument(
-        "-msl",
         "--min_seq_len",
         default=0,
         type=int,
@@ -566,7 +577,7 @@ def main():
         help=extract_help_from_doc(build, "merge_identical", disable=True),
     )
     parser_build.add_argument(
-        "-dvs",
+        "-vs",
         "--vcrs_strandedness",
         action="store_true",
         required=False,
@@ -612,7 +623,7 @@ def main():
     )
 
     # NEW PARSER
-    info_desc = "Describe the MCRS reference in a dataframe."
+    info_desc = "Takes in the input directory containing with the MCRS fasta file generated from varseek build, and returns a dataframe with additional columns containing information about the mutations."
     parser_info = parent_subparsers.add_parser(
         "info",
         parents=[parent],
@@ -623,24 +634,87 @@ def main():
     )
 
     parser_info.add_argument(
-        "-m",
-        "--mutations",
-        type=strpath_or_strnonpath_or_df,
+        "-i",
+        "--input_dir",
+        type=str,
         required=True,
-        help=extract_help_from_doc(info, "mutations"),
+        help=extract_help_from_doc(info, "input_dir"),
     )
     parser_info.add_argument(
-        "-u",
-        "--updated_df",
-        type=strpath_or_df,
-        required=True,
-        help=extract_help_from_doc(info, "updated_df"),
+        "-c",
+        "--columns_to_include",
+        type=strpath_or_list_like_of_strings,
+        nargs="+",
+        required=False,
+        default=("number_of_mutations_in_this_gene_total", "number_of_alignments_to_normal_human_reference", "pseudoaligned_to_human_reference_despite_not_truly_aligning", "longest_homopolymer_length", "triplet_complexity"),
+        help=extract_help_from_doc(info, "columns_to_include"),
+    )
+    parser_info.add_argument(
+        "-k",
+        "--k",
+        type=int,
+        required=False,
+        default=55,
+        help=extract_help_from_doc(info, "k"),
+    )
+    parser_info.add_argument(
+        "--max_ambiguous_mcrs",
+        type=int,
+        required=False,
+        default=0,
+        help=extract_help_from_doc(info, "max_ambiguous_mcrs"),
+    )
+    parser_info.add_argument(
+        "--max_ambiguous_reference",
+        type=int,
+        required=False,
+        default=0,
+        help=extract_help_from_doc(info, "max_ambiguous_reference"),
+    )
+    parser_info.add_argument(
+        "--mcrs_fasta",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(info, "mcrs_fasta"),
+    )
+    parser_info.add_argument(
+        "--mutations_updated_csv",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(info, "mutations_updated_csv"),
     )
     parser_info.add_argument(
         "--id_to_header_csv",
         type=str,
         required=False,
         help=extract_help_from_doc(info, "id_to_header_csv"),
+    )
+    parser_info.add_argument(
+        "--gtf",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(info, "gtf"),
+    )
+    parser_info.add_argument(
+        "--dlist_reference_genome_fasta",
+        type=str,
+        required=False,
+        default="T2T",
+        help=extract_help_from_doc(info, "dlist_reference_genome_fasta"),
+    )
+    parser_info.add_argument(
+        "--dlist_reference_cdna_fasta",
+        type=str,
+        required=False,
+        default="T2T",
+        help=extract_help_from_doc(info, "dlist_reference_cdna_fasta"),
+    )
+    parser_info.add_argument(
+        "--dlist_reference_gtf",
+        type=str,
+        required=False,
+        default="T2T",
+        help=extract_help_from_doc(info, "dlist_reference_gtf"),
     )
     parser_info.add_argument(
         "--mcrs_id_column",
@@ -664,82 +738,161 @@ def main():
         help=extract_help_from_doc(info, "mcrs_source_column"),
     )
     parser_info.add_argument(
-        "--seqid_cdna_column",
+        "--mut_column",
+        type=str,
+        required=False,
+        default="mutation",
+        help=extract_help_from_doc(info, "mut_column"),
+    )
+    parser_info.add_argument(
+        "--seq_id_column",
         type=str,
         required=False,
         default="seq_ID",
-        help=extract_help_from_doc(info, "seqid_cdna_column"),
-    )
-    parser_info.add_argument(
-        "--seqid_genome_column",
-        type=str,
-        required=False,
-        default="chromosome",
-        help=extract_help_from_doc(info, "seqid_genome_column"),
+        help=extract_help_from_doc(info, "seq_id_column"),
     )
     parser_info.add_argument(
         "--mutation_cdna_column",
         type=str,
         required=False,
-        default="chromosome",
+        default="mutation",
         help=extract_help_from_doc(info, "mutation_cdna_column"),
+    )
+    parser_info.add_argument(
+        "--seq_id_cdna_column",
+        type=str,
+        required=False,
+        default="seq_ID",
+        help=extract_help_from_doc(info, "seq_id_cdna_column"),
     )
     parser_info.add_argument(
         "--mutation_genome_column",
         type=str,
         required=False,
-        default="chromosome",
+        default="mutation_genome",
         help=extract_help_from_doc(info, "mutation_genome_column"),
     )
-    parser_info.add_argument("--gtf", type=str, required=False, help=extract_help_from_doc(info, "gtf"))
     parser_info.add_argument(
-        "--mutation_metadata_df_out_path",
+        "--seq_id_genome_column",
         type=str,
         required=False,
-        default="out_dir_notebook/mutation_metadata_df.csv",
-        help=extract_help_from_doc(info, "mutation_metadata_df_out_path"),
+        default="chromosome",
+        help=extract_help_from_doc(info, "seq_id_genome_column"),
     )
     parser_info.add_argument(
-        "--out_dir_notebook",
+        "-o",
+        "--out",
         type=str,
         required=False,
-        default=".",
-        help=extract_help_from_doc(info, "out_dir_notebook"),
+        help=extract_help_from_doc(info, "out"),
     )
     parser_info.add_argument(
+        "-r",
         "--reference_out_dir",
         type=str,
         required=False,
-        default=".",
         help=extract_help_from_doc(info, "reference_out_dir"),
     )
     parser_info.add_argument(
-        "--dlist_reference_source",
+        "--mutations_updated_vk_info_csv_out",
         type=str,
         required=False,
-        default="ensembl_grch37_release93",
-        help=extract_help_from_doc(info, "dlist_reference_source"),
+        help=extract_help_from_doc(info, "mutations_updated_vk_info_csv_out"),
     )
+    parser_info.add_argument(
+        "--mutations_updated_exploded_vk_info_csv_out",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(info, "mutations_updated_exploded_vk_info_csv_out"),
+    )
+    parser_info.add_argument(
+        "--dlist_genome_fasta_out",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(info, "dlist_genome_fasta_out"),
+    )
+    parser_info.add_argument(
+        "--dlist_cdna_fasta_out",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(info, "dlist_cdna_fasta_out"),
+    )
+    parser_info.add_argument(
+        "--dlist_combined_fasta_out",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(info, "dlist_combined_fasta_out"),
+    )
+    parser_info.add_argument(
+        "--save_mutations_updated_exploded_vk_info_csv",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(info, "save_mutations_updated_exploded_vk_info_csv"),
+    )
+    parser_info.add_argument(
+        "--make_pyfastx_summary_file",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(info, "make_pyfastx_summary_file"),
+    )
+    parser_info.add_argument(
+        "--make_kat_histogram",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(info, "make_kat_histogram"),
+    )
+    parser_info.add_argument(
+        "--dry_run",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(info, "dry_run"),
+    )
+    parser_info.add_argument(
+        "--list_columns",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(info, "list_columns"),
+    )
+    parser_info.add_argument(
+        "--overwrite",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(info, "overwrite"),
+    )
+    parser_info.add_argument(
+        "--threads",
+        type=int,
+        default=2,
+        required=False,
+        help=extract_help_from_doc(info, "threads"),
+    )
+    parser_info.add_argument(
+        "-q",
+        "--quiet",
+        action="store_false",
+        required=False,
+        help="Do not print progress information.",
+    )
+    # kwargs
     parser_info.add_argument(
         "-w",
         type=int,
         required=False,
-        default=30,
+        default=54,
         help=extract_help_from_doc(info, "w"),
     )
     parser_info.add_argument(
-        "--remove_Ns",
-        default=False,
-        action="store_true",
+        "--bowtie_path",
+        type=str,
         required=False,
-        help=extract_help_from_doc(info, "remove_Ns"),
+        help=extract_help_from_doc(info, "bowtie_path"),
     )
     parser_info.add_argument(
-        "--strandedness",
-        default=False,
+        "-vs",
+        "--vcrs_strandedness",
         action="store_true",
         required=False,
-        help=extract_help_from_doc(info, "strandedness"),
+        help=extract_help_from_doc(info, "vcrs_strandedness"),
     )
     parser_info.add_argument(
         "--near_splice_junction_threshold",
@@ -749,48 +902,22 @@ def main():
         help=extract_help_from_doc(info, "near_splice_junction_threshold"),
     )
     parser_info.add_argument(
-        "-t",
-        "--threads",
-        type=int,
-        required=False,
-        default=2,
-        help=extract_help_from_doc(info, "threads"),
-    )
-    parser_info.add_argument(
         "--reference_cdna_fasta",
         type=str,
         required=False,
-        default=None,
         help=extract_help_from_doc(info, "reference_cdna_fasta"),
     )
     parser_info.add_argument(
         "--reference_genome_fasta",
         type=str,
         required=False,
-        default=None,
         help=extract_help_from_doc(info, "reference_genome_fasta"),
     )
     parser_info.add_argument(
         "--mutations_csv",
         type=str,
         required=False,
-        default=None,
         help=extract_help_from_doc(info, "mutations_csv"),
-    )
-    parser_info.add_argument(
-        "--save_exploded_df",
-        default=False,
-        action="store_true",
-        required=False,
-        help=extract_help_from_doc(info, "save_exploded_df"),
-    )
-    parser_info.add_argument(
-        "-q",
-        "--quiet",
-        default=True,
-        action="store_false",
-        required=False,
-        help="Do not print progress information.",
     )
 
     # NEW PARSER
@@ -804,77 +931,177 @@ def main():
         formatter_class=CustomHelpFormatter,
     )
     parser_filter.add_argument(
-        "-m",
-        "--mutation_metadata_df_path",
-        default=None,
+        "-i",
+        "--input_dir",
         type=str,
         required=True,
-        help=extract_help_from_doc(filter, "mutation_metadata_df_path"),
+        help=extract_help_from_doc(filter, "input_dir"),
     )
     parser_filter.add_argument(
         "-f",
         "--filters",
-        nargs="+",  # Accept multiple sequential filters or a single JSON file
-        type=str,
+        type=strpath_or_list_like_of_strings,
+        nargs="+",
         required=True,
         help=extract_help_from_doc(filter, "filters"),
     )
     parser_filter.add_argument(
-        "--output_mcrs_fasta",
-        default=None,
+        "--mutations_updated_vk_info_csv",
         type=str,
         required=False,
-        help=extract_help_from_doc(filter, "output_mcrs_fasta"),
+        help=extract_help_from_doc(filter, "mutations_updated_vk_info_csv"),
     )
     parser_filter.add_argument(
-        "--output_metadata_df",
-        default=None,
+        "--mutations_updated_exploded_vk_info_csv",
         type=str,
         required=False,
-        help=extract_help_from_doc(filter, "output_metadata_df"),
-    )
-    parser_filter.add_argument(
-        "--dlist_fasta",
-        default=None,
-        type=str,
-        required=False,
-        help=extract_help_from_doc(filter, "dlist_fasta"),
-    )
-    parser_filter.add_argument(
-        "--output_dlist_fasta",
-        default=None,
-        type=str,
-        required=False,
-        help=extract_help_from_doc(filter, "output_dlist_fasta"),
-    )
-    parser_filter.add_argument(
-        "--output_t2g",
-        default=None,
-        type=str,
-        required=False,
-        help=extract_help_from_doc(filter, "output_t2g"),
+        help=extract_help_from_doc(filter, "mutations_updated_exploded_vk_info_csv"),
     )
     parser_filter.add_argument(
         "--id_to_header_csv",
-        default=None,
         type=str,
         required=False,
         help=extract_help_from_doc(filter, "id_to_header_csv"),
     )
     parser_filter.add_argument(
-        "--output_id_to_header_csv",
-        default=None,
+        "--dlist_fasta",
         type=str,
         required=False,
-        help=extract_help_from_doc(filter, "output_id_to_header_csv"),
+        help=extract_help_from_doc(filter, "dlist_fasta"),
+    )
+    parser_filter.add_argument(
+        "--out",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(filter, "out"),
+    )
+    parser_filter.add_argument(
+        "--mutations_updated_filtered_csv_out",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(filter, "mutations_updated_filtered_csv_out"),
+    )
+    parser_filter.add_argument(
+        "--mutations_updated_exploded_filtered_csv_out",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(filter, "mutations_updated_exploded_filtered_csv_out"),
+    )
+    parser_filter.add_argument(
+        "--id_to_header_filtered_csv_out",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(filter, "id_to_header_filtered_csv_out"),
+    )
+    parser_filter.add_argument(
+        "--dlist_filtered_fasta_out",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(filter, "dlist_filtered_fasta_out"),
+    )
+    parser_filter.add_argument(
+        "--mcrs_filtered_fasta_out",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(filter, "mcrs_filtered_fasta_out"),
+    )
+    parser_filter.add_argument(
+        "--mcrs_t2g_filtered_out",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(filter, "mcrs_t2g_filtered_out"),
+    )
+    parser_filter.add_argument(
+        "--wt_mcrs_filtered_fasta_out",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(filter, "wt_mcrs_filtered_fasta_out"),
+    )
+    parser_filter.add_argument(
+        "--wt_mcrs_t2g_filtered_out",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(filter, "wt_mcrs_t2g_filtered_out"),
+    )
+    parser_filter.add_argument(
+        "--save_wt_mcrs_fasta_and_t2g",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(filter, "save_wt_mcrs_fasta_and_t2g"),
+    )
+    parser_filter.add_argument(
+        "--save_mutations_updated_filtered_csvs",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(filter, "save_mutations_updated_filtered_csvs"),
+    )
+    parser_filter.add_argument(
+        "--return_mutations_updated_filtered_csv_df",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(filter, "return_mutations_updated_filtered_csv_df"),
+    )
+    parser_filter.add_argument(
+        "--dry_run",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(filter, "dry_run"),
+    )
+    parser_filter.add_argument(
+        "--list_filter_rules",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(filter, "list_filter_rules"),
+    )
+    parser_filter.add_argument(
+        "--overwrite",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(filter, "overwrite"),
     )
     parser_filter.add_argument(
         "-q",
         "--quiet",
-        default=False,
         action="store_false",
         required=False,
         help="Do not print progress information.",
+    )
+    # kwargs
+    parser_filter.add_argument(
+        "--filter_all_dlists",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(filter, "filter_all_dlists"),
+    )
+    parser_filter.add_argument(
+        "--dlist_genome_fasta",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(filter, "dlist_genome_fasta"),
+    )
+    parser_filter.add_argument(
+        "--dlist_cdna_fasta",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(filter, "dlist_cdna_fasta"),
+    )
+    parser_filter.add_argument(
+        "--dlist_genome_filtered_fasta_out",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(filter, "dlist_genome_filtered_fasta_out"),
+    )
+    parser_filter.add_argument(
+        "--dlist_cdna_filtered_fasta_out",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(filter, "dlist_cdna_filtered_fasta_out"),
+    )
+    parser_filter.add_argument(
+        "--disable_save_mcrs_filtered_fasta_and_t2g",
+        action="store_false",
+        required=False,
+        help=extract_help_from_doc(filter, "disable_save_mcrs_filtered_fasta_and_t2g", disable=True),
     )
 
     # NEW PARSER
@@ -932,7 +1159,6 @@ def main():
     )
     parser_sim.add_argument(
         "--strand",
-        default=False,
         action="store_true",
         required=False,
         help=extract_help_from_doc(sim, "strand"),
@@ -971,7 +1197,6 @@ def main():
     )
     parser_sim.add_argument(
         "--add_noise",
-        default=False,
         action="store_true",
         required=False,
         help=extract_help_from_doc(sim, "add_noise"),
@@ -992,7 +1217,6 @@ def main():
     )
     parser_sim.add_argument(
         "--with_replacement",
-        default=False,
         action="store_true",
         required=False,
         help=extract_help_from_doc(sim, "with_replacement"),
@@ -1217,9 +1441,6 @@ def main():
     if len(sys.argv) == 2:
         if sys.argv[1] in command_to_parser:
             command_to_parser[sys.argv[1]].print_help(sys.stderr)
-            if sys.argv[1] == "build":  # print the valid options for mutations and sequences supported internally
-                print("\nSupported values internally for mutations and sequences (outside of user-provided files or strings containing mutations and their corresponding reference sequences)")
-                print_valid_values_for_mutations_and_sequences_in_varseek_build()
         else:
             parent_parser.print_help(sys.stderr)
         sys.exit(1)    
@@ -1259,6 +1480,8 @@ def main():
             mut_id_column=args.mut_id_column,
             gtf=args.gtf,
             gtf_transcript_id_column=args.gtf_transcript_id_column,
+            transcript_boundaries=args.transcript_boundaries,
+            identify_all_spliced_from_genome=args.identify_all_spliced_from_genome,
             out=args.out,
             reference_out_dir=args.reference_out_dir,
             mcrs_fasta_out=args.mcrs_fasta_out,
@@ -1267,6 +1490,8 @@ def main():
             mcrs_t2g_out=args.mcrs_t2g_out,
             wt_mcrs_fasta_out=args.wt_mcrs_fasta_out,
             wt_mcrs_t2g_out=args.wt_mcrs_t2g_out,
+            removed_variants_text_out=args.removed_variants_text_out,
+            filtering_report_text_out=args.filtering_report_text_out,
             return_mutation_output=args.return_mutation_output,
             save_mutations_updated_csv=args.save_mutations_updated_csv,
             save_wt_mcrs_fasta_and_t2g=args.save_wt_mcrs_fasta_and_t2g,
@@ -1274,8 +1499,9 @@ def main():
             translate=args.translate,
             translate_start=args.translate_start,
             translate_end=args.translate_end,
-            overwrite=args.overwrite,
             dry_run=args.dry_run,
+            list_supported_databases=args.list_supported_databases,
+            overwrite=args.overwrite,
             verbose=args.quiet,
             insertion_size_limit=args.insertion_size_limit,
             min_seq_len=args.min_seq_len,
@@ -1301,34 +1527,48 @@ def main():
     ## info return
     if args.command == "info":
         info_results = info(
-            mutations=args.mutations,
-            mcrs_fa=args.mcrs_fa,
-            sequences_cdna=args.sequences_cdna,
-            seq_id_column_cdna=args.seq_id_column_cdna,
-            mut_column_cdna=args.mut_column_cdna,
-            sequences_genome=args.sequences_genome,
-            seq_id_column_genome=args.seq_id_column_genome,
-            mut_column_genome=args.mut_column_genome,
-            gtf=args.gtf,
-            mutation_metadata_df_out_path=args.mutation_metadata_df_out_path,
-            out_dir_notebook=args.out_dir_notebook,
-            reference_out_dir=args.reference_out_dir,
-            grch_mutations=args.grch_mutations,
-            cosmic_release=args.cosmic_release,
-            dlist_reference_source=args.dlist_reference_source,
-            id_to_header_csv=args.id_to_header_csv,
-            updated_df=args.updated_df,
-            w=args.w,
-            remove_Ns=args.remove_Ns,
-            optimize_flanking_regions=args.optimize_flanking_regions,
-            strandedness=args.strandedness,
-            bowtie_path=args.bowtie_path,
-            run_comprehensive_dlist=args.run_comprehensive_dlist,
-            perform_additional_pseudoalignment=args.perform_additional_pseudoalignment,
-            near_splice_junction_threshold=args.near_splice_junction_threshold,
+            input_dir=args.input_dir,
             columns_to_include=args.columns_to_include,
+            k=args.k,
+            max_ambiguous_mcrs=args.max_ambiguous_mcrs,
+            max_ambiguous_reference=args.max_ambiguous_reference,
+            mcrs_fasta=args.mcrs_fasta,
+            mutations_updated_csv=args.mutations_updated_csv,
+            id_to_header_csv=args.id_to_header_csv,
+            gtf=args.gtf,
+            dlist_reference_genome_fasta=args.dlist_reference_genome_fasta,
+            dlist_reference_cdna_fasta=args.dlist_reference_cdna_fasta,
+            dlist_reference_gtf=args.dlist_reference_gtf,
+            mcrs_id_column=args.mcrs_id_column,
+            mcrs_sequence_column=args.mcrs_sequence_column,
+            mcrs_source_column=args.mcrs_source_column,
+            mut_column=args.mut_column,
+            seq_id_column=args.seq_id_column,
+            mutation_cdna_column=args.mutation_cdna_column,
+            seq_id_cdna_column=args.seq_id_cdna_column,
+            mutation_genome_column=args.mutation_genome_column,
+            seq_id_genome_column=args.seq_id_genome_column,
+            out=args.out,
+            reference_out_dir=args.reference_out_dir,
+            mutations_updated_vk_info_csv_out=args.mutations_updated_vk_info_csv_out,
+            mutations_updated_exploded_vk_info_csv_out=args.mutations_updated_exploded_vk_info_csv_out,
+            dlist_genome_fasta_out=args.dlist_genome_fasta_out,
+            dlist_cdna_fasta_out=args.dlist_cdna_fasta_out,
+            dlist_combined_fasta_out=args.dlist_combined_fasta_out,
+            save_mutations_updated_exploded_vk_info_csv=args.save_mutations_updated_exploded_vk_info_csv,
+            make_pyfastx_summary_file=args.make_pyfastx_summary_file,
+            make_kat_histogram=args.make_kat_histogram,
+            dry_run=args.dry_run,
+            list_columns=args.list_columns,
+            overwrite=args.overwrite,
             threads=args.threads,
             verbose=args.quiet,
+            bowtie_path=args.bowtie_path,
+            vcrs_strandedness=args.vcrs_strandedness,
+            near_splice_junction_threshold=args.near_splice_junction_threshold,
+            reference_cdna_fasta=args.reference_cdna_fasta,
+            reference_genome_fasta=args.reference_genome_fasta,
+            mutations_csv=args.mutations_csv,
             **kwargs,
         )
 
@@ -1336,15 +1576,37 @@ def main():
 
     ## filter return
     if args.command == "filter":
-        filter_rules = process_filters(args.filters)
+        filter_rules = prepare_filters_list(args.filters)
 
         filter_results = filter(
-            mcrs_fa=args.build_fasta,
-            mutation_metadata_df_path=args.info_csv,
-            output_fasta=args.output_fasta,
-            kv_build_source=args.kv_build_source,
-            verbose=args.quiet,
+            input_dir=args.input_dir,
             filters=filter_rules,
+            mutations_updated_vk_info_csv=args.mutations_updated_vk_info_csv,
+            mutations_updated_exploded_vk_info_csv=args.mutations_updated_exploded_vk_info_csv,
+            id_to_header_csv=args.id_to_header_csv,
+            dlist_fasta=args.dlist_fasta,
+            out=args.out,
+            mutations_updated_filtered_csv_out=args.mutations_updated_filtered_csv_out,
+            mutations_updated_exploded_filtered_csv_out=args.mutations_updated_exploded_filtered_csv_out,
+            id_to_header_filtered_csv_out=args.id_to_header_filtered_csv_out,
+            dlist_filtered_fasta_out=args.dlist_filtered_fasta_out,
+            mcrs_filtered_fasta_out=args.mcrs_filtered_fasta_out,
+            mcrs_t2g_filtered_out=args.mcrs_t2g_filtered_out,
+            wt_mcrs_filtered_fasta_out=args.wt_mcrs_filtered_fasta_out,
+            wt_mcrs_t2g_filtered_out=args.wt_mcrs_t2g_filtered_out,
+            save_wt_mcrs_fasta_and_t2g=args.save_wt_mcrs_fasta_and_t2g,
+            save_mutations_updated_filtered_csvs=args.save_mutations_updated_filtered_csvs,
+            return_mutations_updated_filtered_csv_df=args.return_mutations_updated_filtered_csv_df,
+            dry_run=args.dry_run,
+            list_filter_rules=args.list_filter_rules,
+            overwrite=args.overwrite,
+            verbose=args.quiet,
+            filter_all_dlists=args.filter_all_dlists,
+            dlist_genome_fasta=args.dlist_genome_fasta,
+            dlist_cdna_fasta=args.dlist_cdna_fasta,
+            dlist_genome_filtered_fasta_out=args.dlist_genome_filtered_fasta_out,
+            dlist_cdna_filtered_fasta_out=args.dlist_cdna_filtered_fasta_out,
+            save_mcrs_filtered_fasta_and_t2g=args.save_mcrs_filtered_fasta_and_t2g,
             **kwargs,
         )
 
@@ -1352,7 +1614,7 @@ def main():
 
     ## sim return
     if args.command == "sim":
-        filter_rules = process_filters(args.filters)
+        filter_rules = prepare_filters_list(args.filters)
 
         simulated_df_dict = sim(
             mutation_metadata_df=args.mutation_metadata_df,

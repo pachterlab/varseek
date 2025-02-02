@@ -13,6 +13,7 @@ parser.add_argument("--reference_genome_fasta", help="Path to reference genome f
 parser.add_argument("--reference_genome_gtf", help="Path to reference genome GTF")
 parser.add_argument("--genomes1000_vcf", help="Path to 1000 genomes vcf file")
 parser.add_argument("--star_genome_dir", default="", help="Path to star_genome_dir")
+parser.add_argument("--aligned_and_unmapped_bam", default="", help="Path to aligned_and_unmapped_bam. If not provided, will be created")
 parser.add_argument("--tmp", default="tmp", help="Path to temp folder")
 
 # Parameters
@@ -35,6 +36,7 @@ genomes1000_vcf = args.genomes1000_vcf
 threads = args.threads
 read_length_minus_one = args.read_length - 1
 synthetic_read_fastq = args.synthetic_read_fastq
+aligned_and_unmapped_bam = args.aligned_and_unmapped_bam
 
 STAR = args.STAR
 java = args.java
@@ -73,7 +75,6 @@ os.makedirs(vcf_folder, exist_ok=True)
 os.makedirs(haplotypecaller_folder, exist_ok=True)
 os.makedirs(mutect2_folder, exist_ok=True)
 
-aligned_and_unmapped_bam = f"{out_file_name_prefix}Aligned.sortedByCoord.out.bam"
 aligned_only_bam = f"{alignment_folder}/aligned_only.bam"
 unmapped_bam = f"{alignment_folder}/unmapped.bam"
 merged_bam = f"{alignment_folder}/merged.bam"
@@ -263,6 +264,7 @@ selectvariants_command = [
 #     _ = pysam.faidx(reference_genome_fasta)
 
 if not os.path.exists(aligned_and_unmapped_bam):
+    aligned_and_unmapped_bam = f"{out_file_name_prefix}Aligned.sortedByCoord.out.bam"
     run_command_with_error_logging(star_align_command)
 
 run_command_with_error_logging(fastq_to_sam_command)

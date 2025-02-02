@@ -42,7 +42,7 @@ read_length_minus_one = read_length - 1
 star_tarball = os.path.join(opt_dir, "2.7.11b.tar.gz")
 strelka_tarball = f"{STRELKA_INSTALL_PATH}.tar.bz2"
 
-strelka2_vcf = ""  #!!! update
+strelka2_vcf = os.path.join(strelka2_output_dir, "results/variants/genome.vcf.gz")
 
 #* Download software and reference files
 if not os.path.exists(reference_genome_fasta):
@@ -101,10 +101,14 @@ star_align_command = [
 if not os.path.exists(aligned_and_unmapped_bam):
     subprocess.run(star_align_command, check=True)
 
-
 #* Index reference genome
 if not os.path.exists(f"{reference_genome_fasta}.fai"):
     _ = pysam.faidx(reference_genome_fasta)
+
+#* Index BAM file
+bam_index_file = f"{aligned_and_unmapped_bam}.bai"
+if not os.path.exists(bam_index_file):
+    _ = pysam.index(aligned_and_unmapped_bam)
 
 #* Strelka2 variant calling
 strelka2_configure_command = [

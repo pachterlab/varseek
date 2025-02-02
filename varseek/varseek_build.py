@@ -297,102 +297,87 @@ def calculate_end_mutation_overlap_with_left_flank(row):
 
     return end_mut_nucleotides_with_left_flank(sequence_to_check, original_sequence)
 
-def validate_input_build(sequences, mutations, mut_column, seq_id_column, mut_id_column, gtf, gtf_transcript_id_column, w, k, insertion_size_limit, min_seq_len, optimize_flanking_regions, remove_seqs_with_wt_kmers, max_ambiguous, required_insertion_overlap_length, merge_identical, vcrs_strandedness, replace_original_headers, save_wt_mcrs_fasta_and_t2g, save_mutations_updated_csv, store_full_sequences, translate, translate_start, translate_end, out, reference_out_dir, mcrs_fasta_out, mutations_updated_csv_out, id_to_header_csv_out, mcrs_t2g_out, wt_mcrs_fasta_out, wt_mcrs_t2g_out, return_mutation_output, save_files, verbose, **kwargs,):
-    # Validate sequences
+
+
+def validate_input_build(params_dict):
+    # Required parameters
+    # sequences
+    sequences = params_dict.get("sequences")
+    mutations = params_dict.get("mutations")
+
     if not (isinstance(sequences, str) or isinstance(sequences, list)):
-        raise ValueError(f"sequences must be a nucleotide string, a path, or a list of nucleotide strings. Got {type(sequences)}.")
+        raise ValueError(f"sequences must be a nucleotide string, a list of nucleotide strings, a path to a reference genome, or a string specifying a reference genome supported by varseek. Got {type(sequences)}\nTo see a list of supported mutation databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
     if isinstance(sequences, list) and not all(isinstance(seq, str) for seq in sequences):
         raise ValueError("All elements in sequences must be nucleotide strings.")
-    if isinstance(sequences, str) and (not os.path.isfile(sequences) or not all(c in "ACGTNU-.*" for c in sequences.upper())):
-        raise ValueError("If sequences is a string, it must be a valid file path or a nucleotide string.")
+    if isinstance(sequences, str) and (not os.path.isfile(sequences) or not all(c in "ACGTNU-.*" for c in sequences.upper()) or not supported_databases_and_corresponding_reference_sequence_type.get(mutations, {}).get('sequence_file_names', {}).get(sequences, None)):
+        raise ValueError(f"sequences must be a nucleotide string, a list of nucleotide strings, a path to a reference genome, or a string specifying a reference genome supported by varseek. Got {type(sequences)}.\nTo see a list of supported mutation databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
 
-    # Validate mutations
+    # mutations
     if not (isinstance(mutations, str) or isinstance(mutations, list)):
-        raise ValueError(f"mutations must be a string, a path, or a list of strings. Got {type(mutations)}.")
+        raise ValueError(f"mutations must be a string, a list of strings, a path to a mutation database, or a string specifying a mutation database supported by varseek. Got {type(mutations)}\nTo see a list of supported reference genomes, please use the 'list_supported_databases' flag/argument.")
     if isinstance(mutations, list) and not all(isinstance(mut, str) for mut in mutations):
         raise ValueError("All elements in mutations must be strings.")
     if isinstance(mutations, str) and not (mutations.startswith("c.") or mutations.startswith("g.")):  # mutations refers to an internally supported value, eg cosmic_cmc
         if mutations not in supported_databases_and_corresponding_reference_sequence_type:
-            vk_build_end_help_message = print_valid_values_for_mutations_and_sequences_in_varseek_build(return_message=True)
-            raise ValueError(f"mutations {mutations} not internally supported.\n{vk_build_end_help_message}")
+            raise ValueError(f"mutations {mutations} not internally supported.\nTo see a list of supported mutation databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
         else:
             if sequences not in supported_databases_and_corresponding_reference_sequence_type[mutations]['sequence_download_commands']:
-                vk_build_end_help_message = print_valid_values_for_mutations_and_sequences_in_varseek_build(return_message=True)
-                raise ValueError(f"sequences {sequences} not internally supported.\n{vk_build_end_help_message}")
+                raise ValueError(f"sequences {sequences} not internally supported.\nTo see a list of supported mutation databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
     
     # Directories
-    if not isinstance(out, str) or not os.path.isdir(out):
-        raise ValueError(f"Invalid input directory: {out}")
-    if reference_out_dir and (not isinstance(reference_out_dir, str) or not os.path.isdir(reference_out_dir)):
-        raise ValueError(f"Invalid reference output directory: {reference_out_dir}")
+    if not isinstance(params_dict.get("out", None), str):
+        raise ValueError(f"Invalid value for out: {params_dict.get('out', None)}")
+    if params_dict.get("reference_out_dir", None) and not isinstance(params_dict.get('reference_out_dir', None), str):
+        raise ValueError(f"Invalid value for reference_out_dir: {params_dict.get('reference_out_dir', None)}")
     
-    check_file_path_is_string_with_valid_extension(gtf, "gtf", "gtf")
-    check_file_path_is_string_with_valid_extension(mcrs_fasta_out, "mcrs_fasta_out", "fasta")
-    check_file_path_is_string_with_valid_extension(mutations_updated_csv_out, "mutations_updated_csv_out", "csv")
-    check_file_path_is_string_with_valid_extension(id_to_header_csv_out, "id_to_header_csv_out", "csv")
-    check_file_path_is_string_with_valid_extension(mcrs_t2g_out, "mcrs_t2g_out", "t2g")
-    check_file_path_is_string_with_valid_extension(wt_mcrs_fasta_out, "wt_mcrs_fasta_out", "fasta")
-    check_file_path_is_string_with_valid_extension(wt_mcrs_t2g_out, "wt_mcrs_t2g_out", "t2g")
+    # file paths
+    for param_name, file_type in {
+        "gtf": "gtf",
+        "mcrs_fasta_out": "fasta",
+        "mutations_updated_csv_out": "csv",
+        "id_to_header_csv_out": "csv",
+        "mcrs_t2g_out": "t2g",
+        "wt_mcrs_fasta_out": "fasta",
+        "wt_mcrs_t2g_out": "t2g",
+        "removed_variants_text_out": "txt",
+    }:
+        check_file_path_is_string_with_valid_extension(params_dict.get(param_name), param_name, file_type)
 
-    # Validate string parameters
-    for param_name, param_value in {
-        "mut_column": mut_column,
-        "seq_id_column": seq_id_column,
-        "mut_id_column": mut_id_column,
-        "gtf_transcript_id_column": gtf_transcript_id_column,
-    }.items():
-        if param_value is not None and not isinstance(param_value, str):
-            raise ValueError(f"{param_name} must be a string or None. Got {type(param_value)}.")
-
-    # Validate int parameters
-    for param_name, param_value, min_value, optional_value in [
-        ("w", w, 1, False),
-        ("k", k, 1, True),
-        ("insertion_size_limit", insertion_size_limit, 1, True),
-        ("min_seq_len", min_seq_len, 1, True),
-        ("max_ambiguous", max_ambiguous, 0, True),
+    # column names
+    for column in ["mut_column", "seq_id_column", "mut_id_column", "gtf_transcript_id_column"]:
+        if not isinstance(params_dict.get(column), str):
+            raise ValueError(f"Invalid column name for {column}: {params_dict.get(column)}")
+        
+    # integers
+    for param_name, min_value, optional_value in [
+        ("w", 1, False),
+        ("k", 1, True),
+        ("insertion_size_limit", 1, True),
+        ("min_seq_len", 1, True),
+        ("max_ambiguous", 0, True),
     ]:
         if not is_valid_int(param_value, ">=", min_value, optional=optional_value):
-            raise ValueError(f"{param_name} must be an integer >= {min_value} or None. Got {param_value}.")
+            raise ValueError(f"{param_name} must be an integer >= {min_value} or None. Got {params_dict.get(param_name)}.")
 
-    # Validate required_insertion_overlap_length
-    if required_insertion_overlap_length is not None and not (
-        isinstance(required_insertion_overlap_length, int)
-        or isinstance(required_insertion_overlap_length, str)
+    # required_insertion_overlap_length
+    if params_dict.get("required_insertion_overlap_length") is not None and not (
+        isinstance(params_dict.get("required_insertion_overlap_length"), int)
+        or isinstance(params_dict.get("required_insertion_overlap_length"), str)
     ):
         raise ValueError(
-            f"required_insertion_overlap_length must be an int, a string, or None. Got {type(required_insertion_overlap_length)}."
+            f"required_insertion_overlap_length must be an int, a string, or None. Got {type(params_dict.get('required_insertion_overlap_length'))}."
         )
 
-    # Validate boolean parameters
-    for param_name, param_value in {
-        "optimize_flanking_regions": optimize_flanking_regions,
-        "remove_seqs_with_wt_kmers": remove_seqs_with_wt_kmers,
-        "merge_identical": merge_identical,
-        "vcrs_strandedness": vcrs_strandedness,
-        "replace_original_headers": replace_original_headers,
-        "save_wt_mcrs_fasta_and_t2g": save_wt_mcrs_fasta_and_t2g,
-        "save_mutations_updated_csv": save_mutations_updated_csv,
-        "store_full_sequences": store_full_sequences,
-        "translate": translate,
-        "return_mutation_output": return_mutation_output,
-        "save_files": save_files,
-        "verbose": verbose,
-    }.items():
-        if not isinstance(param_value, bool):
-            raise ValueError(f"{param_name} must be a boolean. Got {type(param_value)}.")
-
-    # Validate output directory
-    if not isinstance(out, str) or not os.path.isdir(out):
-        raise ValueError(f"Output directory (out) must be a valid directory path. Got {out}.")
+    # Boolean
+    for param_name in ["optimize_flanking_regions", "remove_seqs_with_wt_kmers", "merge_identical", "vcrs_strandedness", "replace_original_headers", "save_wt_mcrs_fasta_and_t2g", "save_mutations_updated_csv", "store_full_sequences", "translate", "return_mutation_output", "save_files", "verbose", "save_removed_variants_text", "save_filtering_report_text", "dry_run", "list_supported_databases", "overwrite"]:
+        if not isinstance(params_dict.get(param_name), bool):
+            raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
 
     # Validate translation parameters
-    for param_name, param_value in {
-        "translate_start": translate_start,
-        "translate_end": translate_end,
-    }.items():
+    for param_name in ["translate_start", "translate_end"]:
+        param_value = params_dict.get(param_name)
         if param_value is not None and not (isinstance(param_value, int) or isinstance(param_value, str)):
-            raise ValueError(f"{param_name} must be an int, a string, or None. Got {type(param_value)}.")
+            raise ValueError(f"{param_name} must be an int, a string, or None. Got param_name of type {type(param_value)}.")
 
 
 def build(
@@ -406,6 +391,8 @@ def build(
     mut_id_column = None,
     gtf = None,
     gtf_transcript_id_column = None,
+    transcript_boundaries = False,
+    identify_all_spliced_from_genome = False,
     out = ".",
     reference_out_dir = None,
     mcrs_fasta_out = None,
@@ -426,6 +413,7 @@ def build(
     translate_start = None,
     translate_end = None,
     dry_run = False,
+    list_supported_databases = False,
     overwrite = False,
     verbose = True,
     **kwargs,
@@ -457,8 +445,8 @@ def build(
                     sequences can be a string indicating the source upon which to apply the mutations.
                     See below for supported databases and sequences options.
                     To see the supported combinations of mutations and sequences, either
-                    1) run `vk build --help` from the command line, or
-                    2) run varseek.varseek_build.print_valid_values_for_mutations_and_sequences_in_varseek_build() in python
+                    1) run `vk build --list_supported_databases` from the command line, or
+                    2) run varseek.build(list_supported_databases=True) in python
 
     - mutations     (str or DataFrame object) Path to csv or tsv file (str) (e.g., 'mutations.csv'), or DataFrame (DataFrame object),
                     containing information about the mutations in the following format:
@@ -483,8 +471,8 @@ def build(
                     Alternatively, 'mutations' can be a string specifying a supported database, which will automatically download
                     both the mutation database and corresponding reference sequence (if the 'sequences' is not a path).
                     To see the supported combinations of mutations and sequences, either
-                    1) run `vk build --help` from the command line, or
-                    2) run varseek.varseek_build.print_valid_values_for_mutations_and_sequences_in_varseek_build() in python
+                    1) run `vk build --list_supported_databases` from the command line, or
+                    2) run varseek.build(list_supported_databases=True) in python
 
     # Parameters affecting VCRS creation
     - w                                  (int) Length of sequence windows flanking the variant. Default: 30.
@@ -498,11 +486,12 @@ def build(
     - mut_column                         (str) Name of the column containing the variants to be introduced in 'mutations'. Default: 'mutation'.
     - seq_id_column                      (str) Name of the column containing the IDs of the sequences to be mutated in 'mutations'. Default: 'seq_ID'.
     - mut_id_column                      (str) Name of the column containing the IDs of each variant in 'mutations'. Optional. Default: use <seq_ID>_<mutation> for each row.
-    - gtf                                (str) Path to .gtf file. When providing a genome fasta file as input for 'sequences', you can provide a .gtf file here
-                                         and the input sequences will be defined according to the transcript boundaries. Default: None
+    - gtf                                (str) Path to .gtf file. Only used in conjunction with the arguments `transcript_boundaries` and `identify_all_spliced_from_genome`. Default: None
     - gtf_transcript_id_column           (str) Column name in the input 'mutations' file containing the transcript ID. 
                                          In this case, column seq_id_column should contain the chromosome number.
                                          Required when 'gtf' is provided. Default: None
+    - transcript_boundaries              (True/False) Whether to use the transcript boundaries in the input 'gtf' file to define the boundaries of the VCRSs. Only used when the `sequences` and `mutations` information is in terms of the genome, and when `gtf` is specified. Default: False.
+    - identify_all_spliced_from_genome   (True/False) Whether to identify all spliced VCRSs from the genome. Default: False.
     
     # Output paths and associated parameters
     - out                                (str) Path to default output directory to containing created files. Any individual output file path can be overriden if the specific file path is provided
@@ -541,6 +530,7 @@ def build(
 
     # General arguments:
     - dry_run                            (True/False) Whether to simulate the function call without executing it. Default: False.
+    - list_supported_databases           (True/False) Whether to print the supported databases and sequences. Default: False.
     - overwrite                          (True/False) Whether to overwrite existing output files. Will return if any output file already exists. Default: False.
     - verbose                            (True/False) Whether to print progress information. Default: True
     
@@ -580,12 +570,17 @@ def build(
 
     global intronic_mutations, posttranslational_region_mutations, unknown_mutations, uncertain_mutations, ambiguous_position_mutations, cosmic_incorrect_wt_base, mut_idx_outside_seq
     
+    #* 0. Informational arguments that exit early
+    if list_supported_databases:
+        print_valid_values_for_mutations_and_sequences_in_varseek_build()
+        return
+
     #* 1. Start timer
     start_time = time.perf_counter()
 
     #* 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
-    validate_input_build(**params_dict)
+    validate_input_build(params_dict)
 
     #* 3. Dry-run
     if dry_run:
@@ -1131,7 +1126,7 @@ def build(
     mutations["end_kmer_position_max"] = mutations["end_mutation_position"] + w
     mutations["end_kmer_position"] = mutations[["end_kmer_position_max", "sequence_length"]].min(axis=1)  # don't forget to increment by 1 later on
 
-    if gtf is not None:
+    if gtf is not None and transcript_boundaries:
         assert mutations_path.endswith(".csv") or mutations_path.endswith(".tsv"), "Mutations must be a CSV or TSV file"
         if "start_transcript_position" not in mutations.columns and "end_transcript_position" not in mutations.columns:  # * currently hard-coded column names, but optionally can be changed to arguments later
             mutations = merge_gtf_transcript_locations_into_cosmic_csv(mutations, gtf, gtf_transcript_id_column=gtf_transcript_id_column)

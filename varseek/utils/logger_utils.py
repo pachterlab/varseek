@@ -367,7 +367,9 @@ def make_positional_arguments_list_and_keyword_arguments_dict():
     return positional_args, args_dict
 
 
-def run_command_with_error_logging(command, verbose=True):
+def run_command_with_error_logging(command, verbose=True, track_time=False):
+    if track_time:
+        start_time = time.time()
     if isinstance(command, str):
         shell = True
     elif isinstance(command, list):
@@ -390,6 +392,14 @@ def run_command_with_error_logging(command, verbose=True):
     except Exception as e:
         # Catch any other unexpected exceptions
         print(f"An unexpected error occurred: {e}")
+    
+    if track_time:
+        elapsed_time = time.time() - start_time
+        minutes = int(elapsed_time // 60)
+        seconds = elapsed_time % 60
+        if verbose:
+            print(f"Command runtime: {minutes}m, {seconds:.2f}s")
+        return minutes, seconds
 
 def download_box_url(url, output_folder = ".", output_file_name = None):
     if not output_file_name:
@@ -796,3 +806,104 @@ def download_entex_fastq_links(entex_df, tissue = None, data_download_base = "."
                     print(e)
             else:
                 print(f"File {pair_dir}/{link.split('/')[-1]} already exists, skipping download")
+
+def extract_documentation_file_blocks(file_path, start_pattern, stop_pattern):
+    """
+    Extract blocks of text from a file based on start and stop regex patterns.
+
+    :param file_path: Path to the file.
+    :param start_pattern: Regex pattern to identify the start of a block.
+    :param stop_pattern: Regex pattern to identify the stop condition.
+    :return: List of extracted text blocks.
+    """
+    extracted_blocks = []
+    current_block = []
+    capturing = False  # Flag to track if we are inside a block
+
+    start_regex = re.compile(start_pattern)
+    stop_regex = re.compile(stop_pattern)
+
+    with open(file_path, "r") as file:
+        for line in file:
+            line = line.rstrip()  # Remove trailing newlines but preserve content
+
+            if capturing:
+                if stop_regex.match(line):  # Stop capturing if the stop pattern matches
+                    extracted_blocks.append("\n".join(current_block))
+                    current_block = []
+                    capturing = False
+                else:
+                    current_block.append(line)
+
+            if start_regex.match(line):  # Start capturing if the start pattern matches
+                capturing = True
+                current_block.append(line)
+
+    # Capture any remaining block if the file ends without a newline
+    if current_block:
+        extracted_blocks.append("\n".join(current_block))
+
+    return extracted_blocks
+
+import getpass
+import base64
+from gget.gget_cosmic import is_valid_email
+
+# from gget cosmic
+def authenticate_cosmic_credentials(email = None, password = None):
+    if not email:
+        email = input("Please enter your COSMIC email: ")
+    if not is_valid_email(email):
+        raise ValueError("The email address is not valid.")
+    if not password:
+        password = getpass.getpass("Please enter your COSMIC password: ")
+
+    # Concatenate the email and password with a colon
+    input_string = f"{email}:{password}\n"
+
+    encoded_bytes = base64.b64encode(input_string.encode("utf-8"))
+    encoded_string = encoded_bytes.decode("utf-8")
+    curl_command = [
+        "curl",
+        "-H",
+        f"Authorization: Basic {encoded_string}",
+        "https://cancer.sanger.ac.uk/api/mono/products/v1/downloads/scripted?path=grch37/cmc/v101/CancerMutationCensus_AllData_Tsv_v101_GRCh37.tar&bucket=downloads",  # COSMIC CMC - doesn't really matter what it is
+    ]
+
+    result = subprocess.run(curl_command, capture_output=True, text=True)
+
+    try:
+        response_data = json.loads(result.stdout)
+        true_download_url = response_data.get("url")
+        return True
+    except AttributeError:
+        print("Invalid username or password.")
+        return False
+    
+import base64
+import getpass
+import requests
+
+def encode_cosmic_credentials(email=None, password=None):
+    """Encodes COSMIC email and password into a base64 authentication token."""
+    if not email:
+        email = input("Please enter your COSMIC email: ")
+    if not password:
+        password = getpass.getpass("Please enter your COSMIC password: ")
+
+    input_string = f"{email}:{password}\n"
+    encoded_bytes = base64.b64encode(input_string.encode("utf-8"))
+    return encoded_bytes.decode("utf-8")
+
+def authenticate_cosmic_credentials_via_server(encoded_token):
+    """Sends the encoded authentication token to the server for verification."""
+    server_url = "https://your-secure-server.com/verify_cosmic"  #!!! modify - see varseek_server/validate_cosmic.py
+
+    response = requests.post(server_url, json={"encoded_token": encoded_token})
+    
+    if response.status_code == 200 and response.json().get("authenticated"):
+        return True
+    else:
+        print("Invalid credentials.")
+        return False
+

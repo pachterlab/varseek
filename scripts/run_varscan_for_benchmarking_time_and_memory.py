@@ -10,6 +10,7 @@ parser.add_argument("--synthetic_read_fastq", help="Path to synthetic read FASTQ
 parser.add_argument("--reference_genome_fasta", help="Path to reference genome fasta")
 parser.add_argument("--reference_genome_gtf", help="Path to reference genome GTF")
 parser.add_argument("--star_genome_dir", default="", help="Path to star_genome_dir")
+parser.add_argument("--aligned_and_unmapped_bam", default="", help="Path to aligned_and_unmapped_bam. If not provided, will be created")
 parser.add_argument("--tmp", default="tmp", help="Path to temp folder")
 
 # Parameters
@@ -29,17 +30,18 @@ reference_genome_gtf = args.reference_genome_gtf
 threads = args.threads
 read_length_minus_one = args.read_length - 1
 synthetic_read_fastq = args.synthetic_read_fastq
+aligned_and_unmapped_bam = args.aligned_and_unmapped_bam
 
 STAR = args.STAR
 VARSCAN_INSTALL_PATH = args.VARSCAN_INSTALL_PATH
 
-alignment_folder = f"{varscan_output_dir}/alignment"
+
 os.makedirs(varscan_output_dir, exist_ok=True)
 os.makedirs(star_genome_dir, exist_ok=True)
-os.makedirs(alignment_folder, exist_ok=True)
 
+
+alignment_folder = f"{varscan_output_dir}/alignment"
 out_file_name_prefix = f"{alignment_folder}/sample_"
-aligned_and_unmapped_bam = f"{out_file_name_prefix}Aligned.sortedByCoord.out.bam"
 data_pileup_file = f"{varscan_output_dir}/simulated_data.pileup"
 
 #* Genome alignment with STAR
@@ -66,14 +68,11 @@ star_align_command = [
     "--twopassMode", "Basic"
 ]
 
-#* BAM indexing (maybe not needed?) and sorting (maybe already done by STAR?)
-samtools_index_command = ["samtools", "index", aligned_and_unmapped_bam]
-
 #* Samtools mpileup
 samtools_mpileup_command = f"samtools mpileup -B -f {reference_genome_fasta} {aligned_and_unmapped_bam} > {data_pileup_file}"
 
 #* Varscan variant calling
-varscan_command = f"java -jar {VARSCAN_INSTALL_PATH} mpileup2snp {data_pileup_file}"
+varscan_command = f"java -jar {VARSCAN_INSTALL_PATH} mpileup2cns {data_pileup_file} --output-vcf 1 --variants 1 --min-coverage 1 --min-reads2 1 --min-var-freq 0.0001 --strand-filter 0 --p-value 0.9999"
 
 
 # # commented out, as these should already be done prior to running this script
@@ -84,9 +83,13 @@ varscan_command = f"java -jar {VARSCAN_INSTALL_PATH} mpileup2snp {data_pileup_fi
 #     _ = pysam.faidx(reference_genome_fasta)
 
 if not os.path.exists(aligned_and_unmapped_bam):
+    os.makedirs(alignment_folder, exist_ok=True)
+    aligned_and_unmapped_bam = f"{out_file_name_prefix}Aligned.sortedByCoord.out.bam"
     run_command_with_error_logging(star_align_command)
 
-run_command_with_error_logging(samtools_index_command)
+bam_index_file = f"{aligned_and_unmapped_bam}.bai"
+if not os.path.exists(bam_index_file):
+    _ = pysam.index(aligned_and_unmapped_bam)
 
 run_command_with_error_logging(samtools_mpileup_command)
 

@@ -19,13 +19,14 @@ def print_all_shared_arguments_between_pairs_of_functions(function_name_and_key_
     # Iterate over all combinations of the sets
     for (key1, set1), (key2, set2) in combinations(function_parameters_dict_of_sets.items(), 2):
         shared_elements = set1 & set2  # Find the intersection
-        print(f"Shared elements between {key1} and {key2}: {shared_elements}")
+        shared_elements = sorted(shared_elements)
+        print(f"Shared parameters between {key1} and {key2}: {shared_elements}")
 
 def main():
-    function_name_and_key_list_of_tuples_varseek_ref = [(vk.varseek_build.build, "varseek_build"), (vk.varseek_info.info, "varseek_info"), (vk.varseek_filter.filter, "varseek_filter")]
+    function_name_and_key_list_of_tuples_varseek_ref = [(vk.varseek_build.build, "varseek_build"), (vk.varseek_info.info, "varseek_info"), (vk.varseek_filter.filter, "varseek_filter"), (vk.varseek_ref.ref, "varseek_ref")]
     print_all_shared_arguments_between_pairs_of_functions(function_name_and_key_list_of_tuples_varseek_ref, varseek_ref_only_allowable_kb_ref_arguments, kb_name = "kb ref")
     print("\n-----------------------------------\n")
-    function_name_and_key_list_of_tuples_varseek_count = [(vk.varseek_fastqpp.fastqpp, "varseek_fastqpp"), (vk.varseek_clean.clean, "varseek_clean"), (vk.varseek_summarize.summarize, "varseek_summarize")]
+    function_name_and_key_list_of_tuples_varseek_count = [(vk.varseek_fastqpp.fastqpp, "varseek_fastqpp"), (vk.varseek_clean.clean, "varseek_clean"), (vk.varseek_summarize.summarize, "varseek_summarize"), (vk.varseek_count.count, "varseek_count")]
     print_all_shared_arguments_between_pairs_of_functions(function_name_and_key_list_of_tuples_varseek_count, varseek_ref_only_allowable_kb_count_arguments, kb_name = "kb count")
 
 # Run the script if it's executed directly

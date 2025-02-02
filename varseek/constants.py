@@ -118,6 +118,10 @@ prebuilt_vk_ref_files = {
         "cdna": {
             "index": "",
             "t2g": ""
+        },
+        "genome": {
+            "index": "",
+            "t2g": ""
         }
     }
 }

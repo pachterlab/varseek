@@ -11,7 +11,7 @@ Input table
 Output table
 | Parameter                                                           | File type         | Flag                                                                           | Default Path                                                                                                     | Description           |
 |----------------------------------------------------------------|--------------------|---------------------------------------------------------------------|------------------------------------------------------------------------------------------------------|-------------------------|
-| out                                                                       | directory         | N/A                                                                            | .                                                                                                                        | ...                          |
+| out                                                                       | directory         | N/A                                                                            | <input_dir>                                                                                                       | ...                          |
 | mutations_updated_filtered_csv_out                  | .csv                | N/A                                                                            | <out>/mutation_metadata_df_updated_filtered.csv                                         | ...                          |
 | mutations_updated_exploded_filtered_csv_out  | .csv                | save_mutations_updated_exploded_filtered_csv    | <out>/mutation_metadata_df_updated_filtered_exploded.csv                        | ...                          |
 | id_to_header_filtered_csv_out                            | .csv                | N/A                                                                            | <out>/id_to_header_mapping_filtered.csv                                                      | ...                          |
@@ -27,36 +27,89 @@ Takes in:
 - mcrs fasta
 - filters in the following format
 
-COLUMN-RULE=VALUE
+Only keeps values that pass the filters (e.g., COLUMN0:min=5 will only keep rows where COLUMN0 is greater than or equal to 5)
+
+COLUMN:RULE or COLUMN:RULE=VALUE
 - COLUMN: column name in the info csv
 - RULE: rule to apply to the column from the following list:
-    - min: minimum value
-    - max: maximum value
-    - between: between two values (inclusive)
-    - toppercent: top x% of values (eg 1 to keep top 1%)
-    - bottompercent: bottom x% of values (eg 1 to keep bottom 1%)
-    - equal: equal to value
-    - notequal: not equal to value
-    - isin: equals an element in value (set, or a txt file where each value is separated by a new line)
-    - isnotin: does not equal an element in value (set, or a txt file where each value is separated by a new line)
-    - istrue: is True
-    - isfalse: is False
-    - isnottrue: is not True (i.e., False or NaN)
-    - isnotfalse: is not False (i.e., True or NaN)
-    - isnull: is null
-    - isnotnull: is not null
-- VALUE: value to compare to
-    - min, max: single numeric value (e.g., 1)
-    - between: two numeric values separated by a comma (e.g., "1,2")
-    - contains, notcontains: one or more numeric values separated by a comma (e.g., "1,2,3") for command line or python, or a list or set passed in through an fstring (python only)
-    - equal, notequal: single value (e.g., "yes")
-    - istrue, isfalse, isnottrue, isnotfalse, isnull, isnotnull: no value needed
+    - greater_than:
+        - greater than VALUE i.e., minimum (exclusive) - does not filter null values
+        - VALUE: numeric
+        - example: COLUMN1:greater_than=0
+    - greater_or_equal: 
+        - greater than or equal to VALUE i.e., minimum (inclusive) - does not filter null values
+        - VALUE: numeric
+        - example: COLUMN2:greater_or_equal=0
+    - less_than:
+        - less than or equal to VALUE i.e., maximum (inclusive) - does not filter null values
+        - VALUE: numeric
+        - COLUMN3:less_than=100
+    - less_or_equal:
+        - less than or equal to VALUE i.e., maximum (inclusive) - does not filter null values
+        - VALUE: numeric
+        - example: COLUMN4:less_or_equal=100
+    - between_inclusive:
+        - between two VALUEs (inclusive) - does not filter null values
+        - VALUE: two numeric values separated by a comma
+        - example: COLUMN5:between=0,100
+    - between_exclusive:
+        - between two VALUEs (exclusive) - does not filter null values
+        - VALUE: two numeric values separated by a comma
+        - example: COLUMN6:between=0,100
+    - top_percent:
+        - top VALUE% of numbers (inclusive)
+        - VALUE: numeric
+        - example: COLUMN7:top_percent=10
+    - bottom_percent:
+        - bottom VALUE% of numbers (inclusive)
+        - VALUE: numeric
+        - example: COLUMN8:bottom_percent=0.1
+    - equal:
+        - equal to VALUE
+        - VALUE: string
+        - example: COLUMN9:equal=cdna
+    - not_equal:
+        - not equal to VALUE
+        - VALUE: string
+        - example: COLUMN10:not_equal=cdna
+    - is_in:
+        - equals an element in VALUE i.e., in a set
+        - VALUE: either (1) list or (2) path to text file, where each value is separated by a new line
+        - example: COLUMN11:is_in=[1,2,3], or COLUMN11:is_in=myset.txt
+    - is_not_in:
+        - does not equal an element in value i.e., not in a set
+        - VALUE: either (1) list or (2) path to text file, where each value is separated by a new line
+        - example: COLUMN12:is_not_in=[1,2,3], or COLUMN12:is_not_in=myset.txt
+    - is_true:
+        - is True
+        - VALUE: no value needed
+        - example: COLUMN13:is_true
+    - is_false:
+        - is False
+        - VALUE: no value needed
+        - example: COLUMN14:is_false
+    - is_not_true:
+        - is not True (i.e., False or NaN)
+        - VALUE: no value needed
+        - example: COLUMN15:is_not_true
+    - is_not_false:
+        - is not False (i.e., True or NaN)
+        - VALUE: no value needed
+        - example: COLUMN16:is_not_false
+    - is_null:
+        - is null
+        - VALUE: no value needed
+        - example: COLUMN17:is_null
+    - is_not_null:
+        - is not null
+        - VALUE: no value needed
+        - example: COLUMN18:is_not_null
 
 on command line, simply list the filters as the last argument; in python, pass them as a list of strings
 
 OR the filters can be passed in as a txt file - example:
-COLUMN1-RULE1=VALUE1
-COLUMN2-RULE2=VALUE2
-COLUMN3-RULE3=VALUE3
+COLUMN1:RULE1=VALUE1
+COLUMN2:RULE2=VALUE2
+COLUMN3:RULE3=VALUE3
 
 While the order of filters does not affect the output filtered fasta file, it will affect the stats printed to the console when in verbose mode. The stats will be printed in the order of the filters.

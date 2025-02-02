@@ -97,30 +97,51 @@ def add_mutation_information(mutation_metadata_df, mutation_column="mutation", m
 
     return mutation_metadata_df
 
+def print_list_columns():
+    print("Available values for `columns_to_include`:")
+    for col, description_and_utilized_parameters_tuple in columns_to_include_possible_values.items():
+        print(f"- {col}:\n    {description_and_utilized_parameters_tuple[0]}\n    {description_and_utilized_parameters_tuple[1]}\n")
 
-def validate_input_info(**kwargs):
-    # Type-checking for paths
-    if not isinstance(input_dir, str) or not os.path.isdir(input_dir):
-        raise ValueError(f"Invalid input directory: {input_dir}")
-    if not isinstance(out, str) or not os.path.isdir(out):
-        raise ValueError(f"Invalid input directory: {out}")
-    if reference_out and (not isinstance(reference_out, str) or not os.path.isdir(reference_out)):
-        raise ValueError(f"Invalid reference output directory: {reference_out}")
+def validate_input_info(params_dict):
+    # Directories
+    if not isinstance(params_dict.get("input_dir"), str) or not os.path.isdir(params_dict.get("input_dir")):  # only use os.path.isdir when I require that a directory already exists
+        raise ValueError(f"Invalid value for input_dir: {params_dict.get('input_dir')}")
+    if not isinstance(params_dict.get("out"), str):
+        raise ValueError(f"Invalid value for out: {params_dict.get('out')}")
+    if params_dict.get("reference_out_dir") and (not isinstance(params_dict.get("reference_out_dir"), str) or not os.path.isdir(params_dict.get("reference_out_dir"))):
+        raise ValueError(f"Invalid value for reference_out_dir: {params_dict.get('reference_out_dir')}")
     
-    # Checking paths (all optional because I will provide defaults if they are not provided)
-    check_file_path_is_string_with_valid_extension(mcrs_fasta, "mcrs_fasta", "fasta")
-    check_file_path_is_string_with_valid_extension(mutations_updated_csv, "mutations_updated_csv", "csv")
-    check_file_path_is_string_with_valid_extension(id_to_header_csv, "id_to_header_csv", "csv")
-    check_file_path_is_string_with_valid_extension(mutations_updated_vk_info_csv_out, "mutations_updated_vk_info_csv_out", "csv")
-    check_file_path_is_string_with_valid_extension(mutations_updated_exploded_vk_info_csv_out, "mutations_updated_exploded_vk_info_csv_out", "csv")
-    check_file_path_is_string_with_valid_extension(dlist_genome_fasta_out, "dlist_genome_fasta_out", "fasta")
-    check_file_path_is_string_with_valid_extension(dlist_cdna_fasta_out, "dlist_cdna_fasta_out", "fasta")
-    check_file_path_is_string_with_valid_extension(dlist_combined_fasta_out, "dlist_combined_fasta_out", "fasta")
-    check_file_path_is_string_with_valid_extension(reference_cdna_fasta, "reference_cdna_fasta", "fasta")
-    check_file_path_is_string_with_valid_extension(reference_genome_fasta, "reference_genome_fasta", "fasta")
-    check_file_path_is_string_with_valid_extension(mutations_csv, "mutations_csv", "csv")
+    # file paths
+    for param_name, file_type in {
+        "mcrs_fasta": "fasta",
+        "mutations_updated_csv": "csv",
+        "id_to_header_csv": "csv",
+        "gtf": "gtf",
+        "mutations_updated_vk_info_csv_out": "csv",
+        "mutations_updated_exploded_vk_info_csv_out": "csv",
+        "dlist_genome_fasta_out": "fasta",
+        "dlist_cdna_fasta_out": "fasta",
+        "dlist_combined_fasta_out": "fasta",
+        "reference_cdna_fasta": "fasta",
+        "reference_genome_fasta": "fasta",
+        "mutations_csv": "csv"
+    }:
+        check_file_path_is_string_with_valid_extension(params_dict.get(param_name), param_name, file_type)
 
-    # Type-checking for columns_to_include
+    # dlist reference files
+    for dlist_reference_file in ["dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf"]:
+        if not isinstance(params_dict.get(dlist_reference_file), str):
+            raise ValueError(f"{dlist_reference_file} must be a string, got {type(params_dict.get(dlist_reference_file))}")
+        if params_dict.get(dlist_reference_file) not in supported_dlist_reference_values and not os.path.isfile(params_dict.get(dlist_reference_file)):
+            raise ValueError(f"Invalid value for {dlist_reference_file}: {params_dict.get(dlist_reference_file)}")
+    
+    # column names
+    for column in ["mcrs_id_column", "mcrs_sequence_column", "mcrs_source_column", "mut_column", "seq_id_column", "mutation_cdna_column", "seq_id_cdna_column", "mutation_genome_column", "seq_id_genome_column"]:
+        if not isinstance(params_dict.get(column), str):
+            raise ValueError(f"Invalid column name: {params_dict.get(column)}")
+
+    # columns_to_include
+    columns_to_include = params_dict.get("columns_to_include")
     if not (isinstance(columns_to_include, str) or isinstance(columns_to_include, list) or isinstance(columns_to_include, tuple) or isinstance(columns_to_include, set)):
         raise ValueError(f"columns_to_include must be a string or list of strings, got {type(columns_to_include)}")
     if (isinstance(columns_to_include, list) or isinstance(columns_to_include, tuple) or isinstance(columns_to_include, set)):
@@ -129,68 +150,67 @@ def validate_input_info(**kwargs):
         if not all(col in columns_to_include_possible_values for col in columns_to_include):
             raise ValueError(f"columns_to_include must be a subset of {columns_to_include_possible_values}. Got {columns_to_include}. Use 'all' to include all columns.")
     
-    # Type-checking for int values
-    for param_name, param_value, min_value, optional_value in [
-        ("w", w, 1, False),
-        ("max_ambiguous_mcrs", max_ambiguous_mcrs, 0, True),
-        ("max_ambiguous_reference", max_ambiguous_reference, 0, True),
-        ("threads", threads, 1, True),
-        ("near_splice_junction_threshold", near_splice_junction_threshold, 1, True),
+    # int
+    for param_name, min_value, optional_value in [
+        ("w", 1, False),
+        ("max_ambiguous_mcrs", 0, True),
+        ("max_ambiguous_reference", 0, True),
+        ("threads", 1, True),
+        ("near_splice_junction_threshold", 1, True),
     ]:
+        param_value = params_dict.get(param_name)
         if not is_valid_int(param_value, ">=", min_value, optional=optional_value):
-            raise ValueError(f"{param_name} must be an integer >= {min_value} or None. Got {param_value}.")
+            raise ValueError(f"{param_name} must be an integer >= {min_value} or None. Got {param_value} of type {type(param_value)}.")
         
+    k = params_dict.get("k")
+    w = params_dict.get("w")
     if w and k:
         if not (int(k) > int(w)):
             raise ValueError(f"k must be an integer > w. Got k={k}, w={w}.")
 
-    # Validate boolean parameters
-    for param_name, param_value in {
-        "vcrs_strandedness": vcrs_strandedness,
-        "verbose": verbose,
-        "save_mutations_updated_exploded_vk_info_csv": save_mutations_updated_exploded_vk_info_csv,
-    }.items():
+    # boolean
+    for param_name in ["vcrs_strandedness", "verbose", "save_mutations_updated_exploded_vk_info_csv", "make_pyfastx_summary_file", "make_kat_histogram", "dry_run", "list_columns", "overwrite", "threads"]:
+        param_value = params_dict.get(param_name)
         if not isinstance(param_value, bool):
-            raise ValueError(f"{param_name} must be a boolean. Got {type(param_value)}.")
-    
-    # Type-checking for string (non-path) values
-    if not isinstance(dlist_reference_source, str):
-        raise ValueError(f"dlist_reference_source must be a string, got {type(dlist_reference_source)}")
+            raise ValueError(f"{param_name} must be a boolean. Got {param_value} of type {type(param_value)}.")
 
 
+supported_dlist_reference_values = ["T2T"]
+
+# {column_name, (description, list_of_utilized_parameters)}
 columns_to_include_possible_values = OrderedDict([
-    ('all', 'Include all possible columns'),
-    ('cdna_and_genome_same', 'Whether the cDNA-derived and genome-derived MCRSs are the same'),
-    ('distance_to_nearest_splice_junction', 'Distance to the nearest splice junction (bases) based on the GTF file'),
-    ('number_of_mutations_in_this_gene_total', 'Number of mutations per gene'),
-    ('header_with_gene_name', 'Header with gene name (e.g., ENST00004156 (BRCA1):c.123A>T)'),  #!!! give a real example
-    ('nearby_mutations', 'The list of nearby mutations (i.e., within `k` bases) for each mutation'),
-    ('nearby_mutations_count', 'Nearby mutations count'),
-    ('has_a_nearby_mutation', 'Has a nearby mutation (a boolean of `nearby_mutations_count`)'),
-    ('mcrs_header_length', 'MCRS header length'),
-    ('mcrs_sequence_length', 'MCRS sequence length'),
-    ('dlist', 'States whether an MCRS k-mer aligns to the reference genome'),
-    ('number_of_alignments_to_normal_human_reference', 'Number of alignments to normal human reference'),
-    ('dlist_substring', 'D-list substring'),
-    ('number_of_substring_matches_to_normal_human_reference', 'Number of substring matches to normal human reference'),
-    ('pseudoaligned_to_human_reference', 'Pseudoaligned to human reference'),
-    ('pseudoaligned_to_human_reference_despite_not_truly_aligning', 'Pseudoaligned to human reference despite not truly aligning'),
-    ('number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference', 'Number of k-mers with overlap to other MCRS items in MCRS reference'),
-    ('number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference', 'Number of MCRS items with overlapping k-mers in MCRS reference'),
-    ('kmer_overlap_in_mcrs_reference', 'K-mer overlap in MCRS reference (a boolean of `number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference`)'),
-    ('longest_homopolymer_length', 'Longest homopolymer length'),
-    ('longest_homopolymer', 'Longest homopolymer'),
-    ('num_distinct_triplets', 'Number of distinct triplets'),
-    ('num_total_triplets', 'Number of total triplets'),
-    ('triplet_complexity', 'Triplet complexity'),
-    ('mcrs_mutation_type', 'MCRS mutation type'),
-    ('concatenated_headers_in_mcrs', 'Concatenated headers in MCRS'),
-    ('number_of_mutations_in_mcrs_header', 'Number of mutations in MCRS header'),
-    ('mcrs_sequence_rc', 'MCRS sequence reverse complement'),
-    ('entries_for_which_this_mcrs_is_substring', 'Entries for which this MCRS is substring'),
-    ('entries_for_which_this_mcrs_is_superstring', 'Entries for which this MCRS is superstring'),
-    ('mcrs_is_substring', 'MCRS is substring'),
-    ('mcrs_is_superstring', 'MCRS is superstring')
+    ('all', ('Include all possible columns', ['all parameters'])),
+    ('cdna_and_genome_same', ('Whether the cDNA-derived and genome-derived MCRSs are the same', ['w', 'reference_cdna_fasta', 'reference_genome_fasta', 'mutations_csv'])),
+    ('distance_to_nearest_splice_junction', ('Distance to the nearest splice junction (bases) based on the GTF file', ['gtf', 'near_splice_junction_threshold'])),
+    ('number_of_mutations_in_this_gene_total', ('Number of mutations per gene', [])),
+    ('header_with_gene_name', ('Header with gene name (e.g., ENST00004156 (BRCA1):c.123A>T)', [])),
+    ('nearby_mutations', ('The list of nearby mutations (i.e., within `k` bases) for each mutation', ['k'])),
+    ('nearby_mutations_count', ('Nearby mutations count', ['k'])),
+    ('has_a_nearby_mutation', ('Has a nearby mutation (a boolean of `nearby_mutations_count`)', ['k'])),
+    ('mcrs_header_length', ('MCRS header length', ['k'])),
+    ('mcrs_sequence_length', ('MCRS sequence length', [])),
+    ('dlist', ('States whether an MCRS k-mer aligns to the reference genome', ['k', 'max_ambiguous_mcrs', 'max_ambiguous_reference', 'dlist_reference_genome_fasta', 'dlist_reference_cdna_fasta', 'dlist_reference_gtf', 'dlist_genome_fasta_out', 'dlist_cdna_fasta_out', 'dlist_combined_fasta_out', 'threads', 'vcrs_strandedness'])),
+    ('number_of_alignments_to_normal_human_reference', ('Number of alignments to normal human reference', ['k', 'max_ambiguous_mcrs', 'max_ambiguous_reference', 'dlist_reference_genome_fasta', 'dlist_reference_cdna_fasta', 'dlist_reference_gtf', 'dlist_genome_fasta_out', 'dlist_cdna_fasta_out', 'dlist_combined_fasta_out', 'threads', 'vcrs_strandedness'])),
+    ('dlist_substring', ('D-list substring', ['k', 'max_ambiguous_mcrs', 'max_ambiguous_reference', 'dlist_reference_genome_fasta', 'dlist_reference_cdna_fasta', 'dlist_reference_gtf', 'dlist_genome_fasta_out', 'dlist_cdna_fasta_out', 'dlist_combined_fasta_out', 'threads', 'vcrs_strandedness'])),
+    ('number_of_substring_matches_to_normal_human_reference', ('Number of substring matches to normal human reference', ['k', 'max_ambiguous_mcrs', 'max_ambiguous_reference', 'dlist_reference_genome_fasta', 'dlist_reference_cdna_fasta', 'dlist_reference_gtf', 'dlist_genome_fasta_out', 'dlist_cdna_fasta_out', 'dlist_combined_fasta_out', 'threads', 'vcrs_strandedness'])),
+    ('pseudoaligned_to_human_reference', ('Pseudoaligned to human reference', ['k', 'dlist_reference_genome_fasta', 'dlist_reference_gtf', 'threads', 'vcrs_strandedness'])),
+    ('pseudoaligned_to_human_reference_despite_not_truly_aligning', ('Pseudoaligned to human reference despite not truly aligning', ['k', 'dlist_reference_genome_fasta', 'dlist_reference_gtf', 'threads', 'vcrs_strandedness'])),
+    ('number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference', ('Number of k-mers with overlap to other MCRS items in MCRS reference', ['k', 'vcrs_strandedness'])),
+    ('number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference', ('Number of MCRS items with overlapping k-mers in MCRS reference', ['k', 'vcrs_strandedness'])),
+    ('kmer_overlap_in_mcrs_reference', ('K-mer overlap in MCRS reference (a boolean of `number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference`)', [])),
+    ('longest_homopolymer_length', ('Longest homopolymer length', [])),
+    ('longest_homopolymer', ('Longest homopolymer', [])),
+    ('num_distinct_triplets', ('Number of distinct triplets', [])),
+    ('num_total_triplets', ('Number of total triplets', [])),
+    ('triplet_complexity', ('Triplet complexity', [])),
+    ('mcrs_mutation_type', ('MCRS mutation type', [])),
+    ('concatenated_headers_in_mcrs', ('Concatenated headers in MCRS', [])),
+    ('number_of_mutations_in_mcrs_header', ('Number of mutations in MCRS header', [])),
+    ('mcrs_sequence_rc', ('MCRS sequence reverse complement', [])),
+    ('entries_for_which_this_mcrs_is_substring', ('Entries for which this MCRS is substring', ['threads'])),
+    ('entries_for_which_this_mcrs_is_superstring', ('Entries for which this MCRS is superstring', ['threads'])),
+    ('mcrs_is_substring', ('MCRS is substring', ['threads'])),
+    ('mcrs_is_superstring', ('MCRS is superstring', ['threads']))
 ])
 
 # TODO: finish implementing the cdna/genome column stuff, and remove hard-coding of some column names
@@ -203,6 +223,7 @@ def info(
     mcrs_fasta = None,
     mutations_updated_csv = None,
     id_to_header_csv = None,  # if none then assume no swapping occurred
+    gtf = None,
     dlist_reference_genome_fasta = "T2T",
     dlist_reference_cdna_fasta = "T2T",
     dlist_reference_gtf = "T2T",
@@ -216,7 +237,7 @@ def info(
     mutation_genome_column="mutation_genome",
     seq_id_genome_column="chromosome",
     out = None,
-    reference_out = None,
+    reference_out_dir = None,
     mutations_updated_vk_info_csv_out = None,
     mutations_updated_exploded_vk_info_csv_out = None,
     dlist_genome_fasta_out = None,
@@ -233,7 +254,7 @@ def info(
     **kwargs,
 ):
     """
-    Takes in an MCRS fasta file generated from varseek build, and returns a data frame with additional columns containing information about the mutations in the following format:
+    Takes in the input directory containing with the MCRS fasta file generated from varseek build, and returns a dataframe with additional columns containing information about the mutations.
 
     # Required input arguments:
     - input_dir     (str) Path to the directory containing the input files. Corresponds to `out` in the varseek build function.
@@ -249,9 +270,9 @@ def info(
     - mutations_updated_csv              (str) Path to the updated dataframe containing the MCRS headers and sequences. Corresponds to `mutations_updated_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).
     - id_to_header_csv                   (str) Path to the csv file containing the mapping of IDs to headers generated from varseek build corresponding to mcrs_fasta. Corresponds to `id_to_header_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).
     - gtf                                (str) Path to the GTF file containing the gene annotations for the reference genome. Corresponds to `gtf` in the varseek build function. Must align to genome coordinates used in the annotation of mutations. Only used by the following columns: 'distance_to_nearest_splice_junction'. Default: None.
-    - dlist_reference_genome_fasta       (str) Path to the reference genome fasta file for the d-list. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference', 'pseudoaligned_to_human_reference', 'pseudoaligned_to_human_reference_despite_not_truly_aligning'. Default: "T2T. (will automatically download the T2T reference genome files to `reference_out`)
-    - dlist_reference_cdna_fasta         (str) Path to the reference cDNA fasta file for the d-list. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference'. Default: "T2T. (will automatically download the T2T reference genome files to `reference_out`)
-    - dlist_reference_gtf                (str) Path to the GTF file containing the gene annotations for the reference genome. Only used by the following columns: 'pseudoaligned_to_human_reference', 'pseudoaligned_to_human_reference_despite_not_truly_aligning'. Default: "T2T. (will automatically download the T2T reference genome files to `reference_out`)
+    - dlist_reference_genome_fasta       (str) Path to the reference genome fasta file for the d-list. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference', 'pseudoaligned_to_human_reference', 'pseudoaligned_to_human_reference_despite_not_truly_aligning'. Default: "T2T. (will automatically download the T2T reference genome files to `reference_out_dir`)
+    - dlist_reference_cdna_fasta         (str) Path to the reference cDNA fasta file for the d-list. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference'. Default: "T2T. (will automatically download the T2T reference genome files to `reference_out_dir`)
+    - dlist_reference_gtf                (str) Path to the GTF file containing the gene annotations for the reference genome. Only used by the following columns: 'pseudoaligned_to_human_reference', 'pseudoaligned_to_human_reference_despite_not_truly_aligning'. Default: "T2T. (will automatically download the T2T reference genome files to `reference_out_dir`)
 
     # Column names in mutations_updated_csv:
     - mcrs_id_column                     (str) Name of the column containing the MCRS IDs in `mutations_updated_csv`. Only used if `mutations_updated_csv` exists (i.e., was generated from varseek build). Default: 'mcrs_id'.
@@ -266,12 +287,12 @@ def info(
 
     # Output file paths:
     - out                                (str) Path to the directory where the output files will be saved. Default: `input_dir`.
-    - reference_out                      (str) Path to the directory where the reference files will be saved. Default: `out`.
+    - reference_out_dir                      (str) Path to the directory where the reference files will be saved. Default: `out`.
     - mutations_updated_vk_info_csv_out  (str) Path to the output csv file containing the updated dataframe with the additional columns. Default: `out`/mutation_metadata_df_updated_vk_info.csv.
     - mutations_updated_exploded_vk_info_csv_out (str) Path to the output csv file containing the exploded dataframe with the additional columns. Default: `out`/mutation_metadata_df_updated_vk_info_exploded.csv.
-    - dlist_genome_fasta_out             (str) Path to the output fasta file containing the d-list sequences for the genome-based alignmed. Default: `out`/dlist_genome.fa.
-    - dlist_cdna_fasta_out               (str) Path to the output fasta file containing the d-list sequences for the cDNA-based alignmed. Default: `out`/dlist_cdna.fa.
-    - dlist_combined_fasta_out           (str) Path to the output fasta file containing the d-list sequences  combined genome-based and cDNA-based alignment. Default: `out`/dlist.fa.
+    - dlist_genome_fasta_out             (str) Path to the output fasta file containing the d-list sequences for the genome-based alignmed. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference'. Default: `out`/dlist_genome.fa.
+    - dlist_cdna_fasta_out               (str) Path to the output fasta file containing the d-list sequences for the cDNA-based alignmed. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference'.Default: `out`/dlist_cdna.fa.
+    - dlist_combined_fasta_out           (str) Path to the output fasta file containing the d-list sequences  combined genome-based and cDNA-based alignment. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference'.Default: `out`/dlist.fa.
 
     # Returning and saving of optional output
     - save_mutations_updated_exploded_vk_info_csv (bool) Whether to save the exploded dataframe. Default: False.
@@ -289,18 +310,16 @@ def info(
     - w                                  (int) Maximum length of the MCRS flanking regions. Must be an integer between [1, k-1]. Only utilized for the column 'cdna_and_genome_same'. Corresponds to `w` in the varseek build function. Default: 54.
     - bowtie_path                        (str) Path to the directory containing the bowtie2 and bowtie2-build executables. Default: None.
     - vcrs_strandedness                  (bool) Whether to consider MCRSs as stranded when aligning to the human reference and comparing MCRS k-mers to each other. vcrs_strandedness True corresponds to treating forward and reverse-complement as distinct; False corresponds to treating them as the same. Corresponds to `vcrs_strandedness` in the varseek build function. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference', 'pseudoaligned_to_human_reference', 'pseudoaligned_to_human_reference_despite_not_truly_aligning', 'number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference', 'number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference', 'kmer_overlap_in_mcrs_reference'; and if make_kat_histogram==True. Default: False.
-    - near_splice_junction_threshold     (int) Maximum distance from a splice junction to be considered "near" a splice junction. Default: 10.
+    - near_splice_junction_threshold     (int) Maximum distance from a splice junction to be considered "near" a splice junction. Only utilized for the column 'distance_to_nearest_splice_junction'. Default: 10.
+    - reference_cdna_fasta               (str) Path to the reference cDNA fasta file. Only utilized for the column 'cdna_and_genome_same'. Default: None.
+    - reference_genome_fasta             (str) Path to the reference genome fasta file. Only utilized for the column 'cdna_and_genome_same'. Default: None.
+    - mutations_csv                      (str) Path to the mutations csv file. Only utilized for the column 'cdna_and_genome_same'. Corresponds to `mutations` in the varseek build function. Default: None.
     """
-
-    if dlist_reference_genome_fasta == "T2T" or dlist_reference_cdna_fasta == "T2T" or dlist_reference_gtf == "T2T":
-        dlist_reference_genome_fasta, dlist_reference_cdna_fasta, dlist_reference_gtf = download_t2t_reference_files(reference_out)
-
     # CELL
     #* 0. Informational arguments that exit early
+    
     if list_columns:
-        print("Available values for `columns_to_include`:")
-        for col, description in columns_to_include_possible_values.items():
-            print(f"- {col}: {description}")
+        print_list_columns()
         return
     
     #* 1. Start timer
@@ -308,12 +327,14 @@ def info(
     
     #* 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
-    validate_input_info(**params_dict)
+    validate_input_info(params_dict)
 
-    #* 3. Dry-run
+    #* 3. Dry-run and set out folder (must to it up here or else config will save in the wrong place)
     if dry_run:
         print_varseek_dry_run(params_dict, function_name="info")
         return None
+    if out is None:
+        out = input_dir if input_dir else "."
     
     #* 4. Save params to config file
     config_file = os.path.join(out, "config", "vk_info_config.json")
@@ -338,11 +359,11 @@ def info(
         id_to_header_csv = None
 
     #* 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
-    if not reference_out:
-        reference_out = os.path.join(out, "reference")
+    if not reference_out_dir:
+        reference_out_dir = os.path.join(out, "reference")
 
     os.makedirs(out, exist_ok=True)
-    os.makedirs(reference_out, exist_ok=True)
+    os.makedirs(reference_out_dir, exist_ok=True)
 
     if not mutations_updated_vk_info_csv_out:
         mutations_updated_vk_info_csv_out = os.path.join(out, "mutation_metadata_df_updated_vk_info.csv")
@@ -364,21 +385,26 @@ def info(
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
     #* 7. Define kwargs defaults
+    w = kwargs.get("w", 54)
+    bowtie_path = kwargs.get("bowtie_path", None)
     vcrs_strandedness = kwargs.get("vcrs_strandedness", False)
     near_splice_junction_threshold = kwargs.get("near_splice_junction_threshold", 10)
     reference_cdna_fasta = kwargs.get("reference_cdna_fasta", None)
     reference_genome_fasta = kwargs.get("reference_genome_fasta", None)
     mutations_csv = kwargs.get("mutations_csv", None)
-    w = kwargs.get("w", 54)
 
 
     #* 8. Start the actual function
-    if out is None:
-        out = input_dir if input_dir else "."
+    if columns_to_include == "all":
+        make_pyfastx_summary_file = True
+        make_kat_histogram = True
+
+    if dlist_reference_genome_fasta == "T2T" or dlist_reference_cdna_fasta == "T2T" or dlist_reference_gtf == "T2T":
+        t2t_reference_dir = os.path.join(reference_out_dir, "t2t")
+        dlist_reference_genome_fasta, dlist_reference_cdna_fasta, dlist_reference_gtf = download_t2t_reference_files(t2t_reference_dir)
     
     columns_to_explode = ["header", "order"]
     columns_not_successfully_added = []
-    bowtie_path = kwargs.get("bowtie_path", None)
 
     # --np (N penalty) caps number of Ns in read (MCRS), reference (human reference genome/transcriptome), or both
     # --n-ceil (max_ambiguous_mcrs) caps number of Ns in read (MCRS) only
@@ -730,7 +756,7 @@ def info(
                 mutations=mcrs_fasta,
                 mcrs_id_column=mcrs_id_column,
                 out_dir_notebook=out,
-                reference_out=reference_out,
+                reference_out=reference_out_dir,
                 dlist_fasta_file_genome_full=dlist_genome_fasta_out,
                 dlist_fasta_file_cdna_full=dlist_cdna_fasta_out,
                 dlist_fasta_file=dlist_combined_fasta_out,
@@ -795,7 +821,7 @@ def info(
         else:
             column_name = "pseudoaligned_to_human_reference_despite_not_truly_aligning"
 
-        ref_folder_kb = f"{reference_out}/kb_index_for_mcrs_pseudoalignment_to_reference_genome"
+        ref_folder_kb = f"{reference_out_dir}/kb_index_for_mcrs_pseudoalignment_to_reference_genome"
 
         try:
             logger.info("Getting MCRSs that pseudoalign but aren't dlisted")

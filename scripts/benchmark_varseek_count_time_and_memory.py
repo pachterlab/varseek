@@ -4,6 +4,7 @@ import pysam
 import subprocess
 import pandas as pd
 import numpy as np
+import time
 import varseek as vk
 from varseek.utils import report_time_and_memory_of_script, run_command_with_error_logging, is_program_installed
 all_supported_tools_to_benchmark = {"varseek", "gatk_haplotypecaller", "gatk_mutect2", "strelka2", "varscan"}
@@ -67,6 +68,8 @@ gatk_haplotypecaller_script_path = os.path.join(script_dir, "run_gatk_for_benchm
 gatk_mutect2_script_path = os.path.join(script_dir, "run_gatk_for_benchmarking_time_and_memory.py")
 strelka_script_path = os.path.join(script_dir, "run_strelka_for_benchmarking_time_and_memory.py")
 varscan_script_path = os.path.join(script_dir, "run_varscan_for_benchmarking_time_and_memory.py")
+
+star_output_file = os.path.join(output_dir, "STAR_time.txt")
 
 # create synthetic reads
 if k and w:
@@ -179,11 +182,17 @@ if any(tool in tools_that_require_star_alignment for tool in tools_to_benchmark)
     ]
 
     if not os.listdir(star_genome_dir):
-        run_command_with_error_logging(star_build_command)
+        elapsed_time = run_command_with_error_logging(star_build_command, track_time=True)
+        with open(star_output_file, "w") as f:
+            f.write(f"STAR build runtime: {elapsed_time[0]} minutes, {elapsed_time[1]} seconds\n")
 
     #* Index reference genome
     if not os.path.exists(f"{reference_genome_fasta}.fai"):
+        start_time = time.time()
         _ = pysam.faidx(reference_genome_fasta)
+        minutes, seconds = divmod(time.time() - start_time, 60)
+        with open(star_output_file, "a") as f:
+            f.write(f"Genome indexing runtime: {minutes} minutes, {seconds} seconds\n")
 
     #* Index 1000 genomes standard variants
     index_feature_file_command = [
@@ -234,33 +243,65 @@ for number_of_reads in number_of_reads_list:
         output_file = os.path.join(output_dir, f"vk_count_threads_{threads}_reads_{number_of_reads}_time_and_memory.txt")
         argparse_flags = f"--index {vk_ref_index_path} --t2g {vk_ref_t2g_path} --fastq {fastq_output_path}"  #!!! ensure that no filtering/processing is done by fastqpp or clean
         _ = report_time_and_memory_of_script(vk_count_script_path, output_file = output_file, argparse_flags = argparse_flags)
+
+    if any(tool in tools_that_require_star_alignment for tool in tools_to_benchmark):
+        #* STAR alignment
+        star_alignment_dir = os.path.join(tmp_dir, "strelka2_simulated_data_dir")
+        out_file_name_prefix = f"{star_alignment_dir}/sample_"
+        aligned_and_unmapped_bam = f"{out_file_name_prefix}Aligned.sortedByCoord.out.bam"
+        star_align_command = [
+            STAR,
+            "--runThreadN", str(threads),
+            "--genomeDir", star_genome_dir,
+            "--readFilesIn", fastq_output_path,
+            "--sjdbOverhang", str(read_length_minus_one),
+            "--outFileNamePrefix", out_file_name_prefix,
+            "--outSAMtype", "BAM", "SortedByCoordinate",
+            "--outSAMunmapped", "Within",
+            "--outSAMmapqUnique", "60",
+            "--twopassMode", "Basic"
+        ]
+
+        print(f"STAR alignment, {number_of_reads} reads")
+        elapsed_time = run_command_with_error_logging(star_align_command, track_time=True)
+        with open(star_output_file, "a") as f:
+            f.write(f"STAR alignment runtime for {number_of_reads} reads: {elapsed_time[0]} minutes, {elapsed_time[1]} seconds\n")
+
+        #* Index BAM file
+        bam_index_file = f"{aligned_and_unmapped_bam}.bai"
+        if not os.path.exists(bam_index_file):
+            start_time = time.time()
+            _ = pysam.index(aligned_and_unmapped_bam)
+            minutes, seconds = divmod(time.time() - start_time, 60)
+            with open(star_output_file, "a") as f:
+                f.write(f"BAM indexing runtime for {number_of_reads} reads: {minutes} minutes, {seconds} seconds\n")
     
     if "gatk_haplotypecaller" in tools_to_benchmark:
         #* Variant calling: GATK HaplotypeCaller
         print(f"GATK HaplotypeCaller, {number_of_reads} reads")
         output_file = os.path.join(output_dir, f"gatk_haplotypecaller_threads_{threads}_reads_{number_of_reads}_time_and_memory.txt")
-        argparse_flags = f"--synthetic_read_fastq {fastq_output_path} --reference_genome_fasta {reference_genome_fasta} --reference_genome_gtf {reference_genome_gtf} --star_genome_dir {star_genome_dir} --threads {threads} --read_length {read_length} --STAR {STAR} --java {java} --picard_jar {picard_jar} --gatk {gatk}"
+        argparse_flags = f"--synthetic_read_fastq {fastq_output_path} --reference_genome_fasta {reference_genome_fasta} --reference_genome_gtf {reference_genome_gtf} --star_genome_dir {star_genome_dir} --threads {threads} --read_length {read_length} --STAR {STAR} --java {java} --picard_jar {picard_jar} --gatk {gatk} --tmp {tmp_dir} --aligned_and_unmapped_bam {aligned_and_unmapped_bam}"
         _ = report_time_and_memory_of_script(gatk_haplotypecaller_script_path, output_file = output_file, argparse_flags = argparse_flags)
 
     if "gatk_mutect2" in tools_to_benchmark:
         #* Variant calling: GATK Mutect2
         print(f"GATK Mutect2, {number_of_reads} reads")
         output_file = os.path.join(output_dir, f"gatk_mutect2_threads_{threads}_reads_{number_of_reads}_time_and_memory.txt")
-        argparse_flags = f"--synthetic_read_fastq {fastq_output_path} --reference_genome_fasta {reference_genome_fasta} --reference_genome_gtf {reference_genome_gtf} --star_genome_dir {star_genome_dir} --threads {threads} --read_length {read_length} --STAR {STAR} --java {java} --picard_jar {picard_jar} --gatk {gatk}"
+        argparse_flags = f"--synthetic_read_fastq {fastq_output_path} --reference_genome_fasta {reference_genome_fasta} --reference_genome_gtf {reference_genome_gtf} --star_genome_dir {star_genome_dir} --threads {threads} --read_length {read_length} --STAR {STAR} --java {java} --picard_jar {picard_jar} --gatk {gatk} --tmp {tmp_dir} --aligned_and_unmapped_bam {aligned_and_unmapped_bam}"
         _ = report_time_and_memory_of_script(gatk_mutect2_script_path, output_file = output_file, argparse_flags = argparse_flags)
 
     if "strelka2" in tools_to_benchmark:
         #* Variant calling: Strelka2
         print(f"Strelka2, {number_of_reads} reads")
         output_file = os.path.join(output_dir, f"strelka2_threads_{threads}_reads_{number_of_reads}_time_and_memory.txt")
-        argparse_flags = f"--synthetic_read_fastq {fastq_output_path} --reference_genome_fasta {reference_genome_fasta} --reference_genome_gtf {reference_genome_gtf} --star_genome_dir {star_genome_dir} --threads {threads} --read_length {read_length} --STRELKA_INSTALL_PATH {STRELKA_INSTALL_PATH}"
+        argparse_flags = f"--synthetic_read_fastq {fastq_output_path} --reference_genome_fasta {reference_genome_fasta} --reference_genome_gtf {reference_genome_gtf} --star_genome_dir {star_genome_dir} --threads {threads} --read_length {read_length} --STRELKA_INSTALL_PATH {STRELKA_INSTALL_PATH} --tmp {tmp_dir} --aligned_and_unmapped_bam {aligned_and_unmapped_bam}"
         _ = report_time_and_memory_of_script(strelka_script_path, output_file = output_file, argparse_flags = argparse_flags)
 
     if "varscan" in tools_to_benchmark:
         #* Variant calling: VarScan
         print(f"VarScan, {number_of_reads} reads")
         output_file = os.path.join(output_dir, f"varscan_threads_{threads}_reads_{number_of_reads}_time_and_memory.txt")
-        argparse_flags = f"--synthetic_read_fastq {fastq_output_path} --reference_genome_fasta {reference_genome_fasta} --reference_genome_gtf {reference_genome_gtf} --star_genome_dir {star_genome_dir} --threads {threads} --read_length {read_length} --VARSCAN_INSTALL_PATH {VARSCAN_INSTALL_PATH}"
+        argparse_flags = f"--synthetic_read_fastq {fastq_output_path} --reference_genome_fasta {reference_genome_fasta} --reference_genome_gtf {reference_genome_gtf} --star_genome_dir {star_genome_dir} --threads {threads} --read_length {read_length} --VARSCAN_INSTALL_PATH {VARSCAN_INSTALL_PATH} --tmp {tmp_dir} --aligned_and_unmapped_bam {aligned_and_unmapped_bam}"
         _ = report_time_and_memory_of_script(varscan_script_path, output_file = output_file, argparse_flags = argparse_flags)
 
     os.remove(fastq_output_path)

@@ -102,17 +102,18 @@ if not os.path.exists(aligned_and_unmapped_bam):
 if not os.path.exists(f"{reference_genome_fasta}.fai"):
     _ = pysam.faidx(reference_genome_fasta)
 
-#* BAM indexing (maybe not needed?) and sorting (maybe already done by STAR?)
-samtools_index_command = ["samtools", "index", aligned_and_unmapped_bam]
-subprocess.run(samtools_index_command, check=True)  # can possibly skip samtools sort below due to STAR mode --outSAMtype BAM SortedByCoordinate, but might need this step instead
-# !samtools sort --threads $threads -o sorted.bam $aligned_and_unmapped_bam  # stated to be needed by VarScan documentation
+#* BAM indexing
+bam_index_file = f"{aligned_and_unmapped_bam}.bai"
+if not os.path.exists(bam_index_file):
+    _ = pysam.index(aligned_and_unmapped_bam)
+
 
 #* Samtools mpileup
 samtools_mpileup_command = f"samtools mpileup -B -f {reference_genome_fasta} {aligned_and_unmapped_bam} > {data_pileup_file}"
 subprocess.run(samtools_mpileup_command, shell=True, check=True)
 
 #* Varscan variant calling
-varscan_command = f"java -jar {VARSCAN_INSTALL_PATH} mpileup2snp {data_pileup_file}"
+varscan_command = f"java -jar {VARSCAN_INSTALL_PATH} mpileup2cns {data_pileup_file} --output-vcf 1 --variants 1 --min-coverage 1 --min-reads2 1 --min-var-freq 0.0001 --strand-filter 0 --p-value 0.9999"
 subprocess.run(varscan_command, shell=True, check=True)
 
 if not run_benchmarking:
