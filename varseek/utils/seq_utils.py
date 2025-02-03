@@ -33,7 +33,7 @@ from Bio import SeqIO
 from Bio.Seq import Seq
 import pyfastx
 import gget
-from varseek.constants import complement, codon_to_amino_acid, mutation_pattern, technology_barcode_and_umi_dict
+from varseek.constants import complement, codon_to_amino_acid, mutation_pattern, technology_barcode_and_umi_dict, fastq_extensions
 
 from varseek.utils.visualization_utils import (
     print_column_summary_stats,
@@ -55,7 +55,6 @@ dlist_pattern_utils = re.compile(
     r"|^(unspliced)?(\d+)(;(unspliced)?\d+)*_(\d+)$"  # Second pattern: optional unspliced, digits, underscore, digits
     r"|^(unspliced)?(ENST\d+:(?:c\.|g\.)\d+(_\d+)?([a-zA-Z>]+))(;(unspliced)?ENST\d+:(?:c\.|g\.)\d+(_\d+)?([a-zA-Z>]+))*_\d+$"  # Third pattern: complex ENST pattern
 )
-
 
 def read_fastq(fastq_file):
     is_gzipped = fastq_file.endswith(".gz")
@@ -112,7 +111,7 @@ def read_fasta(file_path, semicolon_split=False):
 
 
 def get_header_set_from_fasta(synthetic_read_fa):
-    return {header for header, _ in read_fasta(synthetic_read_fa)}
+    return {header for header, _ in pyfastx.Fastx(synthetic_read_fa)}
 
 
 def create_mutant_t2g(
@@ -171,7 +170,7 @@ def fasta_to_fastq(
     open_func = gzip.open if gzip_output else open
     mode = "wt" if gzip_output else "w"
     with open_func(fastq_file, mode) as fastq:
-        for sequence_id, sequence in read_fasta(fasta_file):
+        for sequence_id, sequence in pyfastx.Fastx(fasta_file):
             if k is None or k >= len(sequence):
                 if add_noise:
                     quality_scores = generate_noisy_quality_scores(
@@ -197,27 +196,6 @@ def fasta_to_fastq(
                     fastq.write(f"{kmer}\n")
                     fastq.write("+\n")
                     fastq.write(f"{quality_scores}\n")
-
-
-def read_fastq(fastq_file):
-    is_gzipped = fastq_file.endswith(".gz")
-    open_func = gzip.open if is_gzipped else open
-    open_mode = "rt" if is_gzipped else "r"
-
-    try:
-        with open_func(fastq_file, open_mode) as file:
-            while True:
-                header = file.readline().strip()
-                sequence = file.readline().strip()
-                plus_line = file.readline().strip()
-                quality = file.readline().strip()
-
-                if not header:
-                    break
-
-                yield header, sequence, plus_line, quality
-    except Exception as e:
-        raise RuntimeError(f"Error reading FASTQ file '{fastq_file}': {e}")
 
 
 import gzip
@@ -263,7 +241,7 @@ def write_temp_fa(mcrs_fa):
     mcrs_fa_original = mcrs_fa
     mcrs_fa = mcrs_fa.replace(".fa", "_temp.fa")
     with open(mcrs_fa, "w") as outfile:
-        for header, sequence in read_fasta(mcrs_fa_original):
+        for header, sequence in pyfastx.Fastx(mcrs_fa_original):
             new_header = header.replace(">", "x")
             outfile.write(f">{new_header}\n{sequence}\n")
 
@@ -471,7 +449,7 @@ def convert_mutation_cds_locations_to_cdna(
 
 def find_matching_sequences_through_fasta(file_path, ref_sequence):
     headers_of_matching_sequences = []
-    for header, sequence in read_fasta(file_path):
+    for header, sequence in pyfastx.Fastx(file_path):
         if sequence == ref_sequence:
             headers_of_matching_sequences.append(header)
 
@@ -482,7 +460,7 @@ def create_header_to_sequence_ordered_dict_from_fasta_after_semicolon_splitting(
     input_fasta,
 ):
     mutant_reference = OrderedDict()
-    for mutant_reference_header, mutant_reference_sequence in read_fasta(input_fasta):
+    for mutant_reference_header, mutant_reference_sequence in pyfastx.Fastx(input_fasta):
         mutant_reference_header_individual_list = mutant_reference_header.split(";")
         for (
             mutant_reference_header_individual
@@ -498,7 +476,7 @@ def create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splittin
         mutant_reference = pyfastx.Fasta(input_fasta, build_index=True)
     else:
         mutant_reference = OrderedDict()
-        for mutant_reference_header, mutant_reference_sequence in read_fasta(input_fasta):
+        for mutant_reference_header, mutant_reference_sequence in pyfastx.Fastx(input_fasta):
             mutant_reference[mutant_reference_header] = mutant_reference_sequence
     return mutant_reference
 
@@ -716,7 +694,7 @@ def combine_transcriptome_fasta(
     with open(output_file, "w") as outfile:
         # Open the FASTA file and loop through each entry
         outfile.write(f">Joined_transcriptome_chunk_{current_chunk}\n")
-        for _, sequence in read_fasta(input_fasta):
+        for _, sequence in pyfastx.Fastx(input_fasta):
             current_size += len(sequence)
             if current_size <= max_chunk_size:
                 joined_sequences.append(sequence)
@@ -1071,6 +1049,8 @@ def split_fastq_reads_by_N(
     os.makedirs(out_dir, exist_ok=True)
     parts = input_fastq_file.split(".", 1)
     output_fastq_file = os.path.join(out_dir, f"{parts[0]}_split_by_Ns.{parts[1]}")
+
+    technology = technology.lower()
     
     if technology == "bulk":  # use seqtk
         split_reads_by_N_command = f"{seqtk} cutN -n 1 -p 1 {input_fastq_file} | sed '/^$/d' > {output_fastq_file}"
@@ -1090,7 +1070,7 @@ def split_fastq_reads_by_N(
                 if os.path.exists(output_fastq_file_temp):
                     os.remove(output_fastq_file_temp)
     else:  # must copy barcode/umi to each read, so seqtk will not work here
-        if "smartseq" in technology.lower():
+        if "smartseq" in technology:
             barcode_key = "spacer"
         else:
             barcode_key = "barcode"
@@ -1115,11 +1095,14 @@ def split_fastq_reads_by_N(
 
         regex = re.compile(r"[^Nn]+")
 
+        input_fastq_read_only = pyfastx.Fastx(input_fastq_file)
+        plus_line = "+"
+
         with open_func(output_fastq_file, "wt") as out_file:
-            for header, sequence, plus_line, quality in read_fastq(input_fastq_file):
+            for header, sequence, quality in input_fastq_read_only:
                 header = header[1:]  # Remove '@' character
                 if technology != "bulk" and contains_barcodes_or_umis:
-                    if technology == "SMARTSEQ3":
+                    if technology == "smartseq3":
                         sc_read_has_index_and_umi = check_if_read_has_index_and_umi_smartseq3(sequence)  # TODO: write this
                         if not sc_read_has_index_and_umi:
                             prefix_len = 0
@@ -1189,7 +1172,7 @@ def count_number_of_nonidentical_mutation_fragments(
                 input_object, id_to_header_csv, out_fasta=temp_header_fa
             )  # * added
             input_object = temp_header_fa
-        for header, _ in read_fasta(input_object):
+        for header, _ in pyfastx.Fastx(input_object):
             if ";" not in header:
                 i += 1
         if id_to_header_csv is not None:
@@ -1334,7 +1317,7 @@ def remove_mutations_which_are_a_perfect_substring_of_wt_reference_genome(
         output_dlist = dlist_fasta_file + ".tmp"
 
     i = 0
-    for dlist_header, dlist_sequence in read_fasta(dlist_fasta_file):
+    for dlist_header, dlist_sequence in pyfastx.Fastx(dlist_fasta_file):
         dlist_header_shortened = dlist_header.rsplit("_", 1)[0]
         if dlist_header_shortened in mutant_reference:
             if sequence_match(
@@ -1349,7 +1332,7 @@ def remove_mutations_which_are_a_perfect_substring_of_wt_reference_genome(
                 i += len(semicolon_separated_headers)
 
     with open(output_dlist, "w") as output_dlist:
-        for dlist_header, dlist_sequence in read_fasta(dlist_fasta_file):
+        for dlist_header, dlist_sequence in pyfastx.Fastx(dlist_fasta_file):
             if not dlist_header.rsplit("_", 1)[0] in headers_NOT_to_put_in_dlist:
                 output_dlist.write(f">{dlist_header}\n{dlist_sequence}\n")
 
@@ -1400,7 +1383,7 @@ def remove_Ns_fasta(fasta_file, max_ambiguous_reference = 0):
     else:  # at most max_ambiguous_reference Ns
         condition = lambda sequence: sequence.upper().count("N") <= max_ambiguous_reference
     with open(fasta_file, "r") as infile, open(fasta_file_temp, "w") as outfile:
-        for header, sequence in read_fasta(infile):
+        for header, sequence in pyfastx.Fastx(infile):
             if condition(sequence):
                 outfile.write(f">{header}\n{sequence}\n")
             else:
@@ -1420,7 +1403,7 @@ def count_number_of_spliced_and_unspliced_headers(file):
     spliced_only_lines = 0
     unspliced_only_lines = 0
     spliced_and_unspliced_lines = 0
-    for headers_concatenated, _ in read_fasta(file):
+    for headers_concatenated, _ in pyfastx.Fastx(file):
         headers_list = headers_concatenated.split(";")
         spliced = False
         unspliced = False
@@ -1462,7 +1445,7 @@ def assert_proper_header(dlist_header, pattern):
 
 def get_long_headers(fasta_file, length_threshold=250):
     return {
-        header for header, _ in read_fasta(fasta_file) if len(header) > length_threshold
+        header for header, _ in pyfastx.Fastx(fasta_file) if len(header) > length_threshold
     }
 
 
@@ -1484,7 +1467,7 @@ def compute_unique_mutation_header_set(
 
     total_lines = sum(1 for _ in open(file)) // 2
     for headers_concatenated, _ in tqdm(
-        read_fasta(file), total=total_lines, desc="Processing headers"
+        pyfastx.Fastx(file), total=total_lines, desc="Processing headers"
     ):
         headers_list = headers_concatenated.split("~")
         for header in headers_list:
@@ -2484,7 +2467,7 @@ def build_random_genome_read_df(
     if "start_mutation_position_genome" in mutation_metadata_df.columns:
         mutation_metadata_df['start_position_for_which_read_contains_mutation_genome'] = mutation_metadata_df['start_mutation_position_genome'] - read_length + 1
 
-    fasta_entries = list(read_fasta(reference_fasta_file_path))
+    fasta_entries = list(pyfastx.Fastx(reference_fasta_file_path))
     if read_df is None:
         column_names = [
             "read_id",
@@ -2613,9 +2596,9 @@ def build_random_genome_read_df(
 
 def get_header_set_from_fastq(fastq_file, output_format="set"):
     if output_format == "set":
-        headers = {header[1:].strip() for header, _, _, _ in read_fastq(fastq_file)}
+        headers = {header[1:].strip() for header, _, _ in pyfastx.Fastx(fastq_file)}  
     elif output_format == "list":
-        headers = [header[1:].strip() for header, _, _, _ in read_fastq(fastq_file)]
+        headers = [header[1:].strip() for header, _, _ in pyfastx.Fastx(fastq_file)]
     return headers
 
 
@@ -3901,7 +3884,7 @@ def swap_ids_for_headers_in_fasta(in_fasta, id_to_header_csv, out_fasta=None):
         id_to_header = id_to_header_csv
 
     with open(out_fasta, "w") as output_file:
-        for seq_id, sequence in read_fasta(in_fasta):
+        for seq_id, sequence in pyfastx.Fastx(in_fasta):
             output_file.write(f">{id_to_header[seq_id]}\n{sequence}\n")
 
     print("Swapping complete")
@@ -3917,7 +3900,7 @@ def swap_headers_for_ids_in_fasta(in_fasta, id_to_header_csv, out_fasta=None):
         header_to_id = id_to_header_csv
 
     with open(out_fasta, "w") as output_file:
-        for header, sequence in read_fasta(in_fasta):
+        for header, sequence in pyfastx.Fastx(in_fasta):
             output_file.write(f">{header_to_id[header]}\n{sequence}\n")
 
     print("Swapping complete")
@@ -3937,7 +3920,7 @@ def get_mcrs_headers_that_are_substring_dlist(
         )
     )  # TODO: replace with pyfastx
 
-    for dlist_header, dlist_sequence in read_fasta(dlist_fasta_file):
+    for dlist_header, dlist_sequence in pyfastx.Fastx(dlist_fasta_file):
         mcrs_header = dlist_header.rsplit("_", 1)[0]
         if sequence_match(
             mutant_reference[mcrs_header], dlist_sequence, strandedness=strandedness
@@ -6667,3 +6650,72 @@ def order_fastqs_correctly_for_kb_count(fastq_folder, technology = "bulk", multi
     #         f.write(filename + "\n")
 
     return sorted_files
+
+
+
+rnaseq_fastq_filename_pattern = re.compile(r"^([\w-]+)_L\d+_R[12]_\d{3}\.(fastq|fq)(\.gz)?$")  # SAMPLE_LANE_R[12]_001.fastq.gz where SAMPLE is letters, numbers, underscores; LANE is numbers with optional leading 0s; pair is either 1 or 2; and it has .fq or .fastq extension (or .fq.gz or .fastq.gz)
+def sort_order_for_kb_count_fastqs(filepath):
+    # Define order for file types
+    file_type_order = {'R1': 0, 'R2': 1, 'I1': 2, 'I2': 3}
+
+    # Split the filepath into parts by '/'
+    path_parts = filepath.split("/")
+    
+    # Extract the parent folder (2nd to last part)
+    parent_folder = path_parts[-2]
+
+    # Extract the filename (last part of the path)
+    filename = path_parts[-1]
+
+    # Split filename by '_' to extract file type and lane information
+    parts = filename.split("_")
+
+    # Extract lane number; assuming lane info is of the format 'L00X'
+    lane = int(parts[-3][1:4])  # e.g., extracts '001' from 'L001'
+
+    # Get the order value for the file type, e.g., 'R1'
+    file_type = parts[-2].split(".")[0]  # e.g., extracts 'R1' from 'R1_001.fastq.gz'
+
+    # Return a tuple to sort by:
+    # 1. Alphabetically by parent folder
+    # 2. Numerically by lane
+    # 3. Order of file type (R1, R2)
+    return (parent_folder, lane, file_type_order.get(file_type, 999))
+
+
+def sort_fastq_files_for_kb_count(fastq_files, technology = None, multiplexed = None, check_only = False):
+    for fastq_file in fastq_files:
+        if not fastq_file.endswith(fastq_extensions):  # check for valid extension
+            message = f"File {fastq_file} does not have a valid FASTQ extension of one of the following: {fastq_extensions}."
+            raise ValueError(message)  # invalid regardless of order
+        if not bool(rnaseq_fastq_filename_pattern.match(fastq_file)):  # check for Illumina file naming convention
+            message = f"File {fastq_file} does not match the expected Illumina file naming convention of SAMPLE_LANE_R[12]_001.fastq.gz, where SAMPLE is letters, numbers, underscores; LANE is numbers with optional leading 0s; pair is either 1 or 2; and it has .fq or .fastq extension (or .fq.gz or .fastq.gz)."
+            if check_only:
+                print(message)
+            else:
+                message += "\nRaising exception and exiting because sort_fastqs=True, which requires standard Illumina file naming convention. Please check fastq file names or set sort_fastqs=False."
+                raise ValueError(message)
+            
+    if technology is None:
+        print("No technology specified, so defaulting to None when checking file order (i.e., will not drop index files from fastq file list)")
+    if "smartseq" in technology.lower() and multiplexed is None:
+        print("Multiplexed not specified with smartseq technology, so defaulting to None when checking file order (i.e., will not drop index files from fastq file list)")
+        multiplexed = True
+
+    if technology is None or technology == "10xv1" or ("smartseq" in technology.lower() and multiplexed):  # keep the index I1/I2 files (pass into kb count) for 10xv1 or multiplexed smart-seq
+        filtered_files = fastq_files
+    else:  # remove the index files
+        print(f"Removing index files from fastq files list, as they are not utilized in kb count with technology {technology}")
+        filtered_files = [f for f in fastq_files if not any(x in os.path.basename(f) for x in ['I1', 'I2'])]
+        
+
+    sorted_files = sorted(filtered_files, key=sort_order_for_kb_count_fastqs)
+
+    if check_only:
+        if sorted_files == fastq_files:
+            print("Fastq files are in the expected order")
+        else:
+            print("Fastq files are not in the expected order. Fastq files are expected to be sorted (in order) by (a) SAMPLE, (b) LANE, and (c) PARITY (R1/R2). Index files (I1/I2) are not included in the sort order except for technology=10xv1 and multiplexed smartseq. To enable automatic sorting, set sort_fastqs=True.")
+        return fastq_files
+    else:
+        return sorted_files

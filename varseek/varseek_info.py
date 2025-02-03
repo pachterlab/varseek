@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from collections import OrderedDict
+
+import pyfastx
 from varseek.varseek_build import reverse_complement
 
 from varseek.constants import mutation_pattern
@@ -37,7 +39,8 @@ from varseek.utils import (
     print_varseek_dry_run,
     report_time_elapsed,
     is_valid_int,
-    download_t2t_reference_files
+    download_t2t_reference_files,
+    save_run_info
 )
 
 tqdm.pandas()
@@ -150,17 +153,17 @@ def validate_input_info(params_dict):
         if not all(col in columns_to_include_possible_values for col in columns_to_include):
             raise ValueError(f"columns_to_include must be a subset of {columns_to_include_possible_values}. Got {columns_to_include}. Use 'all' to include all columns.")
     
-    # int
+    # integers - optional just means that it's in kwargs
     for param_name, min_value, optional_value in [
         ("w", 1, False),
-        ("max_ambiguous_mcrs", 0, True),
-        ("max_ambiguous_reference", 0, True),
-        ("threads", 1, True),
+        ("max_ambiguous_mcrs", 0, False),
+        ("max_ambiguous_reference", 0, False),
+        ("threads", 1, False),
         ("near_splice_junction_threshold", 1, True),
     ]:
         param_value = params_dict.get(param_name)
         if not is_valid_int(param_value, ">=", min_value, optional=optional_value):
-            raise ValueError(f"{param_name} must be an integer >= {min_value} or None. Got {param_value} of type {type(param_value)}.")
+            raise ValueError(f"{param_name} must be an integer >= {min_value}. Got {param_value} of type {type(param_value)}.")
         
     k = params_dict.get("k")
     w = params_dict.get("w")
@@ -260,7 +263,7 @@ def info(
     - input_dir     (str) Path to the directory containing the input files. Corresponds to `out` in the varseek build function.
 
     # Additional Parameters
-    - columns_to_include                 (list or str) List of columns to include in the output dataframe. Default: ("number_of_mutations_in_this_gene_total", "number_of_alignments_to_normal_human_reference", "pseudoaligned_to_human_reference_despite_not_truly_aligning", "longest_homopolymer_length", "triplet_complexity"). See all possible values and their description by setting list_columns=True (python) or --list_columns (command line).
+    - columns_to_include                 (str or list[str]) List of columns to include in the output dataframe. Default: ("number_of_mutations_in_this_gene_total", "number_of_alignments_to_normal_human_reference", "pseudoaligned_to_human_reference_despite_not_truly_aligning", "longest_homopolymer_length", "triplet_complexity"). See all possible values and their description by setting list_columns=True (python) or --list_columns (command line).
     - k                                  (int) Length of the k-mers utilized by kallisto | bustools. Only used by the following columns: 'nearby_mutations', 'nearby_mutations_count', 'has_a_nearby_mutation', 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference', 'pseudoaligned_to_human_reference', 'pseudoaligned_to_human_reference_despite_not_truly_aligning', 'number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference', 'number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference', 'kmer_overlap_in_mcrs_reference'; and when make_kat_histogram==True. Default: 55.
     - max_ambiguous_mcrs                 (int) Maximum number of 'N' characters allowed in the MCRS when considering alignment to the reference genome/transcriptome. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference'. Default: 0.
     - max_ambiguous_reference            (int) Maximum number of 'N' characters allowed in the aligned reference genome portion when considering alignment to the reference genome/transcriptome. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference'. Default: 0.
@@ -336,9 +339,12 @@ def info(
     if out is None:
         out = input_dir if input_dir else "."
     
-    #* 4. Save params to config file
+    #* 4. Save params to config file and run info file
     config_file = os.path.join(out, "config", "vk_info_config.json")
-    save_params_to_config_file(config_file)
+    save_params_to_config_file(params_dict, config_file)
+
+    run_info_file = os.path.join(out, "config", "vk_info_run_info.txt")
+    save_run_info(run_info_file)
     
     #* 5. Set up default folder/file input paths, and make sure the necessary ones exist
     if not mcrs_fasta:
@@ -458,7 +464,7 @@ def info(
 
     if mutations_updated_csv is None:  # does not support concatenated cdna and genome
         columns_original = []
-        data = list(read_fasta(mcrs_fasta))
+        data = list(pyfastx.Fastx(mcrs_fasta))
         mutation_metadata_df = pd.DataFrame(data, columns=[mcrs_id_column, "mcrs_sequence"])
 
         if id_to_header_dict is not None:

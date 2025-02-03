@@ -18,7 +18,8 @@ from .utils import (
     check_file_path_is_string_with_valid_extension,
     print_varseek_dry_run,
     report_time_elapsed,
-    extract_documentation_file_blocks
+    extract_documentation_file_blocks,
+    save_run_info
 )
 
 logger = set_up_logger()
@@ -330,7 +331,7 @@ def filter(
 
     # Required input arguments:
     - input_dir     (str) Path to the directory containing the input files. Corresponds to `out` in the varseek info function.
-    - filters       (str or list) String or list of filters to apply. If a string, it should be a path to a txt file containing the filters. If a list, it should be a list of strings in the format COLUMNNAME-RULE=VALUE. See documentation for details, or run vk.filter(list_filter_rules=True).
+    - filters       (str or list[str]) String or list of filters to apply. If a string, it should be a path to a txt file containing the filters. If a list, it should be a list of strings in the format COLUMNNAME-RULE=VALUE. See documentation for details, or run vk.filter(list_filter_rules=True).
 
     # Optional input arguments:
     - mutations_updated_vk_info_csv                (str) Path to the updated dataframe containing the MCRS headers and sequences. Corresponds to `mutations_updated_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).
@@ -385,9 +386,12 @@ def filter(
     if out is None:
         out = input_dir if input_dir else "."
     
-    #* 4. Save params to config file
+    #* 4. Save params to config file and run info file
     config_file = os.path.join(out, "config", "vk_filter_config.json")
-    save_params_to_config_file(config_file)
+    save_params_to_config_file(params_dict, config_file)
+
+    run_info_file = os.path.join(out, "config", "vk_filter_run_info.txt")
+    save_run_info(run_info_file)
 
     #* 5. Set up default folder/file input paths, and make sure the necessary ones exist
     # have the option to filter other dlists as kwargs

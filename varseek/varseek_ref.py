@@ -2,7 +2,7 @@ import os
 import subprocess
 import time
 import varseek as vk
-from varseek.utils import set_up_logger, save_params_to_config_file, make_function_parameter_to_value_dict, download_varseek_files, report_time_elapsed, is_valid_int, check_file_path_is_string_with_valid_extension, authenticate_cosmic_credentials, encode_cosmic_credentials, authenticate_cosmic_credentials_via_server
+from varseek.utils import set_up_logger, save_params_to_config_file, make_function_parameter_to_value_dict, download_varseek_files, report_time_elapsed, is_valid_int, check_file_path_is_string_with_valid_extension, authenticate_cosmic_credentials, encode_cosmic_credentials, authenticate_cosmic_credentials_via_server, get_python_or_cli_function_call, save_run_info
 from .constants import prebuilt_vk_ref_files
 import inspect
 
@@ -34,7 +34,7 @@ def validate_input_ref(params_dict):
     dlist = params_dict.get("dlist", None)
     mode = params_dict.get("mode", None)
     threads = params_dict.get("threads", None)
-    mcrs_index_out = params_dict.get("mcrs_index_out", None)
+    index_out = params_dict.get("index_out", None)
     config = params_dict.get("config", None)
     minimum_info_columns = params_dict.get("minimum_info_columns", None)
     download = params_dict.get("download", None)
@@ -65,18 +65,15 @@ def validate_input_ref(params_dict):
     
     # sequences, mutations, out handled by vk build
 
-    check_file_path_is_string_with_valid_extension(mcrs_index_out, "mcrs_index_out", "index")
+    check_file_path_is_string_with_valid_extension(index_out, "index_out", "index")
     check_file_path_is_string_with_valid_extension(config, "config", ["json", "yaml"])
     
     if not is_valid_int(threads, threshold_type=">=", threshold_value=1):
         raise ValueError(f"Threads must be a positive integer, got {threads}")
     
-    if not isinstance(minimum_info_columns, bool):
-        raise ValueError(f"minimum_info_columns must be a boolean. Got {type(minimum_info_columns)}.")
-    if not isinstance(download, bool):
-        raise ValueError(f"download must be a boolean. Got {type(download)}.")
-    if not isinstance(dry_run, bool):
-        raise ValueError(f"dry_run must be a boolean. Got {type(dry_run)}.")
+    for param_name in ["minimum_info_columns", "download", "dry_run"]:
+        if not isinstance(params_dict.get(param_name), bool):
+            raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
     
     mutations = params_dict["mutations"]
     sequences = params_dict["sequences"]
@@ -116,7 +113,9 @@ downloadable_references = [
 def ref(
     sequences,
     mutations,
-    filters = [
+    w=54,
+    k=55,
+    filters = (
         "dlist_substring:equal=none",  # filter out mutations which are a substring of the reference genome
         "pseudoaligned_to_human_reference_despite_not_truly_aligning:is_not_true",  # filter out mutations which pseudoaligned to human genome despite not truly aligning
         "dlist:equal=none",  #*** erase eventually when I want to d-list  # filter out mutations which are capable of being d-listed (given that I filter out the substrings above)
@@ -124,17 +123,20 @@ def ref(
         "number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference:less_than=999999",  # filter out mutations which overlap with other MCRSs in the reference
         "longest_homopolymer_length:bottom_percent=99.99",  # filters out MCRSs with repeating single nucleotide - 99.99 keeps the bottom 99.99% (fraction 0.9999) ie filters out the top 0.01%
         "triplet_complexity:top_percent=99.9"  # filters out MCRSs with repeating triplets - 99.9 keeps the top 99.9% (fraction 0.999) ie filters out the bottom 0.1%
-    ],
+    ),
     mode=None,
     dlist=False,  # path to dlist fasta file or "None" (including the quotes)
     config=None,
     out = ".",
-    mcrs_index_out = None,
+    index_out = None,
+    t2g_out = None,  # intentionally avoid having this name clash with the t2g from vk build and vk filter, as it could refer to either (depending on whether or not filtering will occur)
     download=False,
     dry_run=False,
     list_downloadable_references = False,
     minimum_info_columns=True,
+    overwrite=False,
     threads=2,
+    verbose=True,
     **kwargs  #* including all arguments for vk build, info, and filter
 ):
     """
@@ -191,40 +193,29 @@ def ref(
                     1) run `vk build --list_supported_databases` from the command line, or
                     2) run varseek.build(list_supported_databases=True) in python
 
-    # Optional input arguments:
-    - mutations_updated_vk_info_csv                (str) Path to the updated dataframe containing the MCRS headers and sequences. Corresponds to `mutations_updated_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).
-    - mutations_updated_exploded_vk_info_csv       (str) Path to the updated exploded dataframe containing the MCRS headers and sequences. Corresponds to `mutations_updated_exploded_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).
-    - id_to_header_csv                             (str) Path to the csv file containing the mapping of IDs to headers generated from varseek build corresponding to mcrs_fasta. Corresponds to `id_to_header_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).
-    - dlist_fasta                                  (str) Path to the dlist fasta file. Default: None (will find it in `input_dir` if it exists).
-
+    # Additional parameters
+    - w             (int) Length of sequence windows flanking the variant. Default: 30. If w > total length of the sequence, the entire sequence will be kept.
+    - k             (int) Length of the k-mers to be considered in remove_seqs_with_wt_kmers, and the default minimum value for the minimum sequence length (which can be changed with 'min_seq_len'). If using kallisto in a later workflow, then this should correspond to kallisto k. Must be greater than the value passed in for w. Default: 55.
+    - filters       (str or list[str]) List of filters to apply to the mutations. See varseek filter documentation for more information.
+    - mode          (str) Mode to use for kb ref. Currently not implemented. Default: None.
+    - dlist         (str) Path to dlist fasta file or "None" (including the quotes). Default: False.
+    - config        (str) Path to config file. Default: None.
+    
     # Optional output file paths: (only needed if changing/customizing file names or locations):
-    - mutations_updated_filtered_csv_out           (str) Path to the filtered mutation metadata dataframe. Default: None (will be saved in `out`).
-    - mutations_updated_exploded_filtered_csv_out  (str) Path to the filtered exploded mutation metadata dataframe. Default: None (will be saved in `out`).
-    - id_to_header_filtered_csv_out                (str) Path to the filtered id to header csv. Default: None (will be saved in `out`).
-    - dlist_filtered_fasta_out                     (str) Path to the filtered dlist fasta file. Default: None (will be saved in `out`).
-    - mcrs_filtered_fasta_out                      (str) Path to the filtered mcrs fasta file. Default: None (will be saved in `out`).
-    - mcrs_t2g_filtered_out                        (str) Path to the filtered t2g file. Default: None (will be saved in `out`).
-    - wt_mcrs_filtered_fasta_out                   (str) Path to the filtered wt mcrs fasta file. Default: None (will be saved in `out`).
-    - wt_mcrs_t2g_filtered_out                     (str) Path to the filtered t2g file for wt mcrs fasta. Default: None (will be saved in `out`).
-
-    # Returning and saving of optional output
-    - save_wt_mcrs_fasta_and_t2g                   (bool) If True, save the filtered wt mcrs fasta and t2g files. Default: False.
-    - save_mutations_updated_filtered_csvs         (bool) If True, save the filtered mutation metadata dataframe. Default: False.
-    - return_mutations_updated_filtered_csv_df     (bool) If True, return the filtered mutation metadata dataframe. Default: False.
-
+    - out           (str) Output directory. Default: ".".
+    - index_out (str) Path to output mcrs index file. Default: None.
+    - t2g_out (str) Path to output mcrs t2g file to be used in alignment. Default: None.
+    
     # General arguments:
-    - dry_run                                      (bool) If True, print the parameters and exit without running the function. Default: False.
-    - list_filter_rules                            (bool) If True, print the available filter rules and exit without running the function. Default: False.
-    - overwrite                                    (bool) If True, overwrite the output files if they already exist. Default: False.
-    - verbose                                      (bool) If True, print progress messages. Default: True.
+    - download      (bool) If True, download prebuilt reference files. Default: False.
+    - dry_run       (bool) If True, print the commands that would be run without actually running them. Default: False.
+    - list_downloadable_references (bool) If True, list the available downloadable references. Default: False.
+    - minimum_info_columns (bool) If True, run vk info with minimum columns. Default: True.
+    - overwrite     (bool) If True, overwrite existing files. Default: False.
+    - threads       (int) Number of threads to use. Default: 2.
+    - verbose       (bool) If True, print progress messages. Default: True.
 
-    # Hidden arguments:
-    filter_all_dlists (bool) If True, filter all dlists. Default: False.
-    dlist_genome_fasta (str) Path to the genome dlist fasta file. Default: None.
-    dlist_cdna_fasta (str) Path to the cDNA dlist fasta file. Default: None.
-    dlist_genome_filtered_fasta_out (str) Path to the filtered genome dlist fasta file. Default: None.
-    dlist_cdna_filtered_fasta_out (str) Path to the filtered cDNA dlist fasta file. Default: None.
-    save_mcrs_filtered_fasta_and_t2g (bool) If True, save the filtered mcrs fasta and t2g files. Default: True.
+    For a complete list of supported parameters, see the documentation for varseek build, varseek info, varseek filter, and kb ref. Note that any shared parameter names between functions are meant to have identical purposes.
     """
 
     #* 0. Informational arguments that exit early
@@ -281,31 +272,34 @@ def ref(
     #         if key not in params_dict and key not in ref_signature.parameters.keys():
     #             params_dict[key] = signature.parameters[key].default
 
-    #* 4. Save params to config file
+    #* 4. Save params to config file and run info file
     # Save parameters to config file
     config_file = os.path.join(out, "config", "vk_ref_config.json")
-    save_params_to_config_file(config_file)
+    save_params_to_config_file(params_dict, config_file)
+
+    run_info_file = os.path.join(out, "config", "vk_ref_run_info.txt")
+    save_run_info(run_info_file)
 
     #* 5. Set up default folder/file input paths, and make sure the necessary ones exist
     # all input files for vk build are required in the varseek workflow, so this is skipped
     
     #* 5.5 Setting up modes
-    if mode:
-        for key in mode_parameters[mode]:
-            params_dict[key] = mode_parameters[mode][key]
+    # if mode:  #* uncomment once I have modes
+    #     for key in mode_parameters[mode]:
+    #         params_dict[key] = mode_parameters[mode][key]
     
     #* 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
     # Make directories
-    if not reference_out_dir:
-        reference_out_dir = os.path.join(out, "reference")
-
     os.makedirs(out, exist_ok=True)
-    os.makedirs(reference_out_dir, exist_ok=True)        
 
     # define some more file paths
-    if not mcrs_index_out:
-        mcrs_index_out = os.path.join(out, "mcrs_index.idx")
-    os.makedirs(os.path.dirname(mcrs_index_out), exist_ok=True)
+    if not index_out:
+        index_out = os.path.join(out, "mcrs_index.idx")
+    os.makedirs(os.path.dirname(index_out), exist_ok=True)
+
+    mcrs_fasta_out = params_dict.get("mcrs_fasta_out", None)
+    mcrs_filtered_fasta_out = params_dict.get("mcrs_filtered_fasta_out", None)
+    mcrs_t2g_out = params_dict.get("mcrs_t2g_out", None)
 
     if not mcrs_fasta_out:  # make sure this matches vk build
         mcrs_fasta_out = os.path.join(out, "mcrs.fa")
@@ -316,8 +310,13 @@ def ref(
     if not mcrs_t2g_filtered_out:  # make sure this matches vk filter
         mcrs_t2g_filtered_out = os.path.join(out, "mcrs_t2g_filtered.txt")
 
+    if os.path.isfile(index_out) and not overwrite:
+        raise FileExistsError(f"Output file {index_out} already exists. Please delete it or specify a different output directory.")
+
     #* 6.5 Just to make the unused parameter coloration go away in VSCode
     filters = filters
+    mode = mode
+    verbose = verbose
 
     #* 7. Start the actual function
     # get COSMIC info
@@ -342,9 +341,15 @@ def ref(
 
     if skip_filter:
         mcrs_fasta_for_index = mcrs_fasta_out
+        if t2g_out:
+            params_dict["mcrs_t2g_out"] = t2g_out  # pass this custom path into vk build
+            mcrs_t2g_out = t2g_out  # pass this custom path into the output dict of vk ref
         mcrs_t2g_for_alignment = mcrs_t2g_out
     else:
         mcrs_fasta_for_index = mcrs_filtered_fasta_out
+        if t2g_out:
+            params_dict["mcrs_t2g_filtered_out"] = t2g_out
+            mcrs_t2g_filtered_out = t2g_out
         mcrs_t2g_for_alignment = mcrs_t2g_filtered_out
 
     # download if download argument is True
@@ -357,12 +362,12 @@ def ref(
                 if not authenticate_cosmic_credentials(cosmic_email, cosmic_password):  #!! erase once I'm ready to try out server
                     raise ValueError(f"Trying to download a COSMIC-based index (mutations={mutations}) with invalid COSMIC credentials")
             vk_ref_output_dict = download_varseek_files(file_dict, out=out)  # TODO: replace with DOI download (will need to replace prebuilt_vk_ref_files urls with DOIs)
-            if mcrs_index_out and vk_ref_output_dict['index'] != mcrs_index_out:
-                os.rename(vk_ref_output_dict['index'], mcrs_index_out)
-                vk_ref_output_dict['index'] = mcrs_index_out
-            if mcrs_t2g_out and vk_ref_output_dict['t2g'] != mcrs_t2g_out:
-                os.rename(vk_ref_output_dict['t2g'], mcrs_t2g_out)
-                vk_ref_output_dict['t2g'] = mcrs_t2g_out
+            if index_out and vk_ref_output_dict['index'] != index_out:
+                os.rename(vk_ref_output_dict['index'], index_out)
+                vk_ref_output_dict['index'] = index_out
+            if t2g_out and vk_ref_output_dict['t2g'] != t2g_out:
+                os.rename(vk_ref_output_dict['t2g'], t2g_out)
+                vk_ref_output_dict['t2g'] = t2g_out
         
             return vk_ref_output_dict
         else:
@@ -427,7 +432,7 @@ def ref(
         "-t",
         str(threads),
         "-i",
-        mcrs_index_out,
+        index_out,
         "--d-list",
         dlist_kb_argument,
         "-k",
@@ -454,13 +459,13 @@ def ref(
 
     if dry_run:
         print(kb_ref_command)
-        mcrs_index_out = None
+        index_out = None
         mcrs_t2g_for_alignment = None
     else:
         subprocess.run(kb_ref_command, check=True)
 
     vk_ref_output_dict = {}
-    vk_ref_output_dict["index"] = mcrs_index_out
+    vk_ref_output_dict["index"] = index_out
     vk_ref_output_dict["t2g"] = mcrs_t2g_for_alignment
 
     # Report time
@@ -468,4 +473,5 @@ def ref(
 
     return vk_ref_output_dict
 
-# ref.__doc__ = ref.__doc__ + vk.varseek_build.build.__doc__ + vk.varseek_info.info.__doc__ + vk.varseek_filter.filter.__doc__
+
+# ref.__doc__ = ref.__doc__ + "\n================================\n\n" + "varseek build parameters" + vk.varseek_build.build.__doc__ + "\n================================\n\n" + vk.varseek_info.info.__doc__ + "\n================================\n\n" + vk.varseek_filter.filter.__doc__ + "\n================================\n\n" + "Run `kb ref --help` for more information on kb ref arguments"

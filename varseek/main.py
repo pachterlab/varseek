@@ -301,9 +301,9 @@ def main():
     parser_build.add_argument(
         "-k",
         "--k",
-        default=None,
         type=int,
         required=False,
+        default=55,
         help=extract_help_from_doc(build, "k"),
     )
     parser_build.add_argument(
@@ -334,7 +334,6 @@ def main():
         "-mic",
         "--mut_id_column",
         default=None,
-        type=str,
         required=False,
         help=extract_help_from_doc(build, "mut_id_column"),
     )
@@ -342,7 +341,6 @@ def main():
         "-gtf",
         "--gtf",
         default=None,
-        type=str,
         required=False,
         help=extract_help_from_doc(build, "gtf"),
     )
@@ -350,23 +348,20 @@ def main():
         "-gtic",
         "--gtf_transcript_id_column",
         default=None,
-        type=str,
         required=False,
         help=extract_help_from_doc(build, "gtf_transcript_id_column"),
     )    
     parser_build.add_argument(
         "-tb",
         "--transcript_boundaries",
-        default=None,
-        type=str,
-        required=False,
+        default=False,
+        action="store_true",
         help=extract_help_from_doc(build, "transcript_boundaries"),
     )
     parser_build.add_argument(
         "--identify_all_spliced_from_genome",
-        default=None,
-        type=str,
-        required=False,
+        default=False,
+        action="store_true",
         help=extract_help_from_doc(build, "identify_all_spliced_from_genome"),
     )
     parser_build.add_argument(
@@ -374,13 +369,13 @@ def main():
         "--out",
         type=str,
         required=False,
+        default=".",
         help=extract_help_from_doc(build, "out"),
     )
     parser_build.add_argument(
         "-r",
         "--reference_out_dir",
         default=None,
-        type=str,
         required=False,
         help=extract_help_from_doc(build, "reference_out_dir"),
     )
@@ -388,56 +383,48 @@ def main():
         "-mfo",
         "--mcrs_fasta_out",
         default=None,
-        type=str,
         required=False,
         help=extract_help_from_doc(build, "mcrs_fasta_out"),
     )
     parser_build.add_argument(
         "--mutations_updated_csv_out",
         default=None,
-        type=str,
         required=False,
         help=extract_help_from_doc(build, "mutations_updated_csv_out"),
     )
     parser_build.add_argument(
         "--id_to_header_csv_out",
         default=None,
-        type=str,
         required=False,
         help=extract_help_from_doc(build, "id_to_header_csv_out"),
     )
     parser_build.add_argument(
         "--mcrs_t2g_out",
         default=None,
-        type=str,
         required=False,
         help=extract_help_from_doc(build, "mcrs_t2g_out"),
     )
     parser_build.add_argument(
         "--wt_mcrs_fasta_out",
         default=None,
-        type=str,
         required=False,
         help=extract_help_from_doc(build, "wt_mcrs_fasta_out"),
     )
     parser_build.add_argument(
         "--wt_mcrs_t2g_out",
         default=None,
-        type=str,
         required=False,
         help=extract_help_from_doc(build, "wt_mcrs_t2g_out"),
     )
     parser_build.add_argument(
         "--removed_variants_text_out",
         default=None,
-        type=str,
         required=False,
         help=extract_help_from_doc(build, "removed_variants_text_out"),
     )
     parser_build.add_argument(
         "--filtering_report_text_out",
         default=None,
-        type=str,
         required=False,
         help=extract_help_from_doc(build, "filtering_report_text_out"),
     )
@@ -526,7 +513,6 @@ def main():
     parser_build.add_argument(
         "-q",
         "--quiet",
-        default=True,
         action="store_false",
         required=False,
         help="Do not print progress information.",
@@ -535,7 +521,7 @@ def main():
     # Additional kwargs arguments that I still want as command-line options
     parser_build.add_argument(
         "--insertion_size_limit",
-        default=None,
+        default=lambda x: int(x) if x is not None else None,
         type=int,
         required=False,
         help=extract_help_from_doc(build, "insertion_size_limit"),
@@ -592,25 +578,23 @@ def main():
     )
     parser_build.add_argument(
         "--cosmic_release",
-        type=int,
+        type=lambda x: int(x) if x is not None else None,
         required=False,
         help=extract_help_from_doc(build, "cosmic_release"),
     )
     parser_build.add_argument(
         "--cosmic_grch",
-        type=int,
+        type=lambda x: int(x) if x is not None else None,
         required=False,
         help=extract_help_from_doc(build, "cosmic_grch"),
     )
     parser_build.add_argument(
         "--cosmic_email",
-        type=str,
         required=False,
         help=extract_help_from_doc(build, "cosmic_email"),
     )
     parser_build.add_argument(
         "--cosmic_password",
-        type=str,
         required=False,
         help=extract_help_from_doc(build, "cosmic_password"),
     )
@@ -673,31 +657,26 @@ def main():
     )
     parser_info.add_argument(
         "--mcrs_fasta",
-        type=str,
         required=False,
         help=extract_help_from_doc(info, "mcrs_fasta"),
     )
     parser_info.add_argument(
         "--mutations_updated_csv",
-        type=str,
         required=False,
         help=extract_help_from_doc(info, "mutations_updated_csv"),
     )
     parser_info.add_argument(
         "--id_to_header_csv",
-        type=str,
         required=False,
         help=extract_help_from_doc(info, "id_to_header_csv"),
     )
     parser_info.add_argument(
         "--gtf",
-        type=str,
         required=False,
         help=extract_help_from_doc(info, "gtf"),
     )
     parser_info.add_argument(
         "--dlist_reference_genome_fasta",
-        type=str,
         required=False,
         default="T2T",
         help=extract_help_from_doc(info, "dlist_reference_genome_fasta"),
@@ -782,44 +761,37 @@ def main():
     parser_info.add_argument(
         "-o",
         "--out",
-        type=str,
         required=False,
         help=extract_help_from_doc(info, "out"),
     )
     parser_info.add_argument(
         "-r",
         "--reference_out_dir",
-        type=str,
         required=False,
         help=extract_help_from_doc(info, "reference_out_dir"),
     )
     parser_info.add_argument(
         "--mutations_updated_vk_info_csv_out",
-        type=str,
         required=False,
         help=extract_help_from_doc(info, "mutations_updated_vk_info_csv_out"),
     )
     parser_info.add_argument(
         "--mutations_updated_exploded_vk_info_csv_out",
-        type=str,
         required=False,
         help=extract_help_from_doc(info, "mutations_updated_exploded_vk_info_csv_out"),
     )
     parser_info.add_argument(
         "--dlist_genome_fasta_out",
-        type=str,
         required=False,
         help=extract_help_from_doc(info, "dlist_genome_fasta_out"),
     )
     parser_info.add_argument(
         "--dlist_cdna_fasta_out",
-        type=str,
         required=False,
         help=extract_help_from_doc(info, "dlist_cdna_fasta_out"),
     )
     parser_info.add_argument(
         "--dlist_combined_fasta_out",
-        type=str,
         required=False,
         help=extract_help_from_doc(info, "dlist_combined_fasta_out"),
     )
@@ -883,7 +855,6 @@ def main():
     )
     parser_info.add_argument(
         "--bowtie_path",
-        type=str,
         required=False,
         help=extract_help_from_doc(info, "bowtie_path"),
     )
@@ -903,19 +874,16 @@ def main():
     )
     parser_info.add_argument(
         "--reference_cdna_fasta",
-        type=str,
         required=False,
         help=extract_help_from_doc(info, "reference_cdna_fasta"),
     )
     parser_info.add_argument(
         "--reference_genome_fasta",
-        type=str,
         required=False,
         help=extract_help_from_doc(info, "reference_genome_fasta"),
     )
     parser_info.add_argument(
         "--mutations_csv",
-        type=str,
         required=False,
         help=extract_help_from_doc(info, "mutations_csv"),
     )
@@ -947,79 +915,66 @@ def main():
     )
     parser_filter.add_argument(
         "--mutations_updated_vk_info_csv",
-        type=str,
         required=False,
         help=extract_help_from_doc(filter, "mutations_updated_vk_info_csv"),
     )
     parser_filter.add_argument(
         "--mutations_updated_exploded_vk_info_csv",
-        type=str,
         required=False,
         help=extract_help_from_doc(filter, "mutations_updated_exploded_vk_info_csv"),
     )
     parser_filter.add_argument(
         "--id_to_header_csv",
-        type=str,
         required=False,
         help=extract_help_from_doc(filter, "id_to_header_csv"),
     )
     parser_filter.add_argument(
         "--dlist_fasta",
-        type=str,
         required=False,
         help=extract_help_from_doc(filter, "dlist_fasta"),
     )
     parser_filter.add_argument(
         "--out",
-        type=str,
         required=False,
         help=extract_help_from_doc(filter, "out"),
     )
     parser_filter.add_argument(
         "--mutations_updated_filtered_csv_out",
-        type=str,
         required=False,
         help=extract_help_from_doc(filter, "mutations_updated_filtered_csv_out"),
     )
     parser_filter.add_argument(
         "--mutations_updated_exploded_filtered_csv_out",
-        type=str,
         required=False,
         help=extract_help_from_doc(filter, "mutations_updated_exploded_filtered_csv_out"),
     )
     parser_filter.add_argument(
         "--id_to_header_filtered_csv_out",
-        type=str,
         required=False,
         help=extract_help_from_doc(filter, "id_to_header_filtered_csv_out"),
     )
     parser_filter.add_argument(
         "--dlist_filtered_fasta_out",
-        type=str,
         required=False,
         help=extract_help_from_doc(filter, "dlist_filtered_fasta_out"),
     )
     parser_filter.add_argument(
         "--mcrs_filtered_fasta_out",
-        type=str,
         required=False,
         help=extract_help_from_doc(filter, "mcrs_filtered_fasta_out"),
     )
     parser_filter.add_argument(
         "--mcrs_t2g_filtered_out",
-        type=str,
         required=False,
         help=extract_help_from_doc(filter, "mcrs_t2g_filtered_out"),
     )
     parser_filter.add_argument(
         "--wt_mcrs_filtered_fasta_out",
-        type=str,
         required=False,
         help=extract_help_from_doc(filter, "wt_mcrs_filtered_fasta_out"),
     )
     parser_filter.add_argument(
         "--wt_mcrs_t2g_filtered_out",
-        type=str,
         required=False,
         help=extract_help_from_doc(filter, "wt_mcrs_t2g_filtered_out"),
     )
@@ -1075,25 +1030,21 @@ def main():
     )
     parser_filter.add_argument(
         "--dlist_genome_fasta",
-        type=str,
         required=False,
         help=extract_help_from_doc(filter, "dlist_genome_fasta"),
     )
     parser_filter.add_argument(
         "--dlist_cdna_fasta",
-        type=str,
         required=False,
         help=extract_help_from_doc(filter, "dlist_cdna_fasta"),
     )
     parser_filter.add_argument(
         "--dlist_genome_filtered_fasta_out",
-        type=str,
         required=False,
         help=extract_help_from_doc(filter, "dlist_genome_filtered_fasta_out"),
     )
     parser_filter.add_argument(
         "--dlist_cdna_filtered_fasta_out",
-        type=str,
         required=False,
         help=extract_help_from_doc(filter, "dlist_cdna_filtered_fasta_out"),
     )
@@ -1125,14 +1076,12 @@ def main():
     parser_sim.add_argument(
         "--fastq_output_path",
         default=None,
-        type=str,
         required=False,
         help=extract_help_from_doc(sim, "fastq_output_path"),
     )
     parser_sim.add_argument(
         "--fastq_parent_path",
         default=None,
-        type=str,
         required=False,
         help=extract_help_from_doc(sim, "fastq_parent_path"),
     )
@@ -1146,7 +1095,6 @@ def main():
     parser_sim.add_argument(
         "--sample_type",
         default=None,
-        type=str,
         required=False,
         help=extract_help_from_doc(sim, "sample_type"),
     )
@@ -1165,19 +1113,19 @@ def main():
     )
     parser_sim.add_argument(
         "--number_of_reads_per_sample",
-        type=int,
+        type=lambda x: int(x) if x is not None else None,
         required=False,
         help=extract_help_from_doc(sim, "number_of_reads_per_sample"),
     )
     parser_sim.add_argument(
         "--number_of_reads_per_sample_m",
-        type=int,
+        type=lambda x: int(x) if x is not None else None,
         required=False,
         help=extract_help_from_doc(sim, "number_of_reads_per_sample_m"),
     )
     parser_sim.add_argument(
         "--number_of_reads_per_sample_w",
-        type=int,
+        type=lambda x: int(x) if x is not None else None,
         required=False,
         help=extract_help_from_doc(sim, "number_of_reads_per_sample_w"),
     )
@@ -1204,7 +1152,7 @@ def main():
     parser_sim.add_argument(
         "--error_rate",
         default=0.0001,
-        type=int,
+        type=float,
         required=False,
         help=extract_help_from_doc(sim, "error_rate"),
     )
@@ -1224,105 +1172,91 @@ def main():
     parser_sim.add_argument(
         "--sequences",
         default=None,
-        type=str,
         required=False,
         help=extract_help_from_doc(sim, "sequences"),
     )
     parser_sim.add_argument(
         "--mutation_metadata_df_path",
         default=None,
-        type=str,
         required=False,
         help=extract_help_from_doc(sim, "mutation_metadata_df_path"),
     )
     parser_sim.add_argument(
         "--reference_out_dir",
         default=None,
-        type=str,
         required=False,
         help=extract_help_from_doc(sim, "reference_out_dir"),
     )
     parser_sim.add_argument(
         "--out_dir_vk_build",
         default=None,
-        type=str,
         required=False,
         help=extract_help_from_doc(sim, "out_dir_vk_build"),
     )
     parser_sim.add_argument(
         "--seq_id_column",
         default=None,
-        type=str,
         required=False,
         help=extract_help_from_doc(sim, "seq_id_column"),
     )
     parser_sim.add_argument(
         "--mut_column",
         default=None,
-        type=str,
         required=False,
         help=extract_help_from_doc(sim, "mut_column"),
     )
     parser_sim.add_argument(
         "--gtf",
         default=None,
-        type=str,
         required=False,
         help=extract_help_from_doc(sim, "gtf"),
     )
     parser_sim.add_argument(
         "--gtf_transcript_id_column",
         default=None,
-        type=str,
         required=False,
         help=extract_help_from_doc(sim, "gtf_transcript_id_column"),
     )
     parser_sim.add_argument(
         "--sequences_cdna",
         default=None,
-        type=str,
         required=False,
         help=extract_help_from_doc(sim, "sequences_cdna"),
     )
     parser_sim.add_argument(
         "--seq_id_column_cdna",
         default=None,
-        type=str,
         required=False,
         help=extract_help_from_doc(sim, "seq_id_column_cdna"),
     )
     parser_sim.add_argument(
         "--mut_column_cdna",
         default=None,
-        type=str,
         required=False,
         help=extract_help_from_doc(sim, "mut_column_cdna"),
     )
     parser_sim.add_argument(
         "--sequences_genome",
         default=None,
-        type=str,
         required=False,
         help=extract_help_from_doc(sim, "sequences_genome"),
     )
     parser_sim.add_argument(
         "--seq_id_column_genome",
         default=None,
-        type=str,
         required=False,
         help=extract_help_from_doc(sim, "seq_id_column_genome"),
     )
     parser_sim.add_argument(
         "--mut_column_genome",
         default=None,
-        type=str,
         required=False,
         help=extract_help_from_doc(sim, "mut_column_genome"),
     )
     parser_sim.add_argument(
         "-f",
         "--filters",
-        nargs="+",  # Accept multiple sequential filters or a single JSON file
+        nargs="*",  # Accept multiple sequential filters or a single JSON file
         type=str,
         required=True,
         help=extract_help_from_doc(sim, "filters"),
@@ -1330,7 +1264,6 @@ def main():
     parser_sim.add_argument(
         "-q",
         "--quiet",
-        default=True,
         action="store_false",
         required=False,
         help="Do not print progress information.",
@@ -1347,12 +1280,162 @@ def main():
         formatter_class=CustomHelpFormatter,
     )
     parser_fastqpp.add_argument(
+        "fastqs",
+        nargs='+',
+        required=True,
+        help=extract_help_from_doc(fastqpp, "fastqs"),
+    )
+    parser_fastqpp.add_argument(
+        "-x",
+        "--technology",
+        required=False,
+        help=extract_help_from_doc(fastqpp, "technology"),
+    )
+    parser_fastqpp.add_argument(
+        "--multiplexed",
+        required=False,
+        action="store_true",
+        help=extract_help_from_doc(fastqpp, "multiplexed"),
+    )
+    parser_fastqpp.add_argument(
+        "--parity",
+        required=False,
+        type=str,
+        default="single",
+        help=extract_help_from_doc(fastqpp, "parity"),
+    )
+    parser_fastqpp.add_argument(
+        "--quality_control_fastqs",
+        required=False,
+        action="store_true",
+        help=extract_help_from_doc(fastqpp, "quality_control_fastqs"),
+    )
+    parser_fastqpp.add_argument(
+        "--cut_mean_quality",
+        required=False,
+        type=int,
+        default=13,
+        help=extract_help_from_doc(fastqpp, "cut_mean_quality"),
+    )
+    parser_fastqpp.add_argument(
+        "--cut_window_size",
+        required=False,
+        type=int,
+        default=4,
+        help=extract_help_from_doc(fastqpp, "cut_window_size"),
+    )
+    parser_fastqpp.add_argument(
+        "--qualified_quality_phred",
+        required=False,
+        type=int,
+        default=0,
+        help=extract_help_from_doc(fastqpp, "qualified_quality_phred"),
+    )
+    parser_fastqpp.add_argument(
+        "--unqualified_percent_limit",
+        required=False,
+        type=int,
+        default=100,
+        help=extract_help_from_doc(fastqpp, "unqualified_percent_limit"),
+    )
+    parser_fastqpp.add_argument(
+        "--max_ambiguous",
+        required=False,
+        type=int,
+        default=50,
+        help=extract_help_from_doc(fastqpp, "max_ambiguous"),
+    )
+    parser_fastqpp.add_argument(
+        "--min_read_len",
+        required=False,
+        type=lambda x: int(x) if x is not None else None,
+        default=None,
+        help=extract_help_from_doc(fastqpp, "min_read_len"),
+    )
+    parser_fastqpp.add_argument(
+        "--run_fastqc_and_multiqc",
+        required=False,
+        action="store_true",
+        help=extract_help_from_doc(fastqpp, "run_fastqc_and_multiqc"),
+    )
+    parser_fastqpp.add_argument(
+        "--replace_low_quality_bases_with_N",
+        required=False,
+        action="store_true",
+        help=extract_help_from_doc(fastqpp, "replace_low_quality_bases_with_N"),
+    )
+    parser_fastqpp.add_argument(
+        "--min_base_quality",
+        required=False,
+        type=int,
+        default=13,
+        help=extract_help_from_doc(fastqpp, "min_base_quality"),
+    )
+    parser_fastqpp.add_argument(
+        "--split_reads_by_Ns",
+        required=False,
+        action="store_true",
+        help=extract_help_from_doc(fastqpp, "split_reads_by_Ns"),
+    )
+    parser_fastqpp.add_argument(
+        "--concatenate_paired_fastqs",
+        required=False,
+        action="store_true",
+        help=extract_help_from_doc(fastqpp, "concatenate_paired_fastqs"),
+    )
+    parser_fastqpp.add_argument(
+        "-o",
+        "--out",
+        type=str,
+        required=False,
+        default=".",
+        help=extract_help_from_doc(fastqpp, "out"),
+    )
+    parser_fastqpp.add_argument(
+        "--delete_intermediate_files",
+        required=False,
+        action="store_true",
+        help=extract_help_from_doc(fastqpp, "delete_intermediate_files"),
+    )
+    parser_fastqpp.add_argument(
+        "--dry_run",
+        required=False,
+        action="store_true",
+        help=extract_help_from_doc(fastqpp, "dry_run"),
+    )
+    parser_fastqpp.add_argument(
+        "--disable_sort_fastqs",
+        action="store_false",
+        required=False,
+        help=extract_help_from_doc(fastqpp, "dry_run", disable=True),
+    )
+    parser_fastqpp.add_argument(
+        "-t",
+        "--threads",
+        type=int,
+        required=False,
+        default=2,
+        help=extract_help_from_doc(fastqpp, "threads"),
+    )
+    parser_fastqpp.add_argument(
         "-q",
         "--quiet",
-        default=True,
         action="store_false",
         required=False,
         help="Do not print progress information.",
+    )
+    # kwargs
+    parser_fastqpp.add_argument(
+        "--fastp_path",
+        required=False,
+        default=None,
+        help=extract_help_from_doc(fastqpp, "fastp_path"),
+    )
+    parser_fastqpp.add_argument(
+        "--seqtk_path",
+        required=False,
+        default=None,
+        help=extract_help_from_doc(fastqpp, "seqtk_path"),
     )
 
     # NEW PARSER
@@ -1394,13 +1477,167 @@ def main():
         help="Do not print progress information.",
     )
 
-    parser_list_vk_ref = [parser_build, parser_info, parser_filter]
-    parser_list_vk_count = [parser_fastqpp, parser_clean, parser_summarize]
+    # NEW PARSER
+    ref_desc = "Create a reference index and t2g file for variant screening with varseek count. Wraps around varseek build, varseek info, varseek filter, and kb ref."
+    parser_ref = parent_subparsers.add_parser(
+        "ref",
+        parents=[parent],
+        description=ref_desc,
+        help=ref_desc,
+        add_help=True,
+        formatter_class=CustomHelpFormatter,
+    )
+    parser_ref.add_argument(
+        "-s",
+        "--sequences",
+        type=str,
+        nargs="+",
+        required=True,
+        help=extract_help_from_doc(ref, "sequences"),
+    )
+    parser_ref.add_argument(
+        "-m",
+        "--mutations",
+        type=strpath_or_str_or_list_or_df,
+        nargs="+",
+        required=True,
+        help=extract_help_from_doc(ref, "mutations"),
+    )
+    parser_ref.add_argument(
+        "-w",
+        "--w",
+        default=54,
+        type=int,
+        required=False,
+        help=extract_help_from_doc(ref, "w"),
+    )
+    parser_ref.add_argument(
+        "-k",
+        "--k",
+        default=55,
+        type=int,
+        required=False,
+        help=extract_help_from_doc(ref, "k"),
+    )
+    parser_ref.add_argument(
+        "-f",
+        "--filters",
+        type=strpath_or_list_like_of_strings,
+        nargs="*",
+        required=False,
+        default=(
+            "dlist_substring:equal=none",  # filter out mutations which are a substring of the reference genome
+            "pseudoaligned_to_human_reference_despite_not_truly_aligning:is_not_true",  # filter out mutations which pseudoaligned to human genome despite not truly aligning
+            "dlist:equal=none",  #*** erase eventually when I want to d-list  # filter out mutations which are capable of being d-listed (given that I filter out the substrings above)
+            "number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference:less_than=999999",  # filter out mutations which overlap with other MCRSs in the reference
+            "number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference:less_than=999999",  # filter out mutations which overlap with other MCRSs in the reference
+            "longest_homopolymer_length:bottom_percent=99.99",  # filters out MCRSs with repeating single nucleotide - 99.99 keeps the bottom 99.99% (fraction 0.9999) ie filters out the top 0.01%
+            "triplet_complexity:top_percent=99.9"  # filters out MCRSs with repeating triplets - 99.9 keeps the top 99.9% (fraction 0.999) ie filters out the bottom 0.1%
+        ),
+        help=extract_help_from_doc(ref, "filters"),
+    )
+    parser_ref.add_argument(
+        "--mode",
+        default=None,
+        required=False,
+        help=extract_help_from_doc(ref, "mode"),
+    )
+    parser_ref.add_argument(
+        "--dlist",
+        default=None,
+        required=False,
+        help=extract_help_from_doc(ref, "dlist"),
+    )
+    parser_ref.add_argument(
+        "-c",
+        "--config",
+        required=False,
+        help=extract_help_from_doc(ref, "config"),
+    )
+    parser_ref.add_argument(
+        "-o",
+        "--out",
+        type=str,
+        required=False,
+        default=".",
+        help=extract_help_from_doc(ref, "out"),
+    )
+    parser_ref.add_argument(
+        "-i",
+        "--index_out",
+        required=False,
+        help=extract_help_from_doc(ref, "index_out"),
+    )
+    parser_ref.add_argument(
+        "-g",
+        "--t2g_out",
+        required=False,
+        help=extract_help_from_doc(ref, "t2g_out"),
+    )
+    parser_ref.add_argument(
+        "-d",
+        "--download",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(ref, "download"),
+    )
+    parser_ref.add_argument(
+        "--dry_run",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(ref, "dry_run"),
+    )
+    parser_ref.add_argument(
+        "--list_downloadable_references",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(ref, "list_downloadable_references"),
+    )
+    parser_ref.add_argument(
+        "-dmic",
+        "--disable_minimum_info_columns",
+        action="store_false",
+        help=extract_help_from_doc(ref, "disable_minimum_info_columns", disable=True),
+    )
+    parser_ref.add_argument(
+        "--overwrite",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(ref, "overwrite"),
+    )
+    parser_ref.add_argument(
+        "-t",
+        "--threads",
+        type=int,
+        required=False,
+        default=2,
+        help=extract_help_from_doc(ref, "threads"),
+    )
+    parser_ref.add_argument(
+        "-q",
+        "--quiet",
+        action="store_false",
+        required=False,
+        help="Do not print progress information.",
+    )
 
-    #!!! CONTINUE
-
-    # parser_ref = copy_parser_arguments(parser_target = parser_ref, parser_list = parser_list_vk_ref)
-    # parser_count = copy_parser_arguments(parser_target = parser_count, parser_list = parser_list_vk_count)
+    # NEW PARSER
+    count_desc = "XXXXXX."
+    parser_count = parent_subparsers.add_parser(
+        "count",
+        parents=[parent],
+        description=count_desc,
+        help=count_desc,
+        add_help=True,
+        formatter_class=CustomHelpFormatter,
+    )
+    parser_count.add_argument(
+        "-q",
+        "--quiet",
+        action="store_false",
+        required=False,
+        help="Do not print progress information.",
+    )
 
     ### Define return values
     args, unknown_args = parent_parser.parse_known_args()
@@ -1434,8 +1671,11 @@ def main():
         "info": parser_info,
         "filter": parser_filter,
         "sim": parser_sim,
+        "fastqpp": parser_fastqpp,
         "clean": parser_clean,
         "summarize": parser_summarize,
+        "ref": parser_ref,
+        "count": parser_count,
     }
 
     if len(sys.argv) == 2:
@@ -1634,7 +1874,39 @@ def main():
             **kwargs,
         )
 
-        # * optionally do something with sim_results (e.g., save, or print to console)
+        # * optionally do something with simulated_df_dict (e.g., save, or print to console)
+
+    ## fastqpp return
+    if args.command == "fastqpp":
+        fastqpp_results = filter(
+            fastqs=args.fastqs,
+            technology=args.technology,
+            multiplexed=args.multiplexed,
+            parity=args.parity,
+            quality_control_fastqs=args.quality_control_fastqs,
+            cut_mean_quality=args.cut_mean_quality,
+            cut_window_size=args.cut_window_size,
+            qualified_quality_phred=args.qualified_quality_phred,
+            unqualified_percent_limit=args.unqualified_percent_limit,
+            max_ambiguous=args.max_ambiguous,
+            min_read_len=args.min_read_len,
+            run_fastqc_and_multiqc=args.run_fastqc_and_multiqc,
+            replace_low_quality_bases_with_N=args.replace_low_quality_bases_with_N,
+            min_base_quality=args.min_base_quality,
+            split_reads_by_Ns=args.split_reads_by_Ns,
+            concatenate_paired_fastqs=args.concatenate_paired_fastqs,
+            out=args.out,
+            delete_intermediate_files=args.delete_intermediate_files,
+            dry_run=args.dry_run,
+            sort_fastqs=args.disable_sort_fastqs,
+            threads=args.threads,
+            verbose=args.quiet,
+            fastp_path=args.fastp_path,
+            seqtk_path=args.seqtk_path,
+            **kwargs,
+        )
+
+        # * optionally do something with fastqpp_results (e.g., save, or print to console)
 
     ## clean return
     if args.command == "clean":
@@ -1648,6 +1920,32 @@ def main():
 
         # * optionally do something with summarize_results (e.g., save, or print to console)
 
-    ## summarize return
-    if args.command == "fastqpp":
-        summarize_results = summarize(verbose=args.quiet, **kwargs)
+    ## ref return
+    if args.command == "ref":
+        ref_results = ref(
+            sequences=args.sequences,
+            mutations=args.mutations,
+            filters=args.filters,
+            mode=args.mode,
+            dlist=args.dlist,
+            out=args.out,
+            index_out=args.index_out,
+            t2g_out=args.t2g_out,
+            download=args.download,
+            dry_run=args.dry_run,
+            list_downloadable_references=args.list_downloadable_references,
+            disable_minimum_info_columns=args.disable_minimum_info_columns,
+            overwrite=args.overwrite,
+            verbose=args.quiet,
+            **kwargs,
+        )
+
+        # * optionally do something with ref_results (e.g., save, or print to console)
+
+    ## count return
+    if args.command == "count":
+        count_results = count(verbose=args.quiet, **kwargs)
+
+        # * optionally do something with count_results (e.g., save, or print to console)
+
+    

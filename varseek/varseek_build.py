@@ -1,5 +1,6 @@
 import os
 import subprocess
+import pyfastx
 from typing import Union, List, Optional
 import re
 import time
@@ -30,7 +31,8 @@ from .utils import (
     report_time_elapsed,
     is_valid_int,
     vcf_to_dataframe,
-    generate_mutation_notation_from_vcf_columns
+    generate_mutation_notation_from_vcf_columns,
+    save_run_info
 )
 
 # from gget.utils import read_fasta
@@ -348,16 +350,17 @@ def validate_input_build(params_dict):
         if not isinstance(params_dict.get(column), str):
             raise ValueError(f"Invalid column name for {column}: {params_dict.get(column)}")
         
-    # integers
+    # integers - optional just means that it's in kwargs
     for param_name, min_value, optional_value in [
         ("w", 1, False),
-        ("k", 1, True),
+        ("k", 1, False),
+        ("max_ambiguous", 0, False),
         ("insertion_size_limit", 1, True),
         ("min_seq_len", 1, True),
-        ("max_ambiguous", 0, True),
     ]:
+        param_value = params_dict.get(param_name)
         if not is_valid_int(param_value, ">=", min_value, optional=optional_value):
-            raise ValueError(f"{param_name} must be an integer >= {min_value} or None. Got {params_dict.get(param_name)}.")
+            raise ValueError(f"{param_name} must be an integer >= {min_value}. Got {params_dict.get(param_name)}.")
 
     # required_insertion_overlap_length
     if params_dict.get("required_insertion_overlap_length") is not None and not (
@@ -384,7 +387,7 @@ def build(
     sequences,
     mutations,
     w = 54,
-    k = None,
+    k = 55,
     max_ambiguous = 0,
     mut_column = "mutation",
     seq_id_column = "seq_ID",
@@ -448,7 +451,7 @@ def build(
                     1) run `vk build --list_supported_databases` from the command line, or
                     2) run varseek.build(list_supported_databases=True) in python
 
-    - mutations     (str or DataFrame object) Path to csv or tsv file (str) (e.g., 'mutations.csv'), or DataFrame (DataFrame object),
+    - mutations     (str or list[str] or DataFrame object) Path to csv or tsv file (str) (e.g., 'mutations.csv'), or DataFrame (DataFrame object),
                     containing information about the mutations in the following format:
 
                     | mutation         | mut_ID | seq_ID |
@@ -479,7 +482,7 @@ def build(
                                          If w > total length of the sequence, the entire sequence will be kept.
     - k                                  (int) Length of the k-mers to be considered in remove_seqs_with_wt_kmers, and the default minimum value for the minimum sequence length (which can be changed with 'min_seq_len').
                                          If using kallisto in a later workflow, then this should correspond to kallisto k.
-                                         Must be greater than the value passed in for w. Default: w+1.
+                                         Must be greater than the value passed in for w. Default: 55.
     - max_ambiguous                      (int) Maximum number of 'N' (or 'n') characters allowed in a VCRS. None means no 'N' filter will be applied. Default: 0.
 
     # Additional input files and associated parameters
@@ -587,9 +590,12 @@ def build(
         print_varseek_dry_run(params_dict, function_name="build")
         return None
 
-    #* 4. Save params to config file
+    #* 4. Save params to config file and run info file
     config_file = os.path.join(out, "config", "vk_build_config.json")
-    save_params_to_config_file(config_file)
+    save_params_to_config_file(params_dict, config_file)
+
+    run_info_file = os.path.join(out, "config", "vk_build_run_info.txt")
+    save_run_info(run_info_file)
 
     #* 5. Set up default folder/file input paths, and make sure the necessary ones exist
     # all input files for vk build are required in the varseek workflow, so this is skipped
@@ -627,7 +633,6 @@ def build(
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
     #* 7. Define kwargs defaults
-    # define kwargs
     cosmic_release = kwargs.get("cosmic_release", None)
     cosmic_grch = kwargs.get("cosmic_grch", None)
     cosmic_email = kwargs.get("cosmic_email", None)
@@ -749,7 +754,7 @@ def build(
                         sequences = cds_file
 
         titles, seqs = [], []
-        for title, seq in read_fasta(sequences):
+        for title, seq in pyfastx.Fastx(sequences):
             titles.append(title)
             seqs.append(seq)
         # titles, seqs = read_fasta(sequences)  # when using gget.utils.read_fasta()

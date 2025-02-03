@@ -18,8 +18,14 @@ from varseek.utils import (
     match_adata_orders,
     write_to_vcf,
     write_vcfs_for_rows,
+    set_up_logger,
     save_params_to_config_file,
-    set_up_logger
+    make_function_parameter_to_value_dict,
+    check_file_path_is_string_with_valid_extension,
+    print_varseek_dry_run,
+    report_time_elapsed,
+    is_valid_int,
+    save_run_info
 )
 
 logger = set_up_logger()

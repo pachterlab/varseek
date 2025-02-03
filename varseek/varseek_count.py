@@ -2,7 +2,16 @@ import os
 import subprocess
 import varseek as vk
 import time
-from varseek.utils import set_up_logger
+from varseek.utils import (
+    set_up_logger,
+    save_params_to_config_file,
+    make_function_parameter_to_value_dict,
+    check_file_path_is_string_with_valid_extension,
+    print_varseek_dry_run,
+    report_time_elapsed,
+    is_valid_int,
+    save_run_info
+)
 
 logger = set_up_logger()
 
@@ -83,7 +92,7 @@ def count(
 ):
     """
     Required input arguments:
-    - rnaseq_fastq_files     (list) List of fastq files to be processed. If paired end, the list should contains paths such as [file1_R1, file1_R2, file2_R1, file2_R2, ...]
+    - rnaseq_fastq_files     (str or list[str]) List of fastq files to be processed. If paired end, the list should contains paths such as [file1_R1, file1_R2, file2_R1, file2_R2, ...]
     - mutation_index         (str)  Path to mutation index
     - t2g_vk                 (str)  Path to t2g file
 

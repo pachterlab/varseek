@@ -2,6 +2,7 @@ from datetime import datetime
 import logging
 import re
 import os
+import sys
 import psutil
 import requests
 import subprocess
@@ -14,6 +15,7 @@ from collections import OrderedDict
 from bs4 import BeautifulSoup
 import pandas as pd
 
+from varseek import __version__
 from varseek.constants import default_filename_dict
 
 # Mute numexpr threads info
@@ -94,7 +96,7 @@ def check_file_path_is_string_with_valid_extension(file_path, variable_name, fil
             raise ValueError(f"file_type must be a string or a list, got {type(file_type)}")
         
         # check if file has valid extension
-        if not any(file_path.lower().endswith(ext) for ext in valid_extensions_for_file_type):
+        if not any(file_path.lower().endswith((ext, f"{ext}.zip", f"{ext}.gz")) for ext in valid_extensions_for_file_type):
             raise ValueError(
                 f"Invalid file extension for {variable_name}. Must be one of {valid_extensions_for_file_type}"
             )
@@ -134,7 +136,7 @@ def make_function_parameter_to_value_dict(levels_up = 1):
     
     # handle *args
     if varargs:
-        params["*args"] = values[varargs]
+        params[varargs] = values[varargs]
     
     # handle **kwargs
     if varkw:
@@ -151,7 +153,7 @@ def report_time_elapsed(start_time, logger = None):
     else:
         print(time_elapsed_message)
 
-def save_params_to_config_file(out_file="run_config.json"):
+def save_params_to_config_file(params = None, out_file="run_config.json"):
     out_file_directory = os.path.dirname(out_file)
     if not out_file_directory:
         out_file_directory = "."
@@ -159,7 +161,8 @@ def save_params_to_config_file(out_file="run_config.json"):
         os.makedirs(out_file_directory, exist_ok=True)
 
     # Collect parameters in a dictionary
-    params = make_function_parameter_to_value_dict(levels_up = 2)
+    if not params:
+        params = make_function_parameter_to_value_dict(levels_up = 2)
 
     # Write to JSON
     with open(out_file, "w") as file:
@@ -478,7 +481,7 @@ def get_set_of_allowable_kwargs(func):
 
 
 
-def is_valid_int(value, threshold_type=None, threshold_value=None, optional=False):
+def is_valid_int(value, threshold_type=None, threshold_value=None, min_value_inclusive=None, max_value_inclusive=None, optional=False):
     """
     Check if value is an integer or a string representation of an integer.
     Optionally, apply a threshold comparison.
@@ -506,7 +509,14 @@ def is_valid_int(value, threshold_type=None, threshold_value=None, optional=Fals
 
     # If no threshold is given, just return True
     if threshold_value is None:
-        return True
+        if min_value_inclusive and not max_value_inclusive:
+            threshold_value = min_value_inclusive
+        elif max_value_inclusive and not min_value_inclusive:
+            threshold_value = max_value_inclusive
+        elif min_value_inclusive and max_value_inclusive:
+            threshold_value = min_value_inclusive
+        else:
+            return True
 
     # Apply threshold comparison
     if threshold_type == "<":
@@ -517,10 +527,12 @@ def is_valid_int(value, threshold_type=None, threshold_value=None, optional=Fals
         return value > threshold_value
     elif threshold_type == ">=":
         return value >= threshold_value
+    elif threshold_type == "between":
+        return min_value_inclusive <= value <= max_value_inclusive
     elif threshold_type is None:  # No threshold comparison
         return True
     else:
-        raise ValueError(f"Invalid threshold_type: {threshold_type}. Must be one of '<', '<=', '>', '>='.")
+        raise ValueError(f"Invalid threshold_type: {threshold_type}. Must be one of '<', '<=', '>', '>=', 'between'.")
 
 
 
@@ -907,3 +919,44 @@ def authenticate_cosmic_credentials_via_server(encoded_token):
         print("Invalid credentials.")
         return False
 
+def get_python_function_call():
+    # Get the calling frame
+    frame = inspect.currentframe().f_back.f_back.f_back.f_back  # goes 4 up - 1 to get_python_function_call, 1 to get_python_or_cli_function_call, 1 to save_run_info, and 1 to the function of interest
+    code_context = inspect.getframeinfo(frame).code_context
+
+    # Extract the exact function call as a string
+    function_call = code_context[0].strip() if code_context else "Unknown call"
+    
+    return function_call
+
+def get_python_or_cli_function_call():
+    len_sys_argv = len(sys.argv)
+    if len_sys_argv == 1:  # Python script
+        function_call = get_python_function_call()
+    elif len_sys_argv == 2 and "ipykernel" in sys.argv[0]:  # Jupyter notebook python
+        function_call = get_python_function_call()
+    else:  # command line (terminal or Jupyter with '!')
+        function_call = " ".join(sys.argv)
+    return function_call
+
+
+
+def save_run_info(out_file="run_info.txt"):
+    out_file_directory = os.path.dirname(out_file)
+    if not out_file_directory:
+        out_file_directory = "."
+    else:
+        os.makedirs(out_file_directory, exist_ok=True)
+
+    function_call = get_python_or_cli_function_call()
+
+    # Get the current date and time
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    version = __version__
+
+    # Write everything to the file
+    with open(out_file, "w") as f:
+        f.write(f"{timestamp}\n")  # Write the date and time
+        f.write(f"Version: {version}\n")  # Write the package version
+        f.write(function_call + "\n")  # Write the function call
