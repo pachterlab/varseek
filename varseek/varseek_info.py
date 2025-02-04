@@ -1018,4 +1018,4 @@ def info(
         logger.info(f"Columns not successfully added: {columns_not_successfully_added}")
 
     # Report time
-    report_time_elapsed(start_time)
+    report_time_elapsed(start_time, logger=logger, verbose=verbose)

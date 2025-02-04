@@ -79,6 +79,7 @@ def check_file_path_is_string_with_valid_extension(file_path, variable_name, fil
         "gtf": {".gtf"},
         "t2g": {".txt"},
         "index": {".idx"},
+        "h5ad": {".h5ad"},
     }
     if file_path:  # skip if None or empty string, as I will provide the default path in this case
         # check if file_path is a string
@@ -145,13 +146,14 @@ def make_function_parameter_to_value_dict(levels_up = 1):
     
     return params
 
-def report_time_elapsed(start_time, logger = None):
+def report_time_elapsed(start_time, logger = None, verbose = True):
     elapsed = time.perf_counter() - start_time
     time_elapsed_message = f"Total runtime for vk build\n: {int(elapsed // 60)}m, {elapsed % 60:.2f}s"
-    if logger:
-        logger.info(time_elapsed_message)
-    else:
-        print(time_elapsed_message)
+    if verbose:
+        if logger:
+            logger.info(time_elapsed_message)
+        else:
+            print(time_elapsed_message)
 
 def save_params_to_config_file(params = None, out_file="run_config.json"):
     out_file_directory = os.path.dirname(out_file)
@@ -481,7 +483,7 @@ def get_set_of_allowable_kwargs(func):
 
 
 
-def is_valid_int(value, threshold_type=None, threshold_value=None, min_value_inclusive=None, max_value_inclusive=None, optional=False):
+def is_valid_int(value, threshold_type=None, threshold_value=None, optional=False, min_value_inclusive=None, max_value_inclusive=None):
     """
     Check if value is an integer or a string representation of an integer.
     Optionally, apply a threshold comparison.

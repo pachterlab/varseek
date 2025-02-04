@@ -469,7 +469,7 @@ def ref(
     vk_ref_output_dict["t2g"] = mcrs_t2g_for_alignment
 
     # Report time
-    report_time_elapsed(start_time)
+    report_time_elapsed(start_time, logger=logger, verbose=verbose)
 
     return vk_ref_output_dict
 

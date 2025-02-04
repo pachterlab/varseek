@@ -18,6 +18,7 @@ fasta_extensions = ('.fa', '.fasta', '.fa.gz', '.fasta.gz')
 fastq_extensions = ('.fq', '.fastq', '.fq.gz', '.fastq.gz')
 
 technology_valid_values = {"10xv1", "10xv2", "10xv3", "Bulk", "SmartSeq2", "BDWTA", "CELSeq", "CELSeq2", "DropSeq", "inDropsv1", "inDropsv2", "inDropsv3", "SCRBSeq", "SmartSeq3", "SPLiT", "STORM", "SureCell", "VASA", "Visium"}
+non_single_cell_technologies = {"Bulk", "Visium"}
 
 # Get complement
 complement = {

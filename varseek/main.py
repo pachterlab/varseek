@@ -1353,10 +1353,10 @@ def main():
         help=extract_help_from_doc(fastqpp, "min_read_len"),
     )
     parser_fastqpp.add_argument(
-        "--run_fastqc_and_multiqc",
+        "--fastqc_and_multiqc",
         required=False,
         action="store_true",
-        help=extract_help_from_doc(fastqpp, "run_fastqc_and_multiqc"),
+        help=extract_help_from_doc(fastqpp, "fastqc_and_multiqc"),
     )
     parser_fastqpp.add_argument(
         "--replace_low_quality_bases_with_N",
@@ -1404,6 +1404,12 @@ def main():
         help=extract_help_from_doc(fastqpp, "dry_run"),
     )
     parser_fastqpp.add_argument(
+        "--overwrite",
+        required=False,
+        action="store_true",
+        help=extract_help_from_doc(fastqpp, "overwrite"),
+    )
+    parser_fastqpp.add_argument(
         "--disable_sort_fastqs",
         action="store_false",
         required=False,
@@ -1437,6 +1443,30 @@ def main():
         default=None,
         help=extract_help_from_doc(fastqpp, "seqtk_path"),
     )
+    parser_fastqpp.add_argument(
+        "--quality_control_fastqs_out_suffix",
+        required=False,
+        default=None,
+        help=extract_help_from_doc(fastqpp, "quality_control_fastqs_out_suffix"),
+    )
+    parser_fastqpp.add_argument(
+        "--replace_low_quality_bases_with_N_out_suffix",
+        required=False,
+        default=None,
+        help=extract_help_from_doc(fastqpp, "replace_low_quality_bases_with_N_out_suffix"),
+    )
+    parser_fastqpp.add_argument(
+        "--split_by_N_out_suffix",
+        required=False,
+        default=None,
+        help=extract_help_from_doc(fastqpp, "split_by_N_out_suffix"),
+    )
+    parser_fastqpp.add_argument(
+        "--concatenate_paired_fastqs_out_suffix",
+        required=False,
+        default=None,
+        help=extract_help_from_doc(fastqpp, "concatenate_paired_fastqs_out_suffix"),
+    )
 
     # NEW PARSER
     clean_desc = "Run standard processing on the mutation count matrix."
@@ -1469,6 +1499,45 @@ def main():
         formatter_class=CustomHelpFormatter,
     )
     parser_summarize.add_argument(
+        "adata",
+        type=str,
+        required=True,
+        help=extract_help_from_doc(summarize, "adata"),
+    )
+    parser_summarize.add_argument(
+        "-t",
+        "--top_values",
+        type=int,
+        required=False,
+        default=10,
+        help=extract_help_from_doc(summarize, "top_values"),
+    )
+    parser_summarize.add_argument(
+        "-x",
+        "--technology",
+        required=False,
+        help=extract_help_from_doc(summarize, "technology"),
+    )
+    parser_summarize.add_argument(
+        "-o",
+        "--out",
+        required=False,
+        default=".",
+        help=extract_help_from_doc(summarize, "out"),
+    )
+    parser_summarize.add_argument(
+        "--dry_run",
+        required=False,
+        action="store_true",
+        help=extract_help_from_doc(summarize, "dry_run"),
+    )
+    parser_summarize.add_argument(
+        "--overwrite",
+        required=False,
+        action="store_true",
+        help=extract_help_from_doc(summarize, "overwrite"),
+    )
+    parser_summarize.add_argument(
         "-q",
         "--quiet",
         default=True,
@@ -1476,6 +1545,23 @@ def main():
         required=False,
         help="Do not print progress information.",
     )
+    # kwargs
+    parser_summarize.add_argument(
+        "--stats_file",
+        required=False,
+        help=extract_help_from_doc(summarize, "stats_file"),
+    )
+    parser_summarize.add_argument(
+        "--specific_stats_folder",
+        required=False,
+        help=extract_help_from_doc(summarize, "specific_stats_folder"),
+    )
+    parser_summarize.add_argument(
+        "--plots_folder",
+        required=False,
+        help=extract_help_from_doc(summarize, "plots_folder"),
+    )
+
 
     # NEW PARSER
     ref_desc = "Create a reference index and t2g file for variant screening with varseek count. Wraps around varseek build, varseek info, varseek filter, and kb ref."
@@ -1890,7 +1976,7 @@ def main():
             unqualified_percent_limit=args.unqualified_percent_limit,
             max_ambiguous=args.max_ambiguous,
             min_read_len=args.min_read_len,
-            run_fastqc_and_multiqc=args.run_fastqc_and_multiqc,
+            fastqc_and_multiqc=args.fastqc_and_multiqc,
             replace_low_quality_bases_with_N=args.replace_low_quality_bases_with_N,
             min_base_quality=args.min_base_quality,
             split_reads_by_Ns=args.split_reads_by_Ns,
@@ -1898,11 +1984,16 @@ def main():
             out=args.out,
             delete_intermediate_files=args.delete_intermediate_files,
             dry_run=args.dry_run,
+            overwrite=args.overwrite,
             sort_fastqs=args.disable_sort_fastqs,
             threads=args.threads,
             verbose=args.quiet,
             fastp_path=args.fastp_path,
             seqtk_path=args.seqtk_path,
+            quality_control_fastqs_out_suffix=args.quality_control_fastqs_out_suffix,
+            replace_low_quality_bases_with_N_out_suffix=args.replace_low_quality_bases_with_N_out_suffix,
+            split_by_N_out_suffix=args.split_by_N_out_suffix,
+            concatenate_paired_fastqs_out_suffix=args.concatenate_paired_fastqs_out_suffix,
             **kwargs,
         )
 
@@ -1916,7 +2007,18 @@ def main():
 
     ## summarize return
     if args.command == "summarize":
-        summarize_results = summarize(verbose=args.quiet, **kwargs)
+        summarize_results = summarize(
+            top_values=args.top_values,
+            technology=args.technology,
+            out=args.out,
+            dry_run=args.dry_run,
+            overwrite=args.overwrite,
+            verbose=args.quiet,
+            stats_file=args.stats_file,
+            specific_stats_folder=args.specific_stats_folder,
+            plots_folder=args.plots_folder,
+            **kwargs,
+        )
 
         # * optionally do something with summarize_results (e.g., save, or print to console)
 

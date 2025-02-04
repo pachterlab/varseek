@@ -9,6 +9,9 @@ import gget
 import scipy as sp
 import pysam
 
+import time
+
+from .constants import non_single_cell_technologies
 from varseek.utils import (
     plot_knee_plot,
     increment_adata_based_on_dlist_fns,
@@ -36,16 +39,16 @@ def make_vcf():
 
 #* ORIGINAL
 # def clean(
-#     adata_path,
-#     adata_output_path=None,
+#     adata,
+#     adata_out=None,
 #     out=".",
 #     id_to_header_csv=None,
 #     mutation_metadata_df=None,
 #     mutation_metadata_df_columns=None,
-#     minimum_count_filter=0,
+#     min_counts=0,
 #     use_binary_matrix=False,
 #     drop_zero_columns=False,
-#     assay="bulk",
+#     technology="bulk",
 #     adjust_mutation_adata_by_normal_gene_matrix_information=False,  # * change to True
 #     filter_cells_by_min_counts=None,
 #     filter_cells_by_min_genes=None,
@@ -132,21 +135,48 @@ def clean(
     verbose=False,
     **kwargs,
 ):
-    # begin timer
+    #* 1. Start timer
+    start_time = time.perf_counter()
+    
+    #* 2. Type-checking
+    params_dict = make_function_parameter_to_value_dict(1)
+    validate_input_info(params_dict)
 
-    config_file = os.path.join(out, "config", "vk_clean_config.json")
-    save_params_to_config_file(config_file)
+    #* 3. Dry-run and set out folder (must to it up here or else config will save in the wrong place)
+    if dry_run:
+        print_varseek_dry_run(params_dict, function_name="info")
+        return None
+    if out is None:
+        out = input_dir if input_dir else "."
+    
+    #* 4. Save params to config file and run info file
+    config_file = os.path.join(out, "config", "vk_info_config.json")
+    save_params_to_config_file(params_dict, config_file)
 
-    if isinstance(adata_path, anndata.AnnData):
-        adata = adata_path
+    run_info_file = os.path.join(out, "config", "vk_info_run_info.txt")
+    save_run_info(run_info_file)
+
+    #* 5. Set up default folder/file input paths, and make sure the necessary ones exist
+    
+    #* 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
+    
+    #* 7. Define kwargs defaults
+    
+    #* 8. Start the actual function
+
+
+
+
+
+    if isinstance(adata, anndata.AnnData):
         adata_dir = "."
         output_type = "AnnData"
-    elif isinstance(adata_path, str):
-        adata = sc.read_h5ad(adata_path)
-        adata_dir = os.path.dirname(adata_path)
+    elif isinstance(adata, str):
+        adata = sc.read_h5ad(adata)
+        adata_dir = os.path.dirname(adata)
         output_type = "path"
     else:
-        raise ValueError("adata_path must be a string (file path) or an AnnData object.")
+        raise ValueError("adata must be a string (file path) or an AnnData object.")
 
     # if kb_count_out_wt_mcrs_counterpart:
     #     adata_wt_mcrs_path = f"{kb_count_out_wt_mcrs_counterpart}/counts_unfiltered/adata.h5ad"
@@ -157,8 +187,8 @@ def clean(
     output_figures_dir = os.path.join(out, "figures")
     os.makedirs(output_figures_dir, exist_ok=True)
 
-    if not adata_output_path:
-        adata_output_path = os.path.join(adata_dir, "adata_cleaned.h5ad")
+    if not adata_out:
+        adata_out = os.path.join(adata_dir, "adata_cleaned.h5ad")
 
     adata.var["mcrs_id"] = adata.var.index
 
@@ -203,7 +233,7 @@ def clean(
     #         split_Ns=split_reads_by_Ns,
     #         paired_end_fastqs=False,
     #         paired_end_suffix_length=2,
-    #         assay="bulk",
+    #         technology=technology,
     #         keep_only_insertions=True,
     #     )
 
@@ -223,19 +253,19 @@ def clean(
     #         bustools=bustools,
     #     )
 
-    # if adjust_mutation_adata_by_normal_gene_matrix_information:
+    # if qc_against_gene_matrix:
     #     adata = adjust_mutation_adata_by_normal_gene_matrix(
     #         adata, 
     #         kb_output_mutation=kb_count_out_mutant, 
     #         kb_output_standard=kb_count_out_normal_genome, 
     #         id_to_header_csv=id_to_header_csv, 
     #         mutation_metadata_csv=mutation_metadata_df, 
-    #         adata_output_path=None, 
+    #         adata_out=None, 
     #         t2g_mutation=mcrs_t2g, t2g_standard=None, 
     #         fastq_file_list=data_fastq, 
     #         mm=mm, 
     #         union=False, 
-    #         assay=assay, 
+    #         technology=technology, 
     #         parity="single", 
     #         bustools=bustools,
     #         ignore_barcodes=ignore_barcodes,
@@ -260,9 +290,9 @@ def clean(
         new_adata.obs_names = [first_barcode]
         adata = new_adata.copy()
 
-    # set all count values below minimum_count_filter to 0
-    if minimum_count_filter is not None:
-        adata.X = adata.X.multiply(adata.X >= minimum_count_filter)
+    # set all count values below min_counts to 0
+    if min_counts is not None:
+        adata.X = adata.X.multiply(adata.X >= min_counts)
 
     # # remove 0s for memory purposes
     # adata.X.eliminate_zeros()
@@ -272,7 +302,7 @@ def clean(
 
     # TODO: make sure the adata objects are in the same order (relevant for both bulk and sc)
     if adata_path_normal_genome:
-        if assay == "sc":
+        if technology not in non_single_cell_technologies:
             if filter_cells_by_min_counts:
                 if type(filter_cells_by_min_counts) != int:  # ie True for automatic
                     from kneed import KneeLocator
@@ -356,14 +386,14 @@ def clean(
             adata = adata[common_cells, :].copy()
 
         # do cpm
-        if do_cpm_normalization and not use_binary_matrix:  # normalization not needed for binary matrix
+        if cpm_normalization and not use_binary_matrix:  # normalization not needed for binary matrix
             total_counts = adata_normal_genome.X.sum(axis=1)
             cpm_factor = total_counts / 1e6
 
             adata.X = adata.X / cpm_factor[:, None]  # Reshape to make cpm_factor compatible with adata.X
             adata.obs["cpm_factor"] = cpm_factor
 
-    if drop_zero_columns:
+    if drop_empty_columns:
         # Identify columns (genes) with non-zero counts across samples
         nonzero_gene_mask = np.array((adata.X != 0).sum(axis=0)).flatten() > 0
 
@@ -425,10 +455,10 @@ def clean(
     if adata_path_normal_genome:
         adata_normal_genome.write(adata_normal_genome_output_path)
 
-    adata.write(adata_output_path)
+    adata.write(adata_out)
 
 
     if output_type == "path":
-        return adata_output_path
+        return adata_out
     elif output_type == "AnnData":
         return adata

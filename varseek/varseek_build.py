@@ -1,38 +1,39 @@
 import os
-import subprocess
-import pyfastx
-from typing import Union, List, Optional
 import re
+import subprocess
 import time
+from typing import List, Optional, Union
+
+import gget
 import numpy as np
 import pandas as pd
+import pyfastx
 from tqdm import tqdm
-import gget
 
 from .constants import (
     complement,
-    supported_databases_and_corresponding_reference_sequence_type,
     mutation_pattern,
+    supported_databases_and_corresponding_reference_sequence_type,
 )
 from .utils import (
-    set_up_logger,
-    read_fasta,
-    convert_mutation_cds_locations_to_cdna,
-    convert_chromosome_value_to_int_when_possible,
-    generate_unique_ids,
-    translate_sequence,
-    wt_fragment_and_mutant_fragment_share_kmer,
-    create_mutant_t2g,
     add_mutation_type,
-    save_params_to_config_file,
-    make_function_parameter_to_value_dict,
     check_file_path_is_string_with_valid_extension,
-    print_varseek_dry_run,
-    report_time_elapsed,
-    is_valid_int,
-    vcf_to_dataframe,
+    convert_chromosome_value_to_int_when_possible,
+    convert_mutation_cds_locations_to_cdna,
+    create_mutant_t2g,
     generate_mutation_notation_from_vcf_columns,
-    save_run_info
+    generate_unique_ids,
+    is_valid_int,
+    make_function_parameter_to_value_dict,
+    print_varseek_dry_run,
+    read_fasta,
+    report_time_elapsed,
+    save_params_to_config_file,
+    save_run_info,
+    set_up_logger,
+    translate_sequence,
+    vcf_to_dataframe,
+    wt_fragment_and_mutant_fragment_share_kmer,
 )
 
 # from gget.utils import read_fasta
@@ -1607,10 +1608,10 @@ def build(
                 all_mut_seqs.remove("")
 
             if len(all_mut_seqs) > 0:
-                report_time_elapsed(start_time)
+                report_time_elapsed(start_time, logger=logger, verbose=verbose)
                 return all_mut_seqs
         else:
-            report_time_elapsed(start_time)
+            report_time_elapsed(start_time, logger=logger, verbose=verbose)
             return mutations
     
-    report_time_elapsed(start_time)
+    report_time_elapsed(start_time, logger=logger, verbose=verbose)

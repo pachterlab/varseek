@@ -202,7 +202,7 @@ import gzip
 import shutil
 
 
-def concatenate_fastqs(*input_files, out_dir=".", delete_original_files=False):
+def concatenate_fastqs(*input_files, out_dir=".", delete_original_files=False, suffix="concatenatedPairs"):
     """
     Concatenate a variable number of FASTQ files (gzipped or not) into a single output file.
 
@@ -217,7 +217,7 @@ def concatenate_fastqs(*input_files, out_dir=".", delete_original_files=False):
     os.makedirs(out_dir, exist_ok=True)
 
     parts_filename = input_files[0].split(".", 1)
-    output_file = os.path.join(out_dir, f"combined.{parts_filename[1]}")
+    output_file = os.path.join(out_dir, f"{parts_filename[0]}_{suffix}.{parts_filename[1]}")
 
     input_files_space_separated = " ".join(list(input_files))
     cat_command = f"cat {input_files_space_separated} > {output_file}"
@@ -829,7 +829,8 @@ def trim_edges_and_adaptors_off_fastq_reads(
     length_required=None,
     fastp="fastp",
     out_dir=".",
-    threads=8
+    threads=2,
+    suffix="qc"
 ):
 
     # output_dir = os.path.dirname(filename)
@@ -837,7 +838,7 @@ def trim_edges_and_adaptors_off_fastq_reads(
     # Define default output filenames if not provided
     os.makedirs(out_dir, exist_ok=True)
     parts_filename = filename.split(".", 1)
-    filename_filtered = os.path.join(out_dir, f"{parts_filename[0]}_filtered.{parts_filename[1]}")
+    filename_filtered = os.path.join(out_dir, f"{parts_filename[0]}_{suffix}.{parts_filename[1]}")
 
     try:
         fastp_command = [
@@ -885,7 +886,7 @@ def trim_edges_and_adaptors_off_fastq_reads(
         # Paired-end handling
         if filename_r2:
             parts_filename_r2 = filename_r2.split(".", 1)
-            filename_filtered_r2 = os.path.join(out_dir, f"{parts_filename_r2[0]}_filtered.{parts_filename_r2[1]}")
+            filename_filtered_r2 = os.path.join(out_dir, f"{parts_filename_r2[0]}_{suffix}.{parts_filename_r2[1]}")
 
             fastp_command[3:3] = [
                 "-I",
@@ -908,6 +909,7 @@ def trim_edges_and_adaptors_off_fastq_reads(
                 minimum_phred=cut_mean_quality,
                 number_beginning=0,
                 number_end=0,
+                suffix=suffix
             )
             if filename_r2:
                 _ = trim_edges_of_fastq_reads_seqtk(
@@ -917,6 +919,7 @@ def trim_edges_and_adaptors_off_fastq_reads(
                     minimum_phred=cut_mean_quality,
                     number_beginning=0,
                     number_end=0,
+                    suffix=suffix
                 )
         except Exception as e:
             print(f"Error: {e}")
@@ -940,12 +943,12 @@ def trim_edges_and_adaptors_off_fastq_reads(
 #     elif tool == "trimmomatic":
 #         parts = filename.split(".")
 #         if filename and filename_r2:
-#             assay = "PE"
+#             technology = "PE"
 #         else:
-#             assay = "SE"
+#             technology = "SE"
 
 #         if not os.path.exists(adaptor_fa):
-#             adaptor_fa = f"{adaptor_fa}-{assay}-2.fa"
+#             adaptor_fa = f"{adaptor_fa}-{technology}-2.fa"
 #             download_adaptor_fa_command = f"curl -o {adaptor_fa} https://raw.githubusercontent.com/usadellab/Trimmomatic/main/adapters/{adaptor_fa}"
 #             subprocess.run(download_adaptor_fa_command, shell=True, check=True)
 
@@ -971,10 +974,11 @@ def trim_edges_of_fastq_reads_seqtk(
     minimum_phred=13,
     number_beginning=0,
     number_end=0,
+    suffix="qc",
 ):
     if filename_filtered is None:
         parts = filename.split(".", 1)
-        filename_filtered = f"{parts[0]}_filtered.{parts[1]}"
+        filename_filtered = f"{parts[0]}_{suffix}.{parts[1]}"
 
     minimum_base_probability = phred_to_error_rate(minimum_phred)
 
@@ -1004,10 +1008,10 @@ def trim_edges_of_fastq_reads_seqtk(
 #     split_fastq_reads_by_N(input_fastq_file, output_fastq_file = output_fastq_file, minimum_sequence_length = minimum_sequence_length)
 
 
-def replace_low_quality_base_with_N(filename, out_dir=".", seqtk="seqtk", minimum_base_quality=13):
+def replace_low_quality_base_with_N(filename, out_dir=".", seqtk="seqtk", minimum_base_quality=13, suffix="addedNs"):
     os.makedirs(out_dir, exist_ok=True)
     parts = filename.split(".", 1)
-    filename_filtered = os.path.join(out_dir, f"{parts[0]}_with_more_Ns.{parts[1]}")
+    filename_filtered = os.path.join(out_dir, f"{parts[0]}_{suffix}.{parts[1]}")
     command = [
         seqtk,
         "seq",
@@ -1044,11 +1048,15 @@ def split_fastq_reads_by_N(
     minimum_sequence_length=None,
     technology="bulk",
     contains_barcodes_or_umis = False,  # set to False for bulk and for the paired file of any single-cell technology
-    seqtk = "seqtk"
+    seqtk = "seqtk",
+    logger = None,
+    verbose=True,
+    suffix="splitNs"
 ):
+    printlog = get_printlog(verbose, logger)
     os.makedirs(out_dir, exist_ok=True)
     parts = input_fastq_file.split(".", 1)
-    output_fastq_file = os.path.join(out_dir, f"{parts[0]}_split_by_Ns.{parts[1]}")
+    output_fastq_file = os.path.join(out_dir, f"{parts[0]}_{suffix}.{parts[1]}")
 
     technology = technology.lower()
     
@@ -1066,7 +1074,7 @@ def split_fastq_reads_by_N(
                     os.rename(output_fastq_file_temp, output_fastq_file)
             except Exception as e:
                 print(f"Error: {e}")
-                print("seqtk seq did not work. Skipping minimum length filtering")
+                printlog("seqtk seq did not work. Skipping minimum length filtering")
                 if os.path.exists(output_fastq_file_temp):
                     os.remove(output_fastq_file_temp)
     else:  # must copy barcode/umi to each read, so seqtk will not work here
@@ -1156,7 +1164,7 @@ def split_fastq_reads_by_N(
                             f"{new_header}\n{split_sequence[i]}\n{plus_line}\n{split_qualities[i]}\n"
                         )
 
-        print(f"Split reads written to {output_fastq_file}")
+        # printlog(f"Split reads written to {output_fastq_file}")
 
         return output_fastq_file
 
@@ -3472,7 +3480,7 @@ def increment_adata_based_on_dlist_fns(
     newer_kallisto,
     k=31,
     mm=False,
-    assay="bulk",
+    technology="bulk",
     bustools="bustools",
     ignore_barcodes=False
 ):
@@ -3493,7 +3501,7 @@ def increment_adata_based_on_dlist_fns(
             t2g=t2g,
             mm=mm,
             union=False,
-            assay=assay,
+            technology=technology,
             bustools=bustools,
             ignore_barcodes=ignore_barcodes
         )
@@ -5252,14 +5260,14 @@ def decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_
     split_Ns=False,
     paired_end_fastqs=False,
     paired_end_suffix_length=2,
-    assay="bulk",
+    technology="bulk",
     keep_only_insertions=True,
     ignore_barcodes=False
 ):
     assert (
         split_Ns or paired_end_fastqs
     ), "At least one of split_Ns or paired_end_fastqs must be True"
-    if assay != "bulk":
+    if technology != "bulk":
         raise ValueError("This function currently only works with bulk RNA-seq data")
 
     if not os.path.exists(f"{kb_count_out}/bus_df.csv"):
@@ -5269,7 +5277,7 @@ def decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_
             t2g=t2g,
             mm=mm,
             union=False,
-            assay=assay,
+            technology=technology,
             bustools=bustools,
             ignore_barcodes=ignore_barcodes
         )
@@ -5377,6 +5385,13 @@ def remove_adata_columns(adata, values_of_interest, operation, var_column_name):
 
     return adata
 
+def get_printlog(verbose=True, logger=None):
+    """
+    if verbose=False --> print/log nothing
+    if verbose=True and logger --> logger.info
+    if verbose=True and not logger --> print
+    """
+    return (lambda *args, **kwargs: None) if not verbose else (print if logger is None else logger.info)
 
 def trim_edges_off_reads_fastq_list(
     rnaseq_fastq_files,
@@ -5389,12 +5404,17 @@ def trim_edges_off_reads_fastq_list(
     length_required=None,
     fastp="fastp",
     out_dir=".",
-    threads=8,
+    threads=2,
+    logger=None,
+    verbose=True,
+    suffix="qc"
 ):
+    printlog = get_printlog(verbose, logger)
     os.makedirs(out_dir, exist_ok=True)
     rnaseq_fastq_files_quality_controlled = []
     if parity == "single":
         for i in range(len(rnaseq_fastq_files)):
+            printlog(f"Trimming {rnaseq_fastq_files[i]}")
             rnaseq_fastq_file, _ = trim_edges_and_adaptors_off_fastq_reads(
                 filename=rnaseq_fastq_files[i],
                 filename_r2=None,
@@ -5406,11 +5426,13 @@ def trim_edges_off_reads_fastq_list(
                 length_required=length_required,
                 fastp=fastp,
                 out_dir=out_dir,
-                threads=threads
+                threads=threads,
+                suffix=suffix
             )
             rnaseq_fastq_files_quality_controlled.append(rnaseq_fastq_file)
     elif parity == "paired":
         for i in range(0, len(rnaseq_fastq_files), 2):
+            printlog(f"Trimming {rnaseq_fastq_files[i]} and {rnaseq_fastq_files[i + 1]}")
             rnaseq_fastq_file, rnaseq_fastq_file_2 = (
                 trim_edges_and_adaptors_off_fastq_reads(
                     filename=rnaseq_fastq_files[i],
@@ -5423,7 +5445,8 @@ def trim_edges_off_reads_fastq_list(
                     length_required=length_required,
                     fastp=fastp,
                     out_dir=out_dir,
-                    threads=threads
+                    threads=threads,
+                    suffix=suffix
                 )
             )
             rnaseq_fastq_files_quality_controlled.extend(
@@ -5435,9 +5458,8 @@ def trim_edges_off_reads_fastq_list(
 
 def run_fastqc_and_multiqc(rnaseq_fastq_files_quality_controlled, fastqc_out_dir):
     os.makedirs(fastqc_out_dir, exist_ok=True)
-    rnaseq_fastq_files_quality_controlled_string = " ".join(
-        rnaseq_fastq_files_quality_controlled
-    )
+    rnaseq_fastq_files_quality_controlled_string = " ".join(rnaseq_fastq_files_quality_controlled)
+    
     try:
         fastqc_command = (
             f"fastqc -o {fastqc_out_dir} {rnaseq_fastq_files_quality_controlled_string}"
@@ -5455,12 +5477,14 @@ def run_fastqc_and_multiqc(rnaseq_fastq_files_quality_controlled, fastqc_out_dir
         print(e)
 
 
-def replace_low_quality_bases_with_N_list(rnaseq_fastq_files, minimum_base_quality, seqtk="seqtk", out_dir=".", delete_original_files=False):
+def replace_low_quality_bases_with_N_list(rnaseq_fastq_files, minimum_base_quality, seqtk="seqtk", out_dir=".", delete_original_files=False, logger=None, verbose=True, suffix="addedNs"):
+    printlog = get_printlog(verbose, logger)
     os.makedirs(out_dir, exist_ok=True)
     rnaseq_fastq_files_replace_low_quality_bases_with_N = []
     for i in range(len(rnaseq_fastq_files)):
+        printlog(f"Replacing low quality bases with N in {rnaseq_fastq_files[i]}")
         rnaseq_fastq_file = rnaseq_fastq_files[i]
-        rnaseq_fastq_file = replace_low_quality_base_with_N(rnaseq_fastq_file, seqtk=seqtk, minimum_base_quality=minimum_base_quality, out_dir=out_dir)
+        rnaseq_fastq_file = replace_low_quality_base_with_N(rnaseq_fastq_file, seqtk=seqtk, minimum_base_quality=minimum_base_quality, out_dir=out_dir, suffix=suffix)
         rnaseq_fastq_files_replace_low_quality_bases_with_N.append(rnaseq_fastq_file)
         # delete the file in rnaseq_fastq_files[i]
         if delete_original_files:
@@ -5474,12 +5498,17 @@ def split_reads_by_N_list(
     minimum_sequence_length=None,
     out_dir=".",
     delete_original_files=True,
+    logger=None,
+    verbose=True,
+    suffix="splitNs"
 ):
+    printlog = get_printlog(verbose, logger)
     os.makedirs(out_dir, exist_ok=True)
     rnaseq_fastq_files_split_reads_by_N = []
     for i in range(len(rnaseq_fastq_files_replace_low_quality_bases_with_N)):
+        printlog(f"Splitting reads by N in {rnaseq_fastq_files_replace_low_quality_bases_with_N[i]}")
         rnaseq_fastq_file = rnaseq_fastq_files_replace_low_quality_bases_with_N[i]
-        rnaseq_fastq_file = split_fastq_reads_by_N(rnaseq_fastq_file, minimum_sequence_length=minimum_sequence_length, out_dir=out_dir)  # TODO: would need a way of postprocessing to make sure I don't double-count fragmented reads - I would need to see where each fragmented read aligns - perhaps with kb extract or pseudobam
+        rnaseq_fastq_file = split_fastq_reads_by_N(rnaseq_fastq_file, minimum_sequence_length=minimum_sequence_length, out_dir=out_dir, logger=logger, verbose=verbose, suffix=suffix)  # TODO: would need a way of postprocessing to make sure I don't double-count fragmented reads - I would need to see where each fragmented read aligns - perhaps with kb extract or pseudobam
         # replace_low_quality_base_with_N_and_split_fastq_reads_by_N(input_fastq_file = rnaseq_fastq_file, output_fastq_file = None, minimum_sequence_length=k, seqtk = seqtk, minimum_base_quality = minimum_base_quality_replace_with_N)
         rnaseq_fastq_files_split_reads_by_N.append(rnaseq_fastq_file)
         # # delete the file in rnaseq_fastq_files_replace_low_quality_bases_with_N[i]
@@ -5503,7 +5532,7 @@ def make_bus_df(
     t2g_file,
     mm=False,
     union=False,
-    assay="bulk",  # technology flag of kb
+    technology="bulk",  # technology flag of kb
     parity="single",
     bustools="bustools",
     ignore_barcodes=False
@@ -5515,8 +5544,10 @@ def make_bus_df(
         )  # get transcript at index 0 with transcript[0], and index of transcript named "name" with transcript.index("name")
 
     transcripts.append("dlist")  # add dlist to the end of the list
+
+    technology = technology.lower()
     
-    if assay == "bulk" or "smartseq" in assay.lower():  # smartseq does not have barcodes
+    if technology == "bulk" or "smartseq" in technology.lower():  # smartseq does not have barcodes
         print("loading in barcodes")
         with open(f"{kallisto_out}/matrix.sample.barcodes") as f:
             barcodes = (
@@ -5526,12 +5557,12 @@ def make_bus_df(
         assert not ignore_barcodes, "ignore_barcodes is only supported for bulk RNA-seq data"
         
         try:
-            barcode_start = technology_barcode_and_umi_dict[assay]["barcode_start"]
-            barcode_end = technology_barcode_and_umi_dict[assay]["barcode_end"]
-            umi_start = technology_barcode_and_umi_dict[assay]["umi_start"]
-            umi_end = technology_barcode_and_umi_dict[assay]["umi_end"]
+            barcode_start = technology_barcode_and_umi_dict[technology]["barcode_start"]
+            barcode_end = technology_barcode_and_umi_dict[technology]["barcode_end"]
+            umi_start = technology_barcode_and_umi_dict[technology]["umi_start"]
+            umi_end = technology_barcode_and_umi_dict[technology]["umi_end"]
         except KeyError:
-            print(f"Assay {assay} currently not supported. Supported are {list(technology_barcode_and_umi_dict.keys())}")
+            print(f"technology {technology} currently not supported. Supported are {list(technology_barcode_and_umi_dict.keys())}")
 
         pass  # TODO: write this (will involve technology parameter to get barcode from read)
 
@@ -5564,7 +5595,7 @@ def make_bus_df(
             with open(fastq_file) as f:
                 fastq_header_list = f.read().splitlines()
 
-        if assay == "bulk" or "smartseq" in assay.lower():
+        if technology == "bulk" or "smartseq" in technology.lower():
             if ignore_barcodes:
                 barcode_list = barcodes[0]
             else:
@@ -5656,7 +5687,7 @@ def make_bus_df(
     print("merging ec df into bus df")
     bus_df = bus_df.merge(ec_df, on="EC", how="left")
 
-    if assay != "bulk":
+    if technology != "bulk":
         bus_df_collapsed_1 = bus_df.groupby(
             ["barcode", "UMI", "EC"], as_index=False
         ).agg(
@@ -5706,7 +5737,7 @@ def make_bus_df(
 
         bus_df = bus_df_collapsed_2
 
-    else:  # assay == "bulk"
+    else:  # technology == "bulk"
         # bus_df.rename(columns={"transcript_ids_list": "transcript_ids_list_final", "transcript_names": "transcript_names_final"}, inplace=True)
         bus_df["transcript_ids_list_final"] = bus_df["transcript_ids_list"]
         bus_df["transcript_names_final"] = bus_df["transcript_names"]
@@ -5843,7 +5874,7 @@ def match_paired_ends_after_single_end_run(
 
 
 # TODO: unsure if this works for sc
-def adjust_mutation_adata_by_normal_gene_matrix(adata, kb_output_mutation, kb_output_standard, id_to_header_csv = None, mutation_metadata_csv = None, adata_output_path = None, t2g_mutation = None, t2g_standard = None, fastq_file_list = None, mm = False, union = False, assay = "bulk", parity = "single", bustools = "bustools", ignore_barcodes=False):
+def adjust_mutation_adata_by_normal_gene_matrix(adata, kb_output_mutation, kb_output_standard, id_to_header_csv = None, mutation_metadata_csv = None, adata_output_path = None, t2g_mutation = None, t2g_standard = None, fastq_file_list = None, mm = False, union = False, technology = "bulk", parity = "single", bustools = "bustools", ignore_barcodes=False):
     if not adata:
         adata = f"{kb_output_mutation}/counts_unfiltered/adata.h5ad"
     if type(adata) == str:
@@ -5860,7 +5891,7 @@ def adjust_mutation_adata_by_normal_gene_matrix(adata, kb_output_mutation, kb_ou
             t2g_file = t2g_mutation,
             mm=mm,
             union=union,
-            assay=assay,
+            technology=technology,
             parity=parity,
             bustools=bustools,
         )
@@ -5895,7 +5926,7 @@ def adjust_mutation_adata_by_normal_gene_matrix(adata, kb_output_mutation, kb_ou
             t2g_file = t2g_standard,
             mm=mm,
             union=union,
-            assay=assay,
+            technology=technology,
             parity=parity,
             bustools=bustools,
         )
@@ -6683,7 +6714,9 @@ def sort_order_for_kb_count_fastqs(filepath):
     return (parent_folder, lane, file_type_order.get(file_type, 999))
 
 
-def sort_fastq_files_for_kb_count(fastq_files, technology = None, multiplexed = None, check_only = False):
+def sort_fastq_files_for_kb_count(fastq_files, technology = None, multiplexed = None, logger=None, check_only = False, verbose = True):
+    printlog = get_printlog(verbose, logger)
+    
     for fastq_file in fastq_files:
         if not fastq_file.endswith(fastq_extensions):  # check for valid extension
             message = f"File {fastq_file} does not have a valid FASTQ extension of one of the following: {fastq_extensions}."
@@ -6691,21 +6724,21 @@ def sort_fastq_files_for_kb_count(fastq_files, technology = None, multiplexed = 
         if not bool(rnaseq_fastq_filename_pattern.match(fastq_file)):  # check for Illumina file naming convention
             message = f"File {fastq_file} does not match the expected Illumina file naming convention of SAMPLE_LANE_R[12]_001.fastq.gz, where SAMPLE is letters, numbers, underscores; LANE is numbers with optional leading 0s; pair is either 1 or 2; and it has .fq or .fastq extension (or .fq.gz or .fastq.gz)."
             if check_only:
-                print(message)
+                printlog(message)
             else:
                 message += "\nRaising exception and exiting because sort_fastqs=True, which requires standard Illumina file naming convention. Please check fastq file names or set sort_fastqs=False."
                 raise ValueError(message)
             
     if technology is None:
-        print("No technology specified, so defaulting to None when checking file order (i.e., will not drop index files from fastq file list)")
+        printlog("No technology specified, so defaulting to None when checking file order (i.e., will not drop index files from fastq file list)")
     if "smartseq" in technology.lower() and multiplexed is None:
-        print("Multiplexed not specified with smartseq technology, so defaulting to None when checking file order (i.e., will not drop index files from fastq file list)")
+        printlog("Multiplexed not specified with smartseq technology, so defaulting to None when checking file order (i.e., will not drop index files from fastq file list)")
         multiplexed = True
 
     if technology is None or technology == "10xv1" or ("smartseq" in technology.lower() and multiplexed):  # keep the index I1/I2 files (pass into kb count) for 10xv1 or multiplexed smart-seq
         filtered_files = fastq_files
     else:  # remove the index files
-        print(f"Removing index files from fastq files list, as they are not utilized in kb count with technology {technology}")
+        printlog(f"Removing index files from fastq files list, as they are not utilized in kb count with technology {technology}")
         filtered_files = [f for f in fastq_files if not any(x in os.path.basename(f) for x in ['I1', 'I2'])]
         
 
@@ -6713,9 +6746,9 @@ def sort_fastq_files_for_kb_count(fastq_files, technology = None, multiplexed = 
 
     if check_only:
         if sorted_files == fastq_files:
-            print("Fastq files are in the expected order")
+            printlog("Fastq files are in the expected order")
         else:
-            print("Fastq files are not in the expected order. Fastq files are expected to be sorted (in order) by (a) SAMPLE, (b) LANE, and (c) PARITY (R1/R2). Index files (I1/I2) are not included in the sort order except for technology=10xv1 and multiplexed smartseq. To enable automatic sorting, set sort_fastqs=True.")
+            printlog("Fastq files are not in the expected order. Fastq files are expected to be sorted (in order) by (a) SAMPLE, (b) LANE, and (c) PARITY (R1/R2). Index files (I1/I2) are not included in the sort order except for technology=10xv1 and multiplexed smartseq. To enable automatic sorting, set sort_fastqs=True.")
         return fastq_files
     else:
         return sorted_files

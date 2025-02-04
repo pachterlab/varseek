@@ -84,7 +84,7 @@ def test_bustools_df_bulk(temp_fastq_file, temp_fasta_file, temp_index_file, tem
     kb_count_command = ["kb", "count", "-t", "16", "-k", str(k), "-i", temp_index_file, "-g", temp_t2g_file, "-x", "bulk", "--strand", "forward", "--num", "--h5ad", "--parity", "single", "-o", temp_kb_count_out_folder, temp_fastq_file]
     subprocess.run(kb_count_command, check=True)
 
-    bus_df = make_bus_df(kallisto_out = temp_kb_count_out_folder, fastq_file_list = temp_fastq_file, t2g_file = temp_t2g_file, mm = False, union = False, assay = "bulk", bustools = "/home/jrich/miniconda3/envs/varseek/lib/python3.10/site-packages/kb_python/bins/linux/bustools/bustools")
+    bus_df = make_bus_df(kallisto_out = temp_kb_count_out_folder, fastq_file_list = temp_fastq_file, t2g_file = temp_t2g_file, mm = False, union = False, technology = "bulk", bustools = "/home/jrich/miniconda3/envs/varseek/lib/python3.10/site-packages/kb_python/bins/linux/bustools/bustools")
     read_to_ref_dict = dict(zip(bus_df['fastq_header'], bus_df['gene_names_final']))
 
     assert read_to_ref_dict == {'seq1': ['mcrs1', 'mcrs6'], 'seq2': ['mcrs2'], 'seq3': ['mcrs1', 'mcrs6'], 'seq5': ['mcrs2', 'mcrs4', 'mcrs5']}

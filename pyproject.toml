@@ -46,6 +46,7 @@ dependencies = [
 dev = [
     "pytest>=7.0.0",
     "black[jupyter]>=22.0.0",
+    "isort>=6.0.0",
     "toml>=0.10.2",
     "nbval>=0.10.0",
     "nbdime>=4.0.2",

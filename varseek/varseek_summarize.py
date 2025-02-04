@@ -3,6 +3,9 @@ import scanpy as sc
 import numpy as np
 import pandas as pd
 import anndata
+import time
+
+from .constants import technology_valid_values
 
 from varseek.utils import (
     plot_items_descending_order,
@@ -29,38 +32,110 @@ from varseek.utils import (
 
 logger = set_up_logger()
 
+def validate_input_summarize(params_dict):
+    adata = params_dict["adata"]
+    if not isinstance(adata, (str, anndata.AnnData)):
+        raise TypeError("adata must be a string (file path) or an AnnData object.")
+    if isinstance(adata, str):
+        check_file_path_is_string_with_valid_extension(adata, adata, "h5ad")
+        if not os.path.isfile(adata):  # ensure that all fastq files exist
+            raise ValueError(f"File {adata} does not exist")
+        
+    if not is_valid_int(params_dict["top_values"], ">=", 1):
+        raise ValueError(f"{param_name} must be an positive integer. Got {params_dict.get(param_name)}.")
+
+    technology = params_dict.get("technology", None)
+    technology_valid_values_lower = {x.lower() for x in technology_valid_values}
+    if technology is not None:
+        if technology.lower() not in technology_valid_values_lower:
+            raise ValueError(f"Technology must be None or one of {technology_valid_values_lower}")
+        
+    if not isinstance(params_dict["out"], str):
+        raise ValueError("out must be a string.")
+    
+    for param_name in ["dry_run", "overwrite", "verbose"]:
+        if not isinstance(params_dict.get(param_name), bool):
+            raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
+
+        
+
 
 def summarize(
-    adata_path,
-    technology="bulk",
-    out=".",
-    overwrite=False,
+    adata,
     top_values=10,
+    technology=None,
+    out=".",
+    dry_run=False,
+    overwrite=False,
     verbose=True,
     **kwargs,
 ):
-    # begin timer
+    """
+    Summarize the results of the varseek analysis.
 
+    # Required input arguments:
+    - adata                             (str or Anndata) Anndata object or path to h5ad file.
+
+    # Optional input arguments:
+    - top_values                        (int) Number of top values to report. Default: 10
+    - technology                        (str) Technology used to generate the data. To see list of spported technologies, run `kb --list`. For the purposes of this function, the only distinction that matters is bulk vs. non-bulk. Default: None
+    - out                               (str) Output directory. Default: "."
+    - dry_run                           (bool) If True, print the commands that would be run without actually running them. Default: False
+    - overwrite                         (bool) Whether to overwrite existing files. Default: False
+    - verbose                           (bool) Whether to print progress messages. Default: True
+
+    # Hidden arguments (part of kwargs):
+    - stats_file                        (str) Path to the stats file. Default: "varseek_summarize_stats.txt"
+    - specific_stats_folder             (str) Path to the specific stats folder. Default: "specific_stats"
+    - plots_folder                      (str) Path to the plots folder. Default: "plots"
+    """
+    
+    #* 1. Start timer
+    start_time = time.perf_counter()
+
+    #* 2. Type-checking
+    params_dict = make_function_parameter_to_value_dict(1)
+    validate_input_summarize(params_dict)
+
+    #* 3. Dry-run
+    if dry_run:
+        print_varseek_dry_run(params_dict, function_name="summarize")
+        return None
+    
+    #* 4. Save params to config file and run info file
+    config_file = os.path.join(out, "config", "vk_summarize_config.json")
+    save_params_to_config_file(params_dict, config_file)
+
+    run_info_file = os.path.join(out, "config", "vk_summarize_run_info.txt")
+    save_run_info(run_info_file)
+
+    #* 5. Set up default folder/file input paths, and make sure the necessary ones exist
+    # all input files for vk summarize are required in the varseek workflow, so this is skipped
+
+    #* 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
+    stats_file = os.path.join(out, "varseek_summarize_stats.txt") if not kwargs.get("stats_file") else kwargs["stats_file"]
+    specific_stats_folder = os.path.join(out, "specific_stats") if not kwargs.get("specific_stats_folder") else kwargs["specific_stats_folder"]
+    plots_folder = os.path.join(out, "plots") if not kwargs.get("plots_folder") else kwargs["plots_folder"]
+
+    if not overwrite:
+        for output_path in [stats_file, specific_stats_folder, plots_folder]:
+            if os.path.exists(output_path):
+                raise FileExistsError(f"Path {output_path} already exists. Please delete it or specify a different output directory.")
 
     os.makedirs(out, exist_ok=True)
-    stats_file = os.path.join(out, "varseek_summarize_stats.txt")
-    specific_stats_folder = os.path.join(out, "specific_stats")
-    plots_folder = os.path.join(out, "plots")
-
     os.makedirs(specific_stats_folder, exist_ok=True)
     os.makedirs(plots_folder, exist_ok=True)
 
-    if os.path.exists(stats_file):
-        if not overwrite:
-            raise FileExistsError(f"Stats file {stats_file} already exists. Please delete it or specify a different output directory.")
-        else:
-            os.remove(stats_file)
-    if isinstance(adata_path, anndata.AnnData):
-        adata = adata_path
-    elif isinstance(adata_path, str):
-        adata = sc.read_h5ad(adata_path)
+    #* 7. Define kwargs defaults
+    # no kwargs
+    
+    #* 8. Start the actual function
+    if isinstance(adata, anndata.AnnData):
+        pass
+    elif isinstance(adata, str):
+        adata = sc.read_h5ad(adata)
     else:
-        raise ValueError("adata_path must be a string (file path) or an AnnData object.")
+        raise ValueError("adata must be a string (file path) or an AnnData object.")
 
     if "mcrs_id" not in adata.var.columns:
         adata.var["mcrs_id"] = adata.var_names
@@ -132,7 +207,6 @@ def summarize(
         genes_count_any_row = (gene_counts > 0).sum()
         line = f"Total genes with count > 0 in any sample/cell: {genes_count_any_row}\n"
         f.write(line)
-        print(line.strip())  # For verification in console
 
         # For bulk technologys, calculate counts for each sample
         if technology == "bulk":
@@ -141,7 +215,6 @@ def summarize(
                 gene_counts_per_sample = adata[sample, :].to_df().gt(0).groupby(adata.var["gene_name"], axis=1).sum().gt(0).sum()
                 line = f"Sample {sample} has {gene_counts_per_sample.sum()} genes with count > 0.\n"
                 f.write(line)
-                print(line.strip())  # For verification in console
 
     # List of genes with non-zero mcrs_count across all samples
     genes_with_nonzero_counts = gene_counts[gene_counts > 0].index
@@ -195,7 +268,7 @@ def summarize(
         for gene, row in top_genes_mcrs_count.iterrows():
             f.write(f"{gene}\t{row['number_of_samples_in_which_the_gene_is_detected']}\t{row['total_mcrs_count']}\n")
 
-    # report overall time and memory usage
+    report_time_elapsed(start_time, logger=logger, verbose=verbose)
 
 
     # TODO: things to add

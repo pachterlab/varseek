@@ -570,7 +570,7 @@ def filter(
             logger.info(f"Filtered dlist fasta created at {dlist_filtered_fasta_out}.")
 
     # Report time
-    report_time_elapsed(start_time)
+    report_time_elapsed(start_time, logger=logger, verbose=verbose)
 
     if return_mutations_updated_filtered_csv_df:
         return filtered_df

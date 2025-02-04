@@ -68,7 +68,7 @@ def count(
     minimum_base_quality_replace_with_N=13,
     split_reads_by_Ns=True,
     run_fastqc=False,
-    assay="bulk",  # TODO: implement
+    technology="bulk",  # TODO: implement
     parity="single",
     strand="unstranded",  # "forward", "reverse", or "unstranded"
     minimum_count_filter=None,  # TODO: set a default
@@ -108,7 +108,7 @@ def count(
     - minimum_base_quality_replace_with_N (int) Minimum base quality to replace with N
     - split_reads_by_Ns      (bool) If True, split reads by Ns
     - run_fastqc             (bool) If True, run FastQC and MultiQC
-    - assay                  (str)  "bulk" or "sc"
+    - technology                  (str)  "bulk" or "sc"
     - parity                 (str)  "single" or "paired"
     - strand                 (str)  "forward", "reverse", or "unstranded"
     - minimum_count_filter   (int)  Minimum count filter
@@ -222,7 +222,7 @@ def count(
 
     # # kb count
 
-    # TODO: incorporate assay bulk vs sc in here
+    # TODO: incorporate technology bulk vs sc in here
     if not os.path.exists(kb_count_out) or len(os.listdir(kb_count_out)) == 0:
         kb_count_command = [
             "kb",
@@ -265,7 +265,7 @@ def count(
         ]
         subprocess.run(kb_ref_command, check=True)
 
-    # TODO: incorporate assay bulk vs sc in here
+    # TODO: incorporate technology bulk vs sc in here
     if not os.path.exists(kb_count_out_standard_index) or len(os.listdir(kb_count_out_standard_index)) == 0:
         kb_count_standard_index_command = [
             "kb",
@@ -315,7 +315,7 @@ def count(
     # # vk summarize
     vk.summarize(
         adata_path_clean,
-        assay=assay,
+        technology=technology,
         output_dir=vk_summarize_output_dir,
         overwrite=False,
         top_values=10,
