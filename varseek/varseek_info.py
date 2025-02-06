@@ -2,46 +2,47 @@
 import os
 import subprocess
 import time
-import numpy as np
-import pandas as pd
-from tqdm import tqdm
 from collections import OrderedDict
 
+import numpy as np
+import pandas as pd
 import pyfastx
-from varseek.varseek_build import reverse_complement
+from tqdm import tqdm
 
 from varseek.constants import mutation_pattern
 from varseek.utils import (
-    set_up_logger,
-    read_fasta,
-    swap_ids_for_headers_in_fasta,
-    make_mapping_dict,
-    compare_cdna_and_genome,
-    longest_homopolymer,
-    triplet_stats,
-    get_mcrss_that_pseudoalign_but_arent_dlisted,
-    create_df_of_mcrs_to_self_headers,
-    get_df_overlap,
-    plot_histogram_of_nearby_mutations_7_5,
-    compute_distance_to_closest_splice_junction,
     add_mcrs_mutation_type,
-    plot_kat_histogram,
-    explode_df,
-    collapse_df,
-    fasta_summary_stats,
-    calculate_total_gene_info,
-    calculate_nearby_mutations,
     align_to_normal_genome_and_build_dlist,
+    calculate_nearby_mutations,
+    calculate_total_gene_info,
+    check_file_path_is_string_with_valid_extension,
+    collapse_df,
+    compare_cdna_and_genome,
+    compute_distance_to_closest_splice_junction,
+    create_df_of_mcrs_to_self_headers,
+    download_t2t_reference_files,
+    explode_df,
+    fasta_summary_stats,
+    get_df_overlap,
+    get_mcrss_that_pseudoalign_but_arent_dlisted,
+    is_valid_int,
+    longest_homopolymer,
+    make_function_parameter_to_value_dict,
+    make_mapping_dict,
+    plot_histogram_of_nearby_mutations_7_5,
+    plot_kat_histogram,
+    print_varseek_dry_run,
+    read_fasta,
+    report_time_elapsed,
     safe_literal_eval,
     save_params_to_config_file,
-    make_function_parameter_to_value_dict,
-    check_file_path_is_string_with_valid_extension,
-    print_varseek_dry_run,
-    report_time_elapsed,
-    is_valid_int,
-    download_t2t_reference_files,
-    save_run_info
+    save_run_info,
+    set_up_logger,
+    swap_ids_for_headers_in_fasta,
+    triplet_stats,
+    download_ensembl_reference_files
 )
+from varseek.varseek_build import reverse_complement
 
 tqdm.pandas()
 logger = set_up_logger()
@@ -132,11 +133,18 @@ def validate_input_info(params_dict):
         check_file_path_is_string_with_valid_extension(params_dict.get(param_name), param_name, file_type)
 
     # dlist reference files
-    for dlist_reference_file in ["dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf"]:
-        if not isinstance(params_dict.get(dlist_reference_file), str):
-            raise ValueError(f"{dlist_reference_file} must be a string, got {type(params_dict.get(dlist_reference_file))}")
-        if params_dict.get(dlist_reference_file) not in supported_dlist_reference_values and not os.path.isfile(params_dict.get(dlist_reference_file)):
-            raise ValueError(f"Invalid value for {dlist_reference_file}: {params_dict.get(dlist_reference_file)}")
+    for dlist_reference_file in ["dlist_reference_source", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf"]:
+        if params_dict.get(dlist_reference_file):
+            if not isinstance(params_dict.get(dlist_reference_file), str):
+                raise ValueError(f"{dlist_reference_file} must be a string, got {type(params_dict.get(dlist_reference_file))}")
+            if params_dict.get(dlist_reference_file) not in supported_dlist_reference_values and not os.path.isfile(params_dict.get(dlist_reference_file)):
+                raise ValueError(f"Invalid value for {dlist_reference_file}: {params_dict.get(dlist_reference_file)}")
+    if params_dict.get("dlist_reference_genome_fasta") in supported_dlist_reference_values and params_dict.get("dlist_reference_gtf") in supported_dlist_reference_values:
+        if not params_dict.get("dlist_reference_genome_fasta") == params_dict.get("dlist_reference_gtf"):
+            raise ValueError(f"dlist_reference_genome_fasta and dlist_reference_gtf must be the same value when using a supported dlist reference. Got {params_dict.get('dlist_reference_genome_fasta')} and {params_dict.get('dlist_reference_gtf')}.")
+    # check if dlist_reference_source is not a valid value and the 3 dlist file parameters are also not valid values (i.e., a real file or a supported dlist reference)
+    if not params_dict.get("dlist_reference_source") in supported_dlist_reference_values and not ((os.path.isfile(params_dict.get("dlist_reference_genome_fasta")) or params_dict.get("dlist_reference_genome_fasta") in supported_dlist_reference_values) and (os.path.isfile(params_dict.get("dlist_reference_cdna_fasta")) or params_dict.get("dlist_reference_cdna_fasta") in supported_dlist_reference_values) and (os.path.isfile(params_dict.get("dlist_reference_gtf")) or params_dict.get("dlist_reference_gtf") in supported_dlist_reference_values)):
+        raise ValueError(f"Invalid value for dlist_reference_source: {params_dict.get('dlist_reference_source')} without specifying dlist_reference_genome_fasta, dlist_reference_cdna_fasta, and dlist_reference_gtf. dlist_reference_source must be one of {supported_dlist_reference_values}, or the other arguments must be provided (each as valid file paths or one of {supported_dlist_reference_values}).")
     
     # column names
     for column in ["mcrs_id_column", "mcrs_sequence_column", "mcrs_source_column", "mut_column", "seq_id_column", "mutation_cdna_column", "seq_id_cdna_column", "mutation_genome_column", "seq_id_genome_column"]:
@@ -158,6 +166,7 @@ def validate_input_info(params_dict):
         ("w", 1, False),
         ("max_ambiguous_mcrs", 0, False),
         ("max_ambiguous_reference", 0, False),
+        ("dlist_reference_ensembl_release", 50, False),
         ("threads", 1, False),
         ("near_splice_junction_threshold", 1, True),
     ]:
@@ -170,6 +179,8 @@ def validate_input_info(params_dict):
     if w and k:
         if not (int(k) > int(w)):
             raise ValueError(f"k must be an integer > w. Got k={k}, w={w}.")
+    if int(k) % 2 != 0 or int(k) > 63:
+        logger.warning(f"If running a workflow with vk ref or kb ref, k should be an odd number between 1 and 63. Got k={k}.")
 
     # boolean
     for param_name in ["vcrs_strandedness", "verbose", "save_mutations_updated_exploded_vk_info_csv", "make_pyfastx_summary_file", "make_kat_histogram", "dry_run", "list_columns", "overwrite", "threads"]:
@@ -178,7 +189,7 @@ def validate_input_info(params_dict):
             raise ValueError(f"{param_name} must be a boolean. Got {param_value} of type {type(param_value)}.")
 
 
-supported_dlist_reference_values = ["T2T"]
+supported_dlist_reference_values = {"T2T", "grch37", "grch38"}
 
 # {column_name, (description, list_of_utilized_parameters)}
 columns_to_include_possible_values = OrderedDict([
@@ -220,16 +231,18 @@ columns_to_include_possible_values = OrderedDict([
 def info(
     input_dir,
     columns_to_include = ("number_of_mutations_in_this_gene_total", "number_of_alignments_to_normal_human_reference", "pseudoaligned_to_human_reference_despite_not_truly_aligning", "longest_homopolymer_length", "triplet_complexity"),
-    k = 55,
+    k = 59,
     max_ambiguous_mcrs = 0,
     max_ambiguous_reference = 0,
     mcrs_fasta = None,
     mutations_updated_csv = None,
     id_to_header_csv = None,  # if none then assume no swapping occurred
     gtf = None,
-    dlist_reference_genome_fasta = "T2T",
-    dlist_reference_cdna_fasta = "T2T",
-    dlist_reference_gtf = "T2T",
+    dlist_reference_source = "T2T",
+    dlist_reference_genome_fasta = None,
+    dlist_reference_cdna_fasta = None,
+    dlist_reference_gtf = None,
+    dlist_reference_ensembl_release = 111,
     mcrs_id_column = "mcrs_id",
     mcrs_sequence_column = "mutant_sequence",
     mcrs_source_column = "mcrs_source",  # if input df has concatenated cdna and header MCRS's, then I want to know whether it came from cdna or genome
@@ -251,6 +264,7 @@ def info(
     make_kat_histogram = False,
     dry_run = False,
     list_columns = False,
+    list_d_list_values = False,
     overwrite = False,
     threads = 2,
     verbose = True,
@@ -264,7 +278,7 @@ def info(
 
     # Additional Parameters
     - columns_to_include                 (str or list[str]) List of columns to include in the output dataframe. Default: ("number_of_mutations_in_this_gene_total", "number_of_alignments_to_normal_human_reference", "pseudoaligned_to_human_reference_despite_not_truly_aligning", "longest_homopolymer_length", "triplet_complexity"). See all possible values and their description by setting list_columns=True (python) or --list_columns (command line).
-    - k                                  (int) Length of the k-mers utilized by kallisto | bustools. Only used by the following columns: 'nearby_mutations', 'nearby_mutations_count', 'has_a_nearby_mutation', 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference', 'pseudoaligned_to_human_reference', 'pseudoaligned_to_human_reference_despite_not_truly_aligning', 'number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference', 'number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference', 'kmer_overlap_in_mcrs_reference'; and when make_kat_histogram==True. Default: 55.
+    - k                                  (int) Length of the k-mers utilized by kallisto | bustools. Only used by the following columns: 'nearby_mutations', 'nearby_mutations_count', 'has_a_nearby_mutation', 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference', 'pseudoaligned_to_human_reference', 'pseudoaligned_to_human_reference_despite_not_truly_aligning', 'number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference', 'number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference', 'kmer_overlap_in_mcrs_reference'; and when make_kat_histogram==True. Default: 59.
     - max_ambiguous_mcrs                 (int) Maximum number of 'N' characters allowed in the MCRS when considering alignment to the reference genome/transcriptome. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference'. Default: 0.
     - max_ambiguous_reference            (int) Maximum number of 'N' characters allowed in the aligned reference genome portion when considering alignment to the reference genome/transcriptome. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference'. Default: 0.
 
@@ -273,9 +287,11 @@ def info(
     - mutations_updated_csv              (str) Path to the updated dataframe containing the MCRS headers and sequences. Corresponds to `mutations_updated_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).
     - id_to_header_csv                   (str) Path to the csv file containing the mapping of IDs to headers generated from varseek build corresponding to mcrs_fasta. Corresponds to `id_to_header_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).
     - gtf                                (str) Path to the GTF file containing the gene annotations for the reference genome. Corresponds to `gtf` in the varseek build function. Must align to genome coordinates used in the annotation of mutations. Only used by the following columns: 'distance_to_nearest_splice_junction'. Default: None.
-    - dlist_reference_genome_fasta       (str) Path to the reference genome fasta file for the d-list. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference', 'pseudoaligned_to_human_reference', 'pseudoaligned_to_human_reference_despite_not_truly_aligning'. Default: "T2T. (will automatically download the T2T reference genome files to `reference_out_dir`)
-    - dlist_reference_cdna_fasta         (str) Path to the reference cDNA fasta file for the d-list. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference'. Default: "T2T. (will automatically download the T2T reference genome files to `reference_out_dir`)
-    - dlist_reference_gtf                (str) Path to the GTF file containing the gene annotations for the reference genome. Only used by the following columns: 'pseudoaligned_to_human_reference', 'pseudoaligned_to_human_reference_despite_not_truly_aligning'. Default: "T2T. (will automatically download the T2T reference genome files to `reference_out_dir`)
+    - dlist_reference_source             (str) Source of the d-list reference genome and transcriptome if files are not provided by `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, and `dlist_reference_gtf`. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference', 'pseudoaligned_to_human_reference', 'pseudoaligned_to_human_reference_despite_not_truly_aligning'. Possible values are {supported_dlist_reference_values}. Ignored if values for `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, and `dlist_reference_gtf` are provided. Default: "T2T". (will automatically download the T2T reference genome files to `reference_out_dir`)
+    - dlist_reference_genome_fasta       (str) Path to the reference genome fasta file for the d-list. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference', 'pseudoaligned_to_human_reference', 'pseudoaligned_to_human_reference_despite_not_truly_aligning'. Default: `dlist_reference_source`.
+    - dlist_reference_cdna_fasta         (str) Path to the reference cDNA fasta file for the d-list. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference'. Default: `dlist_reference_source`.
+    - dlist_reference_gtf                (str) Path to the GTF file containing the gene annotations for the reference genome. Only used by the following columns: 'pseudoaligned_to_human_reference', 'pseudoaligned_to_human_reference_despite_not_truly_aligning'. Default: `dlist_reference_source`.
+    - dlist_reference_ensembl_release    (int) Ensembl release number for the d-list reference genome and transcriptome if files are not provided by `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, and `dlist_reference_gtf`. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference', 'pseudoaligned_to_human_reference', 'pseudoaligned_to_human_reference_despite_not_truly_aligning'. Only used if `dlist_reference_source`, `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, `dlist_reference_gtf` is grch37 or grch38. Default: 111. (will automatically download the Ensembl reference genome files to `reference_out_dir`)
 
     # Column names in mutations_updated_csv:
     - mcrs_id_column                     (str) Name of the column containing the MCRS IDs in `mutations_updated_csv`. Only used if `mutations_updated_csv` exists (i.e., was generated from varseek build). Default: 'mcrs_id'.
@@ -304,7 +320,8 @@ def info(
 
     # General arguments:
     - dry_run                            (bool) Whether to do a dry run (i.e., print the parameters and return without running the function). Default: False.
-    - list_columns                       (bool) Whether to list the possible values for `columns_to_include` and their descriptions. Default: False.
+    - list_columns                       (bool) Whether to list the possible values for `columns_to_include` and their descriptions and immediately exit. Default: False.
+    - list_d_list_values                 (bool) Whether to list the possible values for `dlist_reference_source` and immediately exit. Default: False.
     - overwrite                          (bool) Whether to overwrite the output files if they already exist. Default: False.
     - threads                            (int) Number of threads to use for bowtie2 and bowtie2-build. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference', 'pseudoaligned_to_human_reference', 'pseudoaligned_to_human_reference_despite_not_truly_aligning', 'entries_for_which_this_mcrs_is_substring', 'entries_for_which_this_mcrs_is_superstring', 'mcrs_is_substring', 'mcrs_is_superstring'; and when 'entries_for_which_this_mcrs_is_superstring', 'mcrs_is_substring', 'mcrs_is_superstring', make_kat_histogram==True. Default: 2.
     - verbose                            (bool) Whether to print verbose output. Default: True.
@@ -323,6 +340,9 @@ def info(
     
     if list_columns:
         print_list_columns()
+        return
+    if list_d_list_values:
+        print(f"Available values for `dlist_reference_source`: {supported_dlist_reference_values}")
         return
     
     #* 1. Start timer
@@ -405,9 +425,23 @@ def info(
         make_pyfastx_summary_file = True
         make_kat_histogram = True
 
+    if dlist_reference_source:
+        if not dlist_reference_genome_fasta:
+            dlist_reference_genome_fasta = dlist_reference_source
+        if not dlist_reference_cdna_fasta:
+            dlist_reference_cdna_fasta = dlist_reference_source
+        if not dlist_reference_gtf:
+            dlist_reference_gtf = dlist_reference_source
+
     if dlist_reference_genome_fasta == "T2T" or dlist_reference_cdna_fasta == "T2T" or dlist_reference_gtf == "T2T":
         t2t_reference_dir = os.path.join(reference_out_dir, "t2t")
         dlist_reference_genome_fasta, dlist_reference_cdna_fasta, dlist_reference_gtf = download_t2t_reference_files(t2t_reference_dir)
+    elif dlist_reference_genome_fasta == "grch37" or dlist_reference_cdna_fasta == "grch37" or dlist_reference_gtf == "grch37":
+        grch37_reference_dir = os.path.join(reference_out_dir, "grch37")
+        dlist_reference_genome_fasta, dlist_reference_cdna_fasta, dlist_reference_gtf = download_ensembl_reference_files(grch37_reference_dir, grch=37, ensembl_release=dlist_reference_ensembl_release)
+    elif dlist_reference_genome_fasta == "grch38" or dlist_reference_cdna_fasta == "grch38" or dlist_reference_gtf == "grch38":
+        grch38_reference_dir = os.path.join(reference_out_dir, "grch38")
+        dlist_reference_genome_fasta, dlist_reference_cdna_fasta, dlist_reference_gtf = download_ensembl_reference_files(grch38_reference_dir, grch=38, ensembl_release=dlist_reference_ensembl_release)
     
     columns_to_explode = ["header", "order"]
     columns_not_successfully_added = []
@@ -1018,4 +1052,4 @@ def info(
         logger.info(f"Columns not successfully added: {columns_not_successfully_added}")
 
     # Report time
-    report_time_elapsed(start_time, logger=logger, verbose=verbose)
+    report_time_elapsed(start_time, logger=logger, verbose=verbose, function_name="info")

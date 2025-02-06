@@ -1,10 +1,25 @@
+import inspect
 import os
 import subprocess
 import time
+
 import varseek as vk
-from varseek.utils import set_up_logger, save_params_to_config_file, make_function_parameter_to_value_dict, download_varseek_files, report_time_elapsed, is_valid_int, check_file_path_is_string_with_valid_extension, authenticate_cosmic_credentials, encode_cosmic_credentials, authenticate_cosmic_credentials_via_server, get_python_or_cli_function_call, save_run_info
+from varseek.utils import (
+    authenticate_cosmic_credentials,
+    authenticate_cosmic_credentials_via_server,
+    check_file_path_is_string_with_valid_extension,
+    download_varseek_files,
+    encode_cosmic_credentials,
+    get_python_or_cli_function_call,
+    is_valid_int,
+    make_function_parameter_to_value_dict,
+    report_time_elapsed,
+    save_params_to_config_file,
+    save_run_info,
+    set_up_logger,
+)
+
 from .constants import prebuilt_vk_ref_files
-import inspect
 
 logger = set_up_logger()
 
@@ -24,10 +39,10 @@ varseek_ref_unallowable_arguments = {
 }
 
 varseek_ref_only_allowable_kb_ref_arguments = {
-    "zero_arguments": {"--keep-tmp", "--verbose", "--aa", "--overwrite"},
+    "zero_arguments": {"--keep-tmp", "--verbose", "--aa"},
     "one_argument": {"--tmp", "--kallisto", "--bustools"},
     "multiple_arguments": set()
-}  # don't include d-list, t, i, k, workflow here because I do it myself later
+}  # don't include d-list, t, i, k, workflow, overwrite here because I do it myself later
 
 # covers both varseek ref AND kb ref, but nothing else (i.e., all of the arguments that are not contained in varseek build, info, or filter)
 def validate_input_ref(params_dict):
@@ -36,9 +51,7 @@ def validate_input_ref(params_dict):
     threads = params_dict.get("threads", None)
     index_out = params_dict.get("index_out", None)
     config = params_dict.get("config", None)
-    minimum_info_columns = params_dict.get("minimum_info_columns", None)
-    download = params_dict.get("download", None)
-    dry_run = params_dict.get("dry_run", None)
+
     build_signature = inspect.signature(vk.varseek_build.build)
     k = params_dict.get("k", None)
     w = params_dict.get("w", None)
@@ -49,12 +62,11 @@ def validate_input_ref(params_dict):
         w = build_signature.parameters["w"].default
     
     # make sure k is odd and <= 63
-    if k is not None:
-        if not isinstance(k, int) or k % 2 != 0 or k < 1 or k > 63:
-            raise ValueError("k must be odd, positive, integer, and less than or equal to 63")
+    if not isinstance(k, int) or k % 2 == 0 or k < 1 or k > 63:
+        raise ValueError("k must be odd, positive, integer, and less than or equal to 63")
     
-        if (w is not None) and (k < w + 1):
-            raise ValueError("k must be greater than or equal to w + 1")
+    if k < w + 1:
+        raise ValueError("k must be greater than or equal to w + 1")
     
     dlist_valid_values = {"genome", "transcriptome", "genome_and_transcriptome", 'None', None}
     if dlist not in dlist_valid_values:
@@ -104,8 +116,8 @@ mutation_values_for_cosmic = {"cosmic_cmc"}
 
 # a list of dictionaries with keys "mutations", "sequences", and "description"
 downloadable_references = [
-    {"mutations": "cosmic_cmc", "sequences": "cdna", "description": "COSMIC Cancer Mutation Census version 100 - Ensembl GRCh37 release 93 cDNA reference annotations"},
-    {"mutations": "cosmic_cmc", "sequences": "genome", "description": "COSMIC Cancer Mutation Census version 100 - Ensembl GRCh37 release 93 genome reference annotations"},
+    {"mutations": "cosmic_cmc", "sequences": "cdna", "description": "COSMIC Cancer Mutation Census version 100 - Ensembl GRCh37 release 93 cDNA reference annotations. All default arguments of varseek ref (k=59, w=54, filters, no d-list, etc.)."},
+    {"mutations": "cosmic_cmc", "sequences": "genome", "description": "COSMIC Cancer Mutation Census version 100 - Ensembl GRCh37 release 93 genome reference annotations. All default arguments of varseek ref (k=59, w=54, filters, no d-list, etc.)."},
 ]
 
 
@@ -114,18 +126,17 @@ def ref(
     sequences,
     mutations,
     w=54,
-    k=55,
+    k=59,
     filters = (
         "dlist_substring:equal=none",  # filter out mutations which are a substring of the reference genome
         "pseudoaligned_to_human_reference_despite_not_truly_aligning:is_not_true",  # filter out mutations which pseudoaligned to human genome despite not truly aligning
         "dlist:equal=none",  #*** erase eventually when I want to d-list  # filter out mutations which are capable of being d-listed (given that I filter out the substrings above)
-        "number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference:less_than=999999",  # filter out mutations which overlap with other MCRSs in the reference
-        "number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference:less_than=999999",  # filter out mutations which overlap with other MCRSs in the reference
         "longest_homopolymer_length:bottom_percent=99.99",  # filters out MCRSs with repeating single nucleotide - 99.99 keeps the bottom 99.99% (fraction 0.9999) ie filters out the top 0.01%
         "triplet_complexity:top_percent=99.9"  # filters out MCRSs with repeating triplets - 99.9 keeps the top 99.9% (fraction 0.999) ie filters out the bottom 0.1%
     ),
     mode=None,
-    dlist=False,  # path to dlist fasta file or "None" (including the quotes)
+    dlist=None,
+    dlist_reference_source="T2T",
     config=None,
     out = ".",
     index_out = None,
@@ -195,16 +206,17 @@ def ref(
 
     # Additional parameters
     - w             (int) Length of sequence windows flanking the variant. Default: 30. If w > total length of the sequence, the entire sequence will be kept.
-    - k             (int) Length of the k-mers to be considered in remove_seqs_with_wt_kmers, and the default minimum value for the minimum sequence length (which can be changed with 'min_seq_len'). If using kallisto in a later workflow, then this should correspond to kallisto k. Must be greater than the value passed in for w. Default: 55.
+    - k             (int) The length of each k-mer in the kallisto reference index construction. Accordingly corresponds to the length of the k-mers to be considered in vk build's remove_seqs_with_wt_kmers, and the default minimum value for vk build's minimum sequence length (which can be changed with 'min_seq_len'). Must be greater than the value passed in for w. Default: 59.
     - filters       (str or list[str]) List of filters to apply to the mutations. See varseek filter documentation for more information.
     - mode          (str) Mode to use for kb ref. Currently not implemented. Default: None.
-    - dlist         (str) Path to dlist fasta file or "None" (including the quotes). Default: False.
+    - dlist         (str) Specifies whether ones wants to d-list against the genome, transcriptome, or both. Possible values are "genome", "transcriptome", "genome_and_transcriptome", or None. Default: None.
+    - dlist_reference_source (str) Specifies whether to use the T2T, grch37, or grch38 reference genome during alignment of VCRS k-mers to the reference genome/transcriptome and any possible d-list construction. However, no d-list is used during the creation of the VCRS reference index unless `dlist` is not None. Default: "T2T".
     - config        (str) Path to config file. Default: None.
     
     # Optional output file paths: (only needed if changing/customizing file names or locations):
     - out           (str) Output directory. Default: ".".
-    - index_out (str) Path to output mcrs index file. Default: None.
-    - t2g_out (str) Path to output mcrs t2g file to be used in alignment. Default: None.
+    - index_out (str) Path to output mcrs index file. Default: `out`/mcrs_index.idx.
+    - t2g_out (str) Path to output mcrs t2g file to be used in alignment. Default: `out`/mcrs_t2g.txt.
     
     # General arguments:
     - download      (bool) If True, download prebuilt reference files. Default: False.
@@ -281,7 +293,7 @@ def ref(
     save_run_info(run_info_file)
 
     #* 5. Set up default folder/file input paths, and make sure the necessary ones exist
-    # all input files for vk build are required in the varseek workflow, so this is skipped
+    # all input files for vk ref are required in the varseek workflow, so this is skipped
     
     #* 5.5 Setting up modes
     # if mode:  #* uncomment once I have modes
@@ -310,15 +322,32 @@ def ref(
     if not mcrs_t2g_filtered_out:  # make sure this matches vk filter
         mcrs_t2g_filtered_out = os.path.join(out, "mcrs_t2g_filtered.txt")
 
-    if os.path.isfile(index_out) and not overwrite:
-        raise FileExistsError(f"Output file {index_out} already exists. Please delete it or specify a different output directory.")
+    for file in [index_out]:  # purposely exluding mcrs_fasta_out, mcrs_filtered_fasta_out, mcrs_t2g_out, mcrs_t2g_filtered_out because - let's say someone runs vk ref and they get an error write in the kb ref step because of a bad argument that doesn't affect the prior steps - it would be nice for someone to be able to rerun the command with the changed argument without having to rerun vk build, info, filter from scratch when overwrite=False - and if they do want to rerun those steps, they can just delete the files or set overwrite=True
+        if os.path.isfile(file) and not overwrite:
+            raise FileExistsError(f"Output file {file} already exists. Please delete it or specify a different output directory or set overwrite=True.")
+        
+    mutations_updated_vk_info_csv_out = params_dict.get("mutations_updated_vk_info_csv_out", None)
+    if not mutations_updated_vk_info_csv_out:
+        mutations_updated_vk_info_csv_out = os.path.join(out, "mutation_metadata_df_updated_vk_info.csv")
+    
+    file_signifying_successful_vk_build_completion = mcrs_fasta_out
+    file_signifying_successful_vk_info_completion = mutations_updated_vk_info_csv_out
+    files_signifying_successful_vk_filter_completion = (mcrs_filtered_fasta_out, mcrs_t2g_filtered_out)
+    file_signifying_successful_kb_ref_completion = index_out
+
+    overwrite_original = params_dict.get("overwrite_original", False)
 
     #* 6.5 Just to make the unused parameter coloration go away in VSCode
     filters = filters
+    w = w
     mode = mode
     verbose = verbose
+    dlist_reference_source = dlist_reference_source
 
-    #* 7. Start the actual function
+    #* 7. Define kwargs defaults
+    # Nothing to see here
+
+    #* 8. Start the actual function
     # get COSMIC info
     cosmic_email = params_dict.get("cosmic_email", None)
     if not cosmic_email:
@@ -354,6 +383,7 @@ def ref(
 
     # download if download argument is True
     if download:
+        #$ I opt to keep it like this rather than converting the keys of prebuilt_vk_ref_files to a tuple of many arguments for user simplicity - simply document the uploaded references, but no need to differentiate - but if I do end up having multiple reference documents with the same values for mutations and sequences, then switch over to this approach where the dict keys are tuples
         file_dict = prebuilt_vk_ref_files.get(mutations, {}).get(sequences, {})  # when I add mode: file_dict = prebuilt_vk_ref_files.get(mutations, {}).get(sequences, {}).get(mode, {})
         if file_dict:
             if mutations in mutation_values_for_cosmic:
@@ -361,6 +391,7 @@ def ref(
                 # if not authenticate_cosmic_credentials_via_server(encoded_cosmic_credentials):  #!! uncomment once I'm ready to try out server
                 if not authenticate_cosmic_credentials(cosmic_email, cosmic_password):  #!! erase once I'm ready to try out server
                     raise ValueError(f"Trying to download a COSMIC-based index (mutations={mutations}) with invalid COSMIC credentials")
+            print(f"Downloading reference files with mutations={mutations}, sequences={sequences}")
             vk_ref_output_dict = download_varseek_files(file_dict, out=out)  # TODO: replace with DOI download (will need to replace prebuilt_vk_ref_files urls with DOIs)
             if index_out and vk_ref_output_dict['index'] != index_out:
                 os.rename(vk_ref_output_dict['index'], index_out)
@@ -413,15 +444,33 @@ def ref(
     params_dict_vk_filter = {k: v for k, v in params_dict.items() if k in all_parameter_names_set_vk_filter}
 
     # vk build
-    vk.build(**params_dict) if not params_dict.get("dry_run", False) else vk.build(**params_dict_vk_build)  # best of both worlds - will only pass in defined arguments if dry run is True (which is good so that I don't show each function with a bunch of args it never uses), but will pass in all arguments if dry run is False (which is good if I run vk ref with a new parameter that I have not included in docstrings yet, as I only get usable kwargs list from docstrings)
+    if not os.path.exists(file_signifying_successful_vk_build_completion) or overwrite:  # the reason I do it like this, rather than if overwrite or not os.path.exists(MYPATH), is because I would like vk ref/count to automatically overwrite partially-completed function outputs even when overwrite=False; but when overwrite=True, then run from scratch regardless
+        params_dict["overwrite"], params_dict_vk_build["overwrite"] = True, True
+        logger.info(f"Running vk build")
+        vk.build(**params_dict) if not params_dict.get("dry_run", False) else vk.build(**params_dict_vk_build)  # best of both worlds - will only pass in defined arguments if dry run is True (which is good so that I don't show each function with a bunch of args it never uses), but will pass in all arguments if dry run is False (which is good if I run vk ref with a new parameter that I have not included in docstrings yet, as I only get usable kwargs list from docstrings)
+        params_dict["overwrite"], params_dict_vk_build["overwrite"] = overwrite_original, overwrite_original
+    else:
+        logger.warning(f"Skipping vk build because {file_signifying_successful_vk_build_completion} already exists and overwrite=False")
 
     # vk info
     if not skip_info:
-        vk.info(**params_dict) if not params_dict.get("dry_run", False) else vk.info(**params_dict_vk_info)
+        if not os.path.exists(file_signifying_successful_vk_info_completion) or overwrite:
+            params_dict["overwrite"], params_dict_vk_info["overwrite"] = True, True
+            logger.info(f"Running vk info")
+            vk.info(**params_dict) if not params_dict.get("dry_run", False) else vk.info(**params_dict_vk_info)
+            params_dict["overwrite"], params_dict_vk_info["overwrite"] = overwrite_original, overwrite_original
+        else:
+            logger.warning(f"Skipping vk info because {file_signifying_successful_vk_info_completion} already exists and overwrite=False")
 
     # vk filter
     if not skip_filter:
-        vk.filter(**params_dict) if not params_dict.get("dry_run", False) else vk.filter(**params_dict_vk_filter)
+        if not all(os.path.exists(f) for f in files_signifying_successful_vk_filter_completion) or overwrite:
+            params_dict["overwrite"], params_dict_vk_filter["overwrite"] = True, True
+            logger.info(f"Running vk filter")
+            vk.filter(**params_dict) if not params_dict.get("dry_run", False) else vk.filter(**params_dict_vk_filter)
+            params_dict["overwrite"], params_dict_vk_filter["overwrite"] = overwrite_original, overwrite_original
+        else:
+            logger.warning(f"Skipping vk filter because {files_signifying_successful_vk_filter_completion} already exist and overwrite=False")
 
     # kb ref
     kb_ref_command = [
@@ -436,7 +485,9 @@ def ref(
         "--d-list",
         dlist_kb_argument,
         "-k",
-        str(k)
+        str(k),
+        "--overwrite",
+        True  # set to True here regardless of the overwrite argument because I would only even enter this block if kb count was only partially run (as seen by the lack of existing of file_signifying_successful_kb_ref_completion), in which case I should overwrite anyways
     ]
 
     # assumes any argument in varseek ref matches kb ref identically, except dashes replaced with underscores
@@ -462,14 +513,18 @@ def ref(
         index_out = None
         mcrs_t2g_for_alignment = None
     else:
-        subprocess.run(kb_ref_command, check=True)
+        if not os.path.exists(file_signifying_successful_kb_ref_completion) or overwrite:
+            logger.info(f"Running kb ref with command: {' '.join(kb_ref_command)}")
+            subprocess.run(kb_ref_command, check=True)
+        else:
+            logger.warning(f"Skipping kb ref because {file_signifying_successful_kb_ref_completion} already exists and overwrite=False")
 
     vk_ref_output_dict = {}
     vk_ref_output_dict["index"] = index_out
     vk_ref_output_dict["t2g"] = mcrs_t2g_for_alignment
 
     # Report time
-    report_time_elapsed(start_time, logger=logger, verbose=verbose)
+    report_time_elapsed(start_time, logger=logger, verbose=verbose, function_name="ref")
 
     return vk_ref_output_dict
 

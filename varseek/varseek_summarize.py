@@ -1,34 +1,35 @@
 import os
-import scanpy as sc
-import numpy as np
-import pandas as pd
-import anndata
 import time
 
-from .constants import technology_valid_values
+import anndata
+import numpy as np
+import pandas as pd
+import scanpy as sc
 
 from varseek.utils import (
-    plot_items_descending_order,
-    plot_scree,
-    plot_loading_contributions,
+    check_file_path_is_string_with_valid_extension,
+    decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_mode,
     find_resolution_for_target_clusters,
-    plot_contingency_table,
-    plot_knn_tissue_frequencies,
+    increment_adata_based_on_dlist_fns,
+    is_valid_int,
+    make_function_parameter_to_value_dict,
     plot_ascending_bar_plot_of_cluster_distances,
+    plot_contingency_table,
+    plot_items_descending_order,
     plot_jaccard_bar_plot,
     plot_knee_plot,
-    increment_adata_based_on_dlist_fns,
-    decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_mode,
-    remove_adata_columns,
-    set_up_logger,
-    save_params_to_config_file,
-    make_function_parameter_to_value_dict,
-    check_file_path_is_string_with_valid_extension,
+    plot_knn_tissue_frequencies,
+    plot_loading_contributions,
+    plot_scree,
     print_varseek_dry_run,
+    remove_adata_columns,
     report_time_elapsed,
-    is_valid_int,
-    save_run_info
+    save_params_to_config_file,
+    save_run_info,
+    set_up_logger,
 )
+
+from .constants import technology_valid_values
 
 logger = set_up_logger()
 
@@ -268,7 +269,7 @@ def summarize(
         for gene, row in top_genes_mcrs_count.iterrows():
             f.write(f"{gene}\t{row['number_of_samples_in_which_the_gene_is_detected']}\t{row['total_mcrs_count']}\n")
 
-    report_time_elapsed(start_time, logger=logger, verbose=verbose)
+    report_time_elapsed(start_time, logger=logger, verbose=verbose, function_name="summarize")
 
 
     # TODO: things to add

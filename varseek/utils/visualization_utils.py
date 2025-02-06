@@ -1,32 +1,28 @@
-import os
-from collections import Counter
-import shutil
-import scanpy as sc
-from rich.table import Table
-from rich.console import Console
-from collections import OrderedDict, defaultdict
 import json
+import os
+import shutil
+from collections import Counter, OrderedDict, defaultdict
+
+import scanpy as sc
+from rich.console import Console
+from rich.table import Table
 
 console = Console()
 
+import anndata as ad
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import anndata as ad
-
-import matplotlib.pyplot as plt
-from matplotlib.ticker import MaxNLocator, MultipleLocator
-from matplotlib.patches import Rectangle
-from matplotlib.ticker import LogLocator, FuncFormatter
-from matplotlib_venn import venn2
 import seaborn as sns
-
+from matplotlib.patches import Rectangle
+from matplotlib.ticker import FuncFormatter, LogLocator, MaxNLocator, MultipleLocator
+from matplotlib_venn import venn2
 from scipy import stats
 from scipy.sparse import csr_matrix
-from scipy.stats import ttest_rel, t
+from scipy.stats import t, ttest_rel
 from statsmodels.stats.contingency_tables import mcnemar
 
-
-from varseek.constants import complement, codon_to_amino_acid, mutation_pattern
+from varseek.constants import codon_to_amino_acid, complement, mutation_pattern
 
 # Set global settings
 plt.rcParams.update({
@@ -846,9 +842,9 @@ def plot_kat_histogram(kat_hist, out_path=None):
         plt.xlim([data["Frequency"].min() - 1, data["Frequency"].max() + 1])
 
     # Add labels and title
-    plt.xlabel("55-mer Frequency")
-    plt.ylabel("# of Distinct 55-mers")
-    plt.title("55-mer Spectra for random_sequences.fasta")
+    plt.xlabel("k-mer Frequency")
+    plt.ylabel("# of Distinct k-mers")
+    plt.title("k-mer Spectra for random_sequences.fasta")
 
     # Save the plot
     plt.savefig(out_path, format="png", dpi=dpi)

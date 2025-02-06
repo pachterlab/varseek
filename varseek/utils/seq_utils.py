@@ -1,49 +1,54 @@
-import os
-import gc
 import ast
+import gc
 import json
-import shutil
-import tempfile
-import random
-import string
 import math
+import os
+import random
 import re
+import shutil
+import string
 import subprocess
+import tempfile
+
 import requests
 from tqdm import tqdm
 
 tqdm.pandas()
 import gzip
+from bisect import bisect_left
 from collections import OrderedDict, defaultdict
 from typing import Callable
 
+import anndata as ad
+import gget
 import numpy as np
 import pandas as pd
-import anndata as ad
-import scanpy as sc
+import pyfastx
 import pysam
-
+import scanpy as sc
 import scipy.sparse as sp
+from Bio import SeqIO
+from Bio.Seq import Seq
 from scipy.sparse import csr_matrix
-from bisect import bisect_left
 from sklearn.metrics import euclidean_distances
 from sklearn.neighbors import NearestNeighbors
 
-from Bio import SeqIO
-from Bio.Seq import Seq
-import pyfastx
-import gget
-from varseek.constants import complement, codon_to_amino_acid, mutation_pattern, technology_barcode_and_umi_dict, fastq_extensions
-
+from varseek.constants import (
+    codon_to_amino_acid,
+    complement,
+    fastq_extensions,
+    mutation_pattern,
+    technology_barcode_and_umi_dict,
+)
 from varseek.utils.visualization_utils import (
-    print_column_summary_stats,
-    plot_histogram_notebook_1,
+    plot_ascending_bar_plot_of_cluster_distances,
     plot_basic_bar_plot_from_dict,
     plot_descending_bar_plot,
+    plot_histogram_notebook_1,
     plot_histogram_of_nearby_mutations_7_5,
-    plot_knn_tissue_frequencies,
-    plot_ascending_bar_plot_of_cluster_distances,
     plot_jaccard_bar_plot,
+    plot_knn_tissue_frequencies,
+    print_column_summary_stats,
 )
 
 # from varseek.utils.io_utils import read_fasta, read_fastq, process_sam_file, write_temp_fa
@@ -3351,12 +3356,10 @@ def keep_end_of_integer_sequence(mylist, dlist_side="left"):
 #                 result.append(sorted_list[i])
 
 
-def run_kb_count_dry_run(
-    index, t2g, fastq, kb_count_out, newer_kallisto, k=31, threads=1
-):
-    if not os.path.exists(newer_kallisto):
-        kallisto_install_from_source_commands = "git clone https://github.com/pachterlab/kallisto.git && cd kallisto && mkdir build && cd build && cmake .. -DMAX_KMER_SIZE=64 && make"
-        subprocess.run(kallisto_install_from_source_commands, shell=True, check=True)
+def run_kb_count_dry_run(index, t2g, fastq, kb_count_out, newer_kallisto, k=31, threads=1):
+    # if not os.path.exists(newer_kallisto):  # uncommented because the newest release of kb has the correct kallisto version
+    #     kallisto_install_from_source_commands = "git clone https://github.com/pachterlab/kallisto.git && cd kallisto && git checkout 0397342 && mkdir build && cd build && cmake .. -DMAX_KMER_SIZE=64 && make"
+    #     subprocess.run(kallisto_install_from_source_commands, shell=True, check=True)
 
     kb_count_dry_run = f"kb count -t {threads} -i {index} -g {t2g} -x bulk -k {k} --dry-run --parity single -o {kb_count_out} {fastq}"  # should be the same as the kb count run before with the exception of removing --h5ad, swapping in the newer kallisto for the kallisto bus command, and adding --union and --dfk-onlist  # TODO: add support for more kb arguments
     if "--h5ad" in kb_count_dry_run:
@@ -3475,6 +3478,7 @@ def increment_adata_based_on_dlist_fns(
     mcrs_fasta,
     dlist_fasta,
     kb_count_out,
+    index,
     t2g,
     fastq,
     newer_kallisto,
@@ -3485,7 +3489,7 @@ def increment_adata_based_on_dlist_fns(
     ignore_barcodes=False
 ):
     run_kb_count_dry_run(
-        index="index.idx",
+        index=index,
         t2g=t2g,
         fastq=fastq,
         kb_count_out=kb_count_out,
@@ -4945,6 +4949,43 @@ def download_t2t_reference_files(reference_out_dir_sequences_dlist):
     subprocess.run(["rm", "-rf", temp_dir], check=True)
     return ref_dlist_fa_genome, ref_dlist_fa_cdna, ref_dlist_gtf
 
+def download_ensembl_reference_files(reference_out_dir_sequences_dlist, grch="37", ensembl_release="93"):
+    grch = str(grch)
+    ensembl_release = str(ensembl_release)
+    ensembl_grch_gget = "human_grch37" if grch == "37" else grch
+    ensembl_release_gtf = "87" if (grch == "37" and ensembl_release == "93") else ensembl_release
+
+    ref_dlist_fa_genome = f"{reference_out_dir_sequences_dlist}/Homo_sapiens.GRCh{grch}.dna.primary_assembly.fa"
+    ref_dlist_fa_cdna = f"{reference_out_dir_sequences_dlist}/Homo_sapiens.GRCh{grch}.cdna.all.fa"
+    ref_dlist_gtf = f"{reference_out_dir_sequences_dlist}/Homo_sapiens.GRCh{grch}.{ensembl_release_gtf}.gtf"
+
+    files_to_download_list = []
+    file_dict = {
+        "dna": ref_dlist_fa_genome,
+        "cdna": ref_dlist_fa_cdna,
+        "gtf": ref_dlist_gtf,
+    }
+    for file in file_dict:
+        if not os.path.exists(file_dict[file]):
+            files_to_download_list.append(file)
+    if files_to_download_list:
+        files_to_download = ",".join(files_to_download_list)
+        gget_ref_command_dlist = [
+            "gget",
+            "ref",
+            "-w",
+            files_to_download,
+            "-r",
+            ensembl_release,
+            "--out_dir",
+            reference_out_dir_sequences_dlist,
+            "-d",
+            ensembl_grch_gget,
+        ]
+        subprocess.run(gget_ref_command_dlist, check=True)
+        for file in files_to_download_list:
+            subprocess.run(["gunzip", f"{file_dict[file]}.gz"])
+
 
 # first tries pysam, then samtools, then finally custom
 def create_fai(fasta_path, fai_path=None):
@@ -5249,7 +5290,7 @@ def predict_cancer_type(
         compute_mx_metric()
 
 
-# to be clear, this removes double counting of the same MCRS on each paired end, which is true valid when fragment length < 2*read length
+# to be clear, this removes double counting of the same VCRS on each paired end, which is valid when fragment length < 2*read length OR for long insertions that make VCRS very long (such that the VCRS spans across both ends even when considering the region between the ends)
 def decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_mode(
     adata,
     fastq,
@@ -5267,7 +5308,7 @@ def decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_
     assert (
         split_Ns or paired_end_fastqs
     ), "At least one of split_Ns or paired_end_fastqs must be True"
-    if technology != "bulk":
+    if technology.lower() != "bulk":
         raise ValueError("This function currently only works with bulk RNA-seq data")
 
     if not os.path.exists(f"{kb_count_out}/bus_df.csv"):
@@ -5492,7 +5533,7 @@ def replace_low_quality_bases_with_N_list(rnaseq_fastq_files, minimum_base_quali
     return rnaseq_fastq_files_replace_low_quality_bases_with_N
 
 
-# TODO: enable single vs paired end mode (single end works as-is; paired end requires 2 files as input, and for every line it splits in file 1, I will add a line of all Ns in file 2)
+# TODO: enable single vs paired end mode (single end works as-is; paired end requires 2 files as input, and for every line it splits in file 1, I will add a line of all Ns in file 2); also get it working for scRNA-seq data (which is single end parity but still requires the paired-end treatment) - get Delaney's help to determine how to treat single cell files
 def split_reads_by_N_list(
     rnaseq_fastq_files_replace_low_quality_bases_with_N,
     minimum_sequence_length=None,
@@ -5901,7 +5942,7 @@ def adjust_mutation_adata_by_normal_gene_matrix(adata, kb_output_mutation, kb_ou
     bus_df_mutation["gene_names_final"] = bus_df_mutation["gene_names_final"].apply(safe_literal_eval)
     bus_df_mutation.rename(columns={"gene_names_final": "MCRS_ids_final", "count": "count_value"}, inplace=True)
 
-    if not id_to_header_csv:
+    if id_to_header_csv:
         id_to_header_dict = make_mapping_dict(id_to_header_csv, dict_key="id")
         bus_df_mutation['MCRS_headers_final'] = bus_df_mutation['MCRS_ids_final'].apply(
             lambda name_list: [id_to_header_dict.get(name, name) for name in name_list]
@@ -5909,14 +5950,6 @@ def adjust_mutation_adata_by_normal_gene_matrix(adata, kb_output_mutation, kb_ou
 
         bus_df_mutation['transcripts_MCRS'] = bus_df_mutation['MCRS_headers_final'].apply(
             lambda string_list: tuple({s.split(':')[0] for s in string_list})
-        )
-    
-    elif not mutation_metadata_csv:
-        mutation_metadata = pd.read_csv(mutation_metadata_csv)
-
-        id_to_transcript_dict = dict(zip(mutation_metadata['mcrs_id'], mutation_metadata['seq_ID']))
-        bus_df_mutation['transcripts_MCRS'] = bus_df_mutation['MCRS_ids_final'].apply(
-            lambda name_list: tuple({id_to_transcript_dict.get(name, name) for name in name_list})
         )
 
     if not os.path.exists(bus_df_standard_path):
@@ -6684,8 +6717,22 @@ def order_fastqs_correctly_for_kb_count(fastq_folder, technology = "bulk", multi
 
 
 
-rnaseq_fastq_filename_pattern = re.compile(r"^([\w-]+)_L\d+_R[12]_\d{3}\.(fastq|fq)(\.gz)?$")  # SAMPLE_LANE_R[12]_001.fastq.gz where SAMPLE is letters, numbers, underscores; LANE is numbers with optional leading 0s; pair is either 1 or 2; and it has .fq or .fastq extension (or .fq.gz or .fastq.gz)
-def sort_order_for_kb_count_fastqs(filepath):
+rnaseq_fastq_filename_pattern_bulk = re.compile(r"([^/]+)_(\d+)\.(fastq|fq)(\.gz)?$")  # eg SRR8615037_1.fastq.gz
+rnaseq_fastq_filename_pattern_illumina = re.compile(r"^([\w.-]+)_L\d+_R[12]_\d{3}\.(fastq|fq)(\.gz)?$")  # SAMPLE_LANE_R[12]_001.fastq.gz where SAMPLE is letters, numbers, underscores; LANE is numbers with optional leading 0s; pair is either 1 or 2; and it has .fq or .fastq extension (or .fq.gz or .fastq.gz)
+
+def bulk_sort_order_for_kb_count_fastqs(filepath):
+    # Define order for read types
+    read_type_order = {'1': 0, '2': 1}
+
+    match = rnaseq_fastq_filename_pattern_bulk.search(filepath)
+    if not match:
+        raise ValueError(f"Invalid SRA-style FASTQ filename: {filepath}")
+
+    sample_number, read_type = match.groups()
+
+    return (sample_number, read_type_order.get(read_type, 999))
+
+def illumina_sort_order_for_kb_count_fastqs(filepath):
     # Define order for file types
     file_type_order = {'R1': 0, 'R2': 1, 'I1': 2, 'I2': 3}
 
@@ -6708,25 +6755,31 @@ def sort_order_for_kb_count_fastqs(filepath):
     file_type = parts[-2].split(".")[0]  # e.g., extracts 'R1' from 'R1_001.fastq.gz'
 
     # Return a tuple to sort by:
-    # 1. Alphabetically by parent folder
-    # 2. Numerically by lane
-    # 3. Order of file type (R1, R2)
-    return (parent_folder, lane, file_type_order.get(file_type, 999))
+    # 1. Numerically by lane
+    # 2. Order of file type (R1, R2)
+    return (lane, file_type_order.get(file_type, 999))
 
 
 def sort_fastq_files_for_kb_count(fastq_files, technology = None, multiplexed = None, logger=None, check_only = False, verbose = True):
     printlog = get_printlog(verbose, logger)
+
+    file_name_format = None
     
     for fastq_file in fastq_files:
         if not fastq_file.endswith(fastq_extensions):  # check for valid extension
             message = f"File {fastq_file} does not have a valid FASTQ extension of one of the following: {fastq_extensions}."
             raise ValueError(message)  # invalid regardless of order
-        if not bool(rnaseq_fastq_filename_pattern.match(fastq_file)):  # check for Illumina file naming convention
-            message = f"File {fastq_file} does not match the expected Illumina file naming convention of SAMPLE_LANE_R[12]_001.fastq.gz, where SAMPLE is letters, numbers, underscores; LANE is numbers with optional leading 0s; pair is either 1 or 2; and it has .fq or .fastq extension (or .fq.gz or .fastq.gz)."
+        
+        if bool(rnaseq_fastq_filename_pattern_bulk.match(fastq_file)):
+            file_name_format = "bulk"
+        elif bool (rnaseq_fastq_filename_pattern_illumina.match(fastq_file)):  # check for Illumina file naming convention
+            file_name_format = "illumina"
+        else:
+            message = f"File {fastq_file} does not match the expected bulk file naming convention of SAMPLE_PAIR.EXT where SAMPLE is sample name, PAIR is 1/2, and EXT is a fastq extension - or the Illumina file naming convention of SAMPLE_LANE_R[12]_001.fastq.gz, where SAMPLE is letters, numbers, underscores; LANE is numbers with optional leading 0s; pair is either R1 or R2; and it has .fq or .fastq extension (or .fq.gz or .fastq.gz)."
             if check_only:
                 printlog(message)
             else:
-                message += "\nRaising exception and exiting because sort_fastqs=True, which requires standard Illumina file naming convention. Please check fastq file names or set sort_fastqs=False."
+                message += "\nRaising exception and exiting because sort_fastqs=True, which requires standard bulk or Illumina file naming convention. Please check fastq file names or set sort_fastqs=False."
                 raise ValueError(message)
             
     if technology is None:
@@ -6742,8 +6795,13 @@ def sort_fastq_files_for_kb_count(fastq_files, technology = None, multiplexed = 
         filtered_files = [f for f in fastq_files if not any(x in os.path.basename(f) for x in ['I1', 'I2'])]
         
 
-    sorted_files = sorted(filtered_files, key=sort_order_for_kb_count_fastqs)
-
+    if file_name_format == "illumina":
+        sorted_files = sorted(filtered_files, key=illumina_sort_order_for_kb_count_fastqs)
+    elif file_name_format == "bulk":
+        sorted_files = sorted(filtered_files, key=bulk_sort_order_for_kb_count_fastqs)
+    else:
+        sorted_files = sorted(filtered_files, key=bulk_sort_order_for_kb_count_fastqs)  # default to bulk
+    
     if check_only:
         if sorted_files == fastq_files:
             printlog("Fastq files are in the expected order")
@@ -6752,3 +6810,29 @@ def sort_fastq_files_for_kb_count(fastq_files, technology = None, multiplexed = 
         return fastq_files
     else:
         return sorted_files
+    
+
+def load_in_fastqs(fastqs):
+    if len(fastqs) != 1:
+        return fastqs
+    fastqs = fastqs[0]
+    if not os.path.exists(fastqs):
+        raise ValueError(f"File/folder {fastqs} does not exist")
+    if os.path.isdir(fastqs):
+        files = []
+        for file in os.listdir(fastqs):  # make fastqs list from fastq files in immediate child directory
+            if (os.path.isfile(os.path.join(fastqs, file))) and (any(file.lower().endswith((ext, f"{ext}.zip", f"{ext}.gz")) for ext in fastq_extensions)):
+                files.append(file)
+        if len(files) == 0:
+            raise ValueError(f"No fastq files found in {fastqs}")  # redundant with type-checking below, but prints a different error message (informs that the directory has no fastqs, rather than simply telling the user that no fastqs were provided)
+    elif os.path.isfile(fastqs):
+        if file.lower().endswith("txt"):  # make fastqs list from items in txt file
+            with open(fastqs, "r") as f:
+                files = [line.strip() for line in f.readlines()]
+            if len(files) == 0:
+                raise ValueError(f"No fastq files found in {fastqs}")  # redundant with type-checking below, but prints a different error message (informs that the text file has no fastqs, rather than simply telling the user that no fastqs were provided)
+        elif any(fastqs.lower().endswith((ext, f"{ext}.zip", f"{ext}.gz")) for ext in fastq_extensions):
+            files = [fastqs]
+        else:
+            raise ValueError(f"File {fastqs} is not a fastq file, text file, or directory")
+    return files

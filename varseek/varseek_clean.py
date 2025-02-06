@@ -1,153 +1,291 @@
 import os
-import scanpy as sc
-import numpy as np
-import pandas as pd
-import anndata
-
-import gget
-
-import scipy as sp
-import pysam
-
 import time
 
-from .constants import non_single_cell_technologies
+import anndata
+import gget
+import numpy as np
+import pandas as pd
+import pysam
+import scanpy as sc
+import scipy as sp
+from packaging import version
+import subprocess
+
 from varseek.utils import (
-    plot_knee_plot,
-    increment_adata_based_on_dlist_fns,
-    decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_mode,
-    remove_adata_columns,
     adjust_mutation_adata_by_normal_gene_matrix,
+    check_file_path_is_string_with_valid_extension,
+    decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_mode,
+    increment_adata_based_on_dlist_fns,
+    is_valid_int,
+    make_function_parameter_to_value_dict,
     match_adata_orders,
+    plot_knee_plot,
+    print_varseek_dry_run,
+    remove_adata_columns,
+    report_time_elapsed,
+    save_params_to_config_file,
+    save_run_info,
+    set_up_logger,
     write_to_vcf,
     write_vcfs_for_rows,
-    set_up_logger,
-    save_params_to_config_file,
-    make_function_parameter_to_value_dict,
-    check_file_path_is_string_with_valid_extension,
-    print_varseek_dry_run,
-    report_time_elapsed,
-    is_valid_int,
-    save_run_info
+    sort_fastq_files_for_kb_count,
+    load_in_fastqs
 )
+
+from .constants import fastq_extensions, technology_valid_values, non_single_cell_technologies
 
 logger = set_up_logger()
 
 def make_vcf():
     pass
 
+def prepare_set(mcrs_id_set_to_exclusively_keep):
+    if mcrs_id_set_to_exclusively_keep is None:
+        return None  # Keep None as None
+    
+    elif isinstance(mcrs_id_set_to_exclusively_keep, (list, tuple)):
+        return set(mcrs_id_set_to_exclusively_keep)  # Convert list/tuple to set
+    
+    elif isinstance(mcrs_id_set_to_exclusively_keep, str) and os.path.isfile(mcrs_id_set_to_exclusively_keep) and mcrs_id_set_to_exclusively_keep.endswith(".txt"):
+        # Load lines from text file, stripping whitespace
+        with open(mcrs_id_set_to_exclusively_keep, "r") as f:
+            return set(line.strip() for line in f if line.strip())  # Ignore empty lines
+    
+    elif isinstance(mcrs_id_set_to_exclusively_keep, set):
+        return mcrs_id_set_to_exclusively_keep  # Already a set, return as is
+    
+    else:
+        raise ValueError("Invalid input: must be None, a list, tuple, set, or a path to a text file")
 
-#* ORIGINAL
-# def clean(
-#     adata,
-#     adata_out=None,
-#     out=".",
-#     id_to_header_csv=None,
-#     mutation_metadata_df=None,
-#     mutation_metadata_df_columns=None,
-#     min_counts=0,
-#     use_binary_matrix=False,
-#     drop_zero_columns=False,
-#     technology="bulk",
-#     adjust_mutation_adata_by_normal_gene_matrix_information=False,  # * change to True
-#     filter_cells_by_min_counts=None,
-#     filter_cells_by_min_genes=None,
-#     filter_genes_by_min_cells=None,
-#     filter_cells_by_max_mt_content=None,
-#     doublet_detection=None,
-#     remove_doublets=None,
-#     do_cpm_normalization=None,
-#     ignore_barcodes=False,
-#     kb_count_out_normal_genome=None,
-#     adata_path_normal_genome=None,
-#     split_reads_by_Ns=False,
-#     dlist_file=None,
-#     mcrs_id_column="mcrs_id",
-#     data_fastq=None,  # list of fastqs
-#     mcrs_fasta=None,
-#     dlist_fasta=None,
-#     kb_count_out_mutant=None,
-#     mcrs_index=None,
-#     mcrs_t2g=None,
-#     k=None,
-#     mm=None,
-#     threads=None,
-#     strand=None,
-#     newer_kallisto=None,
-#     bustools="/home/jrich/miniconda3/envs/cartf/lib/python3.10/site-packages/kb_python/bins/linux/bustools/bustools",
-#     mcrs_id_set_to_exclusively_keep=None,
-#     mcrs_id_set_to_exclude=None,
-#     transcript_set_to_exclusively_keep=None,
-#     transcript_set_to_exclude=None,
-#     gene_set_to_exclusively_keep=None,
-#     gene_set_to_exclude=None,
-#     adata_normal_genome_output_path=None,
-#     make_vcf = False,
-#     verbose=False,
-#     **kwargs,
-# ):
+
+def validate_input_clean(params_dict):
+    # check if adata_vcrs is of type Anndata
+    adata_vcrs = params_dict["adata_vcrs"]
+    if not isinstance(adata_vcrs, anndata.AnnData) or (not isinstance(adata_vcrs, str) and not adata_vcrs.endswith(".h5ad")):
+        raise ValueError("adata_vcrs must be an AnnData object or a file path to an h5ad object.")
+    if isinstance(adata_vcrs, str) and not os.path.isfile(adata_vcrs):
+        raise ValueError(f"adata_vcrs file path {adata_vcrs} does not exist.")
+    
+    # technology
+    technology = params_dict.get("technology", None)
+    technology_valid_values_lower = {x.lower() for x in technology_valid_values}
+    if technology is None or technology.lower() not in technology_valid_values_lower:
+            raise ValueError(f"Technology must be one of {technology_valid_values_lower}")
+    
+    for param_name, min_value, optional_value in [
+        ("min_counts", 1, False),
+        ("filter_cells_by_min_genes", 0, True),  # optional True means that it can be None
+        ("filter_genes_by_min_cells", 0, True),
+        ("threads", 1, False),
+    ]:
+        param_value = params_dict.get(param_name)
+        if not is_valid_int(param_value, ">=", min_value, optional=optional_value):
+            must_be_value = f"an integer >= {min_value}" if not optional_value else f"an integer >= {min_value} or None"
+            raise ValueError(f"{param_name} must be {must_be_value}. Got {param_value} of type {type(param_value)}.")
+        
+    # filter_cells_by_min_counts - gets special treatment because it can also be True for automatic calculation
+    filter_cells_by_min_counts = params_dict.get("filter_cells_by_min_counts", None)
+    if filter_cells_by_min_counts is not None and not is_valid_int(filter_cells_by_min_counts, ">=", 1):
+        raise ValueError(f"filter_cells_by_min_counts must be an integer >= 1 (for manual threshold), True (for automatic threshold calculation with kneed's KneeLocator), or None (for no threshold). Got {filter_cells_by_min_counts} of type {type(filter_cells_by_min_counts)}.")
+    
+    # filter_cells_by_max_mt_content - special treatment because it is between rather than lower-bounded only
+    if not is_valid_int(params_dict.get("filter_cells_by_max_mt_content"), "between", min_value_inclusive=0, max_value_inclusive=100, optional=True):
+        raise ValueError(f"filter_cells_by_max_mt_content must be an integer between 0 and 100, or None. Got {params_dict.get("filter_cells_by_max_mt_content")}.")
+    
+    # boolean
+    for param_name in ["use_binary_matrix", "drop_empty_columns", "apply_single_end_mode_on_paired_end_data_correction", "split_reads_by_Ns", "apply_dlist_correction", "qc_against_gene_matrix", "doublet_detection", "remove_doublets", "cpm_normalization", "sum_rows", "mm", "union", "multiplexed", "save_vcf", "dry_run", "overwrite", "verbose"]:
+        if not isinstance(params_dict.get(param_name), bool):
+            raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
+        
+    # sets
+    for param_name in ["mcrs_id_set_to_exclusively_keep", "mcrs_id_set_to_exclude", "transcript_set_to_exclusively_keep", "transcript_set_to_exclude", "gene_set_to_exclusively_keep", "gene_set_to_exclude"]:
+        param_value = params_dict.get(param_name, None)
+        if param_value is not None and not isinstance(param_value, (set, list, tuple) and not (isinstance(param_value, str) and param_value.endswith(".txt") and os.path.isfile(param_value))):  # checks if it is (1) None, (2) a set/list/tuple, or (3) a string path to a txt file that exists
+            raise ValueError(f"{param_name} must be a set. Got {param_name} of type {type(param_value)}.")
+        
+    # k
+    k = params_dict.get("k", None)
+    if not isinstance(k, int) or int(k) < 1:
+        raise ValueError(f"k must be a positive integer. Got {k} of type {type(k)}.")
+    if int(k) % 2 != 0 or int(k) > 63:
+        logger.warning(f"If running a workflow with vk count or kb count, k should be an odd number between 1 and 63. Got {k}.")
+
+    # fastqs
+    fastqs = params_dict["fastqs"]  # tuple
+    if len(fastqs) == 0:
+        raise ValueError("No fastq files provided")
+    
+    parity_valid_values = {"single", "paired"}
+    if params_dict["parity"] not in parity_valid_values:
+        raise ValueError(f"Parity must be one of {parity_valid_values}")
+    
+    #$ type checking of the directory and text file performed earlier by load_in_fastqs 
+
+    for fastq in fastqs:
+        check_file_path_is_string_with_valid_extension(fastq, variable_name=fastq, file_type="fastq")  # ensure that all fastq files have valid extension
+        if not os.path.isfile(fastq):  # ensure that all fastq files exist
+            raise ValueError(f"File {fastq} does not exist")
+        
+    # file paths
+    for param_name, file_type in {
+        "config": ["json", "yaml"],
+        "vcrs_index": "index",
+        "vcrs_t2g": "t2g",
+        "mcrs_fasta": "fasta",
+        "id_to_header_csv": "csv",
+        "dlist_fasta": "fasta",
+        "mutations_updated_csv": "csv",
+        "adata_reference_genome": "adata",
+        "adata_vcrs_clean_out": "adata",
+        "adata_reference_genome_clean_out": "adata",
+        "vcf_out": "vcf",
+    }:
+        check_file_path_is_string_with_valid_extension(params_dict.get(param_name), param_name, file_type)
+
+    # directories
+    for param_name in ["vk_ref_dir", "kb_count_vcrs_dir", "kb_count_reference_genome_dir", "out"]:
+        if not isinstance(params_dict.get(param_name), str):
+            raise ValueError(f"Directory {params_dict.get(param_name)} is not a string")
+    if params_dict.get("vk_ref_dir") and not os.path.isdir(params_dict.get("vk_ref_dir")):
+        raise ValueError(f"Directory {params_dict.get("vk_ref_dir")} does not exist")
+
+    
+needs_for_normal_genome_matrix = ["filter_cells_by_min_counts", "filter_cells_by_min_genes", "filter_genes_by_min_cells", "filter_cells_by_max_mt_content", "doublet_detection", "cpm_normalization"]
 
 def clean(
-    adata,
-    adata_out=None,
-    out=".",
-    id_to_header_csv=None,
-    mutation_metadata_df=None,
-    mutation_metadata_df_columns=None,
-    min_counts=1,
+    adata_vcrs,  # required inputs
+    technology,
+    min_counts=2,  # parameters
     use_binary_matrix=False,
     drop_empty_columns=False,
-    technology="bulk",
-    qc_against_gene_matrix=False,  # * change to True
+    apply_single_end_mode_on_paired_end_data_correction=False,
+    split_reads_by_Ns=False,
+    apply_dlist_correction=False,
+    qc_against_gene_matrix=False,
     filter_cells_by_min_counts=None,
     filter_cells_by_min_genes=None,
     filter_genes_by_min_cells=None,
     filter_cells_by_max_mt_content=None,
-    doublet_detection=None,
-    remove_doublets=None,
-    cpm_normalization=None,
-    ignore_barcodes=False,
-    kb_count_out_normal_genome=None,
-    adata_path_normal_genome=None,
-    split_reads_by_Ns=False,
-    dlist_file=None,
-    mcrs_id_column="mcrs_id",
-    data_fastq=None,  # list of fastqs
-    mcrs_fasta=None,
-    dlist_fasta=None,
-    kb_count_out_mutant=None,
-    mcrs_index=None,
-    mcrs_t2g=None,
-    k=None,
-    mm=None,
-    threads=None,
-    strand=None,
-    newer_kallisto=None,
-    bustools="/home/jrich/miniconda3/envs/cartf/lib/python3.10/site-packages/kb_python/bins/linux/bustools/bustools",
+    doublet_detection=False,
+    remove_doublets=False,
+    cpm_normalization=False,
+    sum_rows=False,
     mcrs_id_set_to_exclusively_keep=None,
     mcrs_id_set_to_exclude=None,
     transcript_set_to_exclusively_keep=None,
     transcript_set_to_exclude=None,
     gene_set_to_exclusively_keep=None,
     gene_set_to_exclude=None,
-    adata_normal_genome_output_path=None,
-    save_vcf = False,
+    k=None,
+    mm=False,
+    union=False,
+    parity="single",
+    multiplexed=False,
+    sort_fastqs=True,
+    fastqs=None,  # optional inputs
+    vk_ref_dir=None,
+    vcrs_index=None,
+    vcrs_t2g=None,
+    mcrs_fasta=None,
+    id_to_header_csv=None,
+    dlist_fasta=None,
+    mutations_updated_csv=None,
+    mcrs_id_column="mcrs_id",
+    mutations_updated_csv_columns=None,
+    adata_reference_genome=None,
+    kb_count_vcrs_dir=None,
+    kb_count_reference_genome_dir=None,
+    out=".",  # output paths
+    adata_vcrs_clean_out=None,
+    adata_reference_genome_clean_out=None,
+    vcf_out=None,
+    save_vcf = True,  # optional saves
+    dry_run=False,  # general
+    overwrite=False,
+    threads=2,
     verbose=False,
     **kwargs,
 ):
+    """
+    Apply quality control to the VCRS count matrix (cell/sample x variant) and save the cleaned AnnData object.
+
+    # Required input arguments:
+    - adata_vcrs                            (str or anndata.AnnData): The input AnnData object containing the VCRS data.
+    - technology                            (str)  Technology used to generate the data. To see list of spported technologies, run `kb --list`.
+
+    # Additional parameters
+    - min_counts                            (int): Minimum counts to consider valid in the VCRS count matrix - everything below this number gets set to 0. Default: 2.
+    - use_binary_matrix                     (bool): Whether to binarize the matrix (i.e., set all values >=1 to 1). Default: False.
+    - drop_empty_columns                    (bool): Whether to drop columns (variants) that are empty across all samples. Default: False.
+    - apply_single_end_mode_on_paired_end_data_correction    (bool): Whether to apply correction for when paired end data was run in single end mode (which happens when (concatenate_paired_fastqs = True or split_reads_by_Ns = True) and parity == paired in vk count/fastqpp). Will correct for double-counting when each pair maps to the same VCRS, which can happen when the fragment length is <2*read length, or when the VCRS contains a long insertion that spans both paired ends. Default: False.
+    - split_reads_by_Ns                     (bool): Whether split_reads_by_Ns was run in vk fastqpp/count. Only used when apply_single_end_mode_on_paired_end_data_correction=True (helps with parsing the fastq header names). Default: False.
+    - apply_dlist_correction                (bool): Whether to apply correction for dlist. If a read mapping(s) is tossed due to a d-list entry that is derived from an unrelated gene, then count this entry in the count matrix. Only relevant if a d-list was used during the reference construction (the default: no d-list unless otherwise specified in vk ref/kb ref - see vk ref --list_downloadable_references). Requires `dlist_fasta` to be a valid path as generated by vk ref/info/filter. Default: False.
+    - qc_against_gene_matrix                (bool): Whether to apply correction for qc against gene matrix. If a read maps to 2+ VCRSs that belong to different genes, then cross-reference with the reference genome to determine which gene the read belongs to, and set all VCRSs that do not correspond to this gene to 0 for that read. Also, cross-reference all reads that map to 1 VCRS and ensure that the reads maps to the gene corresponding to this VCRS, or else set this value to 0 in the count matrix. Default: False.
+    - filter_cells_by_min_counts            (int or bool or None): Part of the QC performed on the **gene** count matrix with which to adjust the **variant** count matrix. Minimum number of gene counts per cell to keep the cell. If True, will use kneed's KneeLocator to determine the cutoff. Default: None.
+    - filter_cells_by_min_genes             (int or None): Part of the QC performed on the **gene** count matrix with which to adjust the **variant** count matrix. Minimum number of genes per cell to keep the cell. Default: None.
+    - filter_genes_by_min_cells             (int or None): Part of the QC performed on the **gene** count matrix with which to adjust the **variant** count matrix. Minimum number of cells per gene to keep the gene. Default: None.
+    - filter_cells_by_max_mt_content        (int or None): Part of the QC performed on the **gene** count matrix with which to adjust the **variant** count matrix. Maximum percentage of mitochondrial content per cell to keep the cell. Default: None.
+    - doublet_detection                     (bool): Part of the QC performed on the **gene** count matrix with which to adjust the **variant** count matrix. Whether to run doublet detection. Default: False.
+    - remove_doublets                       (bool): Part of the QC performed on the **gene** count matrix with which to adjust the **variant** count matrix. Whether to remove doublets. Default: False.
+    - cpm_normalization                     (bool): Part of the QC performed on the **gene** count matrix with which to adjust the **variant** count matrix. Whether to run cpm normalization. Default: False.
+    - sum_rows                              (bool): Whether to sum across barcodes (rows) in the VCRS count matrix. Default: False.
+    - mcrs_id_set_to_exclusively_keep       (str or Set(str) or None): If a set, will keep only the VCRSs in this set. If a list/tuple, will convert to a set and then keep only the VCRSs in this set. If a string, will load the text file and keep only the VCRSs in this set. Default: None.
+    - mcrs_id_set_to_exclude                (str or Set(str) or None): If a set, will exclude the VCRSs in this set. If a list/tuple, will convert to a set and then exclude the VCRSs in this set. If a string, will load the text file and exclude the VCRSs in this set. Default: None.
+    - transcript_set_to_exclusively_keep    (str or Set(str) or None): If a set, will keep only the transcripts in this set. If a list/tuple, will convert to a set and then keep only the transcripts in this set. If a string, will load the text file and keep only the transcripts in this set. Default: None.
+    - transcript_set_to_exclude             (str or Set(str) or None): If a set, will exclude the transcripts in this set. If a list/tuple, will convert to a set and then exclude the transcripts in this set. If a string, will load the text file and exclude the transcripts in this set. Default: None.
+    - gene_set_to_exclusively_keep          (str or Set(str) or None): If a set, will keep only the genes in this set. If a list/tuple, will convert to a set and then keep only the genes in this set. If a string, will load the text file and keep only the genes in this set. Default: None.
+    - gene_set_to_exclude                   (str or Set(str) or None): If a set, will exclude the genes in this set. If a list/tuple, will convert to a set and then exclude the genes in this set. If a string, will load the text file and exclude the genes in this set. Default: None.
+    - k                                     (int): K-mer length used for the k-mer index. Used only when apply_dlist_correction=True. Default: None.
+    - mm                                    (bool): Whether to count multimapped reads in the adata count matrix. Only used when apply_single_end_mode_on_paired_end_data_correction, apply_dlist_correction, or qc_against_gene_matrix is True. Default: False.
+    - union                                 (bool): Whether to count unioned reads in the adata count matrix. Only used when apply_single_end_mode_on_paired_end_data_correction, apply_dlist_correction, or qc_against_gene_matrix is True. Default: False.
+    - parity                                (str) "single" or "paired". Only relevant if technology is bulk or a smart-seq. Default: "single"
+    - multiplexed                           (bool) Indicates that the fastq files are multiplexed. Only used if sort_fastqs=True and technology is a smartseq technology. Default: None
+    - sort_fastqs                           (bool): Whether to sort the fastqs. Default: True.
+
+    # Optional input arguments:
+    - fastqs                                (str or list[str]) List of fastq files to be processed. If paired end, the list should contains paths such as [file1_R1, file1_R2, file2_R1, file2_R2, ...]
+    - vk_ref_dir                            (str): Directory containing the VCRS reference files. Same as `out` as specified in vk ref. Default: None.
+    - vcrs_index                            (str): Path to the VCRS index file. Default: None.
+    - vcrs_t2g                              (str): Path to the VCRS t2g file. Default: None.
+    - mcrs_fasta                            (str): Path to the VCRS fasta file. Default: None.
+    - id_to_header_csv                      (str): Path to the VCRS id to header csv file. Default: None.
+    - dlist_fasta                           (str): Path to the dlist fasta file. Default: None.
+    - mutations_updated_csv                 (str): Path to the mutations updated csv file. Default: None.
+    - mcrs_id_column                        (str): Column name in the mutations updated csv file. Default: "mcrs_id".
+    - mutations_updated_csv_columns         (list): List of columns to use in the mutations updated csv file. Default: None.
+    - adata_reference_genome                (str): Path to the reference genome AnnData object. Default: None.
+    - kb_count_vcrs_dir                     (str): Path to the kb count output directory for the VCRS reference. Default: None.
+    - kb_count_reference_genome_dir         (str): Path to the kb count output directory for the reference genome. Default: None.
+
+    # Output paths:
+    - out                                   (str): Output directory. Default: ".".
+    - adata_vcrs_clean_out                  (str): Path to save the cleaned VCRS AnnData object. Default: None.
+    - adata_reference_genome_clean_out      (str): Path to save the cleaned reference genome AnnData object. Default: None.
+    - vcf_out                               (str): Path to save the VCF file. Default: None.
+    - save_vcf                              (bool): Whether to save the VCF file. Default: True.
+
+    # General:
+    - dry_run                               (bool): Whether to run in dry run mode. Default: False.
+    - overwrite                             (bool): Whether to overwrite existing files. Default: False.
+    - threads                               (int): Number of threads to use. Default: 2.
+    - verbose                               (bool): Whether to print verbose output. Default: False.
+    """
     #* 1. Start timer
     start_time = time.perf_counter()
+
+    #* 1.5 load in fastqs
+    fastqs_original = fastqs
+    fastqs = load_in_fastqs(fastqs)  # this will make it in params_dict
     
     #* 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
-    validate_input_info(params_dict)
+    validate_input_clean(params_dict)
+    params_dict["fastqs"] = fastqs_original  # change back for dry run and config_file
 
     #* 3. Dry-run and set out folder (must to it up here or else config will save in the wrong place)
     if dry_run:
         print_varseek_dry_run(params_dict, function_name="info")
         return None
-    if out is None:
-        out = input_dir if input_dir else "."
     
     #* 4. Save params to config file and run info file
     config_file = os.path.join(out, "config", "vk_info_config.json")
@@ -157,122 +295,154 @@ def clean(
     save_run_info(run_info_file)
 
     #* 5. Set up default folder/file input paths, and make sure the necessary ones exist
-    
+    if vk_ref_dir:  # make sure all of the defaults below match vk info/filter
+        vcrs_index = os.path.join(vk_ref_dir, "mcrs_index.idx") if not vcrs_index else vcrs_index
+        if not vcrs_t2g:
+            vcrs_t2g = os.path.join(vk_ref_dir, "mcrs_t2g_filtered.txt") if os.path.isfile(os.path.join(vk_ref_dir, "mcrs_t2g_filtered.txt")) else os.path.join(vk_ref_dir, "mcrs_t2g.txt")
+        if not mcrs_fasta:
+            mcrs_fasta = os.path.join(vk_ref_dir, "mcrs_filtered.fa") if os.path.isfile(os.path.join(vk_ref_dir, "mcrs_filtered.fa")) else os.path.join(vk_ref_dir, "mcrs.fa")
+        if not id_to_header_csv:
+            id_to_header_csv = os.path.join(vk_ref_dir, "id_to_header_mapping_filtered.csv") if os.path.isfile(os.path.join(vk_ref_dir, "id_to_header_mapping_filtered.csv")) else os.path.join(vk_ref_dir, "id_to_header_mapping.csv")
+        if not mutations_updated_csv:
+            mutations_updated_csv = os.path.join(vk_ref_dir, "mutation_metadata_df_filtered.csv") if os.path.isfile(os.path.join(vk_ref_dir, "mutation_metadata_df_filtered.csv")) else os.path.join(vk_ref_dir, "mutation_metadata_df.csv")
+        if not dlist_fasta:
+            dlist_fasta = os.path.join(vk_ref_dir, "dlist_filtered.fa") if os.path.isfile(os.path.join(vk_ref_dir, "dlist_filtered.fa")) else os.path.join(vk_ref_dir, "dlist.fa")
+
+    if (apply_single_end_mode_on_paired_end_data_correction or apply_dlist_correction or qc_against_gene_matrix) and (not kb_count_vcrs_dir or not os.path.exists(kb_count_vcrs_dir)):
+        raise ValueError("kb_count_vcrs_dir must be provided as the output from kb count out to the VCRS reference if apply_single_end_mode_on_paired_end_data_correction, apply_dlist_correction, or qc_against_gene_matrix is True.")
+    if qc_against_gene_matrix and (not kb_count_reference_genome_dir or not os.path.exists(kb_count_reference_genome_dir)):
+        raise ValueError("kb_count_reference_genome_dir must be provided as the output from kb count out to the reference genome if qc_against_gene_matrix is True.")
+        
+
     #* 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
+    output_figures_dir = os.path.join(out, "vk_clean_figures")
+
+    adata_vcrs_clean_out = os.path.join(out, "adata_cleaned.h5ad") if not adata_vcrs_clean_out else adata_vcrs_clean_out
+    adata_reference_genome_clean_out = os.path.join(out, "adata_reference_genome_cleaned.h5ad") if not adata_reference_genome_clean_out else adata_reference_genome_clean_out
+    vcf_out = os.path.join(out, "vcf") if not vcf_out else vcf_out
+
+    for output_path in [output_figures_dir, adata_vcrs_clean_out, adata_reference_genome_clean_out]:
+        if os.path.exists(output_path) and not overwrite:
+            raise ValueError(f"Output path {output_path} already exists. Please set overwrite=True to overwrite it.")
+    
+    os.makedirs(out, exist_ok=True)
+    os.makedirs(output_figures_dir, exist_ok=True)
     
     #* 7. Define kwargs defaults
     
     #* 8. Start the actual function
+    if technology.lower() != "bulk" and "smartseq" not in technology.lower():
+        parity = "single"
 
+    if apply_dlist_correction and not dlist_fasta:
+        raise ValueError("dlist_fasta must be provided if apply_dlist_correction is True.")
+    
+    try:
+        fastqs = sort_fastq_files_for_kb_count(fastqs, technology=technology, multiplexed=multiplexed, logger=logger, check_only=(not sort_fastqs), verbose=verbose)
+    except Exception as e:
+        pass
 
+    if not kallisto:
+        kallisto_binary_path_command = "kb info | grep 'kallisto:' | awk '{print $3}' | sed 's/[()]//g'"
+        kallisto = subprocess.run(kallisto_binary_path_command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, text=True).stdout.strip()
+    if not bustools:
+        bustools_binary_path_command = "kb info | grep 'bustools:' | awk '{print $3}' | sed 's/[()]//g'"
+        bustools = subprocess.run(bustools_binary_path_command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, text=True).stdout.strip()
+    
+    if apply_dlist_correction:  # and anything else that requires new kallisto
+        kallisto_version_command = f"{kallisto} 2>&1 | grep -oP 'kallisto \K[0-9]+\.[0-9]+\.[0-9]+'"
+        kallisto_version_installed = subprocess.run(kallisto_version_command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, text=True).stdout.strip()
+        kallisto_version_required = "0.51.1"
 
+        if version.parse(kallisto_version_installed) < kallisto_version_required:
+            raise ValueError(f"Please install kallisto version {kallisto_version_required} or higher.")
+        
+    mcrs_id_set_to_exclusively_keep = prepare_set(mcrs_id_set_to_exclusively_keep)
+    mcrs_id_set_to_exclude = prepare_set(mcrs_id_set_to_exclude)
+    transcript_set_to_exclusively_keep = prepare_set(transcript_set_to_exclusively_keep)
+    transcript_set_to_exclude = prepare_set(transcript_set_to_exclude)
+    gene_set_to_exclusively_keep = prepare_set(gene_set_to_exclusively_keep)
+    gene_set_to_exclude = prepare_set(gene_set_to_exclude)
 
+    adata = adata_vcrs
 
-    if isinstance(adata, anndata.AnnData):
-        adata_dir = "."
-        output_type = "AnnData"
-    elif isinstance(adata, str):
+    if isinstance(adata, str) and os.path.exists(adata) and adata.endswith(".h5ad"):
         adata = sc.read_h5ad(adata)
-        adata_dir = os.path.dirname(adata)
-        output_type = "path"
-    else:
-        raise ValueError("adata must be a string (file path) or an AnnData object.")
-
-    # if kb_count_out_wt_mcrs_counterpart:
-    #     adata_wt_mcrs_path = f"{kb_count_out_wt_mcrs_counterpart}/counts_unfiltered/adata.h5ad"
-    #     adata_wt_mcrs = sc.read_h5ad(adata_wt_mcrs_path)
-    # else:
-    #     adata_wt_mcrs = None
-
-    output_figures_dir = os.path.join(out, "figures")
-    os.makedirs(output_figures_dir, exist_ok=True)
-
-    if not adata_out:
-        adata_out = os.path.join(adata_dir, "adata_cleaned.h5ad")
 
     adata.var["mcrs_id"] = adata.var.index
-
-    if adata_path_normal_genome:
-        if isinstance(adata_path_normal_genome, anndata.AnnData):
-            adata_normal_genome = adata_path_normal_genome
-            adata_normal_dir = "."
-        elif isinstance(adata_path_normal_genome, str):
-            adata_normal_genome = sc.read_h5ad(adata_path_normal_genome)
-            adata_normal_dir = os.path.dirname(adata_path_normal_genome)
-        else:
-            raise ValueError("adata_path_normal_genome must be a string (file path) or an AnnData object.")
-
-        if not adata_normal_genome_output_path:
-            adata_normal_genome_output_path = os.path.join(adata_normal_dir, "adata_normal_genome_cleaned.h5ad")
-
-    if mutation_metadata_df and type(mutation_metadata_df) == str and os.path.exists(mutation_metadata_df):
-        mutation_metadata_df = pd.read_csv(mutation_metadata_df, index_col=0, usecols=mutation_metadata_df_columns)
-
     original_var_names = adata.var_names.copy()
 
-    if mutation_metadata_df or id_to_header_csv:
-        if mutation_metadata_df and type(mutation_metadata_df) == pd.DataFrame:
-            df_to_merge = mutation_metadata_df
-        elif id_to_header_csv and type(id_to_header_csv) == str and os.path.exists(id_to_header_csv):
+    if adata_reference_genome:
+        if isinstance(adata_reference_genome, str) and os.path.exists(adata_reference_genome) and adata_reference_genome.endswith(".h5ad"):
+            adata_reference_genome = sc.read_h5ad(adata_reference_genome)
+
+    #!!! if it turns out I don't need IDs, then erase this
+    if mutations_updated_csv_columns or not id_to_header_csv:
+        if not mutations_updated_csv_columns:
+            mutations_updated_csv_columns = ["mcrs_id", "mcrs_header"]  #!!! dont hard-code
+        if mutations_updated_csv and type(mutations_updated_csv) == str and os.path.exists(mutations_updated_csv):
+            mutations_updated_csv = pd.read_csv(mutations_updated_csv, index_col=0, usecols=mutations_updated_csv_columns)
+            adata.var = adata.var.merge(mutations_updated_csv, on=mcrs_id_column, how="left")
+    if id_to_header_csv and not mutations_updated_csv:
+        if type(id_to_header_csv) == str and os.path.exists(id_to_header_csv):
             id_to_header_df = pd.read_csv(id_to_header_csv, index_col=0)
-            df_to_merge = id_to_header_df
+            adata.var = adata.var.merge(id_to_header_df, on=mcrs_id_column, how="left")
 
-        adata.var = adata.var.merge(df_to_merge, on=mcrs_id_column, how="left")
-        adata.var_names = original_var_names
+    adata.var_names = original_var_names
 
-    # TODO: uncomment once tested
-    # if split_reads_by_Ns:
-    #     # TODO: test this
-    #     adata = decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_mode(
-    #         adata,
-    #         fastq=data_fastq,
-    #         kb_count_out=kb_count_out_mutant,
-    #         t2g=mcrs_t2g,
-    #         mm=mm,
-    #         bustools=bustools,
-    #         split_Ns=split_reads_by_Ns,
-    #         paired_end_fastqs=False,
-    #         paired_end_suffix_length=2,
-    #         technology=technology,
-    #         keep_only_insertions=True,
-    #     )
+    if apply_single_end_mode_on_paired_end_data_correction:
+        # TODO: test this; also add union
+        adata = decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_mode(
+            adata,
+            fastq=fastqs,
+            kb_count_out=kb_count_vcrs_dir,
+            t2g=vcrs_t2g,
+            mm=mm,
+            bustools=bustools,
+            split_Ns=split_reads_by_Ns,
+            paired_end_fastqs=False,
+            paired_end_suffix_length=2,
+            technology=technology,
+            keep_only_insertions=True,
+        )
 
-    # if dlist_file:
-    #     # TODO: test this
-    #     adata = increment_adata_based_on_dlist_fns(
-    #         adata=adata,
-    #         mcrs_fasta=mcrs_fasta,
-    #         dlist_fasta=dlist_fasta,
-    #         kb_count_out=kb_count_out_mutant,
-    #         index=mcrs_index,
-    #         t2g=mcrs_t2g,
-    #         fastq=data_fastq,
-    #         newer_kallisto=newer_kallisto,
-    #         k=k,
-    #         mm=mm,
-    #         bustools=bustools,
-    #     )
+    if dlist_fasta and apply_dlist_correction:
+        # TODO: test this; also add union
+        adata = increment_adata_based_on_dlist_fns(
+            adata=adata,
+            mcrs_fasta=mcrs_fasta,
+            dlist_fasta=dlist_fasta,
+            kb_count_out=kb_count_vcrs_dir,
+            index=vcrs_index,
+            t2g=vcrs_t2g,
+            fastq=fastqs,
+            newer_kallisto=kallisto,
+            k=k,
+            mm=mm,
+            bustools=bustools,
+        )
 
-    # if qc_against_gene_matrix:
-    #     adata = adjust_mutation_adata_by_normal_gene_matrix(
-    #         adata, 
-    #         kb_output_mutation=kb_count_out_mutant, 
-    #         kb_output_standard=kb_count_out_normal_genome, 
-    #         id_to_header_csv=id_to_header_csv, 
-    #         mutation_metadata_csv=mutation_metadata_df, 
-    #         adata_out=None, 
-    #         t2g_mutation=mcrs_t2g, t2g_standard=None, 
-    #         fastq_file_list=data_fastq, 
-    #         mm=mm, 
-    #         union=False, 
-    #         technology=technology, 
-    #         parity="single", 
-    #         bustools=bustools,
-    #         ignore_barcodes=ignore_barcodes,
-    #         verbose=verbose
-    #     )
+    if qc_against_gene_matrix:
+        # TODO: test this
+        adata = adjust_mutation_adata_by_normal_gene_matrix(
+            adata, 
+            kb_output_mutation=kb_count_vcrs_dir, 
+            kb_output_standard=kb_count_reference_genome_dir, 
+            id_to_header_csv=id_to_header_csv, 
+            adata_vcrs_clean_out=None, 
+            t2g_mutation=vcrs_t2g,
+            t2g_standard=None, 
+            fastq_file_list=fastqs, 
+            mm=mm, 
+            union=union, 
+            technology=technology, 
+            parity=parity, 
+            bustools=bustools,
+            sum_rows=sum_rows,
+            verbose=verbose
+        )
 
-    if ignore_barcodes and adata.shape[0] > 1:
+    if sum_rows and adata.shape[0] > 1:
         # Sum across barcodes (rows)
         summed_data = adata.X.sum(axis=0)
         
@@ -301,13 +471,13 @@ def clean(
         adata.X = (adata.X > 0).astype(int)
 
     # TODO: make sure the adata objects are in the same order (relevant for both bulk and sc)
-    if adata_path_normal_genome:
-        if technology not in non_single_cell_technologies:
+    if isinstance(adata_reference_genome, anndata.AnnData):
+        if technology not in non_single_cell_technologies:  # pardon the double negative - this is just a way to say "if technology is single cell"
             if filter_cells_by_min_counts:
                 if type(filter_cells_by_min_counts) != int:  # ie True for automatic
                     from kneed import KneeLocator
 
-                    umi_counts = np.array(adata_normal_genome.X.sum(axis=1)).flatten()
+                    umi_counts = np.array(adata_reference_genome.X.sum(axis=1)).flatten()
                     umi_counts_sorted = np.sort(umi_counts)[::-1]  # Sort in descending order for the knee plot
 
                     # Step 2: Use KneeLocator to find the cutoff
@@ -324,36 +494,36 @@ def clean(
                         min_counts_assessed_by_knee_plot=filter_cells_by_min_counts,
                         output_file=f"{output_figures_dir}/knee_plot.png",
                     )
-                sc.pp.filter_cells(adata_normal_genome, min_counts=filter_cells_by_min_counts)  # filter cells by min counts
+                sc.pp.filter_cells(adata_reference_genome, min_counts=filter_cells_by_min_counts)  # filter cells by min counts
             if filter_cells_by_min_genes:
-                sc.pp.filter_cells(adata_normal_genome, min_genes=filter_cells_by_min_genes)  # filter cells by min genes
+                sc.pp.filter_cells(adata_reference_genome, min_genes=filter_cells_by_min_genes)  # filter cells by min genes
             if filter_genes_by_min_cells:
-                sc.pp.filter_genes(adata_normal_genome, min_cells=filter_genes_by_min_cells)  # filter genes by min cells
+                sc.pp.filter_genes(adata_reference_genome, min_cells=filter_genes_by_min_cells)  # filter genes by min cells
             if filter_cells_by_max_mt_content:
-                has_mt_genes = adata_normal_genome.var_names.str.startswith("MT-").any()
+                has_mt_genes = adata_reference_genome.var_names.str.startswith("MT-").any()
                 if has_mt_genes:
-                    adata_normal_genome.var["mt"] = adata_normal_genome.var_names.str.startswith("MT-")
+                    adata_reference_genome.var["mt"] = adata_reference_genome.var_names.str.startswith("MT-")
                 else:
                     mito_ensembl_ids = sc.queries.mitochondrial_genes("hsapiens", attrname="ensembl_gene_id")
                     mito_genes = set(mito_ensembl_ids["ensembl_gene_id"].values)
 
-                    adata_base_var_names = adata_normal_genome.var_names.str.split(".").str[0]  # Removes minor version from var names
+                    adata_base_var_names = adata_reference_genome.var_names.str.split(".").str[0]  # Removes minor version from var names
                     mito_genes_base = {gene.split(".")[0] for gene in mito_genes}  # Removes minor version from mito_genes
 
                     # Identify mitochondrial genes in adata.var using the stripped version of gene IDs
-                    adata_normal_genome.var["mt"] = adata_base_var_names.isin(mito_genes_base)
+                    adata_reference_genome.var["mt"] = adata_base_var_names.isin(mito_genes_base)
 
-                mito_counts = adata_normal_genome[:, adata_normal_genome.var["mt"]].X.sum(axis=1)
+                mito_counts = adata_reference_genome[:, adata_reference_genome.var["mt"]].X.sum(axis=1)
 
                 # Calculate total counts per cell
-                total_counts = adata_normal_genome.X.sum(axis=1)
+                total_counts = adata_reference_genome.X.sum(axis=1)
 
                 # Calculate percent mitochondrial gene expression per cell
-                adata_normal_genome.obs["percent_mito"] = np.array(mito_counts / total_counts * 100).flatten()
+                adata_reference_genome.obs["percent_mito"] = np.array(mito_counts / total_counts * 100).flatten()
 
-                adata_normal_genome.obs["total_counts"] = adata_normal_genome.X.sum(axis=1).A1
+                adata_reference_genome.obs["total_counts"] = adata_reference_genome.X.sum(axis=1).A1
                 sc.pp.calculate_qc_metrics(
-                    adata_normal_genome,
+                    adata_reference_genome,
                     qc_vars=["mt"],
                     percent_top=None,
                     log1p=False,
@@ -361,7 +531,7 @@ def clean(
                 )
 
                 sc.pl.violin(
-                    adata_normal_genome,
+                    adata_reference_genome,
                     ["n_genes_by_counts", "total_counts", "pct_counts_mt"],
                     jitter=0.4,
                     multi_panel=True,
@@ -371,27 +541,27 @@ def clean(
                 # * TODO: move violin plot file path
                 violin_plot_path = f"{output_figures_dir}/qc_violin_plot.png"
 
-                adata_normal_genome = adata_normal_genome[adata_normal_genome.obs.pct_counts_mt < 5, :].copy()  # filter cells by high MT content
+                adata_reference_genome = adata_reference_genome[adata_reference_genome.obs.pct_counts_mt < filter_cells_by_max_mt_content, :].copy()  # filter cells by high MT content
 
-                adata.obs["percent_mito"] = adata_normal_genome.obs["percent_mito"]
-                adata.obs["total_counts"] = adata_normal_genome.obs["total_counts"]
+                adata.obs["percent_mito"] = adata_reference_genome.obs["percent_mito"]
+                adata.obs["total_counts"] = adata_reference_genome.obs["total_counts"]
             if doublet_detection:
-                sc.pp.scrublet(adata_normal_genome, batch_key="sample")  # filter doublets
-                adata.obs["predicted_doublet"] = adata_normal_genome.obs["predicted_doublet"]
+                sc.pp.scrublet(adata_reference_genome, batch_key="sample")  # filter doublets
+                adata.obs["predicted_doublet"] = adata_reference_genome.obs["predicted_doublet"]
                 if remove_doublets:
-                    adata_normal_genome = adata_normal_genome[~adata_normal_genome.obs["predicted_doublet"], :].copy()
+                    adata_reference_genome = adata_reference_genome[~adata_reference_genome.obs["predicted_doublet"], :].copy()
                     adata = adata[~adata.obs["predicted_doublet"], :].copy()
 
-            common_cells = adata.obs_names.intersection(adata_normal_genome.obs_names)
+            common_cells = adata.obs_names.intersection(adata_reference_genome.obs_names)
             adata = adata[common_cells, :].copy()
 
         # do cpm
         if cpm_normalization and not use_binary_matrix:  # normalization not needed for binary matrix
-            total_counts = adata_normal_genome.X.sum(axis=1)
+            total_counts = adata_reference_genome.X.sum(axis=1)
             cpm_factor = total_counts / 1e6
 
             adata.X = adata.X / cpm_factor[:, None]  # Reshape to make cpm_factor compatible with adata.X
-            adata.obs["cpm_factor"] = cpm_factor
+            adata.uns["cpm_factor"] = cpm_factor
 
     if drop_empty_columns:
         # Identify columns (genes) with non-zero counts across samples
@@ -452,13 +622,14 @@ def clean(
 
     adata.var["mcrs_count"] = adata.X.sum(axis=0).A1 if hasattr(adata.X, "A1") else np.asarray(adata.X.sum(axis=0)).flatten()
 
-    if adata_path_normal_genome:
-        adata_normal_genome.write(adata_normal_genome_output_path)
+    if save_vcf:
+        make_vcf(vcf_out)  # TODO: write this
 
-    adata.write(adata_out)
+    if isinstance(adata_reference_genome, anndata.AnnData):
+        adata_reference_genome.write(adata_reference_genome_clean_out)
 
+    adata.write(adata_vcrs_clean_out)
 
-    if output_type == "path":
-        return adata_out
-    elif output_type == "AnnData":
-        return adata
+    report_time_elapsed(start_time, logger=logger, verbose=verbose, function_name="clean")
+
+    return adata

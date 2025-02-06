@@ -362,6 +362,13 @@ def validate_input_build(params_dict):
         param_value = params_dict.get(param_name)
         if not is_valid_int(param_value, ">=", min_value, optional=optional_value):
             raise ValueError(f"{param_name} must be an integer >= {min_value}. Got {params_dict.get(param_name)}.")
+    
+    k = params_dict.get("k", None)
+    w = params_dict.get("w", None)
+    if int(k) % 2 != 0 or int(k) > 63:
+        logger.warning(f"If running a workflow with vk ref or kb ref, k should be an odd number between 1 and 63. Got k={k}.")
+    if int(w) >= int(k):
+        raise ValueError(f"w should be less than k. Got w={w}, k={k}.")
 
     # required_insertion_overlap_length
     if params_dict.get("required_insertion_overlap_length") is not None and not (
@@ -388,7 +395,7 @@ def build(
     sequences,
     mutations,
     w = 54,
-    k = 55,
+    k = 59,
     max_ambiguous = 0,
     mut_column = "mutation",
     seq_id_column = "seq_ID",
@@ -483,7 +490,7 @@ def build(
                                          If w > total length of the sequence, the entire sequence will be kept.
     - k                                  (int) Length of the k-mers to be considered in remove_seqs_with_wt_kmers, and the default minimum value for the minimum sequence length (which can be changed with 'min_seq_len').
                                          If using kallisto in a later workflow, then this should correspond to kallisto k.
-                                         Must be greater than the value passed in for w. Default: 55.
+                                         Must be greater than the value passed in for w. Default: 59.
     - max_ambiguous                      (int) Maximum number of 'N' (or 'n') characters allowed in a VCRS. None means no 'N' filter will be applied. Default: 0.
 
     # Additional input files and associated parameters
@@ -1608,10 +1615,10 @@ def build(
                 all_mut_seqs.remove("")
 
             if len(all_mut_seqs) > 0:
-                report_time_elapsed(start_time, logger=logger, verbose=verbose)
+                report_time_elapsed(start_time, logger=logger, verbose=verbose, function_name="build")
                 return all_mut_seqs
         else:
-            report_time_elapsed(start_time, logger=logger, verbose=verbose)
+            report_time_elapsed(start_time, logger=logger, verbose=verbose, function_name="build")
             return mutations
     
-    report_time_elapsed(start_time, logger=logger, verbose=verbose)
+    report_time_elapsed(start_time, logger=logger, verbose=verbose, function_name="build")

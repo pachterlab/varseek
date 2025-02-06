@@ -1,24 +1,28 @@
-import os
-import inspect
-import re
-import math
 import argparse
-import sys
-import pandas as pd
+import inspect
 import json
+import math
+import os
+import re
+import sys
 from datetime import datetime
 
+import pandas as pd
+
 from .__init__ import __version__
-from .varseek_build import build, print_valid_values_for_mutations_and_sequences_in_varseek_build
-from .varseek_summarize import summarize
-from .varseek_filter import filter, prepare_filters_list
+from .utils import load_params, set_up_logger
+from .varseek_build import (
+    build,
+    print_valid_values_for_mutations_and_sequences_in_varseek_build,
+)
 from .varseek_clean import clean
-from .varseek_info import info
-from .varseek_sim import sim
-from .varseek_fastqpp import fastqpp
-from .varseek_ref import ref
 from .varseek_count import count
-from .utils import set_up_logger, load_params
+from .varseek_fastqpp import fastqpp
+from .varseek_filter import filter, prepare_filters_list
+from .varseek_info import info
+from .varseek_ref import ref
+from .varseek_sim import sim
+from .varseek_summarize import summarize
 
 # Get current date and time for alphafold default foldername
 dt_string = datetime.now().strftime("%Y_%m_%d-%H_%M")
@@ -303,7 +307,7 @@ def main():
         "--k",
         type=int,
         required=False,
-        default=55,
+        default=59,
         help=extract_help_from_doc(build, "k"),
     )
     parser_build.add_argument(
@@ -638,7 +642,7 @@ def main():
         "--k",
         type=int,
         required=False,
-        default=55,
+        default=59,
         help=extract_help_from_doc(info, "k"),
     )
     parser_info.add_argument(
@@ -676,24 +680,34 @@ def main():
         help=extract_help_from_doc(info, "gtf"),
     )
     parser_info.add_argument(
-        "--dlist_reference_genome_fasta",
+        "--dlist_reference_source",
         required=False,
         default="T2T",
+        help=extract_help_from_doc(info, "dlist_reference_source"),
+    )
+    parser_info.add_argument(
+        "--dlist_reference_genome_fasta",
+        required=False,
         help=extract_help_from_doc(info, "dlist_reference_genome_fasta"),
     )
     parser_info.add_argument(
         "--dlist_reference_cdna_fasta",
         type=str,
         required=False,
-        default="T2T",
         help=extract_help_from_doc(info, "dlist_reference_cdna_fasta"),
     )
     parser_info.add_argument(
         "--dlist_reference_gtf",
         type=str,
         required=False,
-        default="T2T",
         help=extract_help_from_doc(info, "dlist_reference_gtf"),
+    )
+    parser_info.add_argument(
+        "--dlist_reference_ensembl_release",
+        type=int,
+        required=False,
+        default=111,
+        help=extract_help_from_doc(info, "dlist_reference_ensembl_release"),
     )
     parser_info.add_argument(
         "--mcrs_id_column",
@@ -826,6 +840,12 @@ def main():
         help=extract_help_from_doc(info, "list_columns"),
     )
     parser_info.add_argument(
+        "--list_d_list_values",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(info, "list_d_list_values"),
+    )
+    parser_info.add_argument(
         "--overwrite",
         action="store_true",
         required=False,
@@ -934,6 +954,7 @@ def main():
         help=extract_help_from_doc(filter, "dlist_fasta"),
     )
     parser_filter.add_argument(
+        "-o",
         "--out",
         required=False,
         help=extract_help_from_doc(filter, "out"),
@@ -1301,6 +1322,7 @@ def main():
         "--parity",
         required=False,
         type=str,
+        choices=["single", "paired"],
         default="single",
         help=extract_help_from_doc(fastqpp, "parity"),
     )
@@ -1478,6 +1500,296 @@ def main():
         add_help=True,
         formatter_class=CustomHelpFormatter,
     )
+    parser_clean.add_argument(
+        "adata_vcrs",
+        type=str,
+        required=True,
+        help=extract_help_from_doc(clean, "adata_vcrs"),
+    )
+    parser_clean.add_argument(
+        "technology",
+        type=str,
+        required=True,
+        help=extract_help_from_doc(clean, "technology"),
+    )
+    parser_clean.add_argument(
+        "--min_counts",
+        type=int,
+        required=False,
+        help=extract_help_from_doc(clean, "min_counts"),
+    )
+    parser_clean.add_argument(
+        "--use_binary_matrix",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(clean, "use_binary_matrix"),
+    )
+    parser_clean.add_argument(
+        "--drop_empty_columns",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(clean, "drop_empty_columns"),
+    )
+    parser_clean.add_argument(
+        "--apply_single_end_mode_on_paired_end_data_correction",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(clean, "apply_single_end_mode_on_paired_end_data_correction"),
+    )
+    parser_clean.add_argument(
+        "--split_reads_by_Ns",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(clean, "split_reads_by_Ns"),
+    )
+    parser_clean.add_argument(
+        "--apply_dlist_correction",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(clean, "apply_dlist_correction"),
+    )
+    parser_clean.add_argument(
+        "--qc_against_gene_matrix",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(clean, "qc_against_gene_matrix"),
+    )
+    parser_clean.add_argument(
+        "--filter_cells_by_min_counts",
+        required=False,
+        help=extract_help_from_doc(clean, "filter_cells_by_min_counts"),
+    )
+    parser_clean.add_argument(
+        "--filter_cells_by_min_genes",
+        required=False,
+        help=extract_help_from_doc(clean, "filter_cells_by_min_genes"),
+    )
+    parser_clean.add_argument(
+        "--filter_genes_by_min_cells",
+        required=False,
+        help=extract_help_from_doc(clean, "filter_genes_by_min_cells"),
+    )
+    parser_clean.add_argument(
+        "--filter_cells_by_max_mt_content",
+        required=False,
+        help=extract_help_from_doc(clean, "filter_cells_by_max_mt_content"),
+    )
+    parser_clean.add_argument(
+        "--doublet_detection",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(clean, "doublet_detection"),
+    )
+    parser_clean.add_argument(
+        "--remove_doublets",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(clean, "remove_doublets"),
+    )
+    parser_clean.add_argument(
+        "--cpm_normalization",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(clean, "cpm_normalization"),
+    )
+    parser_clean.add_argument(
+        "--sum_rows",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(clean, "sum_rows"),
+    )
+    parser_clean.add_argument(
+        "--mcrs_id_set_to_exclusively_keep",
+        nargs="+",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(clean, "mcrs_id_set_to_exclusively_keep"),
+    )
+    parser_clean.add_argument(
+        "--mcrs_id_set_to_exclude",
+        nargs="+",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(clean, "mcrs_id_set_to_exclude"),
+    )
+    parser_clean.add_argument(
+        "--transcript_set_to_exclusively_keep",
+        nargs="+",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(clean, "transcript_set_to_exclusively_keep"),
+    )
+    parser_clean.add_argument(
+        "--transcript_set_to_exclude",
+        nargs="+",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(clean, "transcript_set_to_exclude"),
+    )
+    parser_clean.add_argument(
+        "--gene_set_to_exclusively_keep",
+        nargs="+",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(clean, "gene_set_to_exclusively_keep"),
+    )
+    parser_clean.add_argument(
+        "--gene_set_to_exclude",
+        nargs="+",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(clean, "gene_set_to_exclude"),
+    )
+    parser_clean.add_argument(
+        "-k",
+        "--k",
+        required=False,
+        help=extract_help_from_doc(clean, "k"),
+    )
+    parser_clean.add_argument(
+        "--mm",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(clean, "mm"),
+    )
+    parser_clean.add_argument(
+        "--union",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(clean, "union"),
+    )
+    parser_clean.add_argument(
+        "--parity",
+        required=False,
+        type=str,
+        choices=["single", "paired"],
+        default="single",
+        help=extract_help_from_doc(clean, "parity"),
+    )
+    parser_clean.add_argument(
+        "--multiplexed",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(clean, "multiplexed"),
+    )
+    parser_clean.add_argument(
+        "--sort_fastqs",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(clean, "sort_fastqs"),
+    )
+    parser_clean.add_argument(
+        "--fastqs",
+        nargs='+',
+        required=False,
+        help=extract_help_from_doc(clean, "fastqs"),
+    )
+    parser_clean.add_argument(
+        "--vk_ref_dir",
+        required=False,
+        help=extract_help_from_doc(clean, "vk_ref_dir"),
+    )
+    parser_clean.add_argument(
+        "--vcrs_index",
+        required=False,
+        help=extract_help_from_doc(clean, "vcrs_index"),
+    )
+    parser_clean.add_argument(
+        "--vcrs_t2g",
+        required=False,
+        help=extract_help_from_doc(clean, "vcrs_t2g"),
+    )
+    parser_clean.add_argument(
+        "--mcrs_fasta",
+        required=False,
+        help=extract_help_from_doc(clean, "mcrs_fasta"),
+    )
+    parser_clean.add_argument(
+        "--id_to_header_csv",
+        required=False,
+        help=extract_help_from_doc(clean, "id_to_header_csv"),
+    )
+    parser_clean.add_argument(
+        "--dlist_fasta",
+        required=False,
+        help=extract_help_from_doc(clean, "dlist_fasta"),
+    )
+    parser_clean.add_argument(
+        "--mutations_updated_csv",
+        required=False,
+        help=extract_help_from_doc(clean, "mutations_updated_csv"),
+    )
+    parser_clean.add_argument(
+        "--mcrs_id_column",
+        required=False,
+        help=extract_help_from_doc(clean, "mcrs_id_column"),
+    )
+    parser_clean.add_argument(
+        "--mutations_updated_csv_columns",
+        nargs='+',
+        type=str,
+        required=False,
+        help=extract_help_from_doc(clean, "mutations_updated_csv_columns"),
+    )
+    parser_clean.add_argument(
+        "--adata_reference_genome",
+        required=False,
+        help=extract_help_from_doc(clean, "adata_reference_genome"),
+    )
+    parser_clean.add_argument(
+        "--kb_count_vcrs_dir",
+        required=False,
+        help=extract_help_from_doc(clean, "kb_count_vcrs_dir"),
+    )
+    parser_clean.add_argument(
+        "--kb_count_reference_genome_dir",
+        required=False,
+        help=extract_help_from_doc(clean, "kb_count_reference_genome_dir"),
+    )
+    parser_clean.add_argument(
+        "--out",
+        required=False,
+        help=extract_help_from_doc(clean, "out"),
+    )
+    parser_clean.add_argument(
+        "--adata_vcrs_clean_out",
+        required=False,
+        help=extract_help_from_doc(clean, "adata_vcrs_clean_out"),
+    )
+    parser_clean.add_argument(
+        "--adata_reference_genome_clean_out",
+        required=False,
+        help=extract_help_from_doc(clean, "adata_reference_genome_clean_out"),
+    )
+    parser_clean.add_argument(
+        "--vcf_out",
+        required=False,
+        help=extract_help_from_doc(clean, "vcf_out"),
+    )
+    parser_clean.add_argument(
+        "--save_vcf",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(clean, "save_vcf"),
+    )
+    parser_clean.add_argument(
+        "--dry_run",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(clean, "dry_run"),
+    )
+    parser_clean.add_argument(
+        "--overwrite",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(clean, "overwrite"),
+    )
+    parser_clean.add_argument(
+        "--threads",
+        type=int,
+        required=False,
+        help=extract_help_from_doc(clean, "threads"),
+    )
 
     parser_clean.add_argument(
         "-q",
@@ -1600,7 +1912,7 @@ def main():
     parser_ref.add_argument(
         "-k",
         "--k",
-        default=55,
+        default=59,
         type=int,
         required=False,
         help=extract_help_from_doc(ref, "k"),
@@ -1708,7 +2020,7 @@ def main():
     )
 
     # NEW PARSER
-    count_desc = "XXXXXX."
+    count_desc = "Perform variant screening on sequencing data. Wraps around varseek fastqpp, kb count, varseek clean, and kb summarize.."
     parser_count = parent_subparsers.add_parser(
         "count",
         parents=[parent],
@@ -1716,6 +2028,157 @@ def main():
         help=count_desc,
         add_help=True,
         formatter_class=CustomHelpFormatter,
+    )
+    parser_count.add_argument(
+        "fastqs",
+        nargs='+',
+        required=True,
+        help=extract_help_from_doc(count, "fastqs"),
+    )
+    parser_count.add_argument(
+        "-i",
+        "--index",
+        required=True,
+        help=extract_help_from_doc(count, "index"),
+    )
+    parser_count.add_argument(
+        "-g",
+        "--t2g",
+        required=True,
+        help=extract_help_from_doc(count, "t2g"),
+    )
+    parser_count.add_argument(
+        "-x",
+        "--technology",
+        required=True,
+        help=extract_help_from_doc(count, "technology"),
+    )
+    parser_count.add_argument(
+        "-k",
+        "--k",
+        required=False,
+        type=int,
+        default=59,
+        help=extract_help_from_doc(count, "k"),
+    )
+    parser_count.add_argument(
+        "--strand",
+        required=False,
+        type=str,
+        default="unstranded",
+        help=extract_help_from_doc(count, "strand"),
+    )
+    parser_count.add_argument(
+        "--mm",
+        required=False,
+        action="store_true",
+        help=extract_help_from_doc(count, "mm"),
+    )
+    parser_count.add_argument(
+        "--union",
+        required=False,
+        action="store_true",
+        help=extract_help_from_doc(count, "union"),
+    )
+    parser_count.add_argument(
+        "--parity",
+        required=False,
+        type=str,
+        choices=["single", "paired"],
+        default="single",
+        help=extract_help_from_doc(count, "parity"),
+    )
+    parser_count.add_argument(
+        "--species",
+        required=False,
+        help=extract_help_from_doc(count, "species"),
+    )
+    parser_count.add_argument(
+        "--config",
+        required=False,
+        help=extract_help_from_doc(count, "config"),
+    )
+    parser_count.add_argument(
+        "--reference_genome_index",
+        required=False,
+        help=extract_help_from_doc(count, "reference_genome_index"),
+    )
+    parser_count.add_argument(
+        "--reference_genome_t2g",
+        required=False,
+        help=extract_help_from_doc(count, "reference_genome_t2g"),
+    )
+    parser_count.add_argument(
+        "--adata_reference_genome",
+        required=False,
+        help=extract_help_from_doc(count, "adata_reference_genome"),
+    )
+    parser_count.add_argument(
+        "-o",
+        "--out",
+        required=False,
+        type=str,
+        default=".",
+        help=extract_help_from_doc(count, "out"),
+    )
+    parser_count.add_argument(
+        "--kb_count_vcrs_out_dir",
+        required=False,
+        help=extract_help_from_doc(count, "kb_count_vcrs_out_dir"),
+    )
+    parser_count.add_argument(
+        "--kb_count_reference_genome_out_dir",
+        required=False,
+        help=extract_help_from_doc(count, "kb_count_reference_genome_out_dir"),
+    )
+    parser_count.add_argument(
+        "--vk_summarize_out_dir",
+        required=False,
+        help=extract_help_from_doc(count, "vk_summarize_out_dir"),
+    )
+    parser_count.add_argument(
+        "--disable_fastqpp",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(count, "disable_fastqpp"),
+    )
+    parser_count.add_argument(
+        "--disable_clean",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(count, "disable_clean"),
+    )
+    parser_count.add_argument(
+        "--disable_summarize",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(count, "disable_summarize"),
+    )
+    parser_count.add_argument(
+        "--dry_run",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(count, "dry_run"),
+    )
+    parser_count.add_argument(
+        "--overwrite",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(count, "overwrite"),
+    )
+    parser_count.add_argument(
+        "--sort_fastqs",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(count, "sort_fastqs"),
+    )
+    parser_count.add_argument(
+        "-t",
+        "--threads",
+        type=int,
+        required=False,
+        default=2,
+        help=extract_help_from_doc(count, "threads"),
     )
     parser_count.add_argument(
         "-q",
@@ -1862,9 +2325,11 @@ def main():
             mutations_updated_csv=args.mutations_updated_csv,
             id_to_header_csv=args.id_to_header_csv,
             gtf=args.gtf,
+            dlist_reference_source=args.dlist_reference_source,
             dlist_reference_genome_fasta=args.dlist_reference_genome_fasta,
             dlist_reference_cdna_fasta=args.dlist_reference_cdna_fasta,
             dlist_reference_gtf=args.dlist_reference_gtf,
+            dlist_reference_ensembl_release=args.dlist_reference_ensembl_release,
             mcrs_id_column=args.mcrs_id_column,
             mcrs_sequence_column=args.mcrs_sequence_column,
             mcrs_source_column=args.mcrs_source_column,
@@ -1886,6 +2351,7 @@ def main():
             make_kat_histogram=args.make_kat_histogram,
             dry_run=args.dry_run,
             list_columns=args.list_columns,
+            list_dlist_references=args.list_dlist_references,
             overwrite=args.overwrite,
             threads=args.threads,
             verbose=args.quiet,
@@ -1932,7 +2398,7 @@ def main():
             dlist_cdna_fasta=args.dlist_cdna_fasta,
             dlist_genome_filtered_fasta_out=args.dlist_genome_filtered_fasta_out,
             dlist_cdna_filtered_fasta_out=args.dlist_cdna_filtered_fasta_out,
-            save_mcrs_filtered_fasta_and_t2g=args.save_mcrs_filtered_fasta_and_t2g,
+            save_mcrs_filtered_fasta_and_t2g=args.disable_save_mcrs_filtered_fasta_and_t2g,
             **kwargs,
         )
 
@@ -2001,7 +2467,60 @@ def main():
 
     ## clean return
     if args.command == "clean":
-        clean_results = clean(verbose=args.quiet, **kwargs)
+        clean_results = clean(
+            adata_vcrs=args.adata_vcrs,
+            technology=args.technology,
+            min_counts=args.min_counts,
+            use_binary_matrix=args.use_binary_matrix,
+            drop_empty_columns=args.drop_empty_columns,
+            apply_single_end_mode_on_paired_end_data_correction=args.apply_single_end_mode_on_paired_end_data_correction,
+            split_reads_by_Ns=args.split_reads_by_Ns,
+            apply_dlist_correction=args.apply_dlist_correction,
+            qc_against_gene_matrix=args.qc_against_gene_matrix,
+            filter_cells_by_min_counts=args.filter_cells_by_min_counts,
+            filter_cells_by_min_genes=args.filter_cells_by_min_genes,
+            filter_genes_by_min_cells=args.filter_genes_by_min_cells,
+            filter_cells_by_max_mt_content=args.filter_cells_by_max_mt_content,
+            doublet_detection=args.doublet_detection,
+            remove_doublets=args.remove_doublets,
+            cpm_normalization=args.cpm_normalization,
+            sum_rows=args.sum_rows,
+            mcrs_id_set_to_exclusively_keep=args.mcrs_id_set_to_exclusively_keep,
+            mcrs_id_set_to_exclude=args.mcrs_id_set_to_exclude,
+            transcript_set_to_exclusively_keep=args.transcript_set_to_exclusively_keep,
+            transcript_set_to_exclude=args.transcript_set_to_exclude,
+            gene_set_to_exclusively_keep=args.gene_set_to_exclusively_keep,
+            gene_set_to_exclude=args.gene_set_to_exclude,
+            k=args.k,
+            mm=args.mm,
+            union=args.union,
+            parity=args.parity,
+            multiplexed=args.multiplexed,
+            sort_fastqs=args.sort_fastqs,
+            fastqs=args.fastqs,
+            vk_ref_dir=args.vk_ref_dir,
+            vcrs_index=args.vcrs_index,
+            vcrs_t2g=args.vcrs_t2g,
+            mcrs_fasta=args.mcrs_fasta,
+            id_to_header_csv=args.id_to_header_csv,
+            dlist_fasta=args.dlist_fasta,
+            mutations_updated_csv=args.mutations_updated_csv,
+            mcrs_id_column=args.mcrs_id_column,
+            mutations_updated_csv_columns=args.mutations_updated_csv_columns,
+            adata_reference_genome=args.adata_reference_genome,
+            kb_count_vcrs_dir=args.kb_count_vcrs_dir,
+            kb_count_reference_genome_dir=args.kb_count_reference_genome_dir,
+            out=args.out,
+            adata_vcrs_clean_out=args.adata_vcrs_clean_out,
+            adata_reference_genome_clean_out=args.adata_reference_genome_clean_out,
+            vcf_out=args.vcf_out,
+            save_vcf=args.save_vcf,
+            dry_run=args.dry_run,
+            overwrite=args.overwrite,
+            threads=args.threads,
+            verbose=args.quiet,
+            **kwargs,
+        )
 
         # * optionally do something with clean_results (e.g., save, or print to console)
 
@@ -2046,7 +2565,35 @@ def main():
 
     ## count return
     if args.command == "count":
-        count_results = count(verbose=args.quiet, **kwargs)
+        count_results = count(
+            fastqs=args.fastqs,
+            index=args.index,
+            t2g=args.t2g,
+            technology=args.technology,
+            k=args.k,
+            strand=args.strand,
+            mm=args.mm,
+            union=args.union,
+            parity=args.parity,
+            species=args.species,
+            config=args.config,
+            reference_genome_index=args.reference_genome_index,
+            reference_genome_t2g=args.reference_genome_t2g,
+            adata_reference_genome=args.adata_reference_genome,
+            out=args.out,
+            kb_count_vcrs_out_dir=args.kb_count_vcrs_out_dir,
+            kb_count_reference_genome_out_dir=args.kb_count_reference_genome_out_dir,
+            vk_summarize_out_dir=args.vk_summarize_out_dir,
+            disable_fastqpp=args.disable_fastqpp,
+            disable_clean=args.disable_clean,
+            disable_summarize=args.disable_summarize,
+            dry_run=args.dry_run,
+            overwrite=args.overwrite,
+            sort_fastqs=args.sort_fastqs,
+            threads=args.threads,
+            verbose=args.quiet,
+            **kwargs,
+        )
 
         # * optionally do something with count_results (e.g., save, or print to console)
 

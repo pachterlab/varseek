@@ -384,4 +384,4 @@ if __name__ == "__main__":
 
 # add trim_edges_off_reads (with minimum_base_quality_trim_reads), replace_low_quality_bases_with_N (with minimum_base_quality_replace_with_N argument), and/or split_reads_by_Ns
 # swap --data_to_use rnaseq with wxs or wxs_with_corresponding_rnaseq_sample
-# python3 download_and_align_ccle.py --mutation_index XXX --mutation_t2g XXX --standard_index XXX --standard_t2g XXX --json_path XXX --ccle_data_out_base XXX -k 55 --threads_per_task 1 --number_of_tasks_total 20 --data_to_use rnaseq
+# python3 download_and_align_ccle.py --mutation_index XXX --mutation_t2g XXX --standard_index XXX --standard_t2g XXX --json_path XXX --ccle_data_out_base XXX -k 59 --threads_per_task 1 --number_of_tasks_total 20 --data_to_use rnaseq

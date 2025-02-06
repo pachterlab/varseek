@@ -19,6 +19,7 @@ fastq_extensions = ('.fq', '.fastq', '.fq.gz', '.fastq.gz')
 
 technology_valid_values = {"10xv1", "10xv2", "10xv3", "Bulk", "SmartSeq2", "BDWTA", "CELSeq", "CELSeq2", "DropSeq", "inDropsv1", "inDropsv2", "inDropsv3", "SCRBSeq", "SmartSeq3", "SPLiT", "STORM", "SureCell", "VASA", "Visium"}
 non_single_cell_technologies = {"Bulk", "Visium"}
+supported_downloadable_normal_reference_genomes_with_kb_ref = {"human", "mouse", "dog", "monkey", "zebrafish"}  # see full list at https://github.com/pachterlab/kallisto-transcriptome-indices/
 
 # Get complement
 complement = {
@@ -116,8 +117,9 @@ codon_to_amino_acid = {
 
 # a dictionary that maps from dict[mutations][sequences] to a dict of files {"index": index_url, "t2g": t2g_url}
 
-default_filename_dict = {"index": "index.idx", "t2g": "t2g.txt"}
+default_filename_dict = {"index": "mcrs_index.idx", "t2g": "mcrs_t2g.txt"}
 
+#* add more keys here as needed (e.g., k, w, d-list, dlist_reference_source, etc)
 #* if I add modes to varseek ref, then have it be dict[mutations][sequences][mode]
 prebuilt_vk_ref_files = {
     "cosmic_cmc": {

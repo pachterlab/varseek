@@ -241,7 +241,7 @@ for number_of_reads in number_of_reads_list:
     if "varseek" in tools_to_benchmark:
         print(f"varseek, {number_of_reads} reads")
         output_file = os.path.join(output_dir, f"vk_count_threads_{threads}_reads_{number_of_reads}_time_and_memory.txt")
-        argparse_flags = f"--index {vk_ref_index_path} --t2g {vk_ref_t2g_path} --skip_fastqpp {fastq_output_path}"  #!!! ensure that no filtering/processing is done by fastqpp or clean
+        argparse_flags = f"--index {vk_ref_index_path} --t2g {vk_ref_t2g_path} --disable_fastqpp --disable_clean --disable_summarize {fastq_output_path}"
         _ = report_time_and_memory_of_script(vk_count_script_path, output_file = output_file, argparse_flags = argparse_flags)
 
     if any(tool in tools_that_require_star_alignment for tool in tools_to_benchmark):

@@ -1,19 +1,20 @@
 import os
-import subprocess
+import random
 import re
+import subprocess
+
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+
 import varseek
-import random
 
 from .utils import (
-    set_up_logger,
+    fasta_to_fastq,
     introduce_sequencing_errors,
     merge_synthetic_read_info_into_mutations_metadata_df,
-    fasta_to_fastq,
+    set_up_logger,
 )
-
 
 tqdm.pandas()
 logger = set_up_logger()

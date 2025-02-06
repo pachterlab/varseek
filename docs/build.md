@@ -21,6 +21,7 @@ Output table
 | wt_mcrs_fasta_out                                              | .txt                  | save_wt_mcrs_fasta_and_t2g=True     | <out>/wt_mcrs.fa                                                | ...                          |
 | wt_mcrs_t2g_out                                                 | .txt                  | save_wt_mcrs_fasta_and_t2g=True     | <out>/wt_mcrs_t2g.txt                                        | ...                          |
 | removed_variants_text_out                                 | .txt                  | save_removed_variants_text=True      | <out>/removed_variants.txt                                | ...                          |
+| filtering_report_text_out                                       | .txt                  | save_filtering_report_text=True           | <out>/filtering_report.txt                                      | ...                          |
 
 **Required arguments**  
 `-s` `--sequences`

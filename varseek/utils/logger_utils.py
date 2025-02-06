@@ -1,19 +1,19 @@
-from datetime import datetime
-import logging
-import re
-import os
-import sys
-import psutil
-import requests
-import subprocess
-import time
-import tracemalloc
 import inspect
 import json
+import logging
+import os
+import re
+import subprocess
+import sys
+import time
+import tracemalloc
 from collections import OrderedDict
+from datetime import datetime
 
-from bs4 import BeautifulSoup
 import pandas as pd
+import psutil
+import requests
+from bs4 import BeautifulSoup
 
 from varseek import __version__
 from varseek.constants import default_filename_dict
@@ -79,7 +79,7 @@ def check_file_path_is_string_with_valid_extension(file_path, variable_name, fil
         "gtf": {".gtf"},
         "t2g": {".txt"},
         "index": {".idx"},
-        "h5ad": {".h5ad"},
+        "h5ad": {".h5ad", ".h5"},
     }
     if file_path:  # skip if None or empty string, as I will provide the default path in this case
         # check if file_path is a string
@@ -146,9 +146,10 @@ def make_function_parameter_to_value_dict(levels_up = 1):
     
     return params
 
-def report_time_elapsed(start_time, logger = None, verbose = True):
+def report_time_elapsed(start_time, logger = None, verbose = True, function_name = None):
     elapsed = time.perf_counter() - start_time
-    time_elapsed_message = f"Total runtime for vk build\n: {int(elapsed // 60)}m, {elapsed % 60:.2f}s"
+    function_name_message = f" for vk {function_name}" if function_name else ""
+    time_elapsed_message = f"Total runtime{function_name_message}\n: {int(elapsed // 60)}m, {elapsed % 60:.2f}s"
     if verbose:
         if logger:
             logger.info(time_elapsed_message)
@@ -859,9 +860,11 @@ def extract_documentation_file_blocks(file_path, start_pattern, stop_pattern):
 
     return extracted_blocks
 
-import getpass
 import base64
+import getpass
+
 from gget.gget_cosmic import is_valid_email
+
 
 # from gget cosmic
 def authenticate_cosmic_credentials(email = None, password = None):
@@ -896,7 +899,9 @@ def authenticate_cosmic_credentials(email = None, password = None):
     
 import base64
 import getpass
+
 import requests
+
 
 def encode_cosmic_credentials(email=None, password=None):
     """Encodes COSMIC email and password into a base64 authentication token."""

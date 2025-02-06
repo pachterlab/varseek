@@ -1,25 +1,27 @@
-import os
-import csv
-import time
 import ast
+import csv
+import os
 import re
+import time
+from pdb import set_trace as st
+
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from pdb import set_trace as st
+
 from .utils import (
-    set_up_logger,
-    filter_fasta,
-    create_mutant_t2g,
-    fasta_summary_stats,
-    safe_literal_eval,
-    save_params_to_config_file,
-    make_function_parameter_to_value_dict,
     check_file_path_is_string_with_valid_extension,
+    create_mutant_t2g,
+    extract_documentation_file_blocks,
+    fasta_summary_stats,
+    filter_fasta,
+    make_function_parameter_to_value_dict,
     print_varseek_dry_run,
     report_time_elapsed,
-    extract_documentation_file_blocks,
-    save_run_info
+    safe_literal_eval,
+    save_params_to_config_file,
+    save_run_info,
+    set_up_logger,
 )
 
 logger = set_up_logger()
@@ -570,7 +572,7 @@ def filter(
             logger.info(f"Filtered dlist fasta created at {dlist_filtered_fasta_out}.")
 
     # Report time
-    report_time_elapsed(start_time, logger=logger, verbose=verbose)
+    report_time_elapsed(start_time, logger=logger, verbose=verbose, function_name="filter")
 
     if return_mutations_updated_filtered_csv_df:
         return filtered_df

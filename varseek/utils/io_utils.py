@@ -1,8 +1,9 @@
-import os
 import gzip
+import os
+
+import anndata as ad
 import numpy as np
 import pandas as pd
-import anndata as ad
 
 # from varseek.utils.seq_utils import generate_noisy_quality_scores
 
