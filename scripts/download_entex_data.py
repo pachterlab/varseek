@@ -3,7 +3,8 @@ import os
 
 import pandas as pd
 
-from varseek.utils import make_entex_df, download_entex_fastq_links
+from varseek.utils import download_entex_fastq_links, make_entex_df
+
 
 def main(args):
     

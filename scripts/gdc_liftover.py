@@ -1,8 +1,10 @@
 # !pip install pyliftover
 
-import pandas as pd
 import re
+
+import pandas as pd
 from tqdm import tqdm
+
 tqdm.pandas()
 from pyliftover import LiftOver
 

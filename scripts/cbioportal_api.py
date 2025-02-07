@@ -1,24 +1,25 @@
 import colorsys
+import json
 import math
-
-from bravado.client import SwaggerClient
+import os
+import subprocess
+from collections import OrderedDict, defaultdict
 from itertools import islice
-from collections import defaultdict, OrderedDict
-import pandas as pd
-import numpy as np
+from typing import Literal, TypeAlias, TypeVar
+
 import anndata as ad
 import matplotlib.pyplot as plt
-from matplotlib.colors import ListedColormap, BoundaryNorm, TwoSlopeNorm
-
-import json
-import subprocess
+import numpy as np
+import pandas as pd
 import requests
-import os
-
-from typing import Literal, TypeVar, TypeAlias
-
-from scripts.map_enst_to_ensg import get_valid_ensembl_gene_id_bulk, get_ensembl_gene_name_bulk
+from bravado.client import SwaggerClient
+from matplotlib.colors import BoundaryNorm, ListedColormap, TwoSlopeNorm
 from upsetplot import UpSet
+
+from scripts.map_enst_to_ensg import (
+    get_ensembl_gene_name_bulk,
+    get_valid_ensembl_gene_id_bulk,
+)
 
 _K = TypeVar('_K')
 _V = TypeVar('_V')

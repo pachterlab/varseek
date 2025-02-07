@@ -1,13 +1,16 @@
-import pytest
-import varseek as vk
-import scanpy as sc
-from varseek.utils import make_bus_df, create_mutant_t2g
-import pandas as pd
-import numpy as np
 import os
-import tempfile
 import shutil
 import subprocess
+import tempfile
+
+import numpy as np
+import pandas as pd
+import pytest
+import scanpy as sc
+
+import varseek as vk
+from varseek.utils import create_mutant_t2g, make_bus_df
+
 
 @pytest.fixture
 def temp_fastq_file(tmp_path):
@@ -75,6 +78,8 @@ def temp_kb_count_out_folder(tmp_path):
     return temp_dir
 
 from pdb import set_trace as st
+
+
 def test_bustools_df_bulk(temp_fastq_file, temp_fasta_file, temp_index_file, temp_t2g_file, temp_kb_count_out_folder, tmp_path_factory):
     k = "31"
     kb_ref_command = ["kb", "ref", "--workflow", "custom", "-t", "16", "-i", temp_index_file, "--d-list", "None", "-k", k, temp_fasta_file]

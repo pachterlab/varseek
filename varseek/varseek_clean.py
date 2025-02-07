@@ -1,4 +1,5 @@
 import os
+import subprocess
 import time
 
 import anndata
@@ -9,7 +10,6 @@ import pysam
 import scanpy as sc
 import scipy as sp
 from packaging import version
-import subprocess
 
 from varseek.utils import (
     adjust_mutation_adata_by_normal_gene_matrix,
@@ -17,6 +17,7 @@ from varseek.utils import (
     decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_mode,
     increment_adata_based_on_dlist_fns,
     is_valid_int,
+    load_in_fastqs,
     make_function_parameter_to_value_dict,
     match_adata_orders,
     plot_knee_plot,
@@ -26,34 +27,39 @@ from varseek.utils import (
     save_params_to_config_file,
     save_run_info,
     set_up_logger,
+    sort_fastq_files_for_kb_count,
     write_to_vcf,
     write_vcfs_for_rows,
-    sort_fastq_files_for_kb_count,
-    load_in_fastqs
 )
 
-from .constants import fastq_extensions, technology_valid_values, non_single_cell_technologies
+from .constants import (
+    fastq_extensions,
+    non_single_cell_technologies,
+    technology_valid_values,
+)
 
 logger = set_up_logger()
+
 
 def make_vcf():
     pass
 
+
 def prepare_set(mcrs_id_set_to_exclusively_keep):
     if mcrs_id_set_to_exclusively_keep is None:
         return None  # Keep None as None
-    
+
     elif isinstance(mcrs_id_set_to_exclusively_keep, (list, tuple)):
         return set(mcrs_id_set_to_exclusively_keep)  # Convert list/tuple to set
-    
+
     elif isinstance(mcrs_id_set_to_exclusively_keep, str) and os.path.isfile(mcrs_id_set_to_exclusively_keep) and mcrs_id_set_to_exclusively_keep.endswith(".txt"):
         # Load lines from text file, stripping whitespace
         with open(mcrs_id_set_to_exclusively_keep, "r") as f:
             return set(line.strip() for line in f if line.strip())  # Ignore empty lines
-    
+
     elif isinstance(mcrs_id_set_to_exclusively_keep, set):
         return mcrs_id_set_to_exclusively_keep  # Already a set, return as is
-    
+
     else:
         raise ValueError("Invalid input: must be None, a list, tuple, set, or a path to a text file")
 
@@ -65,13 +71,13 @@ def validate_input_clean(params_dict):
         raise ValueError("adata_vcrs must be an AnnData object or a file path to an h5ad object.")
     if isinstance(adata_vcrs, str) and not os.path.isfile(adata_vcrs):
         raise ValueError(f"adata_vcrs file path {adata_vcrs} does not exist.")
-    
+
     # technology
     technology = params_dict.get("technology", None)
     technology_valid_values_lower = {x.lower() for x in technology_valid_values}
     if technology is None or technology.lower() not in technology_valid_values_lower:
-            raise ValueError(f"Technology must be one of {technology_valid_values_lower}")
-    
+        raise ValueError(f"Technology must be one of {technology_valid_values_lower}")
+
     for param_name, min_value, optional_value in [
         ("min_counts", 1, False),
         ("filter_cells_by_min_genes", 0, True),  # optional True means that it can be None
@@ -82,27 +88,27 @@ def validate_input_clean(params_dict):
         if not is_valid_int(param_value, ">=", min_value, optional=optional_value):
             must_be_value = f"an integer >= {min_value}" if not optional_value else f"an integer >= {min_value} or None"
             raise ValueError(f"{param_name} must be {must_be_value}. Got {param_value} of type {type(param_value)}.")
-        
+
     # filter_cells_by_min_counts - gets special treatment because it can also be True for automatic calculation
     filter_cells_by_min_counts = params_dict.get("filter_cells_by_min_counts", None)
     if filter_cells_by_min_counts is not None and not is_valid_int(filter_cells_by_min_counts, ">=", 1):
         raise ValueError(f"filter_cells_by_min_counts must be an integer >= 1 (for manual threshold), True (for automatic threshold calculation with kneed's KneeLocator), or None (for no threshold). Got {filter_cells_by_min_counts} of type {type(filter_cells_by_min_counts)}.")
-    
+
     # filter_cells_by_max_mt_content - special treatment because it is between rather than lower-bounded only
     if not is_valid_int(params_dict.get("filter_cells_by_max_mt_content"), "between", min_value_inclusive=0, max_value_inclusive=100, optional=True):
         raise ValueError(f"filter_cells_by_max_mt_content must be an integer between 0 and 100, or None. Got {params_dict.get('filter_cells_by_max_mt_content')}.")
-    
+
     # boolean
     for param_name in ["use_binary_matrix", "drop_empty_columns", "apply_single_end_mode_on_paired_end_data_correction", "split_reads_by_Ns", "apply_dlist_correction", "qc_against_gene_matrix", "doublet_detection", "remove_doublets", "cpm_normalization", "sum_rows", "mm", "union", "multiplexed", "save_vcf", "dry_run", "overwrite", "verbose"]:
         if not isinstance(params_dict.get(param_name), bool):
             raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
-        
+
     # sets
     for param_name in ["mcrs_id_set_to_exclusively_keep", "mcrs_id_set_to_exclude", "transcript_set_to_exclusively_keep", "transcript_set_to_exclude", "gene_set_to_exclusively_keep", "gene_set_to_exclude"]:
         param_value = params_dict.get(param_name, None)
         if param_value is not None and not isinstance(param_value, (set, list, tuple) and not (isinstance(param_value, str) and param_value.endswith(".txt") and os.path.isfile(param_value))):  # checks if it is (1) None, (2) a set/list/tuple, or (3) a string path to a txt file that exists
             raise ValueError(f"{param_name} must be a set. Got {param_name} of type {type(param_value)}.")
-        
+
     # k
     k = params_dict.get("k", None)
     if not isinstance(k, int) or int(k) < 1:
@@ -114,18 +120,18 @@ def validate_input_clean(params_dict):
     fastqs = params_dict["fastqs"]  # tuple
     if len(fastqs) == 0:
         raise ValueError("No fastq files provided")
-    
+
     parity_valid_values = {"single", "paired"}
     if params_dict["parity"] not in parity_valid_values:
         raise ValueError(f"Parity must be one of {parity_valid_values}")
-    
-    #$ type checking of the directory and text file performed earlier by load_in_fastqs 
+
+    # $ type checking of the directory and text file performed earlier by load_in_fastqs
 
     for fastq in fastqs:
         check_file_path_is_string_with_valid_extension(fastq, variable_name=fastq, file_type="fastq")  # ensure that all fastq files have valid extension
         if not os.path.isfile(fastq):  # ensure that all fastq files exist
             raise ValueError(f"File {fastq} does not exist")
-        
+
     # file paths
     for param_name, file_type in {
         "config": ["json", "yaml"],
@@ -149,8 +155,9 @@ def validate_input_clean(params_dict):
     if params_dict.get("vk_ref_dir") and not os.path.isdir(params_dict.get("vk_ref_dir")):
         raise ValueError(f"Directory {params_dict.get('vk_ref_dir')} does not exist")
 
-    
+
 needs_for_normal_genome_matrix = ["filter_cells_by_min_counts", "filter_cells_by_min_genes", "filter_genes_by_min_cells", "filter_cells_by_max_mt_content", "doublet_detection", "cpm_normalization"]
+
 
 def clean(
     adata_vcrs,  # required inputs
@@ -199,7 +206,7 @@ def clean(
     adata_vcrs_clean_out=None,
     adata_reference_genome_clean_out=None,
     vcf_out=None,
-    save_vcf = True,  # optional saves
+    save_vcf=True,  # optional saves
     dry_run=False,  # general
     overwrite=False,
     threads=2,
@@ -270,31 +277,31 @@ def clean(
     - threads                               (int): Number of threads to use. Default: 2.
     - verbose                               (bool): Whether to print verbose output. Default: False.
     """
-    #* 1. Start timer
+    # * 1. Start timer
     start_time = time.perf_counter()
 
-    #* 1.5 load in fastqs
+    # * 1.5 load in fastqs
     fastqs_original = fastqs
     fastqs = load_in_fastqs(fastqs)  # this will make it in params_dict
-    
-    #* 2. Type-checking
+
+    # * 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
     validate_input_clean(params_dict)
     params_dict["fastqs"] = fastqs_original  # change back for dry run and config_file
 
-    #* 3. Dry-run and set out folder (must to it up here or else config will save in the wrong place)
+    # * 3. Dry-run and set out folder (must to it up here or else config will save in the wrong place)
     if dry_run:
         print_varseek_dry_run(params_dict, function_name="info")
         return None
-    
-    #* 4. Save params to config file and run info file
+
+    # * 4. Save params to config file and run info file
     config_file = os.path.join(out, "config", "vk_info_config.json")
     save_params_to_config_file(params_dict, config_file)
 
     run_info_file = os.path.join(out, "config", "vk_info_run_info.txt")
     save_run_info(run_info_file)
 
-    #* 5. Set up default folder/file input paths, and make sure the necessary ones exist
+    # * 5. Set up default folder/file input paths, and make sure the necessary ones exist
     if kb_count_reference_genome_dir and not adata_reference_genome:
         adata_reference_genome = os.path.join(kb_count_reference_genome_dir, "counts_unfiltered", "adata.h5ad")
 
@@ -315,9 +322,8 @@ def clean(
         raise ValueError("kb_count_vcrs_dir must be provided as the output from kb count out to the VCRS reference if apply_single_end_mode_on_paired_end_data_correction, apply_dlist_correction, or qc_against_gene_matrix is True.")
     if qc_against_gene_matrix and (not kb_count_reference_genome_dir or not os.path.exists(kb_count_reference_genome_dir)):
         raise ValueError("kb_count_reference_genome_dir must be provided as the output from kb count out to the reference genome if qc_against_gene_matrix is True.")
-        
 
-    #* 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
+    # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
     output_figures_dir = os.path.join(out, "vk_clean_figures")
 
     adata_vcrs_clean_out = os.path.join(out, "adata_cleaned.h5ad") if not adata_vcrs_clean_out else adata_vcrs_clean_out
@@ -327,19 +333,19 @@ def clean(
     for output_path in [output_figures_dir, adata_vcrs_clean_out, adata_reference_genome_clean_out]:
         if os.path.exists(output_path) and not overwrite:
             raise ValueError(f"Output path {output_path} already exists. Please set overwrite=True to overwrite it.")
-    
+
     os.makedirs(out, exist_ok=True)
     os.makedirs(output_figures_dir, exist_ok=True)
-    
-    #* 7. Define kwargs defaults
-    
-    #* 8. Start the actual function
+
+    # * 7. Define kwargs defaults
+
+    # * 8. Start the actual function
     if technology.lower() != "bulk" and "smartseq" not in technology.lower():
         parity = "single"
 
     if apply_dlist_correction and not dlist_fasta:
         raise ValueError("dlist_fasta must be provided if apply_dlist_correction is True.")
-    
+
     try:
         fastqs = sort_fastq_files_for_kb_count(fastqs, technology=technology, multiplexed=multiplexed, logger=logger, check_only=(not sort_fastqs), verbose=verbose)
     except Exception as e:
@@ -351,7 +357,7 @@ def clean(
     if not bustools:
         bustools_binary_path_command = "kb info | grep 'bustools:' | awk '{print $3}' | sed 's/[()]//g'"
         bustools = subprocess.run(bustools_binary_path_command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, text=True).stdout.strip()
-    
+
     if apply_dlist_correction:  # and anything else that requires new kallisto
         kallisto_version_command = f"{kallisto} 2>&1 | grep -oP 'kallisto \K[0-9]+\.[0-9]+\.[0-9]+'"
         kallisto_version_installed = subprocess.run(kallisto_version_command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, text=True).stdout.strip()
@@ -359,7 +365,7 @@ def clean(
 
         if version.parse(kallisto_version_installed) < kallisto_version_required:
             raise ValueError(f"Please install kallisto version {kallisto_version_required} or higher.")
-        
+
     mcrs_id_set_to_exclusively_keep = prepare_set(mcrs_id_set_to_exclusively_keep)
     mcrs_id_set_to_exclude = prepare_set(mcrs_id_set_to_exclude)
     transcript_set_to_exclusively_keep = prepare_set(transcript_set_to_exclusively_keep)
@@ -427,37 +433,17 @@ def clean(
 
     if qc_against_gene_matrix:
         # TODO: test this
-        adata = adjust_mutation_adata_by_normal_gene_matrix(
-            adata, 
-            kb_output_mutation=kb_count_vcrs_dir, 
-            kb_output_standard=kb_count_reference_genome_dir, 
-            id_to_header_csv=id_to_header_csv, 
-            adata_vcrs_clean_out=None, 
-            t2g_mutation=vcrs_t2g,
-            t2g_standard=None, 
-            fastq_file_list=fastqs, 
-            mm=mm, 
-            union=union, 
-            technology=technology, 
-            parity=parity, 
-            bustools=bustools,
-            sum_rows=sum_rows,
-            verbose=verbose
-        )
+        adata = adjust_mutation_adata_by_normal_gene_matrix(adata, kb_output_mutation=kb_count_vcrs_dir, kb_output_standard=kb_count_reference_genome_dir, id_to_header_csv=id_to_header_csv, adata_vcrs_clean_out=None, t2g_mutation=vcrs_t2g, t2g_standard=None, fastq_file_list=fastqs, mm=mm, union=union, technology=technology, parity=parity, bustools=bustools, sum_rows=sum_rows, verbose=verbose)
 
     if sum_rows and adata.shape[0] > 1:
         # Sum across barcodes (rows)
         summed_data = adata.X.sum(axis=0)
-        
+
         # Retain the first barcode
         first_barcode = adata.obs_names[0]
 
         # Create a new AnnData object
-        new_adata = anndata.AnnData(
-            X=summed_data.reshape(1, -1),  # Reshape to (1, n_features)
-            obs=adata.obs.iloc[[0]].copy(),  # Copy the first barcode's metadata
-            var=adata.var.copy()             # Copy the original feature metadata
-        )
+        new_adata = anndata.AnnData(X=summed_data.reshape(1, -1), obs=adata.obs.iloc[[0]].copy(), var=adata.var.copy())  # Reshape to (1, n_features)  # Copy the first barcode's metadata  # Copy the original feature metadata
 
         # Update the obs_names to reflect the first barcode
         new_adata.obs_names = [first_barcode]
@@ -621,7 +607,6 @@ def clean(
             operation="exclude",
             var_column_name="gene_name",
         )
-
 
     adata.var["mcrs_count"] = adata.X.sum(axis=0).A1 if hasattr(adata.X, "A1") else np.asarray(adata.X.sum(axis=0)).flatten()
 

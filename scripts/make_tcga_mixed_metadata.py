@@ -1,9 +1,9 @@
 import csv
+import json
 import os
+import random
 import subprocess
 
-import json
-import random
 import requests
 
 random.seed(42)

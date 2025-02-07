@@ -8,6 +8,7 @@ from .utils import (
     concatenate_fastqs,
     get_printlog,
     is_valid_int,
+    load_in_fastqs,
     make_function_parameter_to_value_dict,
     print_varseek_dry_run,
     replace_low_quality_bases_with_N_list,
@@ -19,11 +20,10 @@ from .utils import (
     sort_fastq_files_for_kb_count,
     split_reads_by_N_list,
     trim_edges_off_reads_fastq_list,
-    load_in_fastqs
 )
 
 logger = set_up_logger()
-    
+
 
 def validate_input_fastqpp(params_dict):
     fastqs = params_dict["fastqs"]  # tuple
@@ -32,8 +32,8 @@ def validate_input_fastqpp(params_dict):
     # fastqs
     if len(fastqs) == 0:
         raise ValueError("No fastq files provided")
-    
-    #$ type checking of the directory and text file performed earlier by load_in_fastqs 
+
+    # $ type checking of the directory and text file performed earlier by load_in_fastqs
 
     if parity == "paired" and len(fastqs) % 2 != 0:  # if fastqs parity is paired, then ensure an even number of files
         raise ValueError("Number of fastq files must be even when parity == paired")
@@ -41,27 +41,27 @@ def validate_input_fastqpp(params_dict):
         check_file_path_is_string_with_valid_extension(fastq, variable_name=fastq, file_type="fastq")  # ensure that all fastq files have valid extension
         if not os.path.isfile(fastq):  # ensure that all fastq files exist
             raise ValueError(f"File {fastq} does not exist")
-    
+
     # technology
     technology = params_dict.get("technology", None)
     technology_valid_values_lower = {x.lower() for x in technology_valid_values}
     if technology is not None:
         if technology.lower() not in technology_valid_values_lower:
             raise ValueError(f"Technology must be None or one of {technology_valid_values_lower}")
-    
+
     parity_valid_values = {"single", "paired"}
     if params_dict["parity"] not in parity_valid_values:
         raise ValueError(f"Parity must be one of {parity_valid_values}")
-    
+
     # directories
     if not isinstance(params_dict.get("out", None), str):
         raise ValueError(f"Invalid value for out: {params_dict.get('out', None)}")
-    
+
     # optional str
     for file_name_suffix in ["quality_control_fastqs_out_suffix", "replace_low_quality_bases_with_N_out_suffix", "split_by_N_out_suffix", "concatenate_paired_fastqs_out_suffix"]:
         if params_dict.get(file_name_suffix) is not None and not isinstance(params_dict.get(file_name_suffix), str):
             raise ValueError(f"Invalid suffix: {params_dict.get(file_name_suffix)}")
-    
+
     # integers - optional just means that it's in kwargs
     for param_name, min_value, max_value, optional_value in [
         ("cut_mean_quality", 1, 36, False),
@@ -74,24 +74,23 @@ def validate_input_fastqpp(params_dict):
         param_value = params_dict.get(param_name)
         if not is_valid_int(param_value, "between", min_value_inclusive=min_value, max_value_inclusive=max_value, optional=optional_value):
             raise ValueError(f"{param_name} must be an integer between {min_value} and {max_value}. Got {params_dict.get(param_name)}.")
-    
-    if not is_valid_int(params_dict['threads'], ">=", 1, optional=False):
+
+    if not is_valid_int(params_dict["threads"], ">=", 1, optional=False):
         raise ValueError(f"threads must be an integer >= 1. Got {params_dict.get('threads')}.")
-    
-    if not is_valid_int(params_dict['min_read_len'], ">=", 1, optional=False) and params_dict['min_read_len'] is not None:
+
+    if not is_valid_int(params_dict["min_read_len"], ">=", 1, optional=False) and params_dict["min_read_len"] is not None:
         raise ValueError(f"min_read_len must be an integer >= 1 or None. Got {params_dict.get('threads')}.")
-    
+
     # boolean
     for param_name in ["quality_control_fastqs", "fastqc_and_multiqc", "replace_low_quality_bases_with_N", "split_reads_by_Ns", "concatenate_paired_fastqs", "delete_intermediate_files", "dry_run", "overwrite", "sort_fastqs"]:
         if not isinstance(params_dict.get(param_name), bool):
             raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
-        
-    if parity == "paired" and params_dict['split_reads_by_Ns'] and not params_dict['concatenate_paired_fastqs']:
+
+    if parity == "paired" and params_dict["split_reads_by_Ns"] and not params_dict["concatenate_paired_fastqs"]:
         raise ValueError("When parity==paired, if split_reads_by_Ns==True, then concatenate_paired_fastqs must also be True (split_reads_by_Ns messes up the paired nature of the fastqs).")
-        
+
     if not isinstance(params_dict.get("multiplexed"), bool) and params_dict.get("multiplexed") is not None:
         raise ValueError(f"multiplexed must be a boolean or None. Got {params_dict.get('multiplexed')} of type {type(params_dict.get('multiplexed'))}.")
-
 
 
 def fastqpp(
@@ -118,7 +117,7 @@ def fastqpp(
     sort_fastqs=True,
     threads=2,
     verbose=True,
-    **kwargs
+    **kwargs,
 ):
     """
     Apply quality control to fastq files. This includes trimming edges off reads, running FastQC and MultiQC, replacing low quality bases with N, splitting reads by Ns, and concatenating paired fastq files.
@@ -159,38 +158,38 @@ def fastqpp(
     - concatenate_paired_fastqs_out_suffix (str) Suffix to add to fastq files after concatenating paired fastq files (preceded by underscore). Default: "concatenated"
     """
 
-    #* 0. Informational arguments that exit early
+    # * 0. Informational arguments that exit early
     # Not in this function
 
-    #* 1. Start timer
+    # * 1. Start timer
     start_time = time.perf_counter()
     printlog = get_printlog(verbose, logger)
 
-    #* 1.5 load in fastqs
+    # * 1.5 load in fastqs
     fastqs_original = fastqs
     fastqs = load_in_fastqs(fastqs)  # this will make it in params_dict
 
-    #* 2. Type-checking
+    # * 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
     validate_input_fastqpp(params_dict)
     params_dict["fastqs"] = fastqs_original  # change back for dry run and config_file
 
-    #* 3. Dry-run
+    # * 3. Dry-run
     if dry_run:
         print_varseek_dry_run(params_dict, function_name="fastqpp")
         return None
-    
-    #* 4. Save params to config file and run info file
+
+    # * 4. Save params to config file and run info file
     config_file = os.path.join(out, "config", "vk_fastqpp_config.json")
     save_params_to_config_file(params_dict, config_file)
 
     run_info_file = os.path.join(out, "config", "vk_fastqpp_run_info.txt")
     save_run_info(run_info_file)
 
-    #* 5. Set up default folder/file input paths, and make sure the necessary ones exist
+    # * 5. Set up default folder/file input paths, and make sure the necessary ones exist
     # all input files for vk fastqpp are required in the varseek workflow, so this is skipped
 
-    #* 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
+    # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
     quality_control_fastqs_out_suffix = kwargs.get("quality_control_fastqs_out_suffix", "qc")
     replace_low_quality_bases_with_N_out_suffix = kwargs.get("replace_low_quality_bases_with_N_out_suffix", "addedNs")
     split_by_N_out_suffix = kwargs.get("split_by_N_out_suffix", "splitNs")
@@ -214,7 +213,7 @@ def fastqpp(
             if fastqc_and_multiqc:
                 fastq_fastqc_html = os.path.join(out, f"{parts_filename[0]}_fastqc.html")
                 fastq_fastqc_zip = os.path.join(out, f"{parts_filename[0]}_fastqc.zip")
-                if (os.path.exists(fastq_fastqc_html) or os.path.exists(fastq_fastqc_zip)):
+                if os.path.exists(fastq_fastqc_html) or os.path.exists(fastq_fastqc_zip):
                     logger.warning(f"Output file {fastq_fastqc_html} or {fastq_fastqc_zip} already exists. Use overwrite=True to overwrite existing files, or set fastqc_and_multiqc=False to skip this step.")
             if replace_low_quality_bases_with_N:
                 fastq_more_Ns = os.path.join(out, f"{parts_filename[0]}_{replace_low_quality_bases_with_N_out_suffix}.{parts_filename[1]}")
@@ -240,16 +239,16 @@ def fastqpp(
         if (os.path.exists(multiqc_html) or os.path.exists(multiqc_dir)) and fastqc_and_multiqc:
             logger.warning(f"Output file {multiqc_html} or {multiqc_dir} already exists. Use overwrite=True to overwrite existing files, or set fastqc_and_multiqc=False to skip this step.")
 
-    #* 7. Define kwargs defaults
+    # * 7. Define kwargs defaults
     fastp = kwargs.get("fastp_path", "fastp")
     seqtk = kwargs.get("seqtk_path", "seqtk")
-    
-    #* 8. Start the actual function
+
+    # * 8. Start the actual function
     fastqs = sort_fastq_files_for_kb_count(fastqs, technology=technology, multiplexed=multiplexed, logger=logger, check_only=(not sort_fastqs), verbose=verbose)
 
     if technology.lower() != "bulk" and "smartseq" not in technology.lower():
         parity = "single"
-    
+
     if (concatenate_paired_fastqs or split_reads_by_Ns) and parity == "paired":
         if not concatenate_paired_fastqs:
             logger.info("Setting concatenate_paired_fastqs=True")
@@ -280,7 +279,7 @@ def fastqpp(
                 threads=threads,
                 logger=logger,
                 verbose=verbose,
-                suffix=quality_control_fastqs_out_suffix
+                suffix=quality_control_fastqs_out_suffix,
             )
         else:
             logger.warning(f"Quality controlled fastq files already exist. Skipping quality control step.")
@@ -298,15 +297,7 @@ def fastqpp(
         # check if any file in fastq_more_Ns_all_files does not exist
         if not all([os.path.exists(f) for f in fastq_more_Ns_all_files]):
             logger.info("Replacing low quality bases with N")
-            fastqs = replace_low_quality_bases_with_N_list(
-                rnaseq_fastq_files_quality_controlled=fastqs,
-                minimum_base_quality_replace_with_N=min_base_quality,
-                seqtk=seqtk,
-                out_dir=out,
-                logger=logger,
-                verbose=verbose,
-                suffix=replace_low_quality_bases_with_N_out_suffix
-            )
+            fastqs = replace_low_quality_bases_with_N_list(rnaseq_fastq_files_quality_controlled=fastqs, minimum_base_quality_replace_with_N=min_base_quality, seqtk=seqtk, out_dir=out, logger=logger, verbose=verbose, suffix=replace_low_quality_bases_with_N_out_suffix)
         else:
             logger.warning(f"Fastq files with low quality bases replaced with N already exist. Skipping this step.")
         if not delete_intermediate_files:
@@ -316,15 +307,7 @@ def fastqpp(
         # check if any file in fastq_split_by_N_all_files does not exist
         if not all([os.path.exists(f) for f in fastq_split_by_N_all_files]):
             logger.info("Splitting reads by Ns")
-            fastqs = split_reads_by_N_list(
-                fastqs,
-                minimum_sequence_length=min_read_len,
-                delete_original_files=delete_intermediate_files,
-                out_dir=out,
-                logger=logger,
-                verbose=verbose,
-                suffix=split_by_N_out_suffix
-            )
+            fastqs = split_reads_by_N_list(fastqs, minimum_sequence_length=min_read_len, delete_original_files=delete_intermediate_files, out_dir=out, logger=logger, verbose=verbose, suffix=split_by_N_out_suffix)
         else:
             logger.warning(f"Fastq files with reads split by N already exist. Skipping this step.")
         if not delete_intermediate_files:
@@ -352,5 +335,3 @@ def fastqpp(
     report_time_elapsed(start_time, logger=logger, verbose=verbose, function_name="fastqpp")
 
     return fastqpp_dict
-
-

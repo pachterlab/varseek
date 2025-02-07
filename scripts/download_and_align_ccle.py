@@ -1,11 +1,19 @@
-import os
 import argparse
-import json
-import subprocess
 import concurrent.futures
-from varseek.utils import split_fastq_reads_by_N, replace_low_quality_base_with_N, trim_edges_and_adaptors_off_fastq_reads, concatenate_fastqs, get_header_set_from_fastq, download_t2t_reference_files
-
+import json
+import os
+import subprocess
 from pdb import set_trace as st
+
+from varseek.utils import (
+    concatenate_fastqs,
+    download_t2t_reference_files,
+    get_header_set_from_fastq,
+    replace_low_quality_base_with_N,
+    split_fastq_reads_by_N,
+    trim_edges_and_adaptors_off_fastq_reads,
+)
+
 
 def check_for_successful_downloads(ccle_data_out_base, save_fastq_files = False):
     bad_samples = []

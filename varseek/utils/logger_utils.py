@@ -1,3 +1,5 @@
+import base64
+import getpass
 import inspect
 import json
 import logging
@@ -10,15 +12,11 @@ import tracemalloc
 from collections import OrderedDict
 from datetime import datetime
 
-import base64
-import getpass
-from gget.gget_cosmic import is_valid_email
-import requests
-
 import pandas as pd
 import psutil
 import requests
 from bs4 import BeautifulSoup
+from gget.gget_cosmic import is_valid_email
 
 from varseek.constants import default_filename_dict
 
@@ -31,18 +29,14 @@ from IPython.core.magic import register_cell_magic
 def set_up_logger(logging_level_name=None, save_logs=False, log_dir=None):
     if logging_level_name is None:
         logging_level_name = os.getenv("VARSEEK_LOGLEVEL", "INFO")
-    logging_level = logging.getLevelName(
-        logging_level_name
-    )  # "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"
+    logging_level = logging.getLevelName(logging_level_name)  # "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"
     if type(logging_level) != int:  # unknown log level
         logging_level = logging.INFO
     logger = logging.getLogger(__name__)
     logger.setLevel(logging_level)
 
     if not logger.hasHandlers():
-        formatter = logging.Formatter(
-            "%(asctime)s - %(levelname)s - %(message)s", "%H:%M:%S"
-        )
+        formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s", "%H:%M:%S")
 
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(formatter)
@@ -56,9 +50,7 @@ def set_up_logger(logging_level_name=None, save_logs=False, log_dir=None):
             if not os.path.exists(log_dir):
                 os.makedirs(log_dir)
 
-            log_file = os.path.join(
-                log_dir, f"logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-            )
+            log_file = os.path.join(log_dir, f"logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
 
             file_handler = logging.FileHandler(log_file)
             file_handler.setFormatter(formatter)
@@ -89,7 +81,7 @@ def check_file_path_is_string_with_valid_extension(file_path, variable_name, fil
         # check if file_path is a string
         if not isinstance(file_path, str):
             raise ValueError(f"{variable_name} must be a string, got {type(file_path)}")
-        
+
         # check if file_type is a single value or list of values
         if isinstance(file_type, str):
             valid_extensions_for_file_type = valid_extensions.get(file_type)
@@ -99,15 +91,14 @@ def check_file_path_is_string_with_valid_extension(file_path, variable_name, fil
                 valid_extensions_for_file_type.update(valid_extensions.get(ft))
         else:
             raise ValueError(f"file_type must be a string or a list, got {type(file_type)}")
-        
+
         # check if file has valid extension
         if not any(file_path.lower().endswith((ext, f"{ext}.zip", f"{ext}.gz")) for ext in valid_extensions_for_file_type):
-            raise ValueError(
-                f"Invalid file extension for {variable_name}. Must be one of {valid_extensions_for_file_type}"
-            )
+            raise ValueError(f"Invalid file extension for {variable_name}. Must be one of {valid_extensions_for_file_type}")
     else:
         if required:
             raise ValueError(f"{file_type} file path is required")
+
 
 def load_params(file):
     if file.endswith(".json"):
@@ -115,13 +106,15 @@ def load_params(file):
             return json.load(f)
     elif file.endswith(".yaml") or file.endswith(".yml"):
         import yaml
+
         with open(file, "r") as f:
             return yaml.safe_load(f)
     else:
         print("config file format not recognized. currently supported are json and yaml.")
         return {}
-    
-def make_function_parameter_to_value_dict(levels_up = 1):
+
+
+def make_function_parameter_to_value_dict(levels_up=1):
     # Collect parameters in a dictionary
     params = OrderedDict()
 
@@ -138,19 +131,20 @@ def make_function_parameter_to_value_dict(levels_up = 1):
     # handle explicit function arguments
     for arg in function_args:
         params[arg] = values[arg]
-    
+
     # handle *args
     if varargs:
         params[varargs] = values[varargs]
-    
+
     # handle **kwargs
     if varkw:
         for key, value in values[varkw].items():
             params[key] = value
-    
+
     return params
 
-def report_time_elapsed(start_time, logger = None, verbose = True, function_name = None):
+
+def report_time_elapsed(start_time, logger=None, verbose=True, function_name=None):
     elapsed = time.perf_counter() - start_time
     function_name_message = f" for vk {function_name}" if function_name else ""
     time_elapsed_message = f"Total runtime{function_name_message}\n: {int(elapsed // 60)}m, {elapsed % 60:.2f}s"
@@ -160,7 +154,8 @@ def report_time_elapsed(start_time, logger = None, verbose = True, function_name
         else:
             print(time_elapsed_message)
 
-def save_params_to_config_file(params = None, out_file="run_config.json"):
+
+def save_params_to_config_file(params=None, out_file="run_config.json"):
     out_file_directory = os.path.dirname(out_file)
     if not out_file_directory:
         out_file_directory = "."
@@ -169,15 +164,14 @@ def save_params_to_config_file(params = None, out_file="run_config.json"):
 
     # Collect parameters in a dictionary
     if not params:
-        params = make_function_parameter_to_value_dict(levels_up = 2)
+        params = make_function_parameter_to_value_dict(levels_up=2)
 
     # Write to JSON
     with open(out_file, "w") as file:
         json.dump(params, file, indent=4)
 
 
-
-def return_kb_arguments(command, remove_dashes = False):
+def return_kb_arguments(command, remove_dashes=False):
     # Run the help command and capture the output
     result = subprocess.run(["kb", command, "--help"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
@@ -208,28 +202,24 @@ def return_kb_arguments(command, remove_dashes = False):
         else:
             len_first_flag = 0
         # Get the last character of the contiguous string
-        if flag == '--help':
+        if flag == "--help":
             continue
         last_char_pos = len_first_flag + len(flag) - 1
         positional_arg_pos = last_char_pos + 2
-        if (positional_arg_pos >= len(line)) or (line[positional_arg_pos] == ' '):
+        if (positional_arg_pos >= len(line)) or (line[positional_arg_pos] == " "):
             store_true_flags.append(flag)
         else:
             flags_with_args.append(flag)
 
     kb_arguments = {}
-    kb_arguments['store_true_flags'] = store_true_flags
-    kb_arguments['flags_with_args'] = flags_with_args
+    kb_arguments["store_true_flags"] = store_true_flags
+    kb_arguments["flags_with_args"] = flags_with_args
 
     # remove dashes
     if remove_dashes:
-        kb_arguments['store_true_flags'] = [
-            argument.lstrip('-').replace('-', '_') for argument in kb_arguments['store_true_flags']
-        ]
+        kb_arguments["store_true_flags"] = [argument.lstrip("-").replace("-", "_") for argument in kb_arguments["store_true_flags"]]
 
-        kb_arguments['flags_with_args'] = [
-            argument.lstrip('-').replace('-', '_') for argument in kb_arguments['flags_with_args']
-        ]
+        kb_arguments["flags_with_args"] = [argument.lstrip("-").replace("-", "_") for argument in kb_arguments["flags_with_args"]]
 
     return kb_arguments
 
@@ -237,19 +227,20 @@ def return_kb_arguments(command, remove_dashes = False):
 def print_varseek_dry_run(params, function_name=None):
     if function_name:
         assert function_name in {"build", "info", "filter", "fastqpp", "clean", "summarize", "ref", "count"}
-        end="\n  "
+        end = "\n  "
         print(f"varseek.varseek_{function_name}.{function_name}(", end=end)
     for param_key, param_value in params.items():
         print(f"{param_key} = {param_value}", end=end)
     if function_name:
         print(")")
 
+
 def assign_output_file_name_fordownload_varseek_files(response, out, filetype):
     output_file = os.path.join(out, default_filename_dict[filetype])
     # content_disposition = response.headers.get("Content-Disposition", "")
     # filename = (
-    #     content_disposition.split("filename=")[-1].strip('"') 
-    #     if "filename=" in content_disposition 
+    #     content_disposition.split("filename=")[-1].strip('"')
+    #     if "filename=" in content_disposition
     #     else "unknown"
     # )
     # if filename:
@@ -258,6 +249,7 @@ def assign_output_file_name_fordownload_varseek_files(response, out, filetype):
     # else:
     #     output_file = os.path.join(out, default_filename_dict[filetype])
     return output_file
+
 
 def download_varseek_files(urls_dict, out="."):
     filetype_to_filename_dict = {}
@@ -270,21 +262,23 @@ def download_varseek_files(urls_dict, out="."):
         if response.status_code == 200:
             # Extract the filename from the Content-Disposition header
             output_file_path = assign_output_file_name_fordownload_varseek_files(response=response, out=out, filetype=filetype)
-            
+
             with open(output_file_path, "wb") as file:
                 for chunk in response.iter_content(chunk_size=8192):
                     file.write(chunk)
 
             filetype_to_filename_dict[filetype] = output_file_path
-            
+
             print(f"File downloaded successfully as '{output_file_path.name}'")
         else:
             print(f"Failed to download file. Status code: {response.status_code}")
 
     return filetype_to_filename_dict
 
+
 def is_program_installed(program):
     return os.system(f"which {program}") == 0 or os.path.exists(program)
+
 
 def report_time_and_memory_of_script(script_path, argparse_flags=None, output_file=None):
     # Run the command and capture stderr, where `/usr/bin/time -l` outputs its results
@@ -312,9 +306,9 @@ def report_time_and_memory_of_script(script_path, argparse_flags=None, output_fi
     if match_time:
         if system == "Linux":
             hours = float(match_time.group(1)) if match_time.group(1) else 0
-            minutes = int(float(match_time.group(2)) + hours*60)
+            minutes = int(float(match_time.group(2)) + hours * 60)
             seconds = float(match_time.group(3))
-            runtime = minutes*60 + seconds
+            runtime = minutes * 60 + seconds
         else:
             runtime = float(match_time.group(time_group))  # Return real time in seconds
             minutes = int(runtime // 60)
@@ -336,12 +330,12 @@ def report_time_and_memory_of_script(script_path, argparse_flags=None, output_fi
             unit = "GB"
         memory_message = f"Peak memory usage: {peak_memory_readable_units:.2f} {unit}"
         print(memory_message)
-    
+
     if not match_time:
         raise ValueError("Failed to find 'real' time in output.")
     if not match_memory:
         raise ValueError("Failed to find 'maximum resident set size' in output.")
-    
+
     if output_file:
         if os.path.dirname(output_file):
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
@@ -351,9 +345,10 @@ def report_time_and_memory_of_script(script_path, argparse_flags=None, output_fi
 
     return (runtime, peak_memory)  # Return the runtime and peak memory usage in bytes
 
+
 def make_positional_arguments_list_and_keyword_arguments_dict():
     args = sys.argv[1:]
-    
+
     # Initialize storage
     args_dict = {}
     positional_args = []
@@ -372,7 +367,7 @@ def make_positional_arguments_list_and_keyword_arguments_dict():
         else:  # Handle positional arguments
             positional_args.append(args[i])
         i += 1
-    
+
     return positional_args, args_dict
 
 
@@ -385,9 +380,9 @@ def run_command_with_error_logging(command, verbose=True, track_time=False):
         shell = False
     else:
         raise ValueError("Command must be a string or a list.")
-    
-    command_string = command if shell else ' '.join(command)
-    
+
+    command_string = command if shell else " ".join(command)
+
     try:
         if verbose:
             print(f"Running command: {command_string}")
@@ -401,7 +396,7 @@ def run_command_with_error_logging(command, verbose=True, track_time=False):
     except Exception as e:
         # Catch any other unexpected exceptions
         print(f"An unexpected error occurred: {e}")
-    
+
     if track_time:
         elapsed_time = time.time() - start_time
         minutes = int(elapsed_time // 60)
@@ -410,13 +405,14 @@ def run_command_with_error_logging(command, verbose=True, track_time=False):
             print(f"Command runtime: {minutes}m, {seconds:.2f}s")
         return minutes, seconds
 
-def download_box_url(url, output_folder = ".", output_file_name = None):
+
+def download_box_url(url, output_folder=".", output_file_name=None):
     if not output_file_name:
         output_file_name = url.split("/")[-1]
     if "/" not in output_file_name:
         output_file_path = os.path.join(output_folder, output_file_name)
     os.makedirs(output_folder, exist_ok=True)
-    
+
     # Download the file
     response = requests.get(url, stream=True)
     if response.status_code == 200:
@@ -426,6 +422,7 @@ def download_box_url(url, output_folder = ".", output_file_name = None):
         print(f"File downloaded successfully to {output_file_path}")
     else:
         print(f"Failed to download file. HTTP Status Code: {response.status_code}")
+
 
 # # * DEPRECATED - use %%time instead
 # def report_time(running_total=None):
@@ -442,10 +439,8 @@ def download_box_url(url, output_folder = ".", output_file_name = None):
 def get_set_of_parameters_from_function_signature(func):
     signature = inspect.signature(func)
     # Extract the parameter names, excluding **kwargs
-    return {
-        name for name, param in signature.parameters.items() 
-        if param.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
-    }
+    return {name for name, param in signature.parameters.items() if param.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)}
+
 
 def get_set_of_allowable_kwargs(func):
     """
@@ -484,7 +479,6 @@ def get_set_of_allowable_kwargs(func):
                 hidden_args.add(match.group(1))
 
     return hidden_args
-
 
 
 def is_valid_int(value, threshold_type=None, threshold_value=None, optional=False, min_value_inclusive=None, max_value_inclusive=None):
@@ -541,10 +535,6 @@ def is_valid_int(value, threshold_type=None, threshold_value=None, optional=Fals
         raise ValueError(f"Invalid threshold_type: {threshold_type}. Must be one of '<', '<=', '>', '>=', 'between'.")
 
 
-
-
-
-
 try:
     from IPython import get_ipython
 
@@ -555,9 +545,7 @@ except ImportError:
 if ip:
 
     @register_cell_magic
-    def cell_runtime(
-        line, cell
-    ):  # best version - slight overhead (~0.15s per bash command in a cell), but works on multiline bash commands with variables
+    def cell_runtime(line, cell):  # best version - slight overhead (~0.15s per bash command in a cell), but works on multiline bash commands with variables
         start_time = time.time()
         get_ipython().run_cell(cell)  # type: ignore
         elapsed_time = time.time() - start_time
@@ -711,17 +699,15 @@ def find_key_with_trace(data, target_key, path=""):
 
     return found
 
+
 def get_experiment_links(search_url, base_url):
     response = requests.get(search_url)
     response.raise_for_status()  # Ensure the request was successful
-    soup = BeautifulSoup(response.text, 'html.parser')
+    soup = BeautifulSoup(response.text, "html.parser")
     # Find all experiment links
-    links = [
-        base_url + link['href']
-        for link in soup.find_all('a', href=True)
-        if '/experiments/' in link['href']
-    ]
+    links = [base_url + link["href"] for link in soup.find_all("a", href=True) if "/experiments/" in link["href"]]
     return list(set(links))  # Remove duplicates if any
+
 
 def make_entex_df():
     print("making entex df")
@@ -742,34 +728,30 @@ def make_entex_df():
 
         # donor_values = find_key_with_trace(experiment_data, 'donor')  # to find the trace in the json - returns as list of key_path, value pairs
 
-        description = experiment_data['description']
-        tissue = experiment_data['biosample_ontology']['term_name']
-        organ_slims = experiment_data['biosample_ontology']['organ_slims']
-        age = experiment_data['replicates'][0]['library']['biosample']['donor']['age']  # same as donor_values[0][1]['age']
-        sex = experiment_data['replicates'][0]['library']['biosample']['donor']['sex']  # same as donor_values[0][1]['sex']
+        description = experiment_data["description"]
+        tissue = experiment_data["biosample_ontology"]["term_name"]
+        organ_slims = experiment_data["biosample_ontology"]["organ_slims"]
+        age = experiment_data["replicates"][0]["library"]["biosample"]["donor"]["age"]  # same as donor_values[0][1]['age']
+        sex = experiment_data["replicates"][0]["library"]["biosample"]["donor"]["sex"]  # same as donor_values[0][1]['sex']
 
         # Extract FASTQ file links
-        fastq_files_metadata = [
-            file
-            for file in experiment_data.get('files', [])
-            if file['file_type'] == 'fastq' and file['replicate']['technical_replicate_number'] == 1
-        ]
+        fastq_files_metadata = [file for file in experiment_data.get("files", []) if file["file_type"] == "fastq" and file["replicate"]["technical_replicate_number"] == 1]
 
         if len(fastq_files_metadata) > 2:
-            date_created_to_match = fastq_files_metadata[0]['date_created'].split("T")[0]
-            fastq_files_metadata = [metadata for metadata in fastq_files_metadata if metadata['date_created'].split("T")[0] == date_created_to_match]
+            date_created_to_match = fastq_files_metadata[0]["date_created"].split("T")[0]
+            fastq_files_metadata = [metadata for metadata in fastq_files_metadata if metadata["date_created"].split("T")[0] == date_created_to_match]
 
-        fastq_files = [file['href'] for file in fastq_files_metadata]
-        read_lengths = [file['read_length'] for file in fastq_files_metadata]
-        paired_ends = [file['paired_end'] for file in fastq_files_metadata]
-        date_created = [file['date_created'] for file in fastq_files_metadata]
+        fastq_files = [file["href"] for file in fastq_files_metadata]
+        read_lengths = [file["read_length"] for file in fastq_files_metadata]
+        paired_ends = [file["paired_end"] for file in fastq_files_metadata]
+        date_created = [file["date_created"] for file in fastq_files_metadata]
 
         # reorder fastq_files according to paired_ends
         fastq_files = [fastq_files[int(i) - 1] for i in paired_ends]
 
         if len(set(read_lengths)) != 1:
             print(f"skipping experiment {experiment_id} due to having {len(set(read_lengths))} read lengths: {set(read_lengths)}")
-        
+
         read_length = read_lengths[0]
 
         fastq_links = [base_url + link for link in fastq_files]
@@ -777,17 +759,17 @@ def make_entex_df():
         if len(fastq_links) != 2:
             print(f"skipping experiment {experiment_id} due to having {len(fastq_links)} fastq links: {fastq_links}")
 
-        entex_experiment_dict['experiment_id'] = experiment_id
-        entex_experiment_dict['description'] = description
-        entex_experiment_dict['tissue'] = tissue
-        entex_experiment_dict['organ_slims'] = organ_slims
-        entex_experiment_dict['age'] = age
-        entex_experiment_dict['sex'] = sex
-        entex_experiment_dict['read_length'] = read_length
-        entex_experiment_dict['fastq_link_pair_1'] = fastq_links[0]
-        entex_experiment_dict['fastq_link_pair_2'] = fastq_links[1]
+        entex_experiment_dict["experiment_id"] = experiment_id
+        entex_experiment_dict["description"] = description
+        entex_experiment_dict["tissue"] = tissue
+        entex_experiment_dict["organ_slims"] = organ_slims
+        entex_experiment_dict["age"] = age
+        entex_experiment_dict["sex"] = sex
+        entex_experiment_dict["read_length"] = read_length
+        entex_experiment_dict["fastq_link_pair_1"] = fastq_links[0]
+        entex_experiment_dict["fastq_link_pair_2"] = fastq_links[1]
 
-        experiment_data['biosample_ontology']['term_name']
+        experiment_data["biosample_ontology"]["term_name"]
 
         entex_list_of_dicts.append(entex_experiment_dict)
 
@@ -795,23 +777,24 @@ def make_entex_df():
 
     return entex_df
 
-def download_entex_fastq_links(entex_df, tissue = None, data_download_base = "."):
+
+def download_entex_fastq_links(entex_df, tissue=None, data_download_base="."):
     print("downloading fastq files")
     if tissue:
-        entex_df_tissue_selection = entex_df.loc[entex_df['tissue'] == tissue].reset_index(drop=True)
+        entex_df_tissue_selection = entex_df.loc[entex_df["tissue"] == tissue].reset_index(drop=True)
     else:
         entex_df_tissue_selection = entex_df
 
     # iterate through rows of entex_df_tissue_selection
     number_of_samples = len(entex_df_tissue_selection)
     for index, row in entex_df_tissue_selection.iterrows():
-        tissue_underscore_separated = row['tissue'].replace(" ", "_")
-        sample_base_dir = os.path.join(data_download_base, tissue_underscore_separated, row['experiment_id'])
+        tissue_underscore_separated = row["tissue"].replace(" ", "_")
+        sample_base_dir = os.path.join(data_download_base, tissue_underscore_separated, row["experiment_id"])
         for i in [1, 2]:
             pair_dir = f"{sample_base_dir}/pair{i}"
             os.makedirs(pair_dir, exist_ok=True)
 
-            link = row[f'fastq_link_pair_{i}']
+            link = row[f"fastq_link_pair_{i}"]
 
             download_command = f"wget -c --tries=20 --retry-connrefused -P {pair_dir} {link}"
 
@@ -824,6 +807,7 @@ def download_entex_fastq_links(entex_df, tissue = None, data_download_base = "."
                     print(e)
             else:
                 print(f"File {pair_dir}/{link.split('/')[-1]} already exists, skipping download")
+
 
 def extract_documentation_file_blocks(file_path, start_pattern, stop_pattern):
     """
@@ -865,7 +849,7 @@ def extract_documentation_file_blocks(file_path, start_pattern, stop_pattern):
 
 
 # from gget cosmic
-def authenticate_cosmic_credentials(email = None, password = None):
+def authenticate_cosmic_credentials(email=None, password=None):
     if not email:
         email = input("Please enter your COSMIC email: ")
     if not is_valid_email(email):
@@ -896,7 +880,6 @@ def authenticate_cosmic_credentials(email = None, password = None):
         return False
 
 
-
 def encode_cosmic_credentials(email=None, password=None):
     """Encodes COSMIC email and password into a base64 authentication token."""
     if not email:
@@ -908,17 +891,19 @@ def encode_cosmic_credentials(email=None, password=None):
     encoded_bytes = base64.b64encode(input_string.encode("utf-8"))
     return encoded_bytes.decode("utf-8")
 
+
 def authenticate_cosmic_credentials_via_server(encoded_token):
     """Sends the encoded authentication token to the server for verification."""
     server_url = "https://your-secure-server.com/verify_cosmic"  #!!! modify - see varseek_server/validate_cosmic.py
 
     response = requests.post(server_url, json={"encoded_token": encoded_token})
-    
+
     if response.status_code == 200 and response.json().get("authenticated"):
         return True
     else:
         print("Invalid credentials.")
         return False
+
 
 def get_python_function_call():
     # Get the calling frame
@@ -927,8 +912,9 @@ def get_python_function_call():
 
     # Extract the exact function call as a string
     function_call = code_context[0].strip() if code_context else "Unknown call"
-    
+
     return function_call
+
 
 def get_python_or_cli_function_call():
     len_sys_argv = len(sys.argv)
@@ -941,9 +927,11 @@ def get_python_or_cli_function_call():
     return function_call
 
 
-
 def save_run_info(out_file="run_info.txt"):
-    from varseek import __version__  # keep internal to this function to avoid circular import
+    from varseek import (
+        __version__,  # keep internal to this function to avoid circular import
+    )
+
     out_file_directory = os.path.dirname(out_file)
     if not out_file_directory:
         out_file_directory = "."

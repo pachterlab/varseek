@@ -1,5 +1,6 @@
-import nbformat as nbf
 import argparse
+
+import nbformat as nbf
 
 # Path to your script
 python_in_path = '/home/jrich/Desktop/varseek/notebooks/test_module.py'

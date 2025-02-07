@@ -1,11 +1,18 @@
-import pytest
-import pandas as pd
-import varseek as vk
-from varseek.utils import create_mutant_t2g, create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting, make_mapping_dict
 import os
-import tempfile
-import numpy as np
 import random
+import tempfile
+
+import numpy as np
+import pandas as pd
+import pytest
+
+import varseek as vk
+from varseek.utils import (
+    create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting,
+    create_mutant_t2g,
+    make_mapping_dict,
+)
+
 
 def compare_two_dataframes_without_regard_for_order_of_rows_or_columns(df1_path, df2_path, columns_to_drop=None, head=False):
     df1 = pd.read_csv(df1_path)

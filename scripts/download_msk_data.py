@@ -1,7 +1,9 @@
 import json
 import subprocess
-import requests
+
 import pandas as pd
+import requests
+
 
 def download_msk_data(output_path = "data_mutation_downloaded.txt"):
     # URL of the file to be downloaded

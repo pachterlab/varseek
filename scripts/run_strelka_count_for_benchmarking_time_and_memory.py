@@ -1,6 +1,8 @@
-import os
-import pysam
 import argparse
+import os
+
+import pysam
+
 from varseek.utils import run_command_with_error_logging
 
 parser = argparse.ArgumentParser(description="Run GATK Mutect2 on a set of reads and report the time and memory usage")

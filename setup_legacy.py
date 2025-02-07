@@ -1,5 +1,6 @@
 import toml
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
+
 # from varseek.__init__ import __version__, __author__, __email__
 
 

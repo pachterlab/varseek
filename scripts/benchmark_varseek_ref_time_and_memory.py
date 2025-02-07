@@ -1,6 +1,8 @@
 # import varseek as vk
 import os
+
 import pandas as pd
+
 from varseek.utils import report_time_and_memory_of_script
 
 number_of_variants_list = [1, 4, 16, 64, 256, 1024, 4096]  # number of variants, in thousands

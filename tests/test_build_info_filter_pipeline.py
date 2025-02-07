@@ -1,16 +1,23 @@
-import pytest
 import os
 import shutil
-from pathlib import Path
-import tempfile
-import pandas as pd
-import gget
 import subprocess
+import tempfile
+from pathlib import Path
 from pdb import set_trace as st
 
+import gget
+import pandas as pd
+import pytest
+
 import varseek as vk
-from varseek.utils import convert_mutation_cds_locations_to_cdna, add_mutation_type
-from .conftest import compare_two_dataframes_without_regard_for_order_of_rows_or_columns, compare_two_fastas_without_regard_for_order_of_entries, compare_two_t2gs, compare_two_id_to_header_mappings
+from varseek.utils import add_mutation_type, convert_mutation_cds_locations_to_cdna
+
+from .conftest import (
+    compare_two_dataframes_without_regard_for_order_of_rows_or_columns,
+    compare_two_fastas_without_regard_for_order_of_entries,
+    compare_two_id_to_header_mappings,
+    compare_two_t2gs,
+)
 
 ground_truth_folder = "/home/jrich/data/varseek_data_fresh/pytest_ground_truth"
 cosmic_csv_path_starting = "/home/jrich/data/varseek_data_fresh/pytest_ground_truth/CancerMutationCensus_AllData_v100_GRCh37_mutation_workflow_with_cdna_subsampled_pytest.csv"

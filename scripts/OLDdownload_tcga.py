@@ -1,11 +1,11 @@
 import csv
+import json
 import os
+import random
 import shutil
 import subprocess
 
-import json
 import pandas as pd
-import random
 import requests
 
 random.seed(42)

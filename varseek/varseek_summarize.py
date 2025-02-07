@@ -33,6 +33,7 @@ from .constants import technology_valid_values
 
 logger = set_up_logger()
 
+
 def validate_input_summarize(params_dict):
     adata = params_dict["adata"]
     if not isinstance(adata, (str, anndata.AnnData)):
@@ -41,7 +42,7 @@ def validate_input_summarize(params_dict):
         check_file_path_is_string_with_valid_extension(adata, adata, "h5ad")
         if not os.path.isfile(adata):  # ensure that all fastq files exist
             raise ValueError(f"File {adata} does not exist")
-        
+
     if not is_valid_int(params_dict["top_values"], ">=", 1):
         raise ValueError(f"{param_name} must be an positive integer. Got {params_dict.get(param_name)}.")
 
@@ -50,15 +51,13 @@ def validate_input_summarize(params_dict):
     if technology is not None:
         if technology.lower() not in technology_valid_values_lower:
             raise ValueError(f"Technology must be None or one of {technology_valid_values_lower}")
-        
+
     if not isinstance(params_dict["out"], str):
         raise ValueError("out must be a string.")
-    
+
     for param_name in ["dry_run", "overwrite", "verbose"]:
         if not isinstance(params_dict.get(param_name), bool):
             raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
-
-        
 
 
 def summarize(
@@ -90,30 +89,30 @@ def summarize(
     - specific_stats_folder             (str) Path to the specific stats folder. Default: `out`/specific_stats
     - plots_folder                      (str) Path to the plots folder. Default: `out`/plots
     """
-    
-    #* 1. Start timer
+
+    # * 1. Start timer
     start_time = time.perf_counter()
 
-    #* 2. Type-checking
+    # * 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
     validate_input_summarize(params_dict)
 
-    #* 3. Dry-run
+    # * 3. Dry-run
     if dry_run:
         print_varseek_dry_run(params_dict, function_name="summarize")
         return None
-    
-    #* 4. Save params to config file and run info file
+
+    # * 4. Save params to config file and run info file
     config_file = os.path.join(out, "config", "vk_summarize_config.json")
     save_params_to_config_file(params_dict, config_file)
 
     run_info_file = os.path.join(out, "config", "vk_summarize_run_info.txt")
     save_run_info(run_info_file)
 
-    #* 5. Set up default folder/file input paths, and make sure the necessary ones exist
+    # * 5. Set up default folder/file input paths, and make sure the necessary ones exist
     # all input files for vk summarize are required in the varseek workflow, so this is skipped
 
-    #* 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
+    # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
     stats_file = os.path.join(out, "varseek_summarize_stats.txt") if not kwargs.get("stats_file") else kwargs["stats_file"]
     specific_stats_folder = os.path.join(out, "specific_stats") if not kwargs.get("specific_stats_folder") else kwargs["specific_stats_folder"]
     plots_folder = os.path.join(out, "plots") if not kwargs.get("plots_folder") else kwargs["plots_folder"]
@@ -127,10 +126,10 @@ def summarize(
     os.makedirs(specific_stats_folder, exist_ok=True)
     os.makedirs(plots_folder, exist_ok=True)
 
-    #* 7. Define kwargs defaults
+    # * 7. Define kwargs defaults
     # no kwargs
-    
-    #* 8. Start the actual function
+
+    # * 8. Start the actual function
     if isinstance(adata, anndata.AnnData):
         pass
     elif isinstance(adata, str):
@@ -270,7 +269,6 @@ def summarize(
             f.write(f"{gene}\t{row['number_of_samples_in_which_the_gene_is_detected']}\t{row['total_mcrs_count']}\n")
 
     report_time_elapsed(start_time, logger=logger, verbose=verbose, function_name="summarize")
-
 
     # TODO: things to add
     # differentially expressed mutations/mutated genes

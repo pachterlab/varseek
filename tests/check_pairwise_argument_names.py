@@ -1,8 +1,10 @@
 import inspect
-import varseek as vk
-from varseek.varseek_ref import varseek_ref_only_allowable_kb_ref_arguments
-from varseek.varseek_count import varseek_count_only_allowable_kb_count_arguments
 from itertools import combinations
+
+import varseek as vk
+from varseek.varseek_count import varseek_count_only_allowable_kb_count_arguments
+from varseek.varseek_ref import varseek_ref_only_allowable_kb_ref_arguments
+
 
 def print_all_shared_arguments_between_pairs_of_functions(function_name_and_key_list_of_tuples, varseek_ref_only_allowable_kb_arguments, kb_name):
     function_parameters_dict_of_sets = {}

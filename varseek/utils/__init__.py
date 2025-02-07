@@ -2,6 +2,4 @@ from .logger_utils import *
 from .seq_utils import *
 from .visualization_utils import *
 
-__all__ = [
-    "set_up_logger"
-]  # sets which functions are imported in varseek/__init__.py when using from varseek import *
+__all__ = ["set_up_logger"]  # sets which functions are imported in varseek/__init__.py when using from varseek import *

@@ -1,12 +1,19 @@
 import os
 import random
-import pysam
 import subprocess
-import pandas as pd
-import numpy as np
 import time
+
+import numpy as np
+import pandas as pd
+import pysam
+
 import varseek as vk
-from varseek.utils import report_time_and_memory_of_script, run_command_with_error_logging, is_program_installed
+from varseek.utils import (
+    is_program_installed,
+    report_time_and_memory_of_script,
+    run_command_with_error_logging,
+)
+
 all_supported_tools_to_benchmark = {"varseek", "gatk_haplotypecaller", "gatk_mutect2", "strelka2", "varscan"}
 tools_that_require_star_alignment = {"gatk_haplotypecaller", "gatk_mutect2", "strelka2", "varscan"}
 

@@ -1,8 +1,11 @@
-import pytest
-import varseek as vk
-import pandas as pd
 import os
 import tempfile
+
+import pandas as pd
+import pytest
+
+import varseek as vk
+
 
 @pytest.fixture
 def long_sequence():

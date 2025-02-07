@@ -1,18 +1,32 @@
-import pytest
-import tempfile
-import varseek as vk
-import pandas as pd
-import numpy as np
 import os
+import tempfile
 from pdb import set_trace as st
-from varseek.utils import compare_dicts, collapse_df, explode_df, compare_cdna_and_genome, compute_distance_to_closest_splice_junction, calculate_nearby_mutations, compare_cdna_and_genome, align_to_normal_genome_and_build_dlist, get_mcrss_that_pseudoalign_but_arent_dlisted, get_df_overlap, longest_homopolymer, triplet_stats, add_mcrs_mutation_type, create_df_of_mcrs_to_self_headers, count_kmer_overlaps_new
+
+import numpy as np
+import pandas as pd
+import pytest
+from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-from Bio import SeqIO
-import tempfile
 
+import varseek as vk
+from varseek.utils import (
+    add_mcrs_mutation_type,
+    align_to_normal_genome_and_build_dlist,
+    calculate_nearby_mutations,
+    collapse_df,
+    compare_cdna_and_genome,
+    compare_dicts,
+    compute_distance_to_closest_splice_junction,
+    count_kmer_overlaps_new,
+    create_df_of_mcrs_to_self_headers,
+    explode_df,
+    get_df_overlap,
+    get_mcrss_that_pseudoalign_but_arent_dlisted,
+    longest_homopolymer,
+    triplet_stats,
+)
 from varseek.varseek_info import add_mutation_information
-
 
 
 @pytest.fixture

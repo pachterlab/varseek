@@ -1,6 +1,8 @@
 import os
 import subprocess
+
 import pysam
+
 samtools = "/home/jrich/miniconda3/envs/kvar/bin/samtools"
 input_bam_list = ['/home/jrich/data/varseek_data/trash/gatk_nov17/alignment/merged.bam']
 threads = 8

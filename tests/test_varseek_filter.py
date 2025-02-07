@@ -1,11 +1,20 @@
-import pytest
-import tempfile
-import varseek as vk
-import pandas as pd
-import numpy as np
 import os
+import tempfile
 from pdb import set_trace as st
-from varseek.utils import create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting, make_mapping_dict, load_t2g_as_dict, filter_fasta, compare_dicts
+
+import numpy as np
+import pandas as pd
+import pytest
+
+import varseek as vk
+from varseek.utils import (
+    compare_dicts,
+    create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting,
+    filter_fasta,
+    load_t2g_as_dict,
+    make_mapping_dict,
+)
+
 
 def add_numeric_value_column_to_df_that_applies_range_of_len_df(toy_mutation_metadata_df_path, column_name="numeric_value"):
     df = pd.read_csv(toy_mutation_metadata_df_path)

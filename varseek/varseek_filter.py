@@ -26,11 +26,12 @@ from .utils import (
 
 logger = set_up_logger()
 
+
 def apply_filters(df, filters, verbose=False, filtering_report_text_out=None):
     logger.info("Initial mutation report")
     filtering_report_dict = make_filtering_report(df, logger=logger, verbose=verbose, filtering_report_text_out=filtering_report_text_out)
     initial_filtering_report_dict = filtering_report_dict.copy()
-    
+
     for filter in filters:
         column = filter["column"]
         rule = filter["rule"]
@@ -101,7 +102,7 @@ def apply_filters(df, filters, verbose=False, filtering_report_text_out=None):
             df = df.loc[(df[column] != False) | df[column].isnull()]
         else:
             raise ValueError(f"Rule '{rule}' not recognized")
-        
+
         filtering_report_dict = make_filtering_report(df, logger=logger, verbose=verbose, filtering_report_text_out=filtering_report_text_out, prior_filtering_report_dict=filtering_report_dict)
 
     if verbose:
@@ -116,7 +117,6 @@ def apply_filters(df, filters, verbose=False, filtering_report_text_out=None):
     return df
 
 
-
 def prepare_filters_list(filters):
     filter_list = []
 
@@ -126,15 +126,15 @@ def prepare_filters_list(filters):
     for f in filters:
         f_split_by_equal = f.split("=")
         col_rule = f_split_by_equal[0]
-        
+
         if col_rule.count(":") != 1:  # was missing the ":" in between COLUMN and RULE
             raise ValueError(f"Filter format invalid: {f}. Missing colon. Expected 'COLUMN:RULE' or 'COLUMN:RULE=VALUE'")
-        
+
         column, rule = col_rule.split(":")
-        
+
         if rule not in all_possible_filter_rules:  # had a rule that was not one of the rules that allowed this
             raise ValueError(f"Filter format invalid: {f}. Invalid rule: {rule}.")
-        
+
         if f.count("=") == 0:
             if rule not in filter_rules_that_expect_no_value:  # had 0 '=' and was not one of the rules that allowed this
                 raise ValueError(f"Filter format invalid: {f}. Requires a VALUE for rule {rule}. Expected 'COLUMN:RULE=VALUE'")
@@ -145,7 +145,7 @@ def prepare_filters_list(filters):
             value = f_split_by_equal[1]
         else:  # had more than 1 '='
             raise ValueError(f"Filter format invalid: {f}. Too many '='s. Expected 'COLUMN:RULE' or 'COLUMN:RULE=VALUE'")
-        
+
         if rule in filter_rules_that_expect_single_numeric_value:  # expects float-like
             try:
                 value = float(value)
@@ -175,14 +175,14 @@ def prepare_filters_list(filters):
             pass
         else:
             raise ValueError(f"Filter format invalid: {f}. Invalid rule: {rule}.")  # redundant with the above but keep anyways
-        
+
         if rule in {"is_true", "is_not_true"}:
             value = True
         if rule in {"is_false", "is_not_false"}:
             value = False
 
         filter_list.append({"column": column, "rule": rule, "value": value})  # put filter_list into a list of dicts, where each dict is {"column": column, "rule": rule, "value": value}
-    
+
     return column
 
 
@@ -191,12 +191,8 @@ def convert_txt_to_list(txt_path):
         return [line.strip() for line in f if line.strip()]
 
 
-def filter_id_to_header_csv(
-    id_to_header_csv, id_to_header_csv_filtered, filtered_df_mcrs_ids
-):
-    with open(id_to_header_csv, mode="r") as infile, open(
-        id_to_header_csv_filtered, mode="w", newline=""
-    ) as outfile:
+def filter_id_to_header_csv(id_to_header_csv, id_to_header_csv_filtered, filtered_df_mcrs_ids):
+    with open(id_to_header_csv, mode="r") as infile, open(id_to_header_csv_filtered, mode="w", newline="") as outfile:
         reader = csv.reader(infile)
         writer = csv.writer(outfile)
 
@@ -207,10 +203,11 @@ def filter_id_to_header_csv(
             if key in filtered_df_mcrs_ids:
                 writer.writerow(row)
 
-def make_filtering_report(mutation_metadata_df, logger = None, verbose = False, filtering_report_text_out = None, prior_filtering_report_dict = None):
+
+def make_filtering_report(mutation_metadata_df, logger=None, verbose=False, filtering_report_text_out=None, prior_filtering_report_dict=None):
     if "semicolon_count" not in mutation_metadata_df.columns:
         mutation_metadata_df["semicolon_count"] = mutation_metadata_df["mcrs_header"].str.count(";")
-    
+
     # number of VCRSs
     number_of_vcrss = len(mutation_metadata_df)
 
@@ -219,7 +216,7 @@ def make_filtering_report(mutation_metadata_df, logger = None, verbose = False, 
 
     # number of merged mutations
     number_of_merged_mutations = (mutation_metadata_df.loc[mutation_metadata_df["semicolon_count"] > 0, "semicolon_count"] + 1).sum()  # equivalent to doing (1) mutation_metadata_df["semicolon_count"] += 1, (2) mutation_metadata_df.loc[mutation_metadata_df["semicolon_count"] == 1, "semicolon_count"] = np.nan, and (3) number_of_merged_mutations = int(mutation_metadata_df["semicolon_count"].sum())
-    
+
     # number of total mutations
     number_of_mutations_total = number_of_unique_mutations + number_of_merged_mutations
 
@@ -245,14 +242,16 @@ def make_filtering_report(mutation_metadata_df, logger = None, verbose = False, 
         filtering_report_write_mode = "a" if os.path.exists(filtering_report_text_out) else "w"
         with open(filtering_report_text_out, filtering_report_write_mode) as file:
             file.write(filtering_report)
-    
+
     return {"number_of_vcrss": number_of_vcrss, "number_of_unique_mutations": number_of_unique_mutations, "number_of_merged_mutations": number_of_merged_mutations, "number_of_mutations_total": number_of_mutations_total}
+
 
 def print_list_filter_rules():
     filter_md_path = os.path.join(os.path.dirname(os.getcwd()), "docs", "filter.md")  # Get the filter.md file relative to varseek_filter.py
     column_blocks = extract_documentation_file_blocks(filter_md_path, start_pattern=r"^COLUMN:RULE", stop_pattern=r"^$")  # COLUMN:RULE to new line
     for block in column_blocks:
         print(block)
+
 
 def validate_input_filter(params_dict):
     # directories
@@ -263,16 +262,16 @@ def validate_input_filter(params_dict):
         raise ValueError(f"Invalid input directory: {input_dir}")
     if not isinstance(out, str) or not os.path.isdir(out):
         raise ValueError(f"Invalid input directory: {out}")
-    
+
     # filters
     filters = params_dict["filters"]
     if isinstance(filters, str):
         if not os.path.isfile(filters) or not filters.endswith(".txt"):
             raise ValueError(f"Invalid filters: {filters}")
-    
+
     if not (isinstance(filters, dict) or isinstance(filters, str) or isinstance(filters, list) or isinstance(filters, tuple) or isinstance(filters, set)):
         raise ValueError(f"Invalid filters: {filters}")
-    
+
     # file paths
     for param_name, file_type in {
         "mutations_updated_vk_info_csv": "csv",
@@ -296,12 +295,14 @@ def validate_input_filter(params_dict):
         if not isinstance(param_value, bool):
             raise ValueError(f"{param_name} must be a boolean. Got {param_value} of type {type(param_value)}.")
 
+
 all_possible_filter_rules = {"greater_than", "greater_or_equal", "less_than", "less_or_equal", "between_inclusive", "between_exclusive", "top_percent", "bottom_percent", "equal", "not_equal", "is_in", "is_not_in", "is_true", "is_false", "is_not_true", "is_not_false", "is_null", "is_not_null"}
 filter_rules_that_expect_single_numeric_value = {"greater_than", "greater_or_equal", "less_than", "less_or_equal", "top_percent", "bottom_percent"}
 filter_rules_that_expect_comma_separated_pair_of_numerics_value = {"between_inclusive", "between_exclusive"}
 filter_rules_that_expect_string_value = {"equal", "not_equal"}
 filter_rules_that_expect_text_file_or_list_value = {"is_in", "is_not_in"}
 filter_rules_that_expect_no_value = {"is_true", "is_false", "is_not_true", "is_not_false", "is_null", "is_not_null"}
+
 
 def filter(
     input_dir,
@@ -370,32 +371,32 @@ def filter(
     dlist_cdna_filtered_fasta_out (str) Path to the filtered cDNA dlist fasta file. Default: None.
     save_mcrs_filtered_fasta_and_t2g (bool) If True, save the filtered mcrs fasta and t2g files. Default: True.
     """
-    #* 0. Informational arguments that exit early
+    # * 0. Informational arguments that exit early
     if list_filter_rules:
         print_list_filter_rules()
-    
-    #* 1. Start timer
+
+    # * 1. Start timer
     start_time = time.perf_counter()
 
-    #* 2. Type-checking
+    # * 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
     validate_input_filter(params_dict)
 
-    #* 3. Dry-run
+    # * 3. Dry-run
     if dry_run:
         print_varseek_dry_run(params_dict, function_name="filter")
         return None
     if out is None:
         out = input_dir if input_dir else "."
-    
-    #* 4. Save params to config file and run info file
+
+    # * 4. Save params to config file and run info file
     config_file = os.path.join(out, "config", "vk_filter_config.json")
     save_params_to_config_file(params_dict, config_file)
 
     run_info_file = os.path.join(out, "config", "vk_filter_run_info.txt")
     save_run_info(run_info_file)
 
-    #* 5. Set up default folder/file input paths, and make sure the necessary ones exist
+    # * 5. Set up default folder/file input paths, and make sure the necessary ones exist
     # have the option to filter other dlists as kwargs
     filter_all_dlists = kwargs.get("filter_all_dlists", False)
     dlist_genome_fasta = kwargs.get("dlist_genome_fasta", None)
@@ -416,7 +417,7 @@ def filter(
         for output_file in [dlist_genome_filtered_fasta_out, dlist_cdna_filtered_fasta_out]:
             if output_file and os.path.dirname(output_file):
                 os.makedirs(os.path.dirname(output_file), exist_ok=True)
-    
+
     # define input file names if not provided
     if not mutations_updated_vk_info_csv:
         mutations_updated_vk_info_csv = os.path.join(input_dir, "mutation_metadata_df_updated_vk_info.csv")
@@ -440,19 +441,19 @@ def filter(
         logger.warning(f"ID to header csv file not found at {id_to_header_csv}. Skipping filtering of ID to header csv.")
         id_to_header_csv = None
 
-    #* 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True    
+    # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
     # define output file names if not provided
     if not mutations_updated_filtered_csv_out:  # mutations_updated_vk_info_csv must exist or else an exception will be raised from earlier
         mutations_updated_filtered_csv_out = os.path.join(out, "mutation_metadata_df_filtered.csv")
     if (mutations_updated_exploded_vk_info_csv and os.path.isfile(mutations_updated_exploded_vk_info_csv)) and not mutations_updated_exploded_filtered_csv_out:
         mutations_updated_exploded_filtered_csv_out = os.path.join(out, "mutation_metadata_df_updated_vk_info_exploded_filtered.csv")
     if (id_to_header_csv and os.path.isfile(id_to_header_csv)) and not id_to_header_filtered_csv_out:
-        id_to_header_filtered_csv_out = os.path.join(out, "id_to_header_mapping_filtered.csv")    
+        id_to_header_filtered_csv_out = os.path.join(out, "id_to_header_mapping_filtered.csv")
     if (dlist_fasta and os.path.isfile(dlist_fasta)) and not dlist_filtered_fasta_out:
         dlist_filtered_fasta_out = os.path.join(out, "dlist_filtered.fa")
     if not mcrs_filtered_fasta_out:  # this file must be created
         mcrs_filtered_fasta_out = os.path.join(out, "mcrs_filtered.fa")
-    if not mcrs_t2g_filtered_out:    # this file must be created
+    if not mcrs_t2g_filtered_out:  # this file must be created
         mcrs_t2g_filtered_out = os.path.join(out, "mcrs_t2g_filtered.txt")
     if not wt_mcrs_filtered_fasta_out:
         wt_mcrs_filtered_fasta_out = os.path.join(out, "wt_mcrs_filtered.fa")
@@ -466,11 +467,11 @@ def filter(
             raise ValueError(f"Output file '{output_file}' already exists. Set 'overwrite=True' to overwrite it.")
         if os.path.dirname(output_file):
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
-        
-    #* 7. Define kwargs defaults
+
+    # * 7. Define kwargs defaults
     # defined at the beginning of (5) here, as they were needed in that section
 
-    #* 8. Start the actual function
+    # * 8. Start the actual function
     # filters must either be a dict (as described in docs) or a path to a JSON file
     if isinstance(filters, list) or isinstance(filters, tuple) or isinstance(filters, set) or (isinstance(filters, str) and filters.endswith(".txt")):
         filters = prepare_filters_list(filters)
@@ -542,9 +543,7 @@ def filter(
         mutation_metadata_df_exploded = pd.read_csv(mutations_updated_exploded_vk_info_csv)
 
         # Filter mutation_metadata_df_exploded based on these unique values
-        filtered_mutation_metadata_df_exploded = mutation_metadata_df_exploded[
-            mutation_metadata_df_exploded['mcrs_id'].isin(filtered_df_mcrs_ids)
-        ]
+        filtered_mutation_metadata_df_exploded = mutation_metadata_df_exploded[mutation_metadata_df_exploded["mcrs_id"].isin(filtered_df_mcrs_ids)]
 
         filtered_mutation_metadata_df_exploded.to_csv(mutations_updated_exploded_filtered_csv_out, index=False)
 
@@ -554,7 +553,7 @@ def filter(
     # make dlist_filtered_fasta_out iff dlist_fasta exists
     if dlist_fasta and os.path.isfile(dlist_fasta):
         filter_fasta(dlist_fasta, dlist_filtered_fasta_out, filtered_df_mcrs_ids)
-    
+
     if filter_all_dlists:
         if dlist_genome_fasta and os.path.isfile(dlist_genome_fasta):
             filter_fasta(dlist_genome_fasta, dlist_genome_filtered_fasta_out, filtered_df_mcrs_ids)
@@ -576,4 +575,3 @@ def filter(
 
     if return_mutations_updated_filtered_csv_df:
         return filtered_df
-

@@ -1,8 +1,19 @@
 import os
-import pysam
-import pandas as pd
 import subprocess
-from varseek.utils import vcf_to_dataframe, calculate_metrics, draw_confusion_matrix, create_venn_diagram, calculate_sensitivity_specificity, add_vcf_info_to_cosmic_tsv, merge_gatk_and_cosmic, safe_literal_eval
+
+import pandas as pd
+import pysam
+
+from varseek.utils import (
+    add_vcf_info_to_cosmic_tsv,
+    calculate_metrics,
+    calculate_sensitivity_specificity,
+    create_venn_diagram,
+    draw_confusion_matrix,
+    merge_gatk_and_cosmic,
+    safe_literal_eval,
+    vcf_to_dataframe,
+)
 
 run_benchmarking = False  #!!! change to True when finished debugging the variant calling pipeline
 

@@ -14,8 +14,8 @@ from collections import defaultdict
 #     "varseek_count": set()
 # }
 
-fasta_extensions = ('.fa', '.fasta', '.fa.gz', '.fasta.gz')
-fastq_extensions = ('.fq', '.fastq', '.fq.gz', '.fastq.gz')
+fasta_extensions = (".fa", ".fasta", ".fa.gz", ".fasta.gz")
+fastq_extensions = (".fq", ".fastq", ".fq.gz", ".fastq.gz")
 
 technology_valid_values = {"10xv1", "10xv2", "10xv3", "Bulk", "SmartSeq2", "BDWTA", "CELSeq", "CELSeq2", "DropSeq", "inDropsv1", "inDropsv2", "inDropsv3", "SCRBSeq", "SmartSeq3", "SPLiT", "STORM", "SureCell", "VASA", "Visium"}
 non_single_cell_technologies = {"Bulk", "Visium"}
@@ -119,20 +119,9 @@ codon_to_amino_acid = {
 
 default_filename_dict = {"index": "mcrs_index.idx", "t2g": "mcrs_t2g.txt"}
 
-#* add more keys here as needed (e.g., k, w, d-list, dlist_reference_source, etc)
-#* if I add modes to varseek ref, then have it be dict[mutations][sequences][mode]
-prebuilt_vk_ref_files = {
-    "cosmic_cmc": {
-        "cdna": {
-            "index": "",
-            "t2g": ""
-        },
-        "genome": {
-            "index": "",
-            "t2g": ""
-        }
-    }
-}
+# * add more keys here as needed (e.g., k, w, d-list, dlist_reference_source, etc)
+# * if I add modes to varseek ref, then have it be dict[mutations][sequences][mode]
+prebuilt_vk_ref_files = {"cosmic_cmc": {"cdna": {"index": "", "t2g": ""}, "genome": {"index": "", "t2g": ""}}}
 
 supported_databases_and_corresponding_reference_sequence_type = {
     "cosmic_cmc": {
@@ -164,42 +153,12 @@ mutation_pattern = r"(?:c|g)\.([0-9_\-\+\*\(\)\?]+)([a-zA-Z>]+)"  # more complex
 
 # None means no barcode/umi
 technology_barcode_and_umi_dict = {
-    "bulk": {"barcode_start": None,
-            "barcode_end": None,
-            "umi_start": None,
-            "umi_end": None,
-            "spacer_start": None,
-            "spacer_end": None},
-    "10xv2": {"barcode_start": 0,
-            "barcode_end": 16,
-            "umi_start": 16,
-            "umi_end": 26,
-            "spacer_start": None,
-            "spacer_end": None},
-    "10xv3": {"barcode_start": 0,
-            "barcode_end": 16,
-            "umi_start": 16,
-            "umi_end": 28,
-            "spacer_start": None,
-            "spacer_end": None},
-    "Visium": {"barcode_start": 0,
-            "barcode_end": 16,
-            "umi_start": 16,
-            "umi_end": 28,
-            "spacer_start": None,
-            "spacer_end": None},
-    "SMARTSEQ2": {"barcode_start": None,
-            "barcode_end": None,
-            "umi_start": None,
-            "umi_end": None,
-            "spacer_start": None,
-            "spacer_end": None},
-    "SMARTSEQ3": {"barcode_start": None,
-            "barcode_end": None,
-            "umi_start": 11,
-            "umi_end": 19,
-            "spacer_start": 0,  
-            "spacer_end": 11},
+    "bulk": {"barcode_start": None, "barcode_end": None, "umi_start": None, "umi_end": None, "spacer_start": None, "spacer_end": None},
+    "10xv2": {"barcode_start": 0, "barcode_end": 16, "umi_start": 16, "umi_end": 26, "spacer_start": None, "spacer_end": None},
+    "10xv3": {"barcode_start": 0, "barcode_end": 16, "umi_start": 16, "umi_end": 28, "spacer_start": None, "spacer_end": None},
+    "Visium": {"barcode_start": 0, "barcode_end": 16, "umi_start": 16, "umi_end": 28, "spacer_start": None, "spacer_end": None},
+    "SMARTSEQ2": {"barcode_start": None, "barcode_end": None, "umi_start": None, "umi_end": None, "spacer_start": None, "spacer_end": None},
+    "SMARTSEQ3": {"barcode_start": None, "barcode_end": None, "umi_start": 11, "umi_end": 19, "spacer_start": 0, "spacer_end": 11},
 }
 
 
@@ -210,7 +169,7 @@ entex_to_ccle_map = {
     # "ascending aorta": xxxxxxx,
     "body of pancreas": "Pancreatic Cancer",
     "breast epithelium": "Breast Cancer",
-    "esophagus muscularis mucosa": 'Esophageal Cancer',
+    "esophagus muscularis mucosa": "Esophageal Cancer",
     "esophagus squamous epithelium": "Esophageal Cancer",
     # "gastrocnemius medialis": xxxxxxx,
     "gastroesophageal sphincter": "Gastric Cancer",  # possibly esophageal
@@ -231,7 +190,7 @@ entex_to_ccle_map = {
     "thyroid gland": "Thyroid Cancer",
     # "tibial nerve": xxxxxxx,
     "transverse colon": "Colon/Colorectal Cancer",
-    "upper lobe of left lung": 'Lung Cancer',
-    "uterus": "Endometrial/Uterine Cancer"
+    "upper lobe of left lung": "Lung Cancer",
+    "uterus": "Endometrial/Uterine Cancer",
     # "vagina": xxxxxxx,
 }

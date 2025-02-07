@@ -30,7 +30,6 @@ dt_string = datetime.now().strftime("%Y_%m_%d-%H_%M")
 logger = set_up_logger(logging_level_name=None, save_logs=False, log_dir="logs")
 
 
-
 def extract_help_from_doc(module, arg_name, disable=False):
     """
     Extracts the help message for a given argument from the module's docstring, handling multi-line descriptions.
@@ -84,8 +83,8 @@ def extract_help_from_doc(module, arg_name, disable=False):
     else:
         return "Help message not found in docstring."
         # raise ValueError(f"Argument '{arg_name}' not found in the docstring of the module '{module}'.")
-    
-    
+
+
 # Check that if `--config` is passed, no other arguments are set
 def assert_only_config(args, parser):
     if args.config:
@@ -99,6 +98,7 @@ def assert_only_config(args, parser):
             # Check if the argument value differs from its default
             if value != parser.get_default(key):
                 raise ValueError(f"If '--config' is passed, no other arguments (like '{key}') can be set.")
+
 
 def copy_parser_arguments(parser_list, parser_target):
     for parser in parser_list:
@@ -127,10 +127,10 @@ def copy_parser_arguments(parser_list, parser_target):
 
             if not isinstance(action, (argparse._StoreTrueAction, argparse._StoreFalseAction)):
                 kwargs["nargs"] = action.nargs  # Only include nargs for compatible actions
-            
+
             # Filter out None values to avoid redundant keyword arguments
             kwargs = {k: v for k, v in kwargs.items() if v is not None}
-            
+
             # Add the argument to the target parser
             parser_target.add_argument(*option_strings, **kwargs)
 
@@ -168,7 +168,10 @@ def int_or_float(value):
 def is_int_or_float_or_inf(value):
     return int_or_float(value) or (isinstance(value, float) and math.isinf(value))
 
+
 valid_df_file_extensions = [".csv", ".tsv", ".xls", ".xlsx", ".parquet", ".h5"]
+
+
 def strpath_or_df(value):
     # Check if the input is a pandas DataFrame
     if isinstance(value, pd.DataFrame):
@@ -210,6 +213,7 @@ def int_or_str(value):
     except ValueError:
         return value
 
+
 def strpath_or_list_like_of_strings(value):
     if isinstance(value, str):
         return value
@@ -219,6 +223,7 @@ def strpath_or_list_like_of_strings(value):
             if not isinstance(v, str):
                 raise ValueError(f"All elements in the list must be strings. Found: {v}")
         return value
+
 
 def strpath_or_str_or_list_or_df(value):
     # Check if the input is a DataFrame
@@ -354,7 +359,7 @@ def main():
         default=None,
         required=False,
         help=extract_help_from_doc(build, "gtf_transcript_id_column"),
-    )    
+    )
     parser_build.add_argument(
         "-tb",
         "--transcript_boundaries",
@@ -466,7 +471,7 @@ def main():
         action="store_false",
         required=False,
         help=extract_help_from_doc(build, "save_filtering_report_text"),
-    )    
+    )
     parser_build.add_argument(
         "-sfs",
         "--store_full_sequences",
@@ -1302,7 +1307,7 @@ def main():
     )
     parser_fastqpp.add_argument(
         "fastqs",
-        nargs='+',
+        nargs="+",
         help=extract_help_from_doc(fastqpp, "fastqs"),
     )
     parser_fastqpp.add_argument(
@@ -1679,7 +1684,7 @@ def main():
     )
     parser_clean.add_argument(
         "--fastqs",
-        nargs='+',
+        nargs="+",
         required=False,
         help=extract_help_from_doc(clean, "fastqs"),
     )
@@ -1725,7 +1730,7 @@ def main():
     )
     parser_clean.add_argument(
         "--mutations_updated_csv_columns",
-        nargs='+',
+        nargs="+",
         type=str,
         required=False,
         help=extract_help_from_doc(clean, "mutations_updated_csv_columns"),
@@ -1872,7 +1877,6 @@ def main():
         help=extract_help_from_doc(summarize, "plots_folder"),
     )
 
-
     # NEW PARSER
     ref_desc = "Create a reference index and t2g file for variant screening with varseek count. Wraps around varseek build, varseek info, varseek filter, and kb ref."
     parser_ref = parent_subparsers.add_parser(
@@ -1924,11 +1928,11 @@ def main():
         default=(
             "dlist_substring:equal=none",  # filter out mutations which are a substring of the reference genome
             "pseudoaligned_to_human_reference_despite_not_truly_aligning:is_not_true",  # filter out mutations which pseudoaligned to human genome despite not truly aligning
-            "dlist:equal=none",  #*** erase eventually when I want to d-list  # filter out mutations which are capable of being d-listed (given that I filter out the substrings above)
+            "dlist:equal=none",  # *** erase eventually when I want to d-list  # filter out mutations which are capable of being d-listed (given that I filter out the substrings above)
             "number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference:less_than=999999",  # filter out mutations which overlap with other MCRSs in the reference
             "number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference:less_than=999999",  # filter out mutations which overlap with other MCRSs in the reference
             "longest_homopolymer_length:bottom_percent=99.99",  # filters out MCRSs with repeating single nucleotide - 99.99 keeps the bottom 99.99% (fraction 0.9999) ie filters out the top 0.01%
-            "triplet_complexity:top_percent=99.9"  # filters out MCRSs with repeating triplets - 99.9 keeps the top 99.9% (fraction 0.999) ie filters out the bottom 0.1%
+            "triplet_complexity:top_percent=99.9",  # filters out MCRSs with repeating triplets - 99.9 keeps the top 99.9% (fraction 0.999) ie filters out the bottom 0.1%
         ),
         help=extract_help_from_doc(ref, "filters"),
     )
@@ -2029,7 +2033,7 @@ def main():
     )
     parser_count.add_argument(
         "fastqs",
-        nargs='+',
+        nargs="+",
         help=extract_help_from_doc(count, "fastqs"),
     )
     parser_count.add_argument(
@@ -2229,7 +2233,7 @@ def main():
             command_to_parser[sys.argv[1]].print_help(sys.stderr)
         else:
             parent_parser.print_help(sys.stderr)
-        sys.exit(1)    
+        sys.exit(1)
 
     # Load params from config if provided
     if args.config:
@@ -2593,5 +2597,3 @@ def main():
         )
 
         # * optionally do something with count_results (e.g., save, or print to console)
-
-    

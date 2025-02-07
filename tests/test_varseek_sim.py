@@ -1,11 +1,18 @@
-import pytest
-import tempfile
-import varseek as vk
-import pandas as pd
-import numpy as np
 import os
+import tempfile
 from pdb import set_trace as st
-from varseek.utils import create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting, make_mapping_dict, compare_dicts
+
+import numpy as np
+import pandas as pd
+import pytest
+
+import varseek as vk
+from varseek.utils import (
+    compare_dicts,
+    create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting,
+    make_mapping_dict,
+)
+
 
 @pytest.fixture
 def temporary_output_files():

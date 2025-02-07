@@ -251,9 +251,9 @@ def sim(
 
     # TODO: stop hard-coding this
     if "start_mutation_position_cdna" in mutation_metadata_df.columns:
-        mutation_metadata_df['start_position_for_which_read_contains_mutation_cdna'] = mutation_metadata_df['start_mutation_position_cdna'] - read_length + 1
+        mutation_metadata_df["start_position_for_which_read_contains_mutation_cdna"] = mutation_metadata_df["start_mutation_position_cdna"] - read_length + 1
     if "start_mutation_position_genome" in mutation_metadata_df.columns:
-        mutation_metadata_df['start_position_for_which_read_contains_mutation_genome'] = mutation_metadata_df['start_mutation_position_genome'] - read_length + 1
+        mutation_metadata_df["start_position_for_which_read_contains_mutation_genome"] = mutation_metadata_df["start_mutation_position_genome"] - read_length + 1
 
     if filters:
         filtered_df = varseek.filter(
@@ -392,10 +392,7 @@ def sim(
                     )
 
                 else:
-                    read_start_indices_mutant = random.sample(
-                        range(valid_starting_index_max_mutant),
-                        number_of_reads_per_sample_m
-                    )
+                    read_start_indices_mutant = random.sample(range(valid_starting_index_max_mutant), number_of_reads_per_sample_m)
 
                 with_replacement = with_replacement_original
 

@@ -1,8 +1,8 @@
 import csv
-import os
-import requests
-
 import json
+import os
+
+import requests
 
 experimental_strategy = "RNA-Seq"  # RNA-Seq, WGS, WXS
 base_data_folder = "/home/jrich/data/varseek_data/sequencing/bulk/tcga"
