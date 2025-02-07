@@ -1,7 +1,7 @@
 import inspect
 import varseek as vk
 from varseek.varseek_ref import varseek_ref_only_allowable_kb_ref_arguments
-from varseek.varseek_count import varseek_ref_only_allowable_kb_count_arguments
+from varseek.varseek_count import varseek_count_only_allowable_kb_count_arguments
 from itertools import combinations
 
 def print_all_shared_arguments_between_pairs_of_functions(function_name_and_key_list_of_tuples, varseek_ref_only_allowable_kb_arguments, kb_name):
@@ -27,7 +27,7 @@ def main():
     print_all_shared_arguments_between_pairs_of_functions(function_name_and_key_list_of_tuples_varseek_ref, varseek_ref_only_allowable_kb_ref_arguments, kb_name = "kb ref")
     print("\n-----------------------------------\n")
     function_name_and_key_list_of_tuples_varseek_count = [(vk.varseek_fastqpp.fastqpp, "varseek_fastqpp"), (vk.varseek_clean.clean, "varseek_clean"), (vk.varseek_summarize.summarize, "varseek_summarize"), (vk.varseek_count.count, "varseek_count")]
-    print_all_shared_arguments_between_pairs_of_functions(function_name_and_key_list_of_tuples_varseek_count, varseek_ref_only_allowable_kb_count_arguments, kb_name = "kb count")
+    print_all_shared_arguments_between_pairs_of_functions(function_name_and_key_list_of_tuples_varseek_count, varseek_count_only_allowable_kb_count_arguments, kb_name = "kb count")
 
 # Run the script if it's executed directly
 if __name__ == "__main__":

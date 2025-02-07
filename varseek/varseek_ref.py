@@ -451,6 +451,8 @@ def ref(
         params_dict["overwrite"], params_dict_vk_build["overwrite"] = overwrite_original, overwrite_original
     else:
         logger.warning(f"Skipping vk build because {file_signifying_successful_vk_build_completion} already exists and overwrite=False")
+    if not params_dict.get("input_dir"):  # for vk info/filter
+        params_dict["input_dir"] = params_dict["out"]
 
     # vk info
     if not skip_info:

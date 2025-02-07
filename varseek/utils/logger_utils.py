@@ -10,12 +10,16 @@ import tracemalloc
 from collections import OrderedDict
 from datetime import datetime
 
+import base64
+import getpass
+from gget.gget_cosmic import is_valid_email
+import requests
+
 import pandas as pd
 import psutil
 import requests
 from bs4 import BeautifulSoup
 
-from varseek import __version__
 from varseek.constants import default_filename_dict
 
 # Mute numexpr threads info
@@ -348,7 +352,6 @@ def report_time_and_memory_of_script(script_path, argparse_flags=None, output_fi
     return (runtime, peak_memory)  # Return the runtime and peak memory usage in bytes
 
 def make_positional_arguments_list_and_keyword_arguments_dict():
-    import sys
     args = sys.argv[1:]
     
     # Initialize storage
@@ -860,11 +863,6 @@ def extract_documentation_file_blocks(file_path, start_pattern, stop_pattern):
 
     return extracted_blocks
 
-import base64
-import getpass
-
-from gget.gget_cosmic import is_valid_email
-
 
 # from gget cosmic
 def authenticate_cosmic_credentials(email = None, password = None):
@@ -896,11 +894,7 @@ def authenticate_cosmic_credentials(email = None, password = None):
     except AttributeError:
         print("Invalid username or password.")
         return False
-    
-import base64
-import getpass
 
-import requests
 
 
 def encode_cosmic_credentials(email=None, password=None):
@@ -949,6 +943,7 @@ def get_python_or_cli_function_call():
 
 
 def save_run_info(out_file="run_info.txt"):
+    from varseek import __version__  # keep internal to this function to avoid circular import
     out_file_directory = os.path.dirname(out_file)
     if not out_file_directory:
         out_file_directory = "."

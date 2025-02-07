@@ -1303,7 +1303,6 @@ def main():
     parser_fastqpp.add_argument(
         "fastqs",
         nargs='+',
-        required=True,
         help=extract_help_from_doc(fastqpp, "fastqs"),
     )
     parser_fastqpp.add_argument(
@@ -1503,11 +1502,11 @@ def main():
     parser_clean.add_argument(
         "adata_vcrs",
         type=str,
-        required=True,
         help=extract_help_from_doc(clean, "adata_vcrs"),
     )
     parser_clean.add_argument(
-        "technology",
+        "-x",
+        "--technology",
         type=str,
         required=True,
         help=extract_help_from_doc(clean, "technology"),
@@ -1813,7 +1812,6 @@ def main():
     parser_summarize.add_argument(
         "adata",
         type=str,
-        required=True,
         help=extract_help_from_doc(summarize, "adata"),
     )
     parser_summarize.add_argument(
@@ -2032,7 +2030,6 @@ def main():
     parser_count.add_argument(
         "fastqs",
         nargs='+',
-        required=True,
         help=extract_help_from_doc(count, "fastqs"),
     )
     parser_count.add_argument(

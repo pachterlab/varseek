@@ -90,7 +90,7 @@ def validate_input_clean(params_dict):
     
     # filter_cells_by_max_mt_content - special treatment because it is between rather than lower-bounded only
     if not is_valid_int(params_dict.get("filter_cells_by_max_mt_content"), "between", min_value_inclusive=0, max_value_inclusive=100, optional=True):
-        raise ValueError(f"filter_cells_by_max_mt_content must be an integer between 0 and 100, or None. Got {params_dict.get("filter_cells_by_max_mt_content")}.")
+        raise ValueError(f"filter_cells_by_max_mt_content must be an integer between 0 and 100, or None. Got {params_dict.get('filter_cells_by_max_mt_content')}.")
     
     # boolean
     for param_name in ["use_binary_matrix", "drop_empty_columns", "apply_single_end_mode_on_paired_end_data_correction", "split_reads_by_Ns", "apply_dlist_correction", "qc_against_gene_matrix", "doublet_detection", "remove_doublets", "cpm_normalization", "sum_rows", "mm", "union", "multiplexed", "save_vcf", "dry_run", "overwrite", "verbose"]:
@@ -147,7 +147,7 @@ def validate_input_clean(params_dict):
         if not isinstance(params_dict.get(param_name), str):
             raise ValueError(f"Directory {params_dict.get(param_name)} is not a string")
     if params_dict.get("vk_ref_dir") and not os.path.isdir(params_dict.get("vk_ref_dir")):
-        raise ValueError(f"Directory {params_dict.get("vk_ref_dir")} does not exist")
+        raise ValueError(f"Directory {params_dict.get('vk_ref_dir')} does not exist")
 
     
 needs_for_normal_genome_matrix = ["filter_cells_by_min_counts", "filter_cells_by_min_genes", "filter_genes_by_min_cells", "filter_cells_by_max_mt_content", "doublet_detection", "cpm_normalization"]
@@ -182,6 +182,7 @@ def clean(
     parity="single",
     multiplexed=False,
     sort_fastqs=True,
+    adata_reference_genome=None,
     fastqs=None,  # optional inputs
     vk_ref_dir=None,
     vcrs_index=None,
@@ -192,7 +193,6 @@ def clean(
     mutations_updated_csv=None,
     mcrs_id_column="mcrs_id",
     mutations_updated_csv_columns=None,
-    adata_reference_genome=None,
     kb_count_vcrs_dir=None,
     kb_count_reference_genome_dir=None,
     out=".",  # output paths
@@ -243,6 +243,7 @@ def clean(
     - sort_fastqs                           (bool): Whether to sort the fastqs. Default: True.
 
     # Optional input arguments:
+    - adata_reference_genome                (str): Path to the reference genome AnnData object. Default: `kb_count_reference_genome_dir`/counts_unfiltered/adata.h5ad.
     - fastqs                                (str or list[str]) List of fastq files to be processed. If paired end, the list should contains paths such as [file1_R1, file1_R2, file2_R1, file2_R2, ...]
     - vk_ref_dir                            (str): Directory containing the VCRS reference files. Same as `out` as specified in vk ref. Default: None.
     - vcrs_index                            (str): Path to the VCRS index file. Default: None.
@@ -253,16 +254,15 @@ def clean(
     - mutations_updated_csv                 (str): Path to the mutations updated csv file. Default: None.
     - mcrs_id_column                        (str): Column name in the mutations updated csv file. Default: "mcrs_id".
     - mutations_updated_csv_columns         (list): List of columns to use in the mutations updated csv file. Default: None.
-    - adata_reference_genome                (str): Path to the reference genome AnnData object. Default: None.
     - kb_count_vcrs_dir                     (str): Path to the kb count output directory for the VCRS reference. Default: None.
     - kb_count_reference_genome_dir         (str): Path to the kb count output directory for the reference genome. Default: None.
 
     # Output paths:
     - out                                   (str): Output directory. Default: ".".
-    - adata_vcrs_clean_out                  (str): Path to save the cleaned VCRS AnnData object. Default: None.
-    - adata_reference_genome_clean_out      (str): Path to save the cleaned reference genome AnnData object. Default: None.
-    - vcf_out                               (str): Path to save the VCF file. Default: None.
+    - adata_vcrs_clean_out                  (str): Path to save the cleaned VCRS AnnData object. Default: `out`/adata_cleaned.h5ad.
+    - adata_reference_genome_clean_out      (str): Path to save the cleaned reference genome AnnData object. Default: `out`/adata_reference_genome_cleaned.h5ad.
     - save_vcf                              (bool): Whether to save the VCF file. Default: True.
+    - vcf_out                               (str): Path to save the VCF file. Default: `out`/vcrs.vcf.
 
     # General:
     - dry_run                               (bool): Whether to run in dry run mode. Default: False.
@@ -295,6 +295,9 @@ def clean(
     save_run_info(run_info_file)
 
     #* 5. Set up default folder/file input paths, and make sure the necessary ones exist
+    if kb_count_reference_genome_dir and not adata_reference_genome:
+        adata_reference_genome = os.path.join(kb_count_reference_genome_dir, "counts_unfiltered", "adata.h5ad")
+
     if vk_ref_dir:  # make sure all of the defaults below match vk info/filter
         vcrs_index = os.path.join(vk_ref_dir, "mcrs_index.idx") if not vcrs_index else vcrs_index
         if not vcrs_t2g:
@@ -319,7 +322,7 @@ def clean(
 
     adata_vcrs_clean_out = os.path.join(out, "adata_cleaned.h5ad") if not adata_vcrs_clean_out else adata_vcrs_clean_out
     adata_reference_genome_clean_out = os.path.join(out, "adata_reference_genome_cleaned.h5ad") if not adata_reference_genome_clean_out else adata_reference_genome_clean_out
-    vcf_out = os.path.join(out, "vcf") if not vcf_out else vcf_out
+    vcf_out = os.path.join(out, "vcrs.vcf") if not vcf_out else vcf_out
 
     for output_path in [output_figures_dir, adata_vcrs_clean_out, adata_reference_genome_clean_out]:
         if os.path.exists(output_path) and not overwrite:

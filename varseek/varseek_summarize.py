@@ -86,9 +86,9 @@ def summarize(
     - verbose                           (bool) Whether to print progress messages. Default: True
 
     # Hidden arguments (part of kwargs):
-    - stats_file                        (str) Path to the stats file. Default: "varseek_summarize_stats.txt"
-    - specific_stats_folder             (str) Path to the specific stats folder. Default: "specific_stats"
-    - plots_folder                      (str) Path to the plots folder. Default: "plots"
+    - stats_file                        (str) Path to the stats file. Default: `out`/varseek_summarize_stats.txt
+    - specific_stats_folder             (str) Path to the specific stats folder. Default: `out`/specific_stats
+    - plots_folder                      (str) Path to the plots folder. Default: `out`/plots
     """
     
     #* 1. Start timer
@@ -152,7 +152,7 @@ def summarize(
         mutations_count_any_row = (mutations_with_any_count > 0).sum()
         line = f"Total mutations with count > 0 for any sample/cell: {mutations_count_any_row}"
         f.write(line)
-        if technology == "bulk":
+        if technology.lower() == "bulk":
             for sample in adata.obs_names:
                 count_nonzero_mutations = (adata[sample, :].X > 0).sum()
                 line = f"Sample {sample} has {count_nonzero_mutations} mutations with count > 0."
@@ -210,7 +210,7 @@ def summarize(
         f.write(line)
 
         # For bulk technologys, calculate counts for each sample
-        if technology == "bulk":
+        if technology.lower() == "bulk":
             for sample in adata.obs_names:
                 # Calculate mcrs_count per gene for the specific sample
                 gene_counts_per_sample = adata[sample, :].to_df().gt(0).groupby(adata.var["gene_name"], axis=1).sum().gt(0).sum()

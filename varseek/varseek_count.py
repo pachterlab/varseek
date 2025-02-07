@@ -32,7 +32,7 @@ mode_parameters = {
 
 varseek_count_unallowable_arguments = {
     "varseek_fastqpp": set(),
-    "kb_count": set("aa", "workflow"),
+    "kb_count": {"aa", "workflow"},
     "varseek_clean": set(),
     "varseek_summarize": set(),
 }
@@ -44,6 +44,15 @@ varseek_count_only_allowable_kb_count_arguments = {
     "multiple_arguments": set()
 }  # don't include d-list, t, i, k, workflow here because I do it myself later
 
+
+def check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, dir1, dir2):
+    if params_dict.get(dir1) is not None and params_dict.get(dir2) is not None and params_dict.get(dir1) != params_dict.get(dir2):
+        raise ValueError(f"{dir1} and {dir2} must be the same directory")
+    elif params_dict.get(dir1) is not None and params_dict.get(dir2) is None:
+        params_dict[dir2] = params_dict.get(dir1)
+    elif params_dict.get(dir1) is None and params_dict.get(dir2) is not None:
+        params_dict[dir1] = params_dict.get(dir2)
+    return params_dict
 
 def validate_input_count(params_dict):
     #$ fastqs, technology will get checked through fastqpp
@@ -64,7 +73,7 @@ def validate_input_count(params_dict):
     check_file_path_is_string_with_valid_extension(params_dict.get("adata_reference_genome", None), "adata_reference_genome", "adata")
 
     if not is_valid_int(params_dict.get("threads", None), threshold_type=">=", threshold_value=1):
-        raise ValueError(f"Threads must be a positive integer, got {params_dict.get("threads", None)}")
+        raise ValueError(f"Threads must be a positive integer, got {params_dict.get('threads')}")
 
     # out dirs
     for param_name in ["out", "kb_count_vcrs_out_dir", "kb_count_reference_genome_out_dir", "vk_summarize_out_dir"]:
@@ -254,9 +263,9 @@ def count(
     os.makedirs(kb_count_reference_genome_out_dir, exist_ok=True)
     os.makedirs(vk_summarize_out_dir, exist_ok=True)
 
-    # for vk clean arguments
-    params_dict["kb_count_vcrs_dir"] = kb_count_vcrs_out_dir
-    params_dict["kb_count_reference_genome_dir"] = kb_count_reference_genome_out_dir
+    # for vk clean arguments - generalizes the params_dict["kb_count_vcrs_dir"] = kb_count_vcrs_out_dir and params_dict["kb_count_reference_genome_dir"] = kb_count_reference_genome_out_dir calls
+    params_dict = check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "kb_count_vcrs_dir", "kb_count_vcrs_out_dir")  # check that, if kb_count_vcrs_dir and kb_count_vcrs_out_dir are both provided, they are the same directory; otherwise, if only one is provided, then make them equal to each other
+    params_dict = check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "kb_count_reference_genome_dir", "kb_count_reference_genome_out_dir")  # same story as above but for kb_count_reference_genome and kb_count_reference_genome_out_dir
 
     adata_vcrs = f"{kb_count_vcrs_out_dir}/counts_unfiltered/adata.h5ad"
     adata_reference_genome = f"{kb_count_reference_genome_out_dir}/counts_unfiltered/adata.h5ad" if not params_dict.get("adata_reference_genome") else params_dict.get("adata_reference_genome")
@@ -340,6 +349,7 @@ def count(
         logger.warning(f"Skipping vk fastqpp because disable_fastqpp=True")
         fastqs_vcrs = fastqs
         fastqs_reference_genome = fastqs
+    params_dict["fastqs"] = fastqs_vcrs  # so that the correct fastqs get passed into vk clean
 
     # # kb count, VCRS
     if not os.path.exists(file_signifying_successful_kb_count_vcrs_completion) or overwrite:
@@ -402,11 +412,14 @@ def count(
             logger.info(f"Running kb count with command: {' '.join(kb_count_command)}")
             subprocess.run(kb_count_command, check=True)
     else:
-        logger.warning(f"Skipping kb count because file {file_signifying_successful_kb_count_vcrs_completion} already exists. Note that even setting overwrite=True will still not overwrite this particular directory")
+        logger.warning(f"Skipping kb count because file {file_signifying_successful_kb_count_vcrs_completion} already exists and overwrite=False")
     
     if ((not os.path.exists(file_signifying_successful_kb_count_reference_genome_completion)) and (technology not in non_single_cell_technologies) and any(params_dict.get(value, False) for value in needs_for_normal_genome_matrix)) or (params_dict.get("qc_against_gene_matrix") and len(os.listdir(kb_count_reference_genome_out_dir)) == 0):  # align to this genome if either (1) adata doesn't exist and I do downstream analysis with the normal gene count matrix for scRNA-seq data (ie not bulk) or (2) [qc_against_gene_matrix=True and kb_count_reference_genome_out_dir is empty (because I need the BUS file for this)]  # purposely omitted overwrite because it is reasonable to expect that someone has pre-computed this matrix and doesn't want it recomputed under any circumstances (and if they did, then simply point to a different directory)
         if not isinstance(species, str) and species not in supported_downloadable_normal_reference_genomes_with_kb_ref:
             raise ValueError(f"Species {species} is not supported. Supported values are {supported_downloadable_normal_reference_genomes_with_kb_ref}. See more details at https://github.com/pachterlab/kallisto-transcriptome-indices/")
+        
+        reference_genome_index = params_dict.get("reference_genome_index", os.path.join(out, "reference_genome_index.idx"))
+        reference_genome_t2g = params_dict.get("reference_genome_t2g", os.path.join(out, "reference_genome_t2g.t2g"))
         
         if not os.path.exists(reference_genome_index) or not os.path.exists(reference_genome_t2g):  # download reference if does not exist
             # kb ref, reference genome
@@ -479,6 +492,10 @@ def count(
     elif os.path.exists(file_signifying_successful_kb_count_reference_genome_completion) and params_dict.get("qc_against_gene_matrix"):
         logger.warning(f"Skipping kb count for reference genome because file {file_signifying_successful_kb_count_reference_genome_completion} already exists. Note that even setting overwrite=True will still not overwrite this particular directory")
 
+    params_dict["adata_vcrs"] = adata_vcrs if not params_dict.get("adata_vcrs") else params_dict.get("adata_vcrs")  # for vk clean
+    # kb_count_vcrs_dir already set to kb_count_vcrs_out_dir by check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal
+    params_dict["adata_reference_genome"] = adata_reference_genome  # for vk clean - the conditional part already handled in section 6
+
     # vk clean
     if not disable_clean:
         if not os.path.exists(file_signifying_successful_vk_clean_completion) or overwrite:
@@ -487,9 +504,12 @@ def count(
             vk.clean(**params_dict) if not params_dict.get("dry_run", False) else vk.clean(**params_dict_vk_clean)
             params_dict["overwrite"], params_dict_vk_clean["overwrite"] = overwrite_original, overwrite_original
         else:
-            logger.warning(f"Skipping vk clean because file {file_signifying_successful_vk_clean_completion} already exists. Note that even setting overwrite=True will still not overwrite this particular directory")
+            logger.warning(f"Skipping vk clean because file {file_signifying_successful_vk_clean_completion} already exists and overwrite=False")
+        adata_for_summarize = adata_vcrs_clean_out
     else:
         logger.warning(f"Skipping vk clean because disable_clean=True")
+        adata_for_summarize = adata_vcrs
+    params_dict["adata"] = adata_for_summarize  # so that the correct adata gets passed into vk summarize
 
     # # vk summarize
     if not disable_summarize:
@@ -502,7 +522,7 @@ def count(
             params_dict["overwrite"], params_dict_vk_summarize["overwrite"] = overwrite_original, overwrite_original
             params_dict["out"] = out_original
         else:
-            logger.warning(f"Skipping vk summarize because file {file_signifying_successful_vk_summarize_completion} already exists. Note that even setting overwrite=True will still not overwrite this particular directory")
+            logger.warning(f"Skipping vk summarize because file {file_signifying_successful_vk_summarize_completion} already exists and overwrite=False")
     else:
         logger.warning(f"Skipping vk summarize because disable_summarize=True")
 
