@@ -43,7 +43,7 @@ os.makedirs(base_data_folder, exist_ok=True)
 uuids = []
 uuid_to_output_folder_dict = {}
 failed_metadata_combinations = []
-with open(cohort_metadata_file, mode='w', newline='') as file:
+with open(cohort_metadata_file, mode='w', newline='', encoding="utf-8") as file:
     writer = csv.writer(file, delimiter='\t')
     writer.writerow(["uuid", "file_name", "patient_id", "primary_site", "primary_diagnosis", "ajcc_pathologic_stage", "tissue_type", "experimental_strategy", "workflow_type", "data_category", "data_format"])
 

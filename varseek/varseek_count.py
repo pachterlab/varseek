@@ -1,3 +1,4 @@
+"""varseek count and specific helper functions."""
 import inspect
 import os
 import subprocess
@@ -9,7 +10,6 @@ from varseek.utils import (
     is_valid_int,
     load_in_fastqs,
     make_function_parameter_to_value_dict,
-    print_varseek_dry_run,
     report_time_elapsed,
     save_params_to_config_file,
     save_run_info,
@@ -193,6 +193,9 @@ def count(
     - threads                               (int) Number of threads to use. Default: 2.
     - verbose                               (bool) If True, print progress messages. Default: True.
 
+    # Hidden arguments (part of kwargs):
+    - use_num                              (bool) If True, use the --num argument in kb count. Default: False.
+
     For a complete list of supported parameters, see the documentation for varseek fastqpp, kb count, varseek clean, and varseek summarize. Note that any shared parameter names between functions are meant to have identical purposes.
     """
 
@@ -208,11 +211,11 @@ def count(
 
         # overwrite any parameters passed in with those from the config file
         count_signature = inspect.signature(count)
-        for k, v in vk_count_config_file_input.items():
-            if k in count_signature.parameters.keys():
-                exec("%s = %s" % (k, v))  # assign the value to the variable name
+        for key, value in vk_count_config_file_input.items():
+            if key in count_signature.parameters.keys():
+                exec("%s = %s" % (key, value))  # assign the value to the variable name
             else:
-                kwargs[k] = v  # if the variable is not in the function signature, then add it to kwargs
+                kwargs[key] = value  # if the variable is not in the function signature, then add it to kwargs
 
     # * 1.75 load in fastqs
     fastqs_original = fastqs
@@ -260,9 +263,12 @@ def count(
     #         params_dict[key] = mode_parameters[mode][key]
 
     # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
-    kb_count_vcrs_out_dir = f"{out}/kb_count_out_vcrs" if not kb_count_vcrs_out_dir is None else kb_count_vcrs_out_dir
-    kb_count_reference_genome_out_dir = f"{out}/kb_count_out_reference_genome" if not kb_count_reference_genome_out_dir is None else kb_count_reference_genome_out_dir
-    vk_summarize_out_dir = f"{out}/vk_summarize" if not vk_summarize_out_dir is None else vk_summarize_out_dir
+    if not kb_count_vcrs_out_dir:
+        kb_count_vcrs_out_dir = f"{out}/kb_count_out_vcrs"
+    if not kb_count_reference_genome_out_dir:
+        kb_count_reference_genome_out_dir = f"{out}/kb_count_out_reference_genome"
+    if not vk_summarize_out_dir:
+        vk_summarize_out_dir = f"{out}/vk_summarize"
 
     os.makedirs(out, exist_ok=True)
     os.makedirs(kb_count_vcrs_out_dir, exist_ok=True)
@@ -298,7 +304,7 @@ def count(
     union = union
 
     # * 7. Define kwargs defaults
-    # Nothing to see here
+    use_num = params_dict.get("use_num", False)
 
     # * 8. Start the actual function
     fastqs_unsorted = fastqs.copy()
@@ -341,20 +347,18 @@ def count(
     all_parameter_names_set_vk_clean = explicit_parameters_vk_clean | allowable_kwargs_vk_clean
     all_parameter_names_set_vk_summarize = explicit_parameters_vk_summarize | allowable_kwargs_vk_summarize
 
-    params_dict_vk_fastqpp = {k: v for k, v in params_dict.items() if k in all_parameter_names_set_vk_fastqpp}
-    params_dict_vk_clean = {k: v for k, v in params_dict.items() if k in all_parameter_names_set_vk_clean}
-    params_dict_vk_summarize = {k: v for k, v in params_dict.items() if k in all_parameter_names_set_vk_summarize}
+    params_dict_vk_fastqpp = {key: value for key, value in params_dict.items() if key in all_parameter_names_set_vk_fastqpp}
+    params_dict_vk_clean = {key: value for key, value in params_dict.items() if key in all_parameter_names_set_vk_clean}
+    params_dict_vk_summarize = {key: value for key, value in params_dict.items() if key in all_parameter_names_set_vk_summarize}
 
     # vk fastqpp
     if not disable_fastqpp:
-        logger.info(f"Running vk fastqpp")
-        fastqpp_dict = (
-            vk.fastqpp(**params_dict) if not params_dict.get("dry_run", False) else vk.build(**params_dict_vk_fastqpp)
-        )  # best of both worlds - will only pass in defined arguments if dry run is True (which is good so that I don't show each function with a bunch of args it never uses), but will pass in all arguments if dry run is False (which is good if I run vk ref with a new parameter that I have not included in docstrings yet, as I only get usable kwargs list from docstrings)
+        logger.info("Running vk fastqpp")
+        fastqpp_dict = vk.fastqpp(**params_dict) if not params_dict.get("dry_run", False) else vk.build(**params_dict_vk_fastqpp)  # best of both worlds - will only pass in defined arguments if dry run is True (which is good so that I don't show each function with a bunch of args it never uses), but will pass in all arguments if dry run is False (which is good if I run vk ref with a new parameter that I have not included in docstrings yet, as I only get usable kwargs list from docstrings)
         fastqs_vcrs = fastqpp_dict["final"]
         fastqs_reference_genome = fastqpp_dict["quality_controlled"] if "quality_controlled" in fastqpp_dict else fastqs
     else:
-        logger.warning(f"Skipping vk fastqpp because disable_fastqpp=True")
+        logger.warning("Skipping vk fastqpp because disable_fastqpp=True")
         fastqs_vcrs = fastqs
         fastqs_reference_genome = fastqs
     params_dict["fastqs"] = fastqs_vcrs  # so that the correct fastqs get passed into vk clean
@@ -392,12 +396,12 @@ def count(
 
         if params_dict.get("qc_against_gene_matrix"):
             kb_count_command.extend(["--union", "--mm"])
-        if params_dict.get("qc_against_gene_matrix") or params_dict.get("apply_split_reads_by_Ns_correction") or params_dict.get("apply_dlist_correction"):
+        if params_dict.get("qc_against_gene_matrix") or params_dict.get("apply_split_reads_by_Ns_correction") or params_dict.get("apply_dlist_correction") or use_num:
             kb_count_command.extend(["--num"])
 
         # assumes any argument in varseek count matches kb count identically, except dashes replaced with underscores
-        for dict_key in varseek_count_only_allowable_kb_count_arguments:
-            for argument in list(varseek_count_only_allowable_kb_count_arguments[dict_key]):
+        for dict_key, arguments in varseek_count_only_allowable_kb_count_arguments.items():
+            for argument in list(arguments):
                 dash_count = len(argument) - len(argument.lstrip("-"))
                 leading_dashes = "-" * dash_count
                 argument = argument.lstrip("-").replace("-", "_")
@@ -421,9 +425,7 @@ def count(
     else:
         logger.warning(f"Skipping kb count because file {file_signifying_successful_kb_count_vcrs_completion} already exists and overwrite=False")
 
-    if ((not os.path.exists(file_signifying_successful_kb_count_reference_genome_completion)) and (technology not in non_single_cell_technologies) and any(params_dict.get(value, False) for value in needs_for_normal_genome_matrix)) or (
-        params_dict.get("qc_against_gene_matrix") and len(os.listdir(kb_count_reference_genome_out_dir)) == 0
-    ):  # align to this genome if either (1) adata doesn't exist and I do downstream analysis with the normal gene count matrix for scRNA-seq data (ie not bulk) or (2) [qc_against_gene_matrix=True and kb_count_reference_genome_out_dir is empty (because I need the BUS file for this)]  # purposely omitted overwrite because it is reasonable to expect that someone has pre-computed this matrix and doesn't want it recomputed under any circumstances (and if they did, then simply point to a different directory)
+    if ((not os.path.exists(file_signifying_successful_kb_count_reference_genome_completion)) and (technology not in non_single_cell_technologies) and any(params_dict.get(value, False) for value in needs_for_normal_genome_matrix)) or (params_dict.get("qc_against_gene_matrix") and len(os.listdir(kb_count_reference_genome_out_dir)) == 0):  # align to this genome if either (1) adata doesn't exist and I do downstream analysis with the normal gene count matrix for scRNA-seq data (ie not bulk) or (2) [qc_against_gene_matrix=True and kb_count_reference_genome_out_dir is empty (because I need the BUS file for this)]  # purposely omitted overwrite because it is reasonable to expect that someone has pre-computed this matrix and doesn't want it recomputed under any circumstances (and if they did, then simply point to a different directory)
         if not isinstance(species, str) and species not in supported_downloadable_normal_reference_genomes_with_kb_ref:
             raise ValueError(f"Species {species} is not supported. Supported values are {supported_downloadable_normal_reference_genomes_with_kb_ref}. See more details at https://github.com/pachterlab/kallisto-transcriptome-indices/")
 
@@ -450,6 +452,11 @@ def count(
             else:
                 logger.info(f"Running kb ref for reference genome with command: {' '.join(kb_ref_command)}")
                 subprocess.run(kb_ref_command, check=True)
+        
+        #!!! WT mcrs alignment, copied from previous notebook 1_2 (still not implemented in here correctly)
+        # if os.path.exists(wt_mcrs_index) and (not os.path.exists(kb_count_out_wt_mcrs) or len(os.listdir(kb_count_out_wt_mcrs)) == 0):
+        #     kb_count_command = ["kb", "count", "-t", str(threads), "-k", str(k), "-i", wt_mcrs_index, "-g", wt_mcrs_t2g, "-x", technology, "--num", "--h5ad", "--parity", "single", "--strand", strand, "-o", kb_count_out_wt_mcrs] + rnaseq_fastq_files_final
+        #     subprocess.run(kb_count_command, check=True)
 
         # kb count, reference genome
         kb_count_standard_index_command = [
@@ -475,8 +482,8 @@ def count(
         ]
 
         # assumes any argument in varseek count matches kb count identically, except dashes replaced with underscores
-        for dict_key in varseek_count_only_allowable_kb_count_arguments:
-            for argument in list(varseek_count_only_allowable_kb_count_arguments[dict_key]):
+        for dict_key, arguments in varseek_count_only_allowable_kb_count_arguments.items():
+            for argument in list(arguments):
                 dash_count = len(argument) - len(argument.lstrip("-"))
                 leading_dashes = "-" * dash_count
                 argument = argument.lstrip("-").replace("-", "_")
@@ -509,14 +516,14 @@ def count(
     if not disable_clean:
         if not os.path.exists(file_signifying_successful_vk_clean_completion) or overwrite:
             params_dict["overwrite"], params_dict_vk_clean["overwrite"] = True, True
-            logger.info(f"Running vk clean")
-            vk.clean(**params_dict) if not params_dict.get("dry_run", False) else vk.clean(**params_dict_vk_clean)
+            logger.info("Running vk clean")
+            _ = vk.clean(**params_dict) if not params_dict.get("dry_run", False) else vk.clean(**params_dict_vk_clean)
             params_dict["overwrite"], params_dict_vk_clean["overwrite"] = overwrite_original, overwrite_original
         else:
             logger.warning(f"Skipping vk clean because file {file_signifying_successful_vk_clean_completion} already exists and overwrite=False")
         adata_for_summarize = adata_vcrs_clean_out
     else:
-        logger.warning(f"Skipping vk clean because disable_clean=True")
+        logger.warning("Skipping vk clean because disable_clean=True")
         adata_for_summarize = adata_vcrs
     params_dict["adata"] = adata_for_summarize  # so that the correct adata gets passed into vk summarize
 
@@ -526,14 +533,14 @@ def count(
         if not os.path.exists(file_signifying_successful_vk_summarize_completion) or overwrite:
             params_dict["out"] = vk_summarize_out_dir
             params_dict["overwrite"], params_dict_vk_summarize["overwrite"] = True, True
-            logger.info(f"Running vk summarize")
-            vk.summarize(**params_dict) if not params_dict.get("dry_run", False) else vk.summarize(**params_dict_vk_summarize)
+            logger.info("Running vk summarize")
+            _ = vk.summarize(**params_dict) if not params_dict.get("dry_run", False) else vk.summarize(**params_dict_vk_summarize)
             params_dict["overwrite"], params_dict_vk_summarize["overwrite"] = overwrite_original, overwrite_original
             params_dict["out"] = out_original
         else:
             logger.warning(f"Skipping vk summarize because file {file_signifying_successful_vk_summarize_completion} already exists and overwrite=False")
     else:
-        logger.warning(f"Skipping vk summarize because disable_summarize=True")
+        logger.warning("Skipping vk summarize because disable_summarize=True")
 
     vk_count_output_dict = {}
     vk_count_output_dict["adata_path_unprocessed"] = adata_vcrs

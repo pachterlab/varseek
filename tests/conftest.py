@@ -11,6 +11,7 @@ from varseek.utils import (
     create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting,
     create_mutant_t2g,
     make_mapping_dict,
+    reverse_complement
 )
 
 
@@ -166,7 +167,7 @@ def toy_mutation_metadata_df_path(mcrs_id_and_header_and_sequence_standard_lists
 
     df = vk.varseek_info.add_mutation_information(df, mutation_column = "mutation", mcrs_source = None)
     df = vk.varseek_build.add_mutation_type(df, mut_column = "mutation")
-    df["mutant_sequence_rc"] = df["mcrs_sequence"].apply(vk.varseek_build.reverse_complement)
+    df["mutant_sequence_rc"] = df["mcrs_sequence"].apply(reverse_complement)
 
     df.to_csv(temp_csv_file.name, index=False)
     
@@ -190,9 +191,9 @@ def toy_mutation_metadata_df_with_read_parents_path(toy_mutation_metadata_df_pat
 
     df['header'] = df['mcrs_id']
     df['mcrs_mutation_type'] = 'unknown'
-    df["mutant_sequence_read_parent_rc"] = df["mutant_sequence_read_parent"].apply(vk.varseek_build.reverse_complement)
+    df["mutant_sequence_read_parent_rc"] = df["mutant_sequence_read_parent"].apply(reverse_complement)
     df["mutant_sequence_read_parent_length"] = df["mutant_sequence_read_parent"].apply(len)
-    df["wt_sequence_read_parent_rc"] = df["wt_sequence_read_parent"].apply(vk.varseek_build.reverse_complement)
+    df["wt_sequence_read_parent_rc"] = df["wt_sequence_read_parent"].apply(reverse_complement)
     df["wt_sequence_read_parent_length"] = df["wt_sequence_read_parent"].apply(len)
 
     df.to_csv(temp_csv_file.name, index=False)
@@ -210,7 +211,7 @@ def toy_mcrs_fa_path(mcrs_id_and_header_and_sequence_standard_lists):
     mcrs_id_list = mcrs_id_and_header_and_sequence_standard_lists['mcrs_id_list']
     mcrs_sequence_list = mcrs_id_and_header_and_sequence_standard_lists['mcrs_sequence_list']
 
-    with open(temp_fasta_file.name, 'w') as fasta_file:
+    with open(temp_fasta_file.name, 'w', encoding="utf-8") as fasta_file:
         for i in range(len(mcrs_id_list)):
             fasta_file.write(f">{mcrs_id_list[i]}\n")
             fasta_file.write(f"{mcrs_sequence_list[i]}\n")
@@ -240,7 +241,7 @@ def dlist_file_small_path(mcrs_id_and_header_and_sequence_standard_lists):
     k = 55
     dfk_length = k + 2
     intended_dlist_entry_length = k + 2*dfk_length
-    with open(temp_dlist_fasta_file.name, 'a') as fasta_file:
+    with open(temp_dlist_fasta_file.name, 'a', encoding="utf-8") as fasta_file:
         for dlist_entry in dlist_information:
             if dlist_entry["mcrs_dlist_end"] == "end":
                 dlist_entry["mcrs_dlist_end"] = len(dlist_entry['mcrs_sequence'][dlist_entry["mcrs_dlist_start"]:])
@@ -278,7 +279,7 @@ def toy_id_to_header_mapping_csv_path(mcrs_id_and_header_and_sequence_standard_l
     temp_id_to_header_mapping_csv = tempfile.NamedTemporaryFile(delete=False, suffix='.csv')
 
     # write csv
-    with open(temp_id_to_header_mapping_csv.name, 'w') as id_to_header_mapping_out:
+    with open(temp_id_to_header_mapping_csv.name, 'w', encoding="utf-8") as id_to_header_mapping_out:
         for i in range(len(mcrs_id_list)):
             id_to_header_mapping_out.write(f"{mcrs_id_list[i]},{mcrs_header_list[i]}\n")
 

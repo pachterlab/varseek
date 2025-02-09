@@ -8,7 +8,7 @@ number_to_keep = 5  # Maximum number of records to keep per strategy
 json_path = "/home/jrich/data/varseek_data/sequencing/bulk/ccle/ccle_metadata_updated.json"
 output_json_path = "/home/jrich/data/varseek_data/sequencing/bulk/ccle/ccle_metadata_medium_best.json"
 
-with open(json_path, 'r') as file:
+with open(json_path, 'r', encoding="utf-8") as file:
     data = json.load(file)
 
 
@@ -29,7 +29,7 @@ for cancer_type in cancer_types_to_keep:
     filtered_data.extend(strategy_records[:number_to_keep])
 
 # Write the filtered results to a new JSON file
-with open(output_json_path, 'w') as file:
+with open(output_json_path, 'w', encoding="utf-8") as file:
     json.dump(filtered_data, file, indent=4)
 
 print(f"Filtered data written to {output_json_path}")

@@ -1,8 +1,8 @@
+"""varseek build and specific helper functions."""
 import os
 import re
 import subprocess
 import time
-from typing import List, Optional, Union
 
 import gget
 import numpy as np
@@ -14,6 +14,7 @@ from .constants import (
     complement,
     mutation_pattern,
     supported_databases_and_corresponding_reference_sequence_type,
+    fasta_extensions
 )
 from .utils import (
     add_mutation_type,
@@ -26,7 +27,6 @@ from .utils import (
     is_valid_int,
     make_function_parameter_to_value_dict,
     print_varseek_dry_run,
-    read_fasta,
     report_time_elapsed,
     save_params_to_config_file,
     save_run_info,
@@ -34,6 +34,7 @@ from .utils import (
     translate_sequence,
     vcf_to_dataframe,
     wt_fragment_and_mutant_fragment_share_kmer,
+    reverse_complement
 )
 
 # from gget.utils import read_fasta
@@ -51,7 +52,7 @@ cosmic_incorrect_wt_base = 0
 mut_idx_outside_seq = 0
 
 
-def print_valid_values_for_mutations_and_sequences_in_varseek_build(return_message=False):
+def print_valid_values_for_mutations_and_sequences_in_varseek_build():
     mydict = supported_databases_and_corresponding_reference_sequence_type
 
     # mydict.keys() has mutations, and mydict[mutation]["sequence_download_commands"].keys() has sequences
@@ -60,17 +61,7 @@ def print_valid_values_for_mutations_and_sequences_in_varseek_build(return_messa
         sequences = list(mutation_data["sequence_download_commands"].keys())
         message += f"'mutations': {mutation}\n"
         message += f"  'sequences': {', '.join(sequences)}\n"
-    if return_message:
-        return message
-    else:
-        print(message)
-
-
-def reverse_complement(seq):
-    if pd.isna(seq):  # Check if the sequence is NaN
-        return np.nan
-    complement = str.maketrans("ATCGNatcgn.*", "TAGCNtagcn.*")
-    return seq.translate(complement)[::-1]
+    print(message)
 
 
 def merge_gtf_transcript_locations_into_cosmic_csv(mutations, gtf_path, gtf_transcript_id_column, output_mutations_path=None):
@@ -101,7 +92,8 @@ def merge_gtf_transcript_locations_into_cosmic_csv(mutations, gtf_path, gtf_tran
 
     gtf_df["transcript_id"] = gtf_df["attribute"].str.extract('transcript_id "([^"]+)"')
 
-    assert len(gtf_df["transcript_id"]) == len(set(gtf_df["transcript_id"])), "Duplicate transcript_id values found!"
+    if not len(gtf_df["transcript_id"]) == len(set(gtf_df["transcript_id"])):
+        raise ValueError("Duplicate transcript_id values found!")
 
     # Filter out rows where transcript_id is NaN
     gtf_df = gtf_df.dropna(subset=["transcript_id"])
@@ -127,8 +119,8 @@ def merge_gtf_transcript_locations_into_cosmic_csv(mutations, gtf_path, gtf_tran
     return merged_df
 
 
-def drop_duplication_mutations(input, output, mutation_column="mutation_genome"):
-    df = pd.read_csv(input)
+def drop_duplication_mutations(input_mutations, output, mutation_column="mutation_genome"):
+    df = pd.read_csv(input_mutations)
 
     # count number of duplications
     num_dup = df[mutation_column].str.contains("dup", na=False).sum()
@@ -307,24 +299,33 @@ def validate_input_build(params_dict):
     sequences = params_dict.get("sequences")
     mutations = params_dict.get("mutations")
 
-    if not (isinstance(sequences, str) or isinstance(sequences, list)):
+    if not isinstance(sequences, (list, str)):
         raise ValueError(f"sequences must be a nucleotide string, a list of nucleotide strings, a path to a reference genome, or a string specifying a reference genome supported by varseek. Got {type(sequences)}\nTo see a list of supported mutation databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
     if isinstance(sequences, list) and not all(isinstance(seq, str) for seq in sequences):
         raise ValueError("All elements in sequences must be nucleotide strings.")
-    if isinstance(sequences, str) and (not os.path.isfile(sequences) or not all(c in "ACGTNU-.*" for c in sequences.upper()) or not supported_databases_and_corresponding_reference_sequence_type.get(mutations, {}).get("sequence_file_names", {}).get(sequences, None)):
+    if isinstance(sequences, str):
+        if all(c in "ACGTNU-.*" for c in sequences.upper()):  # a single reference sequence
+            pass
+        if supported_databases_and_corresponding_reference_sequence_type.get(mutations, {}).get("sequence_file_names", {}).get(sequences, None):  # a supported reference genome
+            pass
+        if os.path.isfile(sequences) and sequences.endswith(fasta_extensions):  # a path to a reference genome with a valid extension
+            pass
         raise ValueError(f"sequences must be a nucleotide string, a list of nucleotide strings, a path to a reference genome, or a string specifying a reference genome supported by varseek. Got {type(sequences)}.\nTo see a list of supported mutation databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
 
     # mutations
-    if not (isinstance(mutations, str) or isinstance(mutations, list)):
+    if not isinstance(mutations, (list, str)):
         raise ValueError(f"mutations must be a string, a list of strings, a path to a mutation database, or a string specifying a mutation database supported by varseek. Got {type(mutations)}\nTo see a list of supported reference genomes, please use the 'list_supported_databases' flag/argument.")
-    if isinstance(mutations, list) and not all(isinstance(mut, str) for mut in mutations):
-        raise ValueError("All elements in mutations must be strings.")
-    if isinstance(mutations, str) and not (mutations.startswith("c.") or mutations.startswith("g.")):  # mutations refers to an internally supported value, eg cosmic_cmc
-        if mutations not in supported_databases_and_corresponding_reference_sequence_type:
-            raise ValueError(f"mutations {mutations} not internally supported.\nTo see a list of supported mutation databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
-        else:
+    if isinstance(mutations, list) and not all((isinstance(mut, str) and mut.startswith(("c.", "g."))) for mut in mutations):
+        raise ValueError("All elements in mutations must be strings that start with 'c.' or 'g.'.")
+    if isinstance(mutations, str):
+        if mutations.startswith("c.") or mutations.startswith("g."):  # a single mutation
+            pass
+        elif mutations in supported_databases_and_corresponding_reference_sequence_type:  # a supported mutation database
             if sequences not in supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_download_commands"]:
                 raise ValueError(f"sequences {sequences} not internally supported.\nTo see a list of supported mutation databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
+        elif os.path.isfile(mutations) and mutations.endswith(accepted_build_file_types):  # a path to a mutation database with a valid extension
+            pass
+        raise ValueError(f"mutations must be a string, a list of strings, a path to a mutation database, or a string specifying a mutation database supported by varseek. Got {type(mutations)}.\nTo see a list of supported mutation databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
 
     # Directories
     if not isinstance(params_dict.get("out", None), str):
@@ -365,12 +366,12 @@ def validate_input_build(params_dict):
     k = params_dict.get("k", None)
     w = params_dict.get("w", None)
     if int(k) % 2 != 0 or int(k) > 63:
-        logger.warning(f"If running a workflow with vk ref or kb ref, k should be an odd number between 1 and 63. Got k={k}.")
+        logger.warning("If running a workflow with vk ref or kb ref, k should be an odd number between 1 and 63. Got k=%s.", k)
     if int(w) >= int(k):
         raise ValueError(f"w should be less than k. Got w={w}, k={k}.")
 
     # required_insertion_overlap_length
-    if params_dict.get("required_insertion_overlap_length") is not None and not (isinstance(params_dict.get("required_insertion_overlap_length"), int) or isinstance(params_dict.get("required_insertion_overlap_length"), str)):
+    if params_dict.get("required_insertion_overlap_length") is not None and not isinstance(params_dict.get('required_insertion_overlap_length'), (int, str)):
         raise ValueError(f"required_insertion_overlap_length must be an int, a string, or None. Got {type(params_dict.get('required_insertion_overlap_length'))}.")
 
     # Boolean
@@ -399,10 +400,11 @@ def validate_input_build(params_dict):
     # Validate translation parameters
     for param_name in ["translate_start", "translate_end"]:
         param_value = params_dict.get(param_name)
-        if param_value is not None and not (isinstance(param_value, int) or isinstance(param_value, str)):
+        if param_value is not None and not isinstance(param_value, (int, str)):
             raise ValueError(f"{param_name} must be an int, a string, or None. Got param_name of type {type(param_value)}.")
 
 
+accepted_build_file_types = {".csv", ".tsv", ".vcf"}
 def build(
     sequences,
     mutations,
@@ -563,18 +565,16 @@ def build(
                                          Default: None (no insertion size limit will be applied)
     - min_seq_len                        (int) Minimum length of the variant output sequence. Mutant sequences smaller than this will be dropped. None means no length filter will be applied. Default: k (from the "k" parameter)
     - optimize_flanking_regions          (True/False) Whether to remove nucleotides from either end of the mutant sequence to ensure (when possible)
-                                         that the mutant sequence does not contain any (w+1)-mers (where a (w+1)-mer is a subsequence of length w+1, with w defined by the 'w' argument) also found in the wildtype/input sequence. Default: False
+                                         that the mutant sequence does not contain any (w+1)-mers (where a (w+1)-mer is a subsequence of length w+1, with w defined by the 'w' argument) also found in the wildtype/input sequence. Default: True
     - remove_seqs_with_wt_kmers          (True/False) Removes output sequences where at least one k-mer is also present in the wildtype/input sequence in the same region.
                                          If optimize_flanking_regions=True, only sequences for which a wildtype k-mer (with k defined by the 'k' argument) is still present after optimization will be removed.
-                                         Default: False
+                                         Default: True
 
     - required_insertion_overlap_length  (int | str | None) Enforces the minimum number of bases included in the inserted region for all (w+1)-mers (where a (w+1)-mer is a subsequence of length w+1, with w defined by the 'w' argument),
-                                         or that all (w+1)-mers contain the entire inserted sequence (whatever is smaller). Only effective when optimize_flanking_regions is also True.
-                                         Default: None (Flank optimization occurs only until there is no shared k-mer in the VCRS and the reference sequence). If "all", then require the entire insertion and the following nucleotide (and filter out insertions of length >= 2*w)
+                                         or that all (w+1)-mers contain the entire inserted sequence (whatever is smaller). Only effective when optimize_flanking_regions is also True. None means that flank optimization occurs only until there is no shared k-mer in the VCRS and the reference sequence. If "all", then require the entire insertion and the following nucleotide (and filter out insertions of length >= 2*w). Default: 6
     - merge_identical                    (True/False) Whether to merge sequence-identical VCRSs in the output (identical VCRSs will be merged by concatenating the sequence
-                                         headers for all identical sequences with semicolons). Default: False
-    - vcrs_strandedness                  (True/False) Whether to consider the forward and reverse-complement mutant sequences as distinct if merging identical sequences. Only effective when merge_identical is also True. Default: False
-                                         Default: False (ie do not consider forward and reverse-complement sequences to be equivalent)
+                                         headers for all identical sequences with semicolons). Default: True
+    - vcrs_strandedness                  (True/False) Whether to consider the forward and reverse-complement mutant sequences as distinct if merging identical sequences. Only effective when merge_identical is also True. Default: False (ie consider forward and reverse-complement sequences to be equivalent).
     - replace_original_headers           (True/False) Whether to keep the original sequence headers in the output fasta file, or to replace them with unique IDs of the form 'vcrs_<int>.
                                          If False, then an additional file at the path <id_to_header_csv_out> will be formed that maps sequence IDs from the fasta file to the <mut_id_column>. Default: True.
 
@@ -596,7 +596,7 @@ def build(
     # * 0. Informational arguments that exit early
     if list_supported_databases:
         print_valid_values_for_mutations_and_sequences_in_varseek_build()
-        return
+        return None
 
     # * 1. Start timer
     start_time = time.perf_counter()
@@ -705,7 +705,8 @@ def build(
                 grch = grch_dict[str(largest_key)]
             else:
                 grch = cosmic_grch
-                assert grch in supported_databases_and_corresponding_reference_sequence_type[mutations]["database_version_to_reference_assembly_build"], "The 'cosmic_grch' argument must be supported by the corresponding database."
+                if grch not in supported_databases_and_corresponding_reference_sequence_type[mutations]["database_version_to_reference_assembly_build"]:
+                    raise ValueError(f"Invalid value for cosmic_grch: {cosmic_grch}. Supported values are {', '.join(supported_databases_and_corresponding_reference_sequence_type[mutations]['database_version_to_reference_assembly_build'].keys())}.")
             if grch == "37":
                 gget_ref_grch = "human_grch37"
             elif grch == "38":
@@ -742,7 +743,7 @@ def build(
                     gtf = gtf_file
 
                     if not os.path.isfile(genome_file) or not os.path.isfile(gtf_file):
-                        logger.warning(f"Downloading reference sequences with {' '.join(sequences_download_command_list)}. Note that this requires curl >=7.73.0")
+                        logger.warning("Downloading reference sequences with %s. Note that this requires curl >=7.73.0", ' '.join(sequences_download_command_list))
                         subprocess.run(sequences_download_command_list, check=True)
 
                         subprocess.run(["gunzip", f"{genome_file}.gz"], check=True)
@@ -750,12 +751,12 @@ def build(
 
                     sequences = genome_file
 
-                elif sequences == "cdna" or sequences == "cds":
+                elif sequences in {"cdna", "cds"}:
                     cds_file = supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_file_names"]["cds"]
                     cds_file = cds_file.replace("GRCH_NUMBER", grch)
                     cds_file = f"{reference_out_sequences}/{cds_file}"
                     if not os.path.isfile(cds_file) and sequences == "cds":
-                        logger.warning(f"Downloading reference sequences with {' '.join(sequences_download_command_list)}. Note that this requires curl >=7.73.0")
+                        logger.warning("Downloading reference sequences with %s. Note that this requires curl >=7.73.0", ' '.join(sequences_download_command_list))
                         subprocess.run(sequences_download_command_list, check=True)
 
                         subprocess.run(["gunzip", f"{cds_file}.gz"], check=True)
@@ -764,7 +765,7 @@ def build(
                         cdna_file = cdna_file.replace("GRCH_NUMBER", grch)
                         cdna_file = f"{reference_out_sequences}/{cdna_file}"
                         if not os.path.isfile(cdna_file):
-                            logger.warning(f"Downloading reference sequences with {' '.join(sequences_download_command_list)}. Note that this requires curl >=7.73.0")
+                            logger.warning("Downloading reference sequences with %s. Note that this requires curl >=7.73.0", ' '.join(sequences_download_command_list))
                             subprocess.run(sequences_download_command_list, check=True)
 
                             subprocess.run(["gunzip", f"{cds_file}.gz"], check=True)
@@ -792,7 +793,7 @@ def build(
     else:
         raise ValueError(
             """
-            Format of the input to the 'sequences' argument not recognized. 
+            Format of the input to the 'sequences' argument not recognized.
             'sequences' must be one of the following:
             - Path to the fasta file containing the sequences to be mutated (e.g. 'seqs.fa')
             - A list of sequences to be mutated (e.g. ['ACTGCTAGCT', 'AGCTAGCT'])
@@ -801,8 +802,6 @@ def build(
         )
 
     mutations_path = None
-
-    # logger.warning("Always ensure that the 'sequences' and 'mutations' are compatible with each other. This generally requires the correct source (e.g., Ensembl, RefSeq), version (e.g., GRCh37, GRCh38), and release (e.g., Ensembl release 112 - for transcript locations in particular).")
 
     if isinstance(mutations, str) and mutations in supported_databases_and_corresponding_reference_sequence_type:
         # TODO: expand beyond COSMIC
@@ -904,7 +903,7 @@ def build(
             mutations = temp
 
     # Handle single mutation passed as a string
-    elif isinstance(mutations, str) and not mutations in supported_databases_and_corresponding_reference_sequence_type:
+    elif isinstance(mutations, str) and mutations not in supported_databases_and_corresponding_reference_sequence_type:
         # This will work for one mutation for one sequence as well as one mutation for multiple sequences
         mutations_path = mutations
         temp = pd.DataFrame()
@@ -921,7 +920,7 @@ def build(
     else:
         raise ValueError(
             """
-            Format of the input to the 'mutations' argument not recognized. 
+            Format of the input to the 'mutations' argument not recognized.
             'mutations' must be one of the following:
             - Path to comma-separated csv file (e.g. 'mutations.csv')
             - A pandas DataFrame object
@@ -945,12 +944,7 @@ def build(
         seq_dict[title.split(" ")[0].split(".")[0]] = seq
 
     if non_nuc_seqs > 0:
-        logger.warning(
-            f"""
-            Non-nucleotide characters detected in {non_nuc_seqs} input sequences. gget mutate is currently only optimized for mutating nucleotide sequences.
-            Specifically inversion mutations might not be performed correctly. 
-            """
-        )
+        logger.warning("Non-nucleotide characters detected in %s input sequences. vk build is only optimized for mutating nucleotide sequences. Inversion mutations might not be performed correctly.", non_nuc_seqs)
 
     # remove duplicate entries from the mutations dataframe, keeping the ones with the most information
     duplicate_count = mutations.duplicated(subset=[seq_id_column, mut_column], keep=False).sum() // 2
@@ -962,11 +956,7 @@ def build(
     number_of_missing_seq_ids = mutations[seq_id_column].isna().sum()
 
     if number_of_missing_seq_ids > 0:
-        logger.warning(
-            f"""
-            {number_of_missing_seq_ids} rows in 'mutations' are missing sequence IDs. These rows will be dropped from the analysis.
-            """
-        )
+        logger.warning("%s rows in 'mutations' are missing sequence IDs. These rows will be dropped from the analysis.", number_of_missing_seq_ids)
 
         # Drop rows with missing sequence IDs
         mutations = mutations.dropna(subset=[seq_id_column])
@@ -984,19 +974,21 @@ def build(
     seqs_not_found = mutations[~mutations[seq_id_column].isin(seq_dict.keys())]
     if 0 < len(seqs_not_found) < 20:
         logger.warning(
-            f"""
-            The sequences with the following {len(seqs_not_found)} sequence ID(s) were not found: {", ".join(seqs_not_found[seq_id_column].values)}  
-            These sequences and their corresponding mutations will not be included in the output.  
-            Ensure that the sequence IDs correspond to the string following the > character in the 'sequences' fasta file (do NOT include spaces or dots).
             """
+            The sequences with the following %d sequence ID(s) were not found: %s
+            These sequences and their corresponding mutations will not be included in the output.
+            Ensure that the sequence IDs correspond to the string following the > character in the 'sequences' FASTA file (do NOT include spaces or dots).
+            """,
+            len(seqs_not_found), ", ".join(seqs_not_found[seq_id_column].values)
         )
     elif len(seqs_not_found) > 0:
         logger.warning(
-            f"""
-            The sequences corresponding to {len(seqs_not_found)} sequence IDs were not found.  
-            These sequences and their corresponding mutations will not be included in the output.  
-            Ensure that the sequence IDs correspond to the string following the > character in the 'sequences' fasta file (do NOT include spaces or dots).
             """
+            The sequences corresponding to %d sequence IDs were not found.
+            These sequences and their corresponding mutations will not be included in the output.
+            Ensure that the sequence IDs correspond to the string following the > character in the 'sequences' FASTA file (do NOT include spaces or dots).
+            """,
+            len(seqs_not_found)
         )
 
     # Drop inputs for sequences that were not found
@@ -1004,7 +996,7 @@ def build(
     if len(mutations) < 1:
         raise ValueError(
             """
-            None of the input sequences match the sequence IDs provided in 'mutations'. 
+            None of the input sequences match the sequence IDs provided in 'mutations'.
             Ensure that the sequence IDs correspond to the string following the > character in the 'sequences' fasta file (do NOT include spaces or dots).
             """
         )
@@ -1090,7 +1082,7 @@ def build(
 
     if remove_seqs_with_wt_kmers:
         long_duplications = ((duplication_mask) & ((mutations["end_mutation_position"] - mutations["start_mutation_position"]) >= w)).sum()
-        logger.info(f"Removing {long_duplications} duplications > w")
+        logger.info(f"Removing %d duplications > w", long_duplications)
         mutations = mutations[~((duplication_mask) & ((mutations["end_mutation_position"] - mutations["start_mutation_position"]) >= w))]
 
     # Create a mask for all non-substitution mutations
@@ -1152,7 +1144,6 @@ def build(
     mutations["end_kmer_position"] = mutations[["end_kmer_position_max", "sequence_length"]].min(axis=1)  # don't forget to increment by 1 later on
 
     if gtf is not None and transcript_boundaries:
-        assert mutations_path.endswith(".csv") or mutations_path.endswith(".tsv"), "Mutations must be a CSV or TSV file"
         if "start_transcript_position" not in mutations.columns and "end_transcript_position" not in mutations.columns:  # * currently hard-coded column names, but optionally can be changed to arguments later
             mutations = merge_gtf_transcript_locations_into_cosmic_csv(mutations, gtf, gtf_transcript_id_column=gtf_transcript_id_column)
 
@@ -1323,7 +1314,7 @@ def build(
         mutations = mutations[mutations["mutant_sequence_kmer_length"] >= min_seq_len]
 
         if verbose:
-            logger.info(f"Removed {rows_less_than_minimum} mutant kmers with length less than {min_seq_len}...")
+            logger.info("Removed %d mutant kmers with length less than %d...", rows_less_than_minimum, min_seq_len)
 
     if max_ambiguous is not None:
         # Get number of 'N' or 'n' occuring in the sequence
@@ -1332,7 +1323,7 @@ def build(
         mutations = mutations[mutations["num_N"] <= max_ambiguous]
 
         if verbose:
-            logger.info(f"Removed {num_rows_with_N} mutant kmers containing more than {max_ambiguous} 'N's...")
+            logger.info("Removed %d mutant kmers containing more than %d 'N's...", num_rows_with_N, max_ambiguous)
 
         # Drop the 'num_N' column after filtering
         mutations = mutations.drop(columns=["num_N"])
@@ -1372,14 +1363,15 @@ def build(
 
     # Save the report string to the specified path
     if save_filtering_report_text:
-        with open(filtering_report_text_out, "w") as file:
+        with open(filtering_report_text_out, "w", encoding="utf-8") as file:
             file.write(report)
 
     if translate and save_mutations_updated_csv and store_full_sequences:
         columns_to_keep.extend(["wt_sequence_aa_full", "mutant_sequence_aa_full"])
 
         if not mutations_path:
-            assert type(translate_start) != str and type(translate_end) != str, "translate_start and translate_end must be integers when translating sequences (or default None)."
+            if not isinstance(translate_start, int) and not isinstance(translate_end, int):
+                raise ValueError("translate_start and translate_end must be integers when translating sequences (or default None).")
             if translate_start is None:
                 translate_start = 0
             if translate_end is None:
@@ -1446,7 +1438,7 @@ def build(
 
     # Save as a newline-separated text file
     if save_removed_variants_text and save_files:
-        with open(removed_variants_text_out, "w") as file:
+        with open(removed_variants_text_out, "w", encoding="utf-8") as file:
             for mutation in removed_mutation_set:
                 file.write(f"{mutation}\n")
 
@@ -1549,7 +1541,7 @@ def build(
         # Save the report string to the specified path
         if save_filtering_report_text:
             filtering_report_write_mode = "a" if os.path.exists(filtering_report_text_out) else "w"
-            with open(filtering_report_text_out, filtering_report_write_mode) as file:
+            with open(filtering_report_text_out, filtering_report_write_mode, encoding="utf-8") as file:
                 file.write(merging_report)
 
         if verbose:
@@ -1582,7 +1574,8 @@ def build(
         mutations["fasta_format"] = ">" + mutations["mcrs_id"] + "\n" + mutations["mutant_sequence"] + "\n"
 
         if save_wt_mcrs_fasta_and_t2g:
-            assert save_mutations_updated_csv, "save_mutations_updated_csv must be True to create wt_mcrs_counterpart_fa"
+            if not save_mutations_updated_csv:
+                raise ValueError("save_mutations_updated_csv must be True to create wt_mcrs_fasta_and_t2g")
 
             mutations_with_exactly_1_wt_sequence_per_row = mutations[["mcrs_id", "wt_sequence"]].copy()
 
@@ -1597,17 +1590,17 @@ def build(
 
     # Save mutated sequences in new fasta file
     if save_files:
-        with open(mcrs_fasta_out, "w") as fasta_file:
+        with open(mcrs_fasta_out, "w", encoding="utf-8") as fasta_file:
             fasta_file.write("".join(mutations["fasta_format"].values))
 
         create_mutant_t2g(mcrs_fasta_out, mcrs_t2g_out)
 
     if verbose:
-        logger.info(f"FASTA file containing mutated sequences created at {mcrs_fasta_out}.")
-        logger.info(f"t2g file containing mutated sequences created at {mcrs_t2g_out}.")
+        logger.info("FASTA file containing mutated sequences created at %s.", mcrs_fasta_out)
+        logger.info("t2g file containing mutated sequences created at %s.", mcrs_t2g_out)
 
     if save_wt_mcrs_fasta_and_t2g:
-        with open(wt_mcrs_fasta_out, "w") as fasta_file:
+        with open(wt_mcrs_fasta_out, "w", encoding="utf-8") as fasta_file:
             fasta_file.write("".join(mutations_with_exactly_1_wt_sequence_per_row["fasta_format_wt"].values))
         create_mutant_t2g(wt_mcrs_fasta_out, wt_mcrs_t2g_out)  # separate t2g is needed because it may have a subset of the rows of mutant (because it doesn't contain any MCRSs with merged mutations and 2+ originating WT sequences)
 

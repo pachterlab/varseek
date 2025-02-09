@@ -190,7 +190,7 @@ if any(tool in tools_that_require_star_alignment for tool in tools_to_benchmark)
 
     if not os.listdir(star_genome_dir):
         elapsed_time = run_command_with_error_logging(star_build_command, track_time=True)
-        with open(star_output_file, "w") as f:
+        with open(star_output_file, "w", encoding="utf-8") as f:
             f.write(f"STAR build runtime: {elapsed_time[0]} minutes, {elapsed_time[1]} seconds\n")
 
     #* Index reference genome
@@ -198,7 +198,7 @@ if any(tool in tools_that_require_star_alignment for tool in tools_to_benchmark)
         start_time = time.time()
         _ = pysam.faidx(reference_genome_fasta)
         minutes, seconds = divmod(time.time() - start_time, 60)
-        with open(star_output_file, "a") as f:
+        with open(star_output_file, "a", encoding="utf-8") as f:
             f.write(f"Genome indexing runtime: {minutes} minutes, {seconds} seconds\n")
 
     #* Index 1000 genomes standard variants
@@ -271,7 +271,7 @@ for number_of_reads in number_of_reads_list:
 
         print(f"STAR alignment, {number_of_reads} reads")
         elapsed_time = run_command_with_error_logging(star_align_command, track_time=True)
-        with open(star_output_file, "a") as f:
+        with open(star_output_file, "a", encoding="utf-8") as f:
             f.write(f"STAR alignment runtime for {number_of_reads} reads: {elapsed_time[0]} minutes, {elapsed_time[1]} seconds\n")
 
         #* Index BAM file
@@ -280,7 +280,7 @@ for number_of_reads in number_of_reads_list:
             start_time = time.time()
             _ = pysam.index(aligned_and_unmapped_bam)
             minutes, seconds = divmod(time.time() - start_time, 60)
-            with open(star_output_file, "a") as f:
+            with open(star_output_file, "a", encoding="utf-8") as f:
                 f.write(f"BAM indexing runtime for {number_of_reads} reads: {minutes} minutes, {seconds} seconds\n")
     
     if "gatk_haplotypecaller" in tools_to_benchmark:

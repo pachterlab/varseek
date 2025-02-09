@@ -1,10 +1,7 @@
 import argparse
 import os
-import subprocess
 
-import pysam
-
-from varseek.utils import run_command_with_error_logging
+from varseek.utils import run_command_with_error_logging, splitext_custom
 
 parser = argparse.ArgumentParser(description="Run GATK Mutect2 on a set of reads and report the time and memory usage")
 
@@ -98,7 +95,8 @@ mutect2_unfiltered_vcf = f"{mutect2_folder}/mutect2_output_unfiltered.g.vcf.gz"
 mutect2_filtered_vcf = f"{mutect2_folder}/mutect2_output_filtered.vcf.gz"
 mutect2_filtered_applied_vcf = f"{mutect2_folder}/mutect2_output_filtered_applied.vcf.gz"
 
-reference_genome_dict = reference_genome_fasta.replace(".fa", ".dict")
+reference_genome_fasta_base, _ = splitext_custom(reference_genome_fasta)
+reference_genome_dict = reference_genome_fasta_base + ".dict"
 
 star_build_command = [
     STAR,

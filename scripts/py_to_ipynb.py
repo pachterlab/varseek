@@ -9,7 +9,7 @@ comment_marker_deliniator = '# CELL'
 
 def module_to_notebook(python_in_path, notebook_out_path, comment_marker_deliniator):
     # Read your script
-    with open(python_in_path, 'r') as f:
+    with open(python_in_path, 'r', encoding="utf-8") as f:
         lines = f.readlines()
 
     # Initialize notebook
@@ -92,7 +92,7 @@ def module_to_notebook(python_in_path, notebook_out_path, comment_marker_delinia
     nb['cells'] = cells
 
     # Write notebook to file
-    with open(notebook_out_path, 'w') as f:
+    with open(notebook_out_path, 'w', encoding="utf-8") as f:
         nbf.write(nb, f)
 
 

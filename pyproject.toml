@@ -50,6 +50,7 @@ dev = [
     "toml>=0.10.2",
     "nbval>=0.10.0",
     "nbdime>=4.0.2",
+    "flake8>=7.0.0",
 ]
 analysis = [
     "matplotlib-venn>=1.0.0",

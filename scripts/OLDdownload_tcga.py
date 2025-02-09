@@ -175,8 +175,8 @@ elif dtt_or_curl == "curl":
         token = file.read().strip()
 
     for uuid in uuids:
-        print(f"Downloading {uuid} to {output_folder}")
         output_folder = uuid_to_output_folder_dict[uuid]
+        print(f"Downloading {uuid} to {output_folder}")
         curl_command = f"curl --output-dir '{output_folder}' --remote-name --remote-header-name --header 'X-Auth-Token: {token}' 'https://api.gdc.cancer.gov/data/{uuid}'"
         subprocess.run(curl_command, shell=True)
 

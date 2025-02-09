@@ -100,7 +100,7 @@ if response.status_code == 200:
         if data["uuid_tumor"] and data["uuid_normal"]
     }
 
-    with open(matched_tumor_normal_metadata_file, mode='w', newline='') as file:
+    with open(matched_tumor_normal_metadata_file, mode='w', newline='', encoding="utf-8") as file:
         writer = csv.writer(file, delimiter='\t')
         writer.writerow(["patient_id", "uuid_tumor", "file_name_tumor", "uuid_normal", "file_name_normal", "primary_site", "primary_diagnosis", "ajcc_pathologic_stage", "experimental_strategy", "workflow_type", "data_category", "data_format"])
 

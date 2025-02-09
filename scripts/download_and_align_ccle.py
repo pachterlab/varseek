@@ -221,7 +221,7 @@ def download_ccle_total(
         i = 1
         for fastq_file in fastq_files:
             fastq_header_list = get_header_set_from_fastq(fastq_file, output_format="list")
-            with open(f"{sample_out_folder}/fastq_headers_{i}.txt", "w") as f:
+            with open(f"{sample_out_folder}/fastq_headers_{i}.txt", "w", encoding="utf-8") as f:
                 f.write("\n".join(fastq_header_list))
             i += 1
 
@@ -282,7 +282,7 @@ def main(args):
         subprocess.run(ccle_metadata_download_command, shell=True, check=True)
 
     # Loop through json file and download fastqs
-    with open(json_path, 'r') as file:
+    with open(json_path, 'r', encoding="utf-8") as file:
         data = json.load(file)
 
     rnaseq_data = [study for study in data if study['library_strategy'] == 'RNA-Seq']

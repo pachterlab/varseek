@@ -194,7 +194,7 @@ false_positive_set_including_noncosmic_mutations = false_positive_set.union(nonc
 FP_including_noncosmic = len(false_positive_set_including_noncosmic_mutations)
 accuracy, sensitivity, specificity = calculate_sensitivity_specificity(metric_dictionary_reference['TP'], metric_dictionary_reference['TN'], FP_including_noncosmic, metric_dictionary_reference['FN'])
 
-with open(varscan_stat_path, "a") as file:
+with open(varscan_stat_path, "a", encoding="utf-8") as file:
     file.write(f"FP including non-cosmic: {FP_including_noncosmic}\n")
     file.write(f"accuracy including non-cosmic: {accuracy}\n")
     file.write(f"specificity including non-cosmic: {specificity}\n")

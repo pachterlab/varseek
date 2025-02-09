@@ -1,5 +1,4 @@
-import re
-from collections import defaultdict
+"""varseek constant values."""
 
 # allowable_kwargs = {
 #     "varseek_build": {"insertion_size_limit", "min_seq_len", "optimize_flanking_regions", "remove_seqs_with_wt_kmers", "required_insertion_overlap_length", "merge_identical", "merge_identical_strandedness", "replace_original_headers", "cosmic_release", "cosmic_grch", "cosmic_email", "cosmic_password", "save_files"},
@@ -14,12 +13,14 @@ from collections import defaultdict
 #     "varseek_count": set()
 # }
 
-fasta_extensions = (".fa", ".fasta", ".fa.gz", ".fasta.gz")
+fasta_extensions = (".fa", ".fasta", ".fa.gz", ".fasta.gz", ".fna", ".fna.gz", ".ffn", ".ffn.gz")
 fastq_extensions = (".fq", ".fastq", ".fq.gz", ".fastq.gz")
 
 technology_valid_values = {"10xv1", "10xv2", "10xv3", "Bulk", "SmartSeq2", "BDWTA", "CELSeq", "CELSeq2", "DropSeq", "inDropsv1", "inDropsv2", "inDropsv3", "SCRBSeq", "SmartSeq3", "SPLiT", "STORM", "SureCell", "VASA", "Visium"}
 non_single_cell_technologies = {"Bulk", "Visium"}
 supported_downloadable_normal_reference_genomes_with_kb_ref = {"human", "mouse", "dog", "monkey", "zebrafish"}  # see full list at https://github.com/pachterlab/kallisto-transcriptome-indices/
+
+complement_trans = str.maketrans("ACGTNacgtn.", "TGCANtgcan.")
 
 # Get complement
 complement = {
@@ -35,11 +36,10 @@ complement = {
     "c": "g",
     "g": "c",
     "n": "n",
+    "*": "*",
     ".": ".",  # annotation for gaps
     "-": "-",  # annotation for gaps
     ">": ">",  # in case mutation section has a '>' character indicating substitution
-    "x": "x",  # in case one uses 'x' in place of '>'
-    "X": "X",  # in case one uses 'X' in place of '>'
 }
 
 

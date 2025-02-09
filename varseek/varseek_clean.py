@@ -1,14 +1,12 @@
+"""varseek clean and specific helper functions."""
 import os
 import subprocess
 import time
 
 import anndata
-import gget
 import numpy as np
 import pandas as pd
-import pysam
 import scanpy as sc
-import scipy as sp
 from packaging import version
 
 from varseek.utils import (
@@ -33,7 +31,6 @@ from varseek.utils import (
 )
 
 from .constants import (
-    fastq_extensions,
     non_single_cell_technologies,
     technology_valid_values,
 )
@@ -54,7 +51,7 @@ def prepare_set(mcrs_id_set_to_exclusively_keep):
 
     elif isinstance(mcrs_id_set_to_exclusively_keep, str) and os.path.isfile(mcrs_id_set_to_exclusively_keep) and mcrs_id_set_to_exclusively_keep.endswith(".txt"):
         # Load lines from text file, stripping whitespace
-        with open(mcrs_id_set_to_exclusively_keep, "r") as f:
+        with open(mcrs_id_set_to_exclusively_keep, "r", encoding="utf-8") as f:
             return set(line.strip() for line in f if line.strip())  # Ignore empty lines
 
     elif isinstance(mcrs_id_set_to_exclusively_keep, set):
@@ -210,6 +207,8 @@ def clean(
     dry_run=False,  # general
     overwrite=False,
     threads=2,
+    kallisto=None,
+    bustools=None,
     verbose=False,
     **kwargs,
 ):
@@ -275,6 +274,8 @@ def clean(
     - dry_run                               (bool): Whether to run in dry run mode. Default: False.
     - overwrite                             (bool): Whether to overwrite existing files. Default: False.
     - threads                               (int): Number of threads to use. Default: 2.
+    - kallisto                              (str): Path to the kallisto binary. Default: None.
+    - bustools                              (str): Path to the bustools binary. Default: None.
     - verbose                               (bool): Whether to print verbose output. Default: False.
     """
     # * 1. Start timer
@@ -348,19 +349,19 @@ def clean(
 
     try:
         fastqs = sort_fastq_files_for_kb_count(fastqs, technology=technology, multiplexed=multiplexed, logger=logger, check_only=(not sort_fastqs), verbose=verbose)
-    except Exception as e:
+    except Exception:
         pass
 
     if not kallisto:
         kallisto_binary_path_command = "kb info | grep 'kallisto:' | awk '{print $3}' | sed 's/[()]//g'"
-        kallisto = subprocess.run(kallisto_binary_path_command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, text=True).stdout.strip()
+        kallisto = subprocess.run(kallisto_binary_path_command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, text=True, check=True).stdout.strip()
     if not bustools:
         bustools_binary_path_command = "kb info | grep 'bustools:' | awk '{print $3}' | sed 's/[()]//g'"
-        bustools = subprocess.run(bustools_binary_path_command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, text=True).stdout.strip()
+        bustools = subprocess.run(bustools_binary_path_command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, text=True, check=True).stdout.strip()
 
     if apply_dlist_correction:  # and anything else that requires new kallisto
-        kallisto_version_command = f"{kallisto} 2>&1 | grep -oP 'kallisto \K[0-9]+\.[0-9]+\.[0-9]+'"
-        kallisto_version_installed = subprocess.run(kallisto_version_command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, text=True).stdout.strip()
+        kallisto_version_command = rf"{kallisto} 2>&1 | grep -oP 'kallisto \K[0-9]+\.[0-9]+\.[0-9]+'"
+        kallisto_version_installed = subprocess.run(kallisto_version_command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, text=True, check=True).stdout.strip()
         kallisto_version_required = "0.51.1"
 
         if version.parse(kallisto_version_installed) < kallisto_version_required:
@@ -389,11 +390,11 @@ def clean(
     if mutations_updated_csv_columns or not id_to_header_csv:
         if not mutations_updated_csv_columns:
             mutations_updated_csv_columns = ["mcrs_id", "mcrs_header"]  #!!! dont hard-code
-        if mutations_updated_csv and type(mutations_updated_csv) == str and os.path.exists(mutations_updated_csv):
+        if mutations_updated_csv and isinstance(mutations_updated_csv, str) and os.path.exists(mutations_updated_csv):
             mutations_updated_csv = pd.read_csv(mutations_updated_csv, index_col=0, usecols=mutations_updated_csv_columns)
             adata.var = adata.var.merge(mutations_updated_csv, on=mcrs_id_column, how="left")
     if id_to_header_csv and not mutations_updated_csv:
-        if type(id_to_header_csv) == str and os.path.exists(id_to_header_csv):
+        if isinstance(id_to_header_csv, str) and os.path.exists(id_to_header_csv):
             id_to_header_df = pd.read_csv(id_to_header_csv, index_col=0)
             adata.var = adata.var.merge(id_to_header_df, on=mcrs_id_column, how="left")
 
@@ -433,7 +434,7 @@ def clean(
 
     if qc_against_gene_matrix:
         # TODO: test this
-        adata = adjust_mutation_adata_by_normal_gene_matrix(adata, kb_output_mutation=kb_count_vcrs_dir, kb_output_standard=kb_count_reference_genome_dir, id_to_header_csv=id_to_header_csv, adata_vcrs_clean_out=None, t2g_mutation=vcrs_t2g, t2g_standard=None, fastq_file_list=fastqs, mm=mm, union=union, technology=technology, parity=parity, bustools=bustools, sum_rows=sum_rows, verbose=verbose)
+        adata = adjust_mutation_adata_by_normal_gene_matrix(adata, kb_output_mutation=kb_count_vcrs_dir, kb_output_standard=kb_count_reference_genome_dir, id_to_header_csv=id_to_header_csv, t2g_mutation=vcrs_t2g, t2g_standard=None, fastq_file_list=fastqs, mm=mm, union=union, technology=technology, parity=parity, bustools=bustools, verbose=verbose)
 
     if sum_rows and adata.shape[0] > 1:
         # Sum across barcodes (rows)
@@ -459,11 +460,11 @@ def clean(
     if use_binary_matrix:
         adata.X = (adata.X > 0).astype(int)
 
-    # TODO: make sure the adata objects are in the same order (relevant for both bulk and sc)
+    # TODO: make sure the adata objects are in the same order (relevant for both bulk and sc) - possibly with match_adata_orders
     if isinstance(adata_reference_genome, anndata.AnnData):
         if technology not in non_single_cell_technologies:  # pardon the double negative - this is just a way to say "if technology is single cell"
             if filter_cells_by_min_counts:
-                if type(filter_cells_by_min_counts) != int:  # ie True for automatic
+                if not isinstance(filter_cells_by_min_counts, int):  # ie True for automatic
                     from kneed import KneeLocator
 
                     umi_counts = np.array(adata_reference_genome.X.sum(axis=1)).flatten()

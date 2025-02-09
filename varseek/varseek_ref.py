@@ -1,3 +1,4 @@
+"""varseek ref and specific helper functions."""
 import inspect
 import os
 import subprocess
@@ -231,17 +232,17 @@ def ref(
     if list_downloadable_references:  # for vk ref
         for downloadable_reference in downloadable_references:
             print(f"mutations: {downloadable_reference['mutations']}, sequences: {downloadable_reference['sequences']}, description: {downloadable_reference['description']}")
-        return
+        return None
 
     if kwargs.get("list_supported_databases"):  # from vk build
         vk.varseek_build.print_valid_values_for_mutations_and_sequences_in_varseek_build()
-        return
+        return None
     if kwargs.get("list_columns"):  # from vk info
         vk.varseek_info.print_list_columns()
-        return
+        return None
     if kwargs.get("list_filter_rules"):  # from vk filter
         vk.varseek_filter.print_list_filter_rules()
-        return
+        return None
 
     # * 1. Start timer
     start_time = time.perf_counter()
@@ -252,11 +253,11 @@ def ref(
 
         # overwrite any parameters passed in with those from the config file
         ref_signature = inspect.signature(ref)
-        for k, v in vk_ref_config_file_input.items():
-            if k in ref_signature.parameters.keys():
-                exec("%s = %s" % (k, v))  # assign the value to the variable name
+        for key, value in vk_ref_config_file_input.items():
+            if key in ref_signature.parameters.keys():
+                exec("%s = %s" % (key, value))  # assign the value to the variable name
             else:
-                kwargs[k] = v  # if the variable is not in the function signature, then add it to kwargs
+                kwargs[key] = value  # if the variable is not in the function signature, then add it to kwargs
 
     # * 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
@@ -306,22 +307,15 @@ def ref(
         index_out = os.path.join(out, "mcrs_index.idx")
     os.makedirs(os.path.dirname(index_out), exist_ok=True)
 
-    mcrs_fasta_out = params_dict.get("mcrs_fasta_out", None)
-    mcrs_filtered_fasta_out = params_dict.get("mcrs_filtered_fasta_out", None)
-    mcrs_t2g_out = params_dict.get("mcrs_t2g_out", None)
+    mcrs_fasta_out = params_dict.get("mcrs_fasta_out", os.path.join(out, "mcrs.fa"))  # make sure this matches vk build
+    mcrs_filtered_fasta_out = params_dict.get("mcrs_filtered_fasta_out", os.path.join(out, "mcrs_filtered.fa"))  # make sure this matches vk filter
+    mcrs_t2g_out = params_dict.get("mcrs_t2g_out", os.path.join(out, "mcrs_t2g.txt"))  # make sure this matches vk build
+    mcrs_t2g_filtered_out = params_dict.get("mcrs_t2g_filtered_out", os.path.join(out, "mcrs_t2g_filtered.txt"))  # make sure this matches vk filter
+    dlist_genome_fasta_out = params_dict.get("dlist_genome_fasta_out", os.path.join(out, "dlist_genome.fa"))  # make sure this matches vk info
+    dlist_cdna_fasta_out = params_dict.get("dlist_cdna_fasta_out", os.path.join(out, "dlist_cdna.fa"))  # make sure this matches vk info
+    dlist_combined_fasta_out = params_dict.get("dlist_combined_fasta_out", os.path.join(out, "dlist.fa"))  # make sure this matches vk info
 
-    if not mcrs_fasta_out:  # make sure this matches vk build
-        mcrs_fasta_out = os.path.join(out, "mcrs.fa")
-    if not mcrs_filtered_fasta_out:  # make sure this matches vk filter
-        mcrs_filtered_fasta_out = os.path.join(out, "mcrs_filtered.fa")
-    if not mcrs_t2g_out:  # make sure this matches vk build
-        mcrs_t2g_out = os.path.join(out, "mcrs_t2g.txt")
-    if not mcrs_t2g_filtered_out:  # make sure this matches vk filter
-        mcrs_t2g_filtered_out = os.path.join(out, "mcrs_t2g_filtered.txt")
-
-    for file in [
-        index_out
-    ]:  # purposely exluding mcrs_fasta_out, mcrs_filtered_fasta_out, mcrs_t2g_out, mcrs_t2g_filtered_out because - let's say someone runs vk ref and they get an error write in the kb ref step because of a bad argument that doesn't affect the prior steps - it would be nice for someone to be able to rerun the command with the changed argument without having to rerun vk build, info, filter from scratch when overwrite=False - and if they do want to rerun those steps, they can just delete the files or set overwrite=True
+    for file in [index_out]:  # purposely exluding mcrs_fasta_out, mcrs_filtered_fasta_out, mcrs_t2g_out, mcrs_t2g_filtered_out because - let's say someone runs vk ref and they get an error write in the kb ref step because of a bad argument that doesn't affect the prior steps - it would be nice for someone to be able to rerun the command with the changed argument without having to rerun vk build, info, filter from scratch when overwrite=False - and if they do want to rerun those steps, they can just delete the files or set overwrite=True
         if os.path.isfile(file) and not overwrite:
             raise FileExistsError(f"Output file {file} already exists. Please delete it or specify a different output directory or set overwrite=True.")
 
@@ -404,13 +398,6 @@ def ref(
             raise ValueError(f"No prebuilt files found for the given arguments:\nmutations: {mutations}\nsequences: {sequences}")  # \nmode: {mode}"
 
     # set d-list argument
-    if not dlist_genome_fasta_out:
-        dlist_genome_fasta_out = os.path.join(out, "dlist_genome.fa")
-    if not dlist_cdna_fasta_out:
-        dlist_cdna_fasta_out = os.path.join(out, "dlist_cdna.fa")
-    if not dlist_combined_fasta_out:
-        dlist_combined_fasta_out = os.path.join(out, "dlist.fa")
-
     if dlist == "genome":
         dlist_kb_argument = dlist_genome_fasta_out
     elif dlist == "transcriptome":
@@ -436,17 +423,15 @@ def ref(
     all_parameter_names_set_vk_info = explicit_parameters_vk_info | allowable_kwargs_vk_info
     all_parameter_names_set_vk_filter = explicit_parameters_vk_filter | allowable_kwargs_vk_filter
 
-    params_dict_vk_build = {k: v for k, v in params_dict.items() if k in all_parameter_names_set_vk_build}
-    params_dict_vk_info = {k: v for k, v in params_dict.items() if k in all_parameter_names_set_vk_info}
-    params_dict_vk_filter = {k: v for k, v in params_dict.items() if k in all_parameter_names_set_vk_filter}
+    params_dict_vk_build = {key: value for key, value in params_dict.items() if key in all_parameter_names_set_vk_build}
+    params_dict_vk_info = {key: value for key, value in params_dict.items() if key in all_parameter_names_set_vk_info}
+    params_dict_vk_filter = {key: value for key, value in params_dict.items() if key in all_parameter_names_set_vk_filter}
 
     # vk build
     if not os.path.exists(file_signifying_successful_vk_build_completion) or overwrite:  # the reason I do it like this, rather than if overwrite or not os.path.exists(MYPATH), is because I would like vk ref/count to automatically overwrite partially-completed function outputs even when overwrite=False; but when overwrite=True, then run from scratch regardless
         params_dict["overwrite"], params_dict_vk_build["overwrite"] = True, True
-        logger.info(f"Running vk build")
-        (
-            vk.build(**params_dict) if not params_dict.get("dry_run", False) else vk.build(**params_dict_vk_build)
-        )  # best of both worlds - will only pass in defined arguments if dry run is True (which is good so that I don't show each function with a bunch of args it never uses), but will pass in all arguments if dry run is False (which is good if I run vk ref with a new parameter that I have not included in docstrings yet, as I only get usable kwargs list from docstrings)
+        logger.info("Running vk build")
+        _ = vk.build(**params_dict) if not params_dict.get("dry_run", False) else vk.build(**params_dict_vk_build)  # best of both worlds - will only pass in defined arguments if dry run is True (which is good so that I don't show each function with a bunch of args it never uses), but will pass in all arguments if dry run is False (which is good if I run vk ref with a new parameter that I have not included in docstrings yet, as I only get usable kwargs list from docstrings)
         params_dict["overwrite"], params_dict_vk_build["overwrite"] = overwrite_original, overwrite_original
     else:
         logger.warning(f"Skipping vk build because {file_signifying_successful_vk_build_completion} already exists and overwrite=False")
@@ -457,8 +442,8 @@ def ref(
     if not skip_info:
         if not os.path.exists(file_signifying_successful_vk_info_completion) or overwrite:
             params_dict["overwrite"], params_dict_vk_info["overwrite"] = True, True
-            logger.info(f"Running vk info")
-            vk.info(**params_dict) if not params_dict.get("dry_run", False) else vk.info(**params_dict_vk_info)
+            logger.info("Running vk info")
+            _ = vk.info(**params_dict) if not params_dict.get("dry_run", False) else vk.info(**params_dict_vk_info)
             params_dict["overwrite"], params_dict_vk_info["overwrite"] = overwrite_original, overwrite_original
         else:
             logger.warning(f"Skipping vk info because {file_signifying_successful_vk_info_completion} already exists and overwrite=False")
@@ -467,8 +452,8 @@ def ref(
     if not skip_filter:
         if not all(os.path.exists(f) for f in files_signifying_successful_vk_filter_completion) or overwrite:
             params_dict["overwrite"], params_dict_vk_filter["overwrite"] = True, True
-            logger.info(f"Running vk filter")
-            vk.filter(**params_dict) if not params_dict.get("dry_run", False) else vk.filter(**params_dict_vk_filter)
+            logger.info("Running vk filter")
+            _ = vk.filter(**params_dict) if not params_dict.get("dry_run", False) else vk.filter(**params_dict_vk_filter)
             params_dict["overwrite"], params_dict_vk_filter["overwrite"] = overwrite_original, overwrite_original
         else:
             logger.warning(f"Skipping vk filter because {files_signifying_successful_vk_filter_completion} already exist and overwrite=False")
@@ -492,8 +477,8 @@ def ref(
     ]
 
     # assumes any argument in varseek ref matches kb ref identically, except dashes replaced with underscores
-    for dict_key in varseek_ref_only_allowable_kb_ref_arguments:
-        for argument in list(varseek_ref_only_allowable_kb_ref_arguments[dict_key]):
+    for dict_key, arguments in varseek_ref_only_allowable_kb_ref_arguments.items():
+        for argument in list(arguments):
             dash_count = len(argument) - len(argument.lstrip("-"))
             leading_dashes = "-" * dash_count
             argument = argument.lstrip("-").replace("-", "_")
@@ -519,6 +504,42 @@ def ref(
             subprocess.run(kb_ref_command, check=True)
         else:
             logger.warning(f"Skipping kb ref because {file_signifying_successful_kb_ref_completion} already exists and overwrite=False")
+
+
+    #!!! erase if removing wt mcrs feature
+    wt_mcrs_fasta_out = params_dict.get("mcrs_fasta_out", os.path.join(out, "wt_mcrs.fa"))  # make sure this matches vk build
+    wt_mcrs_filtered_fasta_out = params_dict.get("mcrs_filtered_fasta_out", os.path.join(out, "wt_mcrs_filtered.fa"))  # make sure this matches vk filter
+    mcrs_wt_fasta_for_index = wt_mcrs_fasta_out if skip_filter else wt_mcrs_filtered_fasta_out
+    wt_mcrs_index_out = params_dict.get("wt_mcrs_index_out", os.path.join(out, "wt_mcrs_index.idx"))
+    file_signifying_successful_wt_mcrs_kb_ref_completion = wt_mcrs_index_out
+    
+    kb_ref_wt_mcrs_command = [
+        "kb",
+        "ref",
+        "--workflow",
+        "custom",
+        "-t",
+        str(threads),
+        "-i",
+        wt_mcrs_index_out,
+        "--d-list",
+        "None",
+        "-k",
+        str(k),
+        "--overwrite",
+        True,  # set to True here regardless of the overwrite argument because I would only even enter this block if kb count was only partially run (as seen by the lack of existing of file_signifying_successful_wt_mcrs_kb_ref_completion), in which case I should overwrite anyways
+        mcrs_wt_fasta_for_index
+    ]
+
+    if dry_run:
+        print(kb_ref_wt_mcrs_command)
+    else:
+        if not os.path.exists(file_signifying_successful_wt_mcrs_kb_ref_completion) or overwrite:
+            logger.info(f"Running kb ref for wt mcrs index with command: {' '.join(kb_ref_wt_mcrs_command)}")
+            subprocess.run(kb_ref_wt_mcrs_command, check=True)
+        else:
+            logger.warning(f"Skipping kb ref for wt mcrs because {file_signifying_successful_wt_mcrs_kb_ref_completion} already exists and overwrite=False")
+    #!!! erase if removing wt mcrs feature
 
     vk_ref_output_dict = {}
     vk_ref_output_dict["index"] = index_out

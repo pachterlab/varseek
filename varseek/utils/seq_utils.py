@@ -1,26 +1,26 @@
+"""varseek sequencing utilities."""
 import ast
-import gc
-import json
 import math
 import os
+import sys
 import random
 import re
+import pathlib
 import shutil
 import string
 import subprocess
-import tempfile
+import csv
 
 import requests
 from tqdm import tqdm
+import hashlib
 
-tqdm.pandas()
 import gzip
 from bisect import bisect_left
 from collections import OrderedDict, defaultdict
 from typing import Callable
 
 import anndata as ad
-import gget
 import numpy as np
 import pandas as pd
 import pyfastx
@@ -39,6 +39,7 @@ from varseek.constants import (
     fastq_extensions,
     mutation_pattern,
     technology_barcode_and_umi_dict,
+    complement_trans
 )
 from varseek.utils.visualization_utils import (
     plot_ascending_bar_plot_of_cluster_distances,
@@ -51,7 +52,7 @@ from varseek.utils.visualization_utils import (
     print_column_summary_stats,
 )
 
-# from varseek.utils.io_utils import read_fasta, read_fastq, process_sam_file, write_temp_fa
+tqdm.pandas()
 
 # dlist_pattern_utils = re.compile(r"^(\d+)_(\d+)$")   # re.compile(r"^(unspliced)?(\d+)(;(unspliced)?\d+)*_(\d+)$")   # re.compile(r"^(unspliced)?(ENST\d+:(?:c\.|g\.)\d+(_\d+)?([a-zA-Z>]+))(;(unspliced)?ENST\d+:(?:c\.|g\.)\d+(_\d+)?([a-zA-Z>]+))*_\d+$")
 # TODO: change when I change unspliced notaiton
@@ -123,7 +124,7 @@ def get_header_set_from_fasta(synthetic_read_fa):
 
 def create_mutant_t2g(mutation_reference_file_fasta, out="./cancer_mutant_reference_t2g.txt"):
     if not os.path.exists(out):
-        with open(mutation_reference_file_fasta, "r") as fasta, open(out, "w") as t2g:
+        with open(mutation_reference_file_fasta, "r", encoding="utf-8") as fasta, open(out, "w", encoding="utf-8") as t2g:
             for line in fasta:
                 if line.startswith(">"):
                     header = line[1:].strip()
@@ -134,7 +135,7 @@ def create_mutant_t2g(mutation_reference_file_fasta, out="./cancer_mutant_refere
 
 def load_t2g_as_dict(file_path):
     t2g_dict = {}
-    with open(file_path, "r") as file:
+    with open(file_path, "r", encoding="utf-8") as file:
         for line in file:
             # Strip any whitespace and split by tab
             key, value = line.strip().split("\t")
@@ -143,7 +144,7 @@ def load_t2g_as_dict(file_path):
 
 
 def process_sam_file(sam_file):
-    with open(sam_file, "r") as sam:
+    with open(sam_file, "r", encoding="utf-8") as sam:
         for line in sam:
             if line.startswith("@"):
                 continue
@@ -177,7 +178,7 @@ def fasta_to_fastq(fasta_file, fastq_file, quality_score="I", k=None, add_noise=
                 fastq.write(f"{quality_scores}\n")
             else:
                 for i in range(len(sequence) - k + 1):
-                    kmer = sequence[i : i + k]
+                    kmer = sequence[i:(i + k)]
                     if add_noise:
                         quality_scores = generate_noisy_quality_scores(kmer, average_quality_for_noisy_reads, sd_quality_for_noisy_reads)  # don't pass seed in here since it is already set earlier
                     else:
@@ -187,10 +188,6 @@ def fasta_to_fastq(fasta_file, fastq_file, quality_score="I", k=None, add_noise=
                     fastq.write(f"{kmer}\n")
                     fastq.write("+\n")
                     fastq.write(f"{quality_scores}\n")
-
-
-import gzip
-import shutil
 
 
 def concatenate_fastqs(*input_files, out_dir=".", delete_original_files=False, suffix="concatenatedPairs"):
@@ -228,23 +225,14 @@ def concatenate_fastqs(*input_files, out_dir=".", delete_original_files=False, s
     return output_file
 
 
-def write_temp_fa(mcrs_fa):
-    mcrs_fa_original = mcrs_fa
-    mcrs_fa = mcrs_fa.replace(".fa", "_temp.fa")
-    with open(mcrs_fa, "w") as outfile:
-        for header, sequence in pyfastx.Fastx(mcrs_fa_original):
-            new_header = header.replace(">", "x")
-            outfile.write(f">{new_header}\n{sequence}\n")
-
-    return mcrs_fa, mcrs_fa_original
-
-
-def fast_reverse_complement(sequence):
-    complement_map = str.maketrans("ACGTNacgtn.", "TGCANtgcan.")
-    return sequence.translate(complement_map)[::-1]
-
 
 def reverse_complement(sequence):
+    if pd.isna(sequence):  # Check if the sequence is NaN
+        return np.nan
+    return sequence.translate(complement_trans)[::-1]
+
+
+def slow_reverse_complement(sequence):
     return "".join(complement.get(nucleotide, "N") for nucleotide in sequence[::-1])
 
 
@@ -285,7 +273,7 @@ def convert_chromosome_value_to_int_when_possible(val):
 def translate_sequence(sequence, start, end):
     amino_acid_sequence = ""
     for i in range(start, end, 3):
-        codon = sequence[i : i + 3].upper()
+        codon = sequence[i:(i + 3)].upper()
         amino_acid = codon_to_amino_acid.get(codon, "X")  # Use 'X' for unknown or incomplete codons
         amino_acid_sequence += amino_acid
 
@@ -300,7 +288,7 @@ def wt_fragment_and_mutant_fragment_share_kmer(mutated_fragment: str, wildtype_f
             return False
     else:
         for mutant_position in range(len(mutated_fragment) - k):
-            mutant_kmer = mutated_fragment[mutant_position : mutant_position + k]
+            mutant_kmer = mutated_fragment[mutant_position:(mutant_position + k)]
             if mutant_kmer in wildtype_fragment:
                 # wt_position = wildtype_fragment.find(mutant_kmer)
                 return True
@@ -489,7 +477,7 @@ def merge_genome_into_transcriptome_fasta(
     mutant_reference_combined = join_keys_with_same_values(mutant_reference_combined)
 
     # initialize combined fasta file with transcriptome fasta
-    with open(mutation_reference_file_fasta_combined, "w") as fasta_file:
+    with open(mutation_reference_file_fasta_combined, "w", encoding="utf-8") as fasta_file:
         for (
             header_transcriptome,
             sequence_transcriptome,
@@ -509,7 +497,7 @@ def remove_dlist_duplicates(input_file, output_file=None):
     # TODO: make header fasta from id fasta with id:header dict
 
     sequence_to_headers_dict = {}
-    with open(input_file, "r") as file:
+    with open(input_file, "r", encoding="utf-8") as file:
         while True:
             header = file.readline().strip()
             sequence = file.readline().strip()
@@ -524,7 +512,7 @@ def remove_dlist_duplicates(input_file, output_file=None):
             else:
                 sequence_to_headers_dict[sequence] = header
 
-    with open(output_file, "w") as file:
+    with open(output_file, "w", encoding="utf-8") as file:
         for sequence, header in sequence_to_headers_dict.items():
             file.write(f"{header}\n{sequence}\n")
 
@@ -537,7 +525,7 @@ def remove_dlist_duplicates(input_file, output_file=None):
 def capitalize_sequences(input_file, output_file=None):
     if output_file is None:
         output_file = input_file + ".tmp"  # Write to a temporary file
-    with open(input_file, "r") as infile, open(output_file, "w") as outfile:
+    with open(input_file, "r", encoding="utf-8") as infile, open(output_file, "w", encoding="utf-8") as outfile:
         for line in infile:
             if line.startswith(">"):
                 outfile.write(line)
@@ -563,7 +551,7 @@ def parse_sam_and_extract_sequences(
 
     def read_reference_genome(ref_genome_file):
         genome = {}
-        with open(ref_genome_file, "r") as f:
+        with open(ref_genome_file, "r", encoding="utf-8") as f:
             current_chrom = None
             current_seq = []
             for line in f:
@@ -581,7 +569,7 @@ def parse_sam_and_extract_sequences(
 
     ref_genome = read_reference_genome(ref_genome_file)
 
-    with open(sam_file, "r") as f, open(output_fasta_file, "w") as dlist_fasta:
+    with open(sam_file, "r", encoding="utf-8") as f, open(output_fasta_file, "w", encoding="utf-8") as dlist_fasta:
         bad_cigar = 0
         for line in f:
             if line.startswith("@"):
@@ -627,7 +615,7 @@ def combine_transcriptome_fasta(input_fasta, output_file, max_chunk_size=1000000
     current_size = 0
     current_chunk = 0
 
-    with open(output_file, "w") as outfile:
+    with open(output_file, "w", encoding="utf-8") as outfile:
         # Open the FASTA file and loop through each entry
         outfile.write(f">Joined_transcriptome_chunk_{current_chunk}\n")
         for _, sequence in pyfastx.Fastx(input_fasta):
@@ -693,7 +681,7 @@ def filter_fasta(input_fasta, output_fasta=None, sequence_names_set=set(), keep=
         print("No sequences to filter out")
         shutil.copyfile(input_fasta, output_fasta)
     else:
-        with open(input_fasta, "r") as infile, open(output_fasta, "w") as outfile:
+        with open(input_fasta, "r", encoding="utf-8") as infile, open(output_fasta, "w", encoding="utf-8") as outfile:
             write_entry = False
             for line in infile:
                 if line.startswith(">"):
@@ -736,7 +724,7 @@ def split_qualities_based_on_sequence(nucleotide_sequence, quality_score_sequenc
     split_quality_score_sequence = []
     start = 0
     for length in lengths:
-        split_quality_score_sequence.append(quality_score_sequence[start : start + length])
+        split_quality_score_sequence.append(quality_score_sequence[start:(start + length)])
         start += length + 1
 
     return split_quality_score_sequence
@@ -828,44 +816,6 @@ def trim_edges_and_adaptors_off_fastq_reads(filename, filename_r2=None, cut_mean
     return filename_filtered, filename_filtered_r2
 
 
-# def trim_edges_and_adaptors_of_fastq_reads_depracated(filename, tool = "trimgalore", filename_r2 = None, filename_filtered = None, filename_filtered_r2 = None, minimum_phred = 13, min_len = 31, adaptor_fa = "TruSeq3"):
-#     if tool == "trimgalore":
-#         output_dir = os.path.dirname(filename)
-#         trimgalore_command = f"trim_galore --quality {minimum_phred} --length {min_len} --output_dir {output_dir} {filename}"
-#         if filename and filename_r2:
-#             parts = trimgalore_command.split()  # Split the command into parts
-#             parts.insert(1, "--paired")  # Insert "--paired" at the second position
-#             parts.append(filename_r2)  # Append the second filename
-#             trimgalore_command = " ".join(parts)  # Rejoin the parts into a single string
-#         subprocess.run(trimgalore_command, shell=True, check=True)
-
-#     elif tool == "trimmomatic":
-#         parts = filename.split(".")
-#         if filename and filename_r2:
-#             technology = "PE"
-#         else:
-#             technology = "SE"
-
-#         if not os.path.exists(adaptor_fa):
-#             adaptor_fa = f"{adaptor_fa}-{technology}-2.fa"
-#             download_adaptor_fa_command = f"curl -o {adaptor_fa} https://raw.githubusercontent.com/usadellab/Trimmomatic/main/adapters/{adaptor_fa}"
-#             subprocess.run(download_adaptor_fa_command, shell=True, check=True)
-
-#         if not filename_filtered:
-#             filename_filtered = f"{parts[0]}_filtered." + ".".join(parts[1:])
-#         if filename and filename_r2:
-#             parts_r2 = filename_r2.split(".")
-#             if not filename_filtered_r2:
-#                 filename_filtered_r2 = f"{parts_r2[0]}_filtered." + ".".join(parts_r2[1:])
-#             trimmomatic_command = f"java -jar trimmomatic-0.39.jar PE -phred33 {filename} {filename_r2} {filename_filtered} output_forward_unpaired.{".".join(parts[1:])} {filename_filtered_r2} output_reverse_unpaired.{".".join(parts_r2[1:])} ILLUMINACLIP-{adaptor_fa}:2:30:10:2:True LEADING:{minimum_phred} TRAILING:{minimum_phred} MINLEN:{min_len}"
-#         else:
-#             trimmomatic_command = f"java -jar trimmomatic-0.39.jar SE -phred33 {filename} {filename_filtered} ILLUMINACLIP-{adaptor_fa}:2:30:10:2:True LEADING:{minimum_phred} TRAILING:{minimum_phred} SLIDINGWINDOW:4:{minimum_phred} MINLEN:{min_len}"
-#         subprocess.run(trimmomatic_command, shell=True, check=True)
-#         if filename and filename_r2:
-#             os.remove(f"output_forward_unpaired.{".".join(parts[1:])}")
-#             os.remove(f"output_reverse_unpaired.{".".join(parts_r2[1:])}")
-
-
 def trim_edges_of_fastq_reads_seqtk(
     filename,
     seqtk="seqtk",
@@ -895,7 +845,7 @@ def trim_edges_of_fastq_reads_seqtk(
             str(number_end),
             filename,
         ]
-    with open(filename_filtered, "w") as output_file:
+    with open(filename_filtered, "w", encoding="utf-8") as output_file:
         subprocess.run(command, stdout=output_file, check=True)
     return filename_filtered
 
@@ -931,7 +881,7 @@ def replace_low_quality_base_with_N(filename, out_dir=".", seqtk="seqtk", minimu
         #     process.wait()
     else:
         command += f" > {filename_filtered}"
-        # with open(filename_filtered, 'w') as output_file:
+        # with open(filename_filtered, 'w', encoding="utf-8") as output_file:
         #     subprocess.run(command, stdout=output_file, check=True)
     subprocess.run(command, shell=True, check=True)
     return filename_filtered
@@ -1049,30 +999,10 @@ def split_fastq_reads_by_N(input_fastq_file, out_dir=".", minimum_sequence_lengt
         return output_fastq_file
 
 
-def count_number_of_nonidentical_mutation_fragments(input_object, id_to_header_csv=None):
-    i = 0
-    if type(input_object) == str:
-        if id_to_header_csv is not None:
-            temp_header_fa = input_object.replace(".fa", "_with_headers.fa")
-            swap_ids_for_headers_in_fasta(input_object, id_to_header_csv, out_fasta=temp_header_fa)  # * added
-            input_object = temp_header_fa
-        for header, _ in pyfastx.Fastx(input_object):
-            if ";" not in header:
-                i += 1
-        if id_to_header_csv is not None:
-            os.remove(temp_header_fa)
-    elif type(input_object) == list or type(input_object) == tuple or type(input_object) == set:
-        if type(input_object) == list or type(input_object) == tuple:
-            input_object = set(input_object)
-        for header in input_object:
-            if ";" not in header:
-                i += 1
-    return i
-
 
 def parse_fastq(file_path):
     problematic_mutations = []
-    with gzip.open(file_path, "rt") as file:  # 'rt' mode is for reading text
+    with gzip.open(file_path, "rt", encoding="utf-8") as file:  # 'rt' mode is for reading text
         while True:
             header = file.readline().strip()
             sequence = file.readline().strip()
@@ -1088,7 +1018,7 @@ def parse_fastq(file_path):
 
 
 def remove_fasta_headers(input_file, output_file, keep_only_flanks=True, k=31):
-    with open(input_file, "r") as infile, open(output_file, "w") as outfile:
+    with open(input_file, "r", encoding="utf-8") as infile, open(output_file, "w", encoding="utf-8") as outfile:
         for line in infile:
             if line.startswith(">"):
                 outfile.write(">\n")
@@ -1098,7 +1028,7 @@ def remove_fasta_headers(input_file, output_file, keep_only_flanks=True, k=31):
     if keep_only_flanks:
         output_file_temp = output_file + ".tmp"
 
-        with open(output_file, "r") as infile, open(output_file_temp, "w") as outfile:
+        with open(output_file, "r", encoding="utf-8") as infile, open(output_file_temp, "w", encoding="utf-8") as outfile:
             line = infile.readline()
             if ">" in line:
                 outfile.write(">\n")
@@ -1108,20 +1038,6 @@ def remove_fasta_headers(input_file, output_file, keep_only_flanks=True, k=31):
                 outfile.write(f"{line[len(line) - k:]}\n")
 
         os.replace(output_file_temp, output_file)
-
-
-def capitalize_sequences(input_file, output_file=None):
-    if output_file is None:
-        output_file = input_file + ".tmp"  # Write to a temporary file
-    with open(input_file, "r") as infile, open(output_file, "w") as outfile:
-        for line in infile:
-            if line.startswith(">"):
-                outfile.write(line)
-            else:
-                outfile.write(line.upper())
-
-    if output_file == input_file + ".tmp":
-        os.replace(output_file, input_file)
 
 
 def extract_problematic_mutation_list(problematic_genes_string, kb_extract_out_dir):
@@ -1203,12 +1119,12 @@ def remove_mutations_which_are_a_perfect_substring_of_wt_reference_genome(
                 semicolon_separated_headers = dlist_header_shortened.split(";")
                 i += len(semicolon_separated_headers)
 
-    with open(output_dlist, "w") as output_dlist:
+    with open(output_dlist, "w", encoding="utf-8") as file:
         for dlist_header, dlist_sequence in pyfastx.Fastx(dlist_fasta_file):
             if not dlist_header.rsplit("_", 1)[0] in headers_NOT_to_put_in_dlist:
-                output_dlist.write(f">{dlist_header}\n{dlist_sequence}\n")
+                file.write(f">{dlist_header}\n{dlist_sequence}\n")
 
-    with open(output_fasta, "w") as file:
+    with open(output_fasta, "w", encoding="utf-8") as file:
         for header, sequence in mutant_reference.items():
             file.write(f">{header}\n{sequence}\n")
 
@@ -1240,7 +1156,7 @@ def select_contiguous_substring(sequence, kmer, read_length=150):
     start_position = random.randint(min_start_position, max_start_position)
 
     # Extract the 20-character substring
-    selected_substring = sequence[start_position : start_position + read_length]
+    selected_substring = sequence[start_position:(start_position + read_length)]
 
     return selected_substring
 
@@ -1252,7 +1168,7 @@ def remove_Ns_fasta(fasta_file, max_ambiguous_reference=0):
         condition = lambda sequence: "N" not in sequence.upper()
     else:  # at most max_ambiguous_reference Ns
         condition = lambda sequence: sequence.upper().count("N") <= max_ambiguous_reference
-    with open(fasta_file, "r") as infile, open(fasta_file_temp, "w") as outfile:
+    with open(fasta_file, "r", encoding="utf-8") as infile, open(fasta_file_temp, "w", encoding="utf-8") as outfile:
         for header, sequence in pyfastx.Fastx(infile):
             if condition(sequence):
                 outfile.write(f">{header}\n{sequence}\n")
@@ -1264,7 +1180,8 @@ def remove_Ns_fasta(fasta_file, max_ambiguous_reference=0):
 
 
 def count_line_number_in_file(file):
-    return sum(1 for _ in open(file))
+    with open(file, "r", encoding="utf-8") as f:
+        return sum(1 for _ in f)
 
 
 def count_number_of_spliced_and_unspliced_headers(file):
@@ -1306,12 +1223,15 @@ def check_dlist_header(dlist_header, pattern):
     return bool(pattern.search(dlist_header))
 
 
-def assert_proper_header(dlist_header, pattern):
-    assert pattern.fullmatch(dlist_header), f"Header {dlist_header} does not match the expected format"
-
-
 def get_long_headers(fasta_file, length_threshold=250):
     return {header for header, _ in pyfastx.Fastx(fasta_file) if len(header) > length_threshold}
+
+def splitext_custom(file_path):
+    if not isinstance(file_path, pathlib.PosixPath):
+        file_path = pathlib.Path(file_path)
+    base = str(file_path).replace("".join(file_path.suffixes), "")
+    ext = "".join(file_path.suffixes)
+    return base, ext
 
 
 def compute_unique_mutation_header_set(
@@ -1322,13 +1242,15 @@ def compute_unique_mutation_header_set(
     remove_unspliced=True,
 ):
     if id_to_header_csv is not None:
-        temp_header_fa = file.replace(".fa", "_with_headers.fa")
+        base, ext = splitext_custom(file)
+        temp_header_fa = f"{base}_with_headers{ext}"
         swap_ids_for_headers_in_fasta(file, id_to_header_csv, out_fasta=temp_header_fa)  # * added
         file = temp_header_fa
 
     unique_headers = set()
 
-    total_lines = sum(1 for _ in open(file)) // 2
+    with open(file, encoding="utf-8") as f:
+        total_lines = sum(1 for _ in f) // 2
     for headers_concatenated, _ in tqdm(pyfastx.Fastx(file), total=total_lines, desc="Processing headers"):
         headers_list = headers_concatenated.split("~")
         for header in headers_list:
@@ -1347,22 +1269,6 @@ def compute_unique_mutation_header_set(
         os.remove(temp_header_fa)
 
     return unique_headers
-
-
-# def count_number_of_total_mutations(headers_list, id_to_header_csv=None):
-#     if id_to_header_csv is not None:
-#         temp_header_fa = file.replace(".fa", "_with_headers.fa")
-#         swap_ids_for_headers_in_fasta(
-#             file, id_to_header_csv, out_fasta=temp_header_fa
-#         )  # * added
-#         file = temp_header_fa
-#     i = 0
-#     for header in headers_list:
-#         individual_header = header.split(";")
-#         i += len(individual_header)
-
-#     # TODO: make id fasta from header fasta with id:header dict
-#     return i
 
 
 def apply_enst_format(unique_mutations_genome, cosmic_reference_file_mutation_csv):
@@ -1386,11 +1292,11 @@ def apply_enst_format(unique_mutations_genome, cosmic_reference_file_mutation_cs
 def generate_kmers(sequence, k, strandedness=True):
     """Generate k-mers of length k from a sequence."""
     if strandedness:
-        return [sequence[i : i + k] for i in range(len(sequence) - k + 1)]
+        return [sequence[i:(i + k)] for i in range(len(sequence) - k + 1)]
     else:
-        list_f = [sequence[i : i + k] for i in range(len(sequence) - k + 1)]
+        list_f = [sequence[i:(i + k)] for i in range(len(sequence) - k + 1)]
         sequence_rc = reverse_complement(sequence)
-        list_rc = [sequence_rc[i : i + k] for i in range(len(sequence_rc) - k + 1)]
+        list_rc = [sequence_rc[i:(i + k)] for i in range(len(sequence_rc) - k + 1)]
         return list_f + list_rc
 
 
@@ -1479,12 +1385,14 @@ def generate_kmers(sequence, k, strandedness=True):
 
 #     return df
 
-from hashlib import md5
 
+def hash_kmer_security_specified(kmer):
+    """Return the MD5 hash of a k-mer as a hexadecimal string."""
+    return hashlib.md5(kmer.encode("utf-8"), usedforsecurity=False).hexdigest()
 
 def hash_kmer(kmer):
     """Return the MD5 hash of a k-mer as a hexadecimal string."""
-    return md5(kmer.encode("utf-8")).hexdigest()
+    return hashlib.md5(kmer.encode("utf-8")).hexdigest()
 
 
 def count_kmer_overlaps_new(fasta_file, k=31, strandedness=False, mcrs_id_column="mcrs_id"):
@@ -1492,13 +1400,18 @@ def count_kmer_overlaps_new(fasta_file, k=31, strandedness=False, mcrs_id_column
     # Parse the FASTA file and store sequences
     id_and_sequence_list_of_tuples = [(record.id, str(record.seq)) for record in SeqIO.parse(fasta_file, "fasta")]
 
+    if sys.version_info >= (3, 9):
+        hash_kmer_function = hash_kmer_security_specified
+    else:
+        hash_kmer_function = hash_kmer
+
     # Create a combined k-mer overlap dictionary
     kmer_to_seqids = defaultdict(set)
     for seq_id, sequence in tqdm(id_and_sequence_list_of_tuples, desc="Generating k-mers", unit="sequence"):
         for kmer in generate_kmers(sequence, k, strandedness=strandedness):
             # kmer_to_seqids[kmer].add(seq_id)
             # TODO: erase the line above and try storing hashes of k-mers instead
-            kmer_hash = hash_kmer(kmer)  # Hash the k-mer
+            kmer_hash = hash_kmer_function(kmer)  # Hash the k-mer
             kmer_to_seqids[kmer_hash].add(seq_id)
 
     # Process forward sequences only, checking overlaps with both forward and reverse complement k-mers
@@ -1588,7 +1501,7 @@ def create_df_of_dlist_headers(dlist_path, k=None, header_column_name="mcrs_id")
 
     df = pd.DataFrame(dlist_headers_list_updated, columns=[header_column_name]).drop_duplicates()
 
-    df[f"number_of_alignments_to_normal_human_reference"] = df[header_column_name].map(pd.Series(dlist_headers_list_updated).value_counts())
+    df["number_of_alignments_to_normal_human_reference"] = df[header_column_name].map(pd.Series(dlist_headers_list_updated).value_counts())
 
     df["dlist"] = True
 
@@ -1883,7 +1796,7 @@ def merge_synthetic_read_info_into_mutations_metadata_df(mutation_metadata_df, s
 
 #     # Write to a FASTA file
 #     total_fragments = 0
-#     with open(fasta_output_path, "a") as fa_file:
+#     with open(fasta_output_path, "a", encoding="utf-8") as fa_file:
 #         for row in sampled_reference_df.itertuples(index=False):
 #             header = row.header
 #             mcrs_header = row.mcrs_header
@@ -2038,7 +1951,7 @@ def generate_synthetic_reads(
 
     # Write to a FASTA file
     total_fragments = 0
-    with open(fasta_output_path, "a") as fa_file:
+    with open(fasta_output_path, "a", encoding="utf-8") as fa_file:
         for row in sampled_reference_df.itertuples(index=False):
             header = row.header
             mcrs_header = row.mcrs_header
@@ -2097,7 +2010,7 @@ def generate_synthetic_reads(
                 new_column_dict["list_of_read_starting_indices_mutant"].append(read_start_indices_mutant)
                 for selected_sequence, selected_strand in mutant_sequence_list:
                     for i in read_start_indices_mutant:
-                        sequence_chunk = selected_sequence[i : i + read_length]
+                        sequence_chunk = selected_sequence[i:(i + read_length)]
                         if add_noise:
                             sequence_chunk = introduce_sequencing_errors(sequence_chunk)
                         read_header = f"{header}_{i}{selected_strand}M"
@@ -2123,7 +2036,7 @@ def generate_synthetic_reads(
                 new_column_dict["list_of_read_starting_indices_wt"].append(read_start_indices_wt)
                 for selected_sequence, selected_strand in wt_sequence_list:
                     for i in read_start_indices_wt:
-                        sequence_chunk = selected_sequence[i : i + read_length]
+                        sequence_chunk = selected_sequence[i:(i + read_length)]
                         if add_noise:
                             sequence_chunk = introduce_sequencing_errors(sequence_chunk)
                         read_header = f"{header}_{i}{selected_strand}W"
@@ -2230,7 +2143,8 @@ def build_random_genome_read_df(
     seed=42,
 ):
     # Collect all headers and sequences from the FASTA file
-    fasta_output_path_temp = fastq_output_path.replace(".fq", "_temp.fa")
+    fastq_output_path_base, fastq_output_path_ext = splitext_custom(fastq_output_path)
+    fasta_output_path_temp = fastq_output_path_base + "_temp.fa"
 
     # TODO: stop hard-coding this
     if "start_mutation_position_cdna" in mutation_metadata_df.columns:
@@ -2260,7 +2174,7 @@ def build_random_genome_read_df(
 
     i = 0
     num_loops = 0
-    with open(fasta_output_path_temp, "a") as fa_file:
+    with open(fasta_output_path_temp, "a", encoding="utf-8") as fa_file:
         while i < n:
             # Choose a random entry (header, sequence) from the FASTA file
             random_transcript, random_sequence = random.choice(fasta_entries)
@@ -2336,11 +2250,11 @@ def build_random_genome_read_df(
             write_mode = "w"
         else:
             write_mode = "a"
-        with open(fastq_output_path, "r") as new_file:
+        with open(fastq_output_path, "r", encoding="utf-8") as new_file:
             file_content_new = new_file.read()
 
         # Now write both contents to read_fa_path
-        with open(fastq_parent_path, write_mode) as parent_file:
+        with open(fastq_parent_path, write_mode, encoding="utf-8") as parent_file:
             parent_file.write(file_content_new)
 
     if read_df_out is not None:
@@ -2357,7 +2271,21 @@ def get_header_set_from_fastq(fastq_file, output_format="set"):
     return headers
 
 
-def compare_cdna_and_genome(mutation_metadata_df_exploded, gget_mutate_temp_folder=None, reference_cdna_fasta="cdna", reference_genome_fasta="genome", mutations_csv=None, w=30, mcrs_source="cdna", columns_to_explode=None, seq_id_column_cdna="seq_ID", mut_column_cdna="mutation", seq_id_column_genome="chromosome", mut_column_genome="mutation_genome"):
+def compare_cdna_and_genome(
+        mutation_metadata_df_exploded,
+        varseek_build_temp_folder="vk_build_tmp",
+        reference_cdna_fasta="cdna",
+        reference_genome_fasta="genome",
+        mutations_csv=None,
+        w=30,
+        mcrs_source="cdna",
+        columns_to_explode=None,
+        seq_id_column_cdna="seq_ID",
+        mut_column_cdna="mutation",
+        seq_id_column_genome="chromosome",
+        mut_column_genome="mutation_genome",
+        delete_temp_dir=True
+    ):
     from varseek.varseek_build import build
 
     if columns_to_explode is None:
@@ -2365,77 +2293,76 @@ def compare_cdna_and_genome(mutation_metadata_df_exploded, gget_mutate_temp_fold
     else:
         columns_to_explode = columns_to_explode.copy()
 
-    with tempfile.TemporaryDirectory() as gget_mutate_temp_folder:
-        reference_out_dir_temp = f"{gget_mutate_temp_folder}/reference_out"
-        gget_mutate_cdna_out_df = f"{gget_mutate_temp_folder}/gget_mutate_cdna_{w}.csv"
+    reference_out_dir_temp = f"{varseek_build_temp_folder}/reference_out"
+    gget_mutate_cdna_out_df = f"{varseek_build_temp_folder}/gget_mutate_cdna_{w}.csv"
 
-        if not os.path.exists(gget_mutate_cdna_out_df):
-            build(
-                sequences=reference_cdna_fasta,
-                mutations=mutations_csv,
-                out=gget_mutate_temp_folder,
-                reference_out_dir=reference_out_dir_temp,
-                w=w,
-                remove_seqs_with_wt_kmers=False,
-                optimize_flanking_regions=False,
-                min_seq_len=None,
-                max_ambiguous=None,
-                required_insertion_overlap_length=None,
-                merge_identical=False,
-                cosmic_email=os.getenv("COSMIC_EMAIL"),
-                cosmic_password=os.getenv("COSMIC_PASSWORD"),
-                save_mutations_updated_csv=True,
-                mutations_updated_csv_out=gget_mutate_cdna_out_df,
-                seq_id_column=seq_id_column_cdna,
-                mut_column=mut_column_cdna,
-            )
-
-        cdna_updated_df = pd.read_csv(
-            gget_mutate_cdna_out_df,
-            usecols=[
-                "header",
-                "mutant_sequence",
-                "seq_ID",
-                "mutation",
-                "mutation_type",
-            ],
+    if not os.path.exists(gget_mutate_cdna_out_df):
+        build(
+            sequences=reference_cdna_fasta,
+            mutations=mutations_csv,
+            out=varseek_build_temp_folder,
+            reference_out_dir=reference_out_dir_temp,
+            w=w,
+            remove_seqs_with_wt_kmers=False,
+            optimize_flanking_regions=False,
+            min_seq_len=None,
+            max_ambiguous=None,
+            required_insertion_overlap_length=None,
+            merge_identical=False,
+            cosmic_email=os.getenv("COSMIC_EMAIL"),
+            cosmic_password=os.getenv("COSMIC_PASSWORD"),
+            save_mutations_updated_csv=True,
+            mutations_updated_csv_out=gget_mutate_cdna_out_df,
+            seq_id_column=seq_id_column_cdna,
+            mut_column=mut_column_cdna,
         )
 
-        gget_mutate_genome_out_df = f"{gget_mutate_temp_folder}/gget_mutate_genome_{w}.csv"
+    cdna_updated_df = pd.read_csv(
+        gget_mutate_cdna_out_df,
+        usecols=[
+            "header",
+            "mutant_sequence",
+            "seq_ID",
+            "mutation",
+            "mutation_type",
+        ],
+    )
 
-        if not os.path.exists(gget_mutate_genome_out_df):
-            build(
-                sequences=reference_genome_fasta,
-                mutations=mutations_csv,
-                out=gget_mutate_temp_folder,
-                reference_out_dir=reference_out_dir_temp,
-                w=w,
-                remove_seqs_with_wt_kmers=False,
-                optimize_flanking_regions=False,
-                min_seq_len=None,
-                max_ambiguous=None,
-                required_insertion_overlap_length=None,
-                merge_identical=False,
-                cosmic_email=os.getenv("COSMIC_EMAIL"),
-                cosmic_password=os.getenv("COSMIC_PASSWORD"),
-                save_mutations_updated_csv=True,
-                mutations_updated_csv_out=gget_mutate_genome_out_df,
-                seq_id_column=seq_id_column_genome,
-                mut_column=mut_column_genome,
-            )
+    gget_mutate_genome_out_df = f"{varseek_build_temp_folder}/gget_mutate_genome_{w}.csv"
 
-        genome_updated_df = pd.read_csv(
-            gget_mutate_genome_out_df,
-            usecols=[
-                "header",
-                "mutant_sequence",
-                "chromosome",
-                "mutation_genome",
-                "mutation_type",
-                "seq_ID",
-                "mutation",
-            ],
+    if not os.path.exists(gget_mutate_genome_out_df):
+        build(
+            sequences=reference_genome_fasta,
+            mutations=mutations_csv,
+            out=varseek_build_temp_folder,
+            reference_out_dir=reference_out_dir_temp,
+            w=w,
+            remove_seqs_with_wt_kmers=False,
+            optimize_flanking_regions=False,
+            min_seq_len=None,
+            max_ambiguous=None,
+            required_insertion_overlap_length=None,
+            merge_identical=False,
+            cosmic_email=os.getenv("COSMIC_EMAIL"),
+            cosmic_password=os.getenv("COSMIC_PASSWORD"),
+            save_mutations_updated_csv=True,
+            mutations_updated_csv_out=gget_mutate_genome_out_df,
+            seq_id_column=seq_id_column_genome,
+            mut_column=mut_column_genome,
         )
+
+    genome_updated_df = pd.read_csv(
+        gget_mutate_genome_out_df,
+        usecols=[
+            "header",
+            "mutant_sequence",
+            "chromosome",
+            "mutation_genome",
+            "mutation_type",
+            "seq_ID",
+            "mutation",
+        ],
+    )
 
     combined_updated_df = cdna_updated_df.merge(
         genome_updated_df,
@@ -2475,8 +2402,9 @@ def compare_cdna_and_genome(mutation_metadata_df_exploded, gget_mutate_temp_fold
     # # mutation_metadata_df["cdna_and_genome_same"] = mutation_metadata_df["cdna_and_genome_same"].fillna("unsure")  # because I'm filling values with unsure, I must specify == True if indexing true values
     # # mutation_metadata_df = mutation_metadata_df.loc[~((mutation_metadata_df["cdna_and_genome_same"] == "True") & (mutation_metadata_df["mcrs_source"] == "genome"))]  #* uncomment to filter out rows derived from genome where cDNA and genome are the same (I used to filter these out because they are redundant and I only wanted to keep rows where genome differed from cDNA)
 
-    # # # delete temp folder and all contents
-    # shutil.rmtree(gget_mutate_temp_folder)
+    # delete temp folder and all contents
+    if delete_temp_dir:
+        shutil.rmtree(varseek_build_temp_folder)
 
     return mutation_metadata_df_exploded, columns_to_explode
 
@@ -2556,11 +2484,11 @@ def add_mcrs_mutation_type(mutations_df, mut_column="mcrs_header"):
 
 
 def align_all_kmers_from_a_given_fasta_entry_to_all_other_kmers_in_the_file(my_header, my_sequence, reference_fasta, k=31):
-    with open(reference_fasta, "r") as fasta_handle:
+    with open(reference_fasta, "r", encoding="utf-8") as fasta_handle:
         for record in SeqIO.parse(fasta_handle, "fasta"):
             sequence = str(record.seq)  # Convert the sequence to a string
             for start_position in range(0, len(my_sequence) - k + 1):
-                kmer = my_sequence[start_position : start_position + k]
+                kmer = my_sequence[start_position:(start_position + k)]
                 if kmer in sequence:
                     if record.id in my_header:
                         print(f"k-mer at position {start_position} found in its respective sequence: {record.id}")
@@ -2929,7 +2857,7 @@ def create_df_of_mcrs_to_self_headers(
                 write_mode = "a"
             else:
                 write_mode = "w"
-            with open(output_stat_file, write_mode) as f:
+            with open(output_stat_file, write_mode, encoding="utf-8") as f:
                 f.write(f"bowtie alignment for {bowtie_reference_prefix}")
                 f.write("Standard Output:\n")
                 f.write(result.stdout)
@@ -3068,7 +2996,7 @@ def create_umi_to_barcode_dict(bus_file, bustools="bustools", barcode_length=16,
     umi_to_barcode_dict = {}
 
     # Define the command
-    # !/home/jrich/miniconda3/envs/cartf/lib/python3.10/site-packages/kb_python/bins/linux/bustools/bustools text -p -a -f -d /home/jrich/Desktop/CART_prostate_sc/TEMP_dlist_tests/kb_count_out_delaney/output.bus
+    # bustools text -p -a -f -d output.bus
     command = [
         bustools,
         "text",
@@ -3091,7 +3019,7 @@ def create_umi_to_barcode_dict(bus_file, bustools="bustools", barcode_length=16,
         elif key_to_use == "fastq_header_position":
             umi = columns[5]
         barcode = columns[0]  # remember there will be A's for padding to 32 characters
-        barcode = barcode[(32 - barcode_length) :]  # * remove the padding
+        barcode = barcode[(32 - barcode_length):]  # * remove the padding
         umi_to_barcode_dict[umi] = barcode
 
     return umi_to_barcode_dict
@@ -3102,7 +3030,7 @@ def check_if_read_dlisted_by_one_of_its_respective_dlist_sequences(mcrs_header, 
     dlist_header_to_seq_dict_filtered = {key: value for key, value in dlist_header_to_seq_dict.items() if mcrs_header == key.rsplit("_", 1)[0]}
     mcrs_sequence = mcrs_header_to_seq_dict[mcrs_header]
     for i in range(len(mcrs_sequence) - k + 1):
-        kmer = mcrs_sequence[i : i + k]
+        kmer = mcrs_sequence[i:(i + k)]
         for dlist_sequence in dlist_header_to_seq_dict_filtered.values():
             if kmer in dlist_sequence:
                 return True
@@ -3156,7 +3084,7 @@ def increment_adata_based_on_dlist_fns(adata, mcrs_fasta, dlist_fasta, kb_count_
     else:
         bus_df = pd.read_csv(f"{kb_count_out}/bus_df.csv")
 
-    # with open(f"{kb_count_out}/transcripts.txt") as f:
+    # with open(f"{kb_count_out}/transcripts.txt", encoding="utf-8") as f:
     #     dlist_index = str(sum(1 for line in file))
 
     n_rows, n_cols = adata.X.shape
@@ -3220,7 +3148,7 @@ def increment_adata_based_on_dlist_fns(adata, mcrs_fasta, dlist_fasta, kb_count_
 
 
 def contains_kmer_in_mcrs(read_sequence, mcrs_sequence, k):
-    return any(read_sequence[i : i + k] in mcrs_sequence for i in range(len(read_sequence) - k + 1))
+    return any(read_sequence[i:(i + k)] in mcrs_sequence for i in range(len(read_sequence) - k + 1))
 
 
 def check_for_read_kmer_in_mcrs(read_df, unique_mcrs_df, k, subset=None, strand=None):
@@ -3280,7 +3208,7 @@ def get_valid_ensembl_gene_id(row, transcript_column: str = "seq_ID", gene_colum
 def get_ensembl_gene_id(transcript_id: str, verbose: bool = False):
     try:
         url = f"https://rest.ensembl.org/lookup/id/{transcript_id}?expand=1"
-        response = requests.get(url, headers={"Content-Type": "application/json"})
+        response = requests.get(url, headers={"Content-Type": "application/json"}, timeout=10)
 
         if not response.ok:
             response.raise_for_status()
@@ -3288,7 +3216,7 @@ def get_ensembl_gene_id(transcript_id: str, verbose: bool = False):
         data = response.json()
 
         return data.get("Parent")
-    except Exception as e:
+    except Exception:
         if verbose:
             print(f"Error for: {transcript_id}")
         return "Unknown"
@@ -3299,11 +3227,12 @@ def get_ensembl_gene_id_bulk(transcript_ids: list[str]) -> dict[str, str]:
         return {}
 
     try:
-        url = f"https://rest.ensembl.org/lookup/id/"
+        url = "https://rest.ensembl.org/lookup/id/"
         response = requests.post(
             url,
             json={"ids": transcript_ids},
             headers={"Content-Type": "application/json"},
+            timeout=10,
         )
 
         if not response.ok:
@@ -3322,8 +3251,8 @@ def get_ensembl_gene_name_bulk(gene_ids: list[str]) -> dict[str, str]:
         return {}
 
     try:
-        url = f"https://rest.ensembl.org/lookup/id/"
-        response = requests.post(url, json={"ids": gene_ids}, headers={"Content-Type": "application/json"})
+        url = "https://rest.ensembl.org/lookup/id/"
+        response = requests.post(url, json={"ids": gene_ids}, headers={"Content-Type": "application/json"}, timeout=10)
 
         if not response.ok:
             response.raise_for_status()
@@ -3456,7 +3385,7 @@ def run_bowtie_alignment_dlist(
                 write_mode = "a"
             else:
                 write_mode = "w"
-            with open(output_stat_file, write_mode) as f:
+            with open(output_stat_file, write_mode, encoding="utf-8") as f:
                 f.write(f"bowtie alignment for {bowtie_reference_prefix}")
                 f.write("Standard Output:\n")
                 f.write(result.stdout)
@@ -3467,12 +3396,9 @@ def run_bowtie_alignment_dlist(
         print("Bowtie2 alignment complete")
 
 
-import csv
-
-
 def make_mapping_dict(id_to_header_csv, dict_key="id"):
     mapping_dict = {}
-    with open(id_to_header_csv, newline="") as csvfile:
+    with open(id_to_header_csv, newline="", encoding="utf-8") as csvfile:
         reader = csv.reader(csvfile)
         for row in reader:
             seq_id, header = row
@@ -3485,14 +3411,15 @@ def make_mapping_dict(id_to_header_csv, dict_key="id"):
 
 def swap_ids_for_headers_in_fasta(in_fasta, id_to_header_csv, out_fasta=None):
     if out_fasta is None:
-        out_fasta = in_fasta.replace(".fa", "_with_headers.fa")
+        base, ext = splitext_custom(in_fasta)
+        out_fasta = f"{base}_with_headers{ext}"
 
     if id_to_header_csv.endswith(".csv"):
         id_to_header = make_mapping_dict(id_to_header_csv, dict_key="id")
     else:
         id_to_header = id_to_header_csv
 
-    with open(out_fasta, "w") as output_file:
+    with open(out_fasta, "w", encoding="utf-8") as output_file:
         for seq_id, sequence in pyfastx.Fastx(in_fasta):
             output_file.write(f">{id_to_header[seq_id]}\n{sequence}\n")
 
@@ -3501,14 +3428,15 @@ def swap_ids_for_headers_in_fasta(in_fasta, id_to_header_csv, out_fasta=None):
 
 def swap_headers_for_ids_in_fasta(in_fasta, id_to_header_csv, out_fasta=None):
     if out_fasta is None:
-        out_fasta = in_fasta.replace(".fa", "_with_ids.fa")
+        base, ext = splitext_custom(in_fasta)
+        out_fasta = f"{base}_with_ids{ext}"
 
     if id_to_header_csv.endswith(".csv"):
         header_to_id = make_mapping_dict(id_to_header_csv, dict_key="header")
     else:
         header_to_id = id_to_header_csv
 
-    with open(out_fasta, "w") as output_file:
+    with open(out_fasta, "w", encoding="utf-8") as output_file:
         for header, sequence in pyfastx.Fastx(in_fasta):
             output_file.write(f">{header_to_id[header]}\n{sequence}\n")
 
@@ -3532,7 +3460,7 @@ def get_mcrs_headers_that_are_substring_dlist(
 
     df = pd.DataFrame(mcrs_headers_that_are_substring_dlist, columns=[header_column_name]).drop_duplicates()
 
-    df[f"number_of_substring_matches_to_normal_human_reference"] = df[header_column_name].map(pd.Series(mcrs_headers_that_are_substring_dlist).value_counts())
+    df["number_of_substring_matches_to_normal_human_reference"] = df[header_column_name].map(pd.Series(mcrs_headers_that_are_substring_dlist).value_counts())
 
     df["dlist_substring"] = True
 
@@ -3540,9 +3468,9 @@ def get_mcrs_headers_that_are_substring_dlist(
 
 
 def concatenate_fasta(fasta_files, output_file):
-    with open(output_file, "w") as outfile:
+    with open(output_file, "w", encoding="utf-8") as outfile:
         for fasta_file in fasta_files:
-            with open(fasta_file, "r") as infile:
+            with open(fasta_file, "r", encoding="utf-8") as infile:
                 outfile.write(infile.read())
 
 
@@ -3569,7 +3497,7 @@ def longest_homopolymer(sequence):
 
 def triplet_stats(sequence):
     # Create a list of 3-mers (triplets) from the sequence
-    triplets = [sequence[i : i + 3] for i in range(len(sequence) - 2)]
+    triplets = [sequence[i:(i + 3)] for i in range(len(sequence) - 2)]
 
     # Number of distinct triplets
     distinct_triplets = set(triplets)
@@ -3601,8 +3529,9 @@ def get_mcrss_that_pseudoalign_but_arent_dlisted(
 ):
     if ref_folder_kb is None:
         ref_folder_kb = out_dir_notebook
-    mcrs_fa_filtered_bowtie = mcrs_fa.replace(".fa", "_filtered_bowtie.fa")
-    mcrs_fQ_filtered_bowtie = mcrs_fa_filtered_bowtie.replace(".fa", ".fq")
+    mcrs_fa_base, mcrs_fa_ext = splitext_custom(mcrs_fa)
+    mcrs_fa_filtered_bowtie = f"{mcrs_fa_base}_filtered_bowtie{mcrs_fa_ext}"
+    mcrs_fQ_filtered_bowtie = f"{mcrs_fa_base}_filtered_bowtie.fq"
     kb_ref_wt = f"{ref_folder_kb}/reference"
     os.makedirs(kb_ref_wt, exist_ok=True)
     kb_human_reference_index_file = f"{kb_ref_wt}/index.idx"
@@ -3639,9 +3568,9 @@ def get_mcrss_that_pseudoalign_but_arent_dlisted(
             kb_human_reference_t2g_file,
             "-f1",
             kb_human_reference_f1_file,
-        ]
-        + kb_ref_workflow_line
-        + [
+        ] +
+        kb_ref_workflow_line +
+        [
             "--d-list=None",
             "-k",
             str(k),
@@ -3700,7 +3629,7 @@ def get_mcrss_that_pseudoalign_but_arent_dlisted(
             how="left",
         )
 
-    except Exception as e:
+    except Exception:
         print("No reads pseudoaligned - setting entire column to False")
         mutation_metadata_df[column_name] = False
 
@@ -3796,9 +3725,9 @@ def collapse_df(
         columns_to_explode = columns_to_explode.copy()
 
     if columns_to_explode_extend_values:
-        if type(columns_to_explode_extend_values) == list:
+        if isinstance(columns_to_explode_extend_values, list):
             columns_to_explode.extend(columns_to_explode_extend_values)  # * .update(items) for set
-        elif type(columns_to_explode_extend_values) == str:
+        elif isinstance(columns_to_explode_extend_values, str):
             columns_to_explode.append(columns_to_explode_extend_values)  # * .add(items) for set
 
     for column in list(columns_to_explode):
@@ -3822,12 +3751,12 @@ def collapse_df(
 # TODO: save in txt file
 def fasta_summary_stats(fa, output_file=None):
     try:
-        if type(fa) == str:
+        if isinstance(fa, str):
             fa = pyfastx.Fasta(fa)
 
         try:
             gc_content = fa.gc_content
-        except Exception as e:
+        except Exception:
             gc_content = None
 
         nucleotide_composition = fa.composition
@@ -3857,7 +3786,7 @@ def fasta_summary_stats(fa, output_file=None):
 
         # Print to console and save to file
         if output_file is not None:
-            with open(output_file, "w") as f:
+            with open(output_file, "w", encoding="utf-8") as f:
                 for line in summary:
                     f.write(line + "\n")  # Write to file with a newline
 
@@ -3908,7 +3837,7 @@ def calculate_total_gene_info(
     }
 
     if output_stat_file is not None:
-        with open(output_stat_file, "w") as f:
+        with open(output_stat_file, "w", encoding="utf-8") as f:
             for key, value in metadata_counts_dict.items():
                 f.write(f"{key}: {value}\n")
 
@@ -4203,13 +4132,13 @@ def align_to_normal_genome_and_build_dlist(
         dlist_fasta_file = f"{out_dir_notebook}/dlist.fa"
 
     # concatenate d-lists into one file
-    with open(dlist_fasta_file, "w") as outfile:
+    with open(dlist_fasta_file, "w", encoding="utf-8") as outfile:
         # Write the contents of the first input file to the output file
-        with open(dlist_fasta_file_genome_full, "r") as infile1:
+        with open(dlist_fasta_file_genome_full, "r", encoding="utf-8") as infile1:
             outfile.write(infile1.read())
 
             # Write the contents of the second input file to the output file
-        with open(dlist_fasta_file_genome_full, "r") as infile2:
+        with open(dlist_fasta_file_genome_full, "r", encoding="utf-8") as infile2:
             outfile.write(infile2.read())
 
     dlist_combined_df = dlist_cdna_df.merge(
@@ -4303,7 +4232,7 @@ def align_to_normal_genome_and_build_dlist(
         write_mode = "w"
 
         # Re-print and save the messages to a text file
-    with open(bowtie_stat_file, write_mode) as f:  # Use 'a' to append to the file
+    with open(bowtie_stat_file, write_mode, encoding="utf-8") as f:  # Use 'a' to append to the file
         f.write("Bowtie alignment statistics summary\n")
         for message in log_messages:
             f.write(message + "\n")  # Write to file
@@ -4360,9 +4289,11 @@ def download_ensembl_reference_files(reference_out_dir_sequences_dlist, grch="37
         "cdna": ref_dlist_fa_cdna,
         "gtf": ref_dlist_gtf,
     }
+    
     for file in file_dict:
         if not os.path.exists(file_dict[file]):
             files_to_download_list.append(file)
+    
     if files_to_download_list:
         files_to_download = ",".join(files_to_download_list)
         gget_ref_command_dlist = [
@@ -4377,9 +4308,13 @@ def download_ensembl_reference_files(reference_out_dir_sequences_dlist, grch="37
             "-d",
             ensembl_grch_gget,
         ]
+        
         subprocess.run(gget_ref_command_dlist, check=True)
+        
         for file in files_to_download_list:
             subprocess.run(["gunzip", f"{file_dict[file]}.gz"])
+    
+    return ref_dlist_fa_genome, ref_dlist_fa_cdna, ref_dlist_gtf
 
 
 # first tries pysam, then samtools, then finally custom
@@ -4388,16 +4323,14 @@ def create_fai(fasta_path, fai_path=None):
         import pysam
 
         pysam.faidx(fasta_path)
-    except Exception as e:
+    except Exception:
         try:
-            import subprocess
-
             samtools_faidx_command = f"samtools faidx {fasta_path}"
             subprocess.run(samtools_faidx_command, shell=True, check=True)
-        except Exception as e:
+        except Exception:
             if fai_path is None:
                 fai_path = fasta_path + ".fai"
-            with open(fasta_path, "r") as fasta_file, open(fai_path, "w") as fai_file:
+            with open(fasta_path, "r", encoding="utf-8") as fasta_file, open(fai_path, "w", encoding="utf-8") as fai_file:
                 offset = 0  # Track byte offset of each sequence
                 seq_name = None
                 seq_start = 0
@@ -4495,7 +4428,7 @@ def compute_cluster_centroid_distances(adata_unknown, adata_combined_ccle_rnaseq
 
     cluster_centroid_distance_file = f"{out_dir}/cluster_centroid_distances.txt"
     # Write the sorted distances to a file
-    with open(cluster_centroid_distance_file, "w") as f:
+    with open(cluster_centroid_distance_file, "w", encoding="utf-8") as f:
         for cluster, dist in sorted_distances:
             f.write(f"Distance from unknown sample to centroid of cluster {cluster}: {dist}\n")
 
@@ -4542,7 +4475,7 @@ def compute_jaccard_indices(
 
         # Check if the file exists in the current tissue folder
         if os.path.isfile(sorted_mutations_file):
-            with open(sorted_mutations_file, "r") as f:
+            with open(sorted_mutations_file, "r", encoding="utf-8") as f:
                 for line in f:
                     mutation_name = line.split()[0]  # Grab the first column (mutation name)
                     mutations.add(mutation_name)
@@ -4659,7 +4592,8 @@ def predict_cancer_type(
 
 # to be clear, this removes double counting of the same VCRS on each paired end, which is valid when fragment length < 2*read length OR for long insertions that make VCRS very long (such that the VCRS spans across both ends even when considering the region between the ends)
 def decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_mode(adata, fastq, kb_count_out, t2g, mm, bustools="bustools", split_Ns=False, paired_end_fastqs=False, paired_end_suffix_length=2, technology="bulk", keep_only_insertions=True, ignore_barcodes=False):
-    assert split_Ns or paired_end_fastqs, "At least one of split_Ns or paired_end_fastqs must be True"
+    if not split_Ns and not paired_end_fastqs:
+        raise ValueError("At least one of split_Ns or paired_end_fastqs must be True")
     if technology.lower() != "bulk":
         raise ValueError("This function currently only works with bulk RNA-seq data")
 
@@ -4668,7 +4602,7 @@ def decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_
     else:
         bus_df = pd.read_csv(f"{kb_count_out}/bus_df.csv")
 
-    if not "mcrs_mutation_type" in adata.var.columns:
+    if "mcrs_mutation_type" not in adata.var.columns:
         adata.var = add_mcrs_mutation_type(adata.var, mut_column="mcrs_header")
 
     if keep_only_insertions:  # valid when fragment length >= 2*read length
@@ -4727,10 +4661,10 @@ def decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_
 
 
 def remove_adata_columns(adata, values_of_interest, operation, var_column_name):
-    if type(values_of_interest) == str and values_of_interest.endswith(".txt"):
-        with open(values_of_interest, "r") as f:
+    if isinstance(values_of_interest, str) and values_of_interest.endswith(".txt"):
+        with open(values_of_interest, "r", encoding="utf-8") as f:
             values_of_interest_set = {line.strip() for line in f}
-    elif type(values_of_interest) == list:
+    elif isinstance(values_of_interest, (list, tuple, set)):
         values_of_interest_set = set(values_of_interest)
 
     # Step 2: Filter adata.var based on whether 'mcrs_id' is in the set
@@ -4838,7 +4772,7 @@ def map_transcripts_to_genes(transcript_list, mapping_dict):
 # * only works when kb count was run with --num (as this means that each row of the BUS file corresponds to exactly one read)
 def make_bus_df(kallisto_out, fastq_file_list, t2g_file, mm=False, union=False, technology="bulk", parity="single", bustools="bustools", ignore_barcodes=False):  # make sure this is in the same order as passed into kb count - [sample1, sample2, etc] OR [sample1_pair1, sample1_pair2, sample2_pair1, sample2_pair2, etc]  # technology flag of kb
     print("loading in transcripts")
-    with open(f"{kallisto_out}/transcripts.txt") as f:
+    with open(f"{kallisto_out}/transcripts.txt", encoding="utf-8") as f:
         transcripts = f.read().splitlines()  # get transcript at index 0 with transcript[0], and index of transcript named "name" with transcript.index("name")
 
     transcripts.append("dlist")  # add dlist to the end of the list
@@ -4847,10 +4781,11 @@ def make_bus_df(kallisto_out, fastq_file_list, t2g_file, mm=False, union=False, 
 
     if technology == "bulk" or "smartseq" in technology.lower():  # smartseq does not have barcodes
         print("loading in barcodes")
-        with open(f"{kallisto_out}/matrix.sample.barcodes") as f:
+        with open(f"{kallisto_out}/matrix.sample.barcodes", encoding="utf-8") as f:
             barcodes = f.read().splitlines()  # get transcript at index 0 with transcript[0], and index of transcript named "name" with transcript.index("name")
     else:
-        assert not ignore_barcodes, "ignore_barcodes is only supported for bulk RNA-seq data"
+        if technology == "bulk" and ignore_barcodes:
+            raise ValueError("ignore_barcodes is only supported for bulk RNA-seq data")
 
         try:
             barcode_start = technology_barcode_and_umi_dict[technology]["barcode_start"]
@@ -4867,7 +4802,7 @@ def make_bus_df(kallisto_out, fastq_file_list, t2g_file, mm=False, union=False, 
     if parity == "paired":
         fastq_header_df["fastq_header_pair"] = None
 
-    if type(fastq_file_list) == str:
+    if isinstance(fastq_file_list, str):
         fastq_file_list = [fastq_file_list]
 
     skip_upcoming_fastq = False
@@ -4880,10 +4815,10 @@ def make_bus_df(kallisto_out, fastq_file_list, t2g_file, mm=False, union=False, 
         fastq_file = str(fastq_file)
 
         print("loading in fastq headers")
-        if fastq_file.endswith(".fastq") or fastq_file.endswith(".fq") or fastq_file.endswith(".fastq.gz") or fastq_file.endswith(".fq.gz"):
+        if fastq_file.endswith(fastq_extensions):
             fastq_header_list = get_header_set_from_fastq(fastq_file, output_format="list")
         elif fastq_file.endswith(".txt"):
-            with open(fastq_file) as f:
+            with open(fastq_file, encoding="utf-8") as f:
                 fastq_header_list = f.read().splitlines()
 
         if technology == "bulk" or "smartseq" in technology.lower():
@@ -4899,10 +4834,10 @@ def make_bus_df(kallisto_out, fastq_file_list, t2g_file, mm=False, union=False, 
 
         if parity == "paired":
             fastq_file_pair = str(fastq_file_list[i + 1])
-            if fastq_file_pair.endswith(".fastq") or fastq_file_pair.endswith(".fq") or fastq_file_pair.endswith(".fastq.gz") or fastq_file_pair.endswith(".fq.gz"):
+            if fastq_file_pair.endswith(fastq_extensions):
                 new_rows["fastq_header_pair"] = get_header_set_from_fastq(fastq_file_pair, output_format="list")
             elif fastq_file_pair.endswith(".txt"):
-                with open(fastq_file_pair) as f:
+                with open(fastq_file_pair, encoding="utf-8") as f:
                     new_rows["fastq_header_pair"] = f.read().splitlines()
 
             skip_upcoming_fastq = True  # because it will be the pair
@@ -4935,7 +4870,7 @@ def make_bus_df(kallisto_out, fastq_file_list, t2g_file, mm=False, union=False, 
         bus_txt_file_existed_originally = False
         create_bus_txt_file_command = f"{bustools} text -o {bus_text_file} -f {bus_file}"
         subprocess.run(create_bus_txt_file_command, shell=True, check=True)
-        # /home/jrich/miniconda3/envs/cartf/lib/python3.10/site-packages/kb_python/bins/linux/bustools/bustools text -p -a -f -d /home/jrich/Desktop/CART_prostate_sc/TEMP_dlist_tests/kb_count_out_delaney/output.bus
+        # bustools text -p -a -f -d output.bus
     else:
         bus_txt_file_existed_originally = True
 
@@ -5096,15 +5031,16 @@ def match_paired_ends_after_single_end_run(bus_df_path, gene_name_type="mcrs_id"
 
 
 # TODO: unsure if this works for sc
-def adjust_mutation_adata_by_normal_gene_matrix(adata, kb_output_mutation, kb_output_standard, id_to_header_csv=None, mutation_metadata_csv=None, adata_output_path=None, t2g_mutation=None, t2g_standard=None, fastq_file_list=None, mm=False, union=False, technology="bulk", parity="single", bustools="bustools", ignore_barcodes=False):
+def adjust_mutation_adata_by_normal_gene_matrix(adata, kb_output_mutation, kb_output_standard, id_to_header_csv=None, mutation_metadata_csv=None, adata_output_path=None, t2g_mutation=None, t2g_standard=None, fastq_file_list=None, mm=False, union=False, technology="bulk", parity="single", bustools="bustools", ignore_barcodes=False, verbose=False):
     if not adata:
         adata = f"{kb_output_mutation}/counts_unfiltered/adata.h5ad"
-    if type(adata) == str:
+    if isinstance(adata, str):
         adata = sc.read_h5ad(adata)
 
     bus_df_mutation_path = f"{kb_output_mutation}/bus_df.csv"
     bus_df_standard_path = f"{kb_output_standard}/bus_df.csv"
-    assert id_to_header_csv or mutation_metadata_csv, "Either id_to_header_csv or mutation_metadata_csv must be provided"
+    if not id_to_header_csv and not mutation_metadata_csv:
+        raise ValueError("Either id_to_header_csv or mutation_metadata_csv must be provided")
 
     if not os.path.exists(bus_df_mutation_path):
         bus_df_mutation = make_bus_df(
@@ -5451,7 +5387,8 @@ def add_vcf_info_to_cosmic_tsv(cosmic_tsv, reference_genome_fasta, cosmic_df_out
     cosmic_df.drop(columns=["Mutation genome position GRCh37", "GENOME_POS", "GENOME_END_POS", "ACCESSION_NUMBER", "Mutation CDS", "mutation_id", "ref_cosmic", "alt_cosmic", "original_nucleotide", "mutation_type"], inplace=True)  # 'strand'
 
     num_rows_with_na = cosmic_df.isna().any(axis=1).sum()
-    assert num_rows_with_na == 0, f"Number of rows with NA values: {num_rows_with_na}"
+    if num_rows_with_na > 0:
+        raise ValueError(f"Number of rows with NA values: {num_rows_with_na}")
 
     cosmic_df["POS"] = cosmic_df["POS"].astype(np.int64)
 
@@ -5471,7 +5408,7 @@ def write_to_vcf(adata_var, output_file):
         output_file (str): Path to the output VCF file.
     """
     # Open VCF file for writing
-    with open(output_file, "w") as vcf_file:
+    with open(output_file, "w", encoding="utf-8") as vcf_file:
         # Write VCF header
         vcf_file.write("##fileformat=VCFv4.2\n")
         vcf_file.write('##INFO=<ID=DP,Number=1,Type=Integer,Description="Total Depth">\n')
@@ -5520,7 +5457,7 @@ def write_vcfs_for_rows(adata, adata_wt_mcrs, adata_vaf, output_dir):
 
         # Create VCF file for the row
         output_file = f"{output_dir}/{var_id}.vcf"
-        with open(output_file, "w") as vcf_file:
+        with open(output_file, "w", encoding="utf-8") as vcf_file:
             # Write VCF header
             vcf_file.write("##fileformat=VCFv4.2\n")
             vcf_file.write('##INFO=<ID=RD,Number=1,Type=Integer,Description="Total Depth">\n')
@@ -5775,7 +5712,7 @@ def order_fastqs_correctly_for_kb_count(fastq_folder, technology="bulk", multipl
     # # Path to save the text file
     # output_path = os.path.join(fastq_folder, "sorted_fastqs.txt")
 
-    # with open(output_path, "w") as f:
+    # with open(output_path, "w", encoding="utf-8") as f:
     #     for filename in sorted_files:
     #         f.write(filename + "\n")
 
@@ -5806,8 +5743,8 @@ def illumina_sort_order_for_kb_count_fastqs(filepath):
     # Split the filepath into parts by '/'
     path_parts = filepath.split("/")
 
-    # Extract the parent folder (2nd to last part)
-    parent_folder = path_parts[-2]
+    # # Extract the parent folder (2nd to last part)
+    # parent_folder = path_parts[-2]
 
     # Extract the filename (last part of the path)
     filename = path_parts[-1]
@@ -5893,7 +5830,7 @@ def load_in_fastqs(fastqs):
             raise ValueError(f"No fastq files found in {fastqs}")  # redundant with type-checking below, but prints a different error message (informs that the directory has no fastqs, rather than simply telling the user that no fastqs were provided)
     elif os.path.isfile(fastqs):
         if file.lower().endswith("txt"):  # make fastqs list from items in txt file
-            with open(fastqs, "r") as f:
+            with open(fastqs, "r", encoding="utf-8") as f:
                 files = [line.strip() for line in f.readlines()]
             if len(files) == 0:
                 raise ValueError(f"No fastq files found in {fastqs}")  # redundant with type-checking below, but prints a different error message (informs that the text file has no fastqs, rather than simply telling the user that no fastqs were provided)

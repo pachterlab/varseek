@@ -34,7 +34,7 @@ for input_bam in input_bam_list:
             output_fastq_rg = f"{output_dir}/{bam_file_name}_{rgid}.fastq.gz"
             command = f"{samtools} fastq -O {input_bam_rg} > {output_fastq_rg}"
             subprocess.run(command, shell=True)
-            # with open(output_fastq_rg, "w") as output_file:
+            # with open(output_fastq_rg, "w", encoding="utf-8") as output_file:
             #     pysam.samtools.fastq(
             #         "-O",  # Optimize output
             #         input_bam_rg,  # Input BAM file
@@ -45,7 +45,7 @@ for input_bam in input_bam_list:
         output_fastq = f"{output_dir}/{bam_file_name}.fastq.gz"
         command = f"{samtools} fastq -O {input_bam} > {output_fastq}"
         subprocess.run(command, shell=True)
-        # with open(output_fastq, "w") as output_file:
+        # with open(output_fastq, "w", encoding="utf-8") as output_file:
         #     pysam.samtools.fastq(
         #         "-O",  # Optimize output
         #         input_bam,  # Input BAM file

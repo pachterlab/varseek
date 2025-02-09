@@ -1,6 +1,6 @@
+"""main function for argparse."""
 import argparse
 import inspect
-import json
 import math
 import os
 import re
@@ -11,10 +11,7 @@ import pandas as pd
 
 from .__init__ import __version__
 from .utils import load_params, set_up_logger
-from .varseek_build import (
-    build,
-    print_valid_values_for_mutations_and_sequences_in_varseek_build,
-)
+from .varseek_build import build
 from .varseek_clean import clean
 from .varseek_count import count
 from .varseek_fastqpp import fastqpp
@@ -80,9 +77,8 @@ def extract_help_from_doc(module, arg_name, disable=False):
         if disable:
             help_message = [f"Disable {arg_name}, described below:"] + help_message
         return "\n".join(help_message).strip()
-    else:
-        return "Help message not found in docstring."
-        # raise ValueError(f"Argument '{arg_name}' not found in the docstring of the module '{module}'.")
+    return "Help message not found in docstring."
+    # raise ValueError(f"Argument '{arg_name}' not found in the docstring of the module '{module}'.")
 
 
 # Check that if `--config` is passed, no other arguments are set
@@ -129,7 +125,7 @@ def copy_parser_arguments(parser_list, parser_target):
                 kwargs["nargs"] = action.nargs  # Only include nargs for compatible actions
 
             # Filter out None values to avoid redundant keyword arguments
-            kwargs = {k: v for k, v in kwargs.items() if v is not None}
+            kwargs = {key: value for key, value in kwargs.items() if value is not None}
 
             # Add the argument to the target parser
             parser_target.add_argument(*option_strings, **kwargs)
@@ -224,6 +220,8 @@ def strpath_or_list_like_of_strings(value):
                 raise ValueError(f"All elements in the list must be strings. Found: {v}")
         return value
 
+    raise TypeError(f"Expected a string or list-like of strings, but got {type(value).__name__}")
+
 
 def strpath_or_str_or_list_or_df(value):
     # Check if the input is a DataFrame
@@ -250,7 +248,7 @@ def strpath_or_str_or_list_or_df(value):
     raise ValueError("Input must be a non-path string, a valid file path, a list, or a pandas DataFrame.")
 
 
-def main():
+def main():  # noqa: C901
     """
     Function containing argparse parsers and arguments to allow the use of varseek from the terminal (as varseek).
     """
@@ -270,9 +268,6 @@ def main():
     # NEW PARSER
     # build parser arguments
     build_desc = "Build a mutation-containing reference sequence (MCRS) file."
-
-    # prints additional info at the end of the help message for varseek build
-    # vk_build_end_help_message = print_valid_values_for_mutations_and_sequences_in_varseek_build(return_message=True)
 
     parser_build = parent_subparsers.add_parser(
         "build",
@@ -1794,7 +1789,16 @@ def main():
         required=False,
         help=extract_help_from_doc(clean, "threads"),
     )
-
+    parser_clean.add_argument(
+        "--kallisto",
+        required=False,
+        help=extract_help_from_doc(clean, "kallisto"),
+    )
+    parser_clean.add_argument(
+        "--bustools",
+        required=False,
+        help=extract_help_from_doc(clean, "bustools"),
+    )
     parser_clean.add_argument(
         "-q",
         "--quiet",
@@ -2188,8 +2192,15 @@ def main():
         required=False,
         help="Do not print progress information.",
     )
+    # kwargs
+    parser_count.add_argument(
+        "--use_num",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(count, "use_num"),
+    )
 
-    ### Define return values
+    #* Define return values
     args, unknown_args = parent_parser.parse_known_args()
 
     kwargs = {unknown_args[i].lstrip("--"): unknown_args[i + 1] for i in range(0, len(unknown_args), 2)}
@@ -2246,7 +2257,7 @@ def main():
         for key, value in params.items():
             setattr(args, key, value)
 
-    ## build return
+    #* build return
     if args.command == "build":
         if isinstance(args.sequences, list) and len(args.sequences) == 1:
             seqs = args.sequences[0]
@@ -2314,7 +2325,7 @@ def main():
             for mut_seq in build_results:
                 print(mut_seq)
 
-    ## info return
+    #* info return
     if args.command == "info":
         info_results = info(
             input_dir=args.input_dir,
@@ -2367,7 +2378,7 @@ def main():
 
         # * optionally do something with info_results (e.g., save, or print to console)
 
-    ## filter return
+    #* filter return
     if args.command == "filter":
         filter_rules = prepare_filters_list(args.filters)
 
@@ -2405,7 +2416,7 @@ def main():
 
         # * optionally do something with filter_results (e.g., save, or print to console)
 
-    ## sim return
+    #* sim return
     if args.command == "sim":
         filter_rules = prepare_filters_list(args.filters)
 
@@ -2429,7 +2440,7 @@ def main():
 
         # * optionally do something with simulated_df_dict (e.g., save, or print to console)
 
-    ## fastqpp return
+    #* fastqpp return
     if args.command == "fastqpp":
         fastqpp_results = filter(
             fastqs=args.fastqs,
@@ -2466,7 +2477,7 @@ def main():
 
         # * optionally do something with fastqpp_results (e.g., save, or print to console)
 
-    ## clean return
+    #* clean return
     if args.command == "clean":
         clean_results = clean(
             adata_vcrs=args.adata_vcrs,
@@ -2519,13 +2530,15 @@ def main():
             dry_run=args.dry_run,
             overwrite=args.overwrite,
             threads=args.threads,
+            kallisto=args.kallisto,
+            bustools=args.bustools,
             verbose=args.quiet,
             **kwargs,
         )
 
         # * optionally do something with clean_results (e.g., save, or print to console)
 
-    ## summarize return
+    #* summarize return
     if args.command == "summarize":
         summarize_results = summarize(
             top_values=args.top_values,
@@ -2542,7 +2555,7 @@ def main():
 
         # * optionally do something with summarize_results (e.g., save, or print to console)
 
-    ## ref return
+    #* ref return
     if args.command == "ref":
         ref_results = ref(
             sequences=args.sequences,
@@ -2564,7 +2577,7 @@ def main():
 
         # * optionally do something with ref_results (e.g., save, or print to console)
 
-    ## count return
+    #* count return
     if args.command == "count":
         count_results = count(
             fastqs=args.fastqs,
@@ -2593,6 +2606,7 @@ def main():
             sort_fastqs=args.sort_fastqs,
             threads=args.threads,
             verbose=args.quiet,
+            use_num=args.use_num,
             **kwargs,
         )
 

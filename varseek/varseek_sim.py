@@ -1,7 +1,6 @@
+"""varseek sim and specific helper functions."""
 import os
 import random
-import re
-import subprocess
 
 import numpy as np
 import pandas as pd
@@ -14,6 +13,8 @@ from .utils import (
     introduce_sequencing_errors,
     merge_synthetic_read_info_into_mutations_metadata_df,
     set_up_logger,
+    reverse_complement,
+    splitext_custom
 )
 
 tqdm.pandas()
@@ -122,7 +123,8 @@ def sim(
         update_df_out = f"{out_dir_vk_build}/sim_data_df.csv"
 
         if k and w:
-            assert k > w, "k must be greater than w"
+            if k <= w:
+                raise ValueError("k must be greater than w")
             read_w = read_length - (k - w)
         else:
             read_w = read_length - 1
@@ -222,10 +224,10 @@ def sim(
             inplace=True,
         )
 
-        sim_data_df["mutant_sequence_read_parent_rc"] = sim_data_df["mutant_sequence_read_parent"].apply(varseek.varseek_build.reverse_complement)
+        sim_data_df["mutant_sequence_read_parent_rc"] = sim_data_df["mutant_sequence_read_parent"].apply(reverse_complement)
         sim_data_df["mutant_sequence_read_parent_length"] = sim_data_df["mutant_sequence_read_parent"].str.len()
 
-        sim_data_df["wt_sequence_read_parent_rc"] = sim_data_df["wt_sequence_read_parent"].apply(varseek.varseek_build.reverse_complement)
+        sim_data_df["wt_sequence_read_parent_rc"] = sim_data_df["wt_sequence_read_parent"].apply(reverse_complement)
         sim_data_df["wt_sequence_read_parent_length"] = sim_data_df["wt_sequence_read_parent"].str.len()
 
         mutation_metadata_df = pd.merge(
@@ -269,7 +271,8 @@ def sim(
     if fastq_output_path is None:
         fastq_output_path = "./synthetic_reads.fq"
 
-    fasta_output_path_temp = fastq_output_path.replace(".fq", "_temp.fa")
+    fastq_output_path_base, fastq_output_path_ext = splitext_custom(fastq_output_path)
+    fasta_output_path_temp = fastq_output_path_base + "_temp.fa"
 
     if seed is not None:
         random.seed(seed)
@@ -350,7 +353,7 @@ def sim(
     # Write to a FASTA file
     total_fragments = 0
     skipped = 0
-    with open(fasta_output_path_temp, "a") as fa_file:
+    with open(fasta_output_path_temp, "a", encoding="utf-8") as fa_file:
         for row in sampled_reference_df.itertuples(index=False):
             # try:
             header = row.header
@@ -441,7 +444,7 @@ def sim(
                 number_of_reads_mutant = number_of_reads
                 number_of_reads_wt = number_of_reads
 
-            if strand == False or strand is None:
+            if strand is False or strand is None:
                 mutant_sequence_list = [random.choice([(mutant_sequence, "f"), (mutant_sequence_rc, "r")])]
                 wt_sequence_list = [random.choice([(wt_sequence, "f"), (wt_sequence_rc, "r")])]
             elif strand[0] == "f":
@@ -450,16 +453,18 @@ def sim(
             elif strand[0] == "r":
                 mutant_sequence_list = [(mutant_sequence_rc, "r")]
                 wt_sequence_list = [(wt_sequence_rc, "r")]
-            elif strand == "both" or strand == True:
+            elif strand == "both" or strand is True:
                 mutant_sequence_list = [
                     (mutant_sequence, "f"),
                     (mutant_sequence_rc, "r"),
                 ]
                 wt_sequence_list = [(wt_sequence, "f"), (wt_sequence_rc, "r")]
+            else:
+                raise ValueError(f"Invalid strand value: {strand}")
 
             # Loop through each 150mer of the sequence
             if sample_type != "w":
-                if number_of_reads_per_sample == "all" and (strand == "both" or strand == True):
+                if number_of_reads_per_sample == "all" and (strand == "both" or strand is True):
                     number_of_reads_mutant = number_of_reads_mutant * 2  # since now both strands are being sampled
 
                 new_column_dict["number_of_reads_mutant"].append(number_of_reads_mutant)
@@ -507,7 +512,7 @@ def sim(
                 noisy_read_indices_mutant = []
 
             if sample_type != "m":
-                if number_of_reads_per_sample == "all" and (strand == "both" or strand == True):
+                if number_of_reads_per_sample == "all" and (strand == "both" or strand is True):
                     number_of_reads_wt = number_of_reads_wt * 2  # since now both strands are being sampled
                 new_column_dict["number_of_reads_wt"].append(number_of_reads_wt)
                 new_column_dict["list_of_read_starting_indices_wt"].append(read_start_indices_wt)
@@ -578,11 +583,11 @@ def sim(
             write_mode = "w"
         else:
             write_mode = "a"
-        with open(fastq_output_path, "r") as new_file:
+        with open(fastq_output_path, "r", encoding="utf-8") as new_file:
             file_content_new = new_file.read()
 
         # Now write both contents to read_fa_path
-        with open(fastq_parent_path, write_mode) as parent_file:
+        with open(fastq_parent_path, write_mode, encoding="utf-8") as parent_file:
             parent_file.write(file_content_new)
 
     if read_df_parent is not None:

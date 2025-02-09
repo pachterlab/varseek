@@ -1,3 +1,4 @@
+"""varseek info and specific helper functions."""
 # CELL
 import os
 import subprocess
@@ -33,7 +34,6 @@ from varseek.utils import (
     plot_histogram_of_nearby_mutations_7_5,
     plot_kat_histogram,
     print_varseek_dry_run,
-    read_fasta,
     report_time_elapsed,
     safe_literal_eval,
     save_params_to_config_file,
@@ -41,8 +41,9 @@ from varseek.utils import (
     set_up_logger,
     swap_ids_for_headers_in_fasta,
     triplet_stats,
+    reverse_complement,
+    splitext_custom
 )
-from varseek.varseek_build import reverse_complement
 
 tqdm.pandas()
 logger = set_up_logger()
@@ -84,20 +85,20 @@ def add_mutation_information(mutation_metadata_df, mutation_column="mutation", m
     mutation_metadata_df[["nucleotide_positions", "actual_mutation"]] = mutation_metadata_df[mutation_column].str.extract(mutation_pattern)
 
     split_positions = mutation_metadata_df["nucleotide_positions"].str.split("_", expand=True)
-    mutation_metadata_df[f"start_mutation_position"] = split_positions[0]
+    mutation_metadata_df["start_mutation_position"] = split_positions[0]
 
     if split_positions.shape[1] > 1:
-        mutation_metadata_df[f"end_mutation_position"] = split_positions[1].fillna(split_positions[0])
+        mutation_metadata_df["end_mutation_position"] = split_positions[1].fillna(split_positions[0])
     else:
-        mutation_metadata_df[f"end_mutation_position"] = mutation_metadata_df["start_mutation_position"]
+        mutation_metadata_df["end_mutation_position"] = mutation_metadata_df["start_mutation_position"]
 
     mutation_metadata_df[["start_mutation_position", "end_mutation_position"]] = mutation_metadata_df[["start_mutation_position", "end_mutation_position"]].astype("Int64")
 
     if mcrs_source is not None:
-        mutation_metadata_df[f"nucleotide_positions_{mcrs_source}"] = mutation_metadata_df[f"nucleotide_positions"]
-        mutation_metadata_df[f"actual_mutation_{mcrs_source}"] = mutation_metadata_df[f"actual_mutation"]
-        mutation_metadata_df[f"start_mutation_position_{mcrs_source}"] = mutation_metadata_df[f"start_mutation_position"]
-        mutation_metadata_df[f"end_mutation_position_{mcrs_source}"] = mutation_metadata_df[f"end_mutation_position"]
+        mutation_metadata_df[f"nucleotide_positions_{mcrs_source}"] = mutation_metadata_df["nucleotide_positions"]
+        mutation_metadata_df[f"actual_mutation_{mcrs_source}"] = mutation_metadata_df["actual_mutation"]
+        mutation_metadata_df[f"start_mutation_position_{mcrs_source}"] = mutation_metadata_df["start_mutation_position"]
+        mutation_metadata_df[f"end_mutation_position_{mcrs_source}"] = mutation_metadata_df["end_mutation_position"]
 
     return mutation_metadata_df
 
@@ -146,9 +147,9 @@ def validate_input_info(params_dict):
             raise ValueError(f"dlist_reference_genome_fasta and dlist_reference_gtf must be the same value when using a supported dlist reference. Got {params_dict.get('dlist_reference_genome_fasta')} and {params_dict.get('dlist_reference_gtf')}.")
     # check if dlist_reference_source is not a valid value and the 3 dlist file parameters are also not valid values (i.e., a real file or a supported dlist reference)
     if not params_dict.get("dlist_reference_source") in supported_dlist_reference_values and not (
-        (os.path.isfile(params_dict.get("dlist_reference_genome_fasta")) or params_dict.get("dlist_reference_genome_fasta") in supported_dlist_reference_values)
-        and (os.path.isfile(params_dict.get("dlist_reference_cdna_fasta")) or params_dict.get("dlist_reference_cdna_fasta") in supported_dlist_reference_values)
-        and (os.path.isfile(params_dict.get("dlist_reference_gtf")) or params_dict.get("dlist_reference_gtf") in supported_dlist_reference_values)
+        (os.path.isfile(params_dict.get("dlist_reference_genome_fasta")) or params_dict.get("dlist_reference_genome_fasta") in supported_dlist_reference_values) and
+        (os.path.isfile(params_dict.get("dlist_reference_cdna_fasta")) or params_dict.get("dlist_reference_cdna_fasta") in supported_dlist_reference_values) and
+        (os.path.isfile(params_dict.get("dlist_reference_gtf")) or params_dict.get("dlist_reference_gtf") in supported_dlist_reference_values)
     ):
         raise ValueError(
             f"Invalid value for dlist_reference_source: {params_dict.get('dlist_reference_source')} without specifying dlist_reference_genome_fasta, dlist_reference_cdna_fasta, and dlist_reference_gtf. dlist_reference_source must be one of {supported_dlist_reference_values}, or the other arguments must be provided (each as valid file paths or one of {supported_dlist_reference_values})."
@@ -161,9 +162,9 @@ def validate_input_info(params_dict):
 
     # columns_to_include
     columns_to_include = params_dict.get("columns_to_include")
-    if not (isinstance(columns_to_include, str) or isinstance(columns_to_include, list) or isinstance(columns_to_include, tuple) or isinstance(columns_to_include, set)):
+    if not isinstance(columns_to_include, (list, set, str, tuple)):
         raise ValueError(f"columns_to_include must be a string or list of strings, got {type(columns_to_include)}")
-    if isinstance(columns_to_include, list) or isinstance(columns_to_include, tuple) or isinstance(columns_to_include, set):
+    if isinstance(columns_to_include, (list, set, tuple)):
         if not all(isinstance(col, str) for col in columns_to_include):
             raise ValueError("All elements in columns_to_include must be strings.")
         if not all(col in columns_to_include_possible_values for col in columns_to_include):
@@ -185,7 +186,7 @@ def validate_input_info(params_dict):
     k = params_dict.get("k")
     w = params_dict.get("w")
     if w and k:
-        if not (int(k) > int(w)):
+        if not int(k) > int(w):
             raise ValueError(f"k must be an integer > w. Got k={k}, w={w}.")
     if int(k) % 2 != 0 or int(k) > 63:
         logger.warning(f"If running a workflow with vk ref or kb ref, k should be an odd number between 1 and 63. Got k={k}.")
@@ -366,7 +367,7 @@ def info(
     # * 3. Dry-run and set out folder (must to it up here or else config will save in the wrong place)
     if dry_run:
         print_varseek_dry_run(params_dict, function_name="info")
-        return None
+        return
     if out is None:
         out = input_dir if input_dir else "."
 
@@ -479,8 +480,9 @@ def info(
 
     if id_to_header_csv is not None:
         id_to_header_dict = make_mapping_dict(id_to_header_csv, dict_key="id")
-        # header_to_id_dict = {v: k for k, v in id_to_header_dict.items()}
-        temp_header_fa = mcrs_fasta.replace(".fa", "_with_headers.fa")
+        # header_to_id_dict = {value: key for key, value in id_to_header_dict.items()}
+        mcrs_fasta_base, mcrs_fasta_ext = splitext_custom(mcrs_fasta)
+        temp_header_fa = f"{mcrs_fasta_base}_with_headers{mcrs_fasta_ext}"
         swap_ids_for_headers_in_fasta(mcrs_fasta, id_to_header_csv, out_fasta=temp_header_fa)
     else:
         id_to_header_dict = None
@@ -602,10 +604,10 @@ def info(
         if mcrs_source == "combined":
             mutation_metadata_df = add_some_mutation_information_when_cdna_and_genome_combined(mutation_metadata_df, columns_to_explode)
         else:
-            mutation_metadata_df[f"nucleotide_positions_{mcrs_source}"] = mutation_metadata_df[f"nucleotide_positions"]
-            mutation_metadata_df[f"actual_mutation_{mcrs_source}"] = mutation_metadata_df[f"actual_mutation"]
-            mutation_metadata_df[f"start_mutation_position_{mcrs_source}"] = mutation_metadata_df[f"start_mutation_position"]
-            mutation_metadata_df[f"end_mutation_position_{mcrs_source}"] = mutation_metadata_df[f"end_mutation_position"]
+            mutation_metadata_df[f"nucleotide_positions_{mcrs_source}"] = mutation_metadata_df["nucleotide_positions"]
+            mutation_metadata_df[f"actual_mutation_{mcrs_source}"] = mutation_metadata_df["actual_mutation"]
+            mutation_metadata_df[f"start_mutation_position_{mcrs_source}"] = mutation_metadata_df["start_mutation_position"]
+            mutation_metadata_df[f"end_mutation_position_{mcrs_source}"] = mutation_metadata_df["end_mutation_position"]
 
         columns_to_explode.extend(
             [
@@ -646,17 +648,17 @@ def info(
             )
             columns_to_explode_extend_values.extend(
                 [
-                    f"nucleotide_positions_genome",
-                    f"actual_mutation_genome",
-                    f"start_mutation_position_genome",
-                    f"end_mutation_position_genome",
+                    "nucleotide_positions_genome",
+                    "actual_mutation_genome",
+                    "start_mutation_position_genome",
+                    "end_mutation_position_genome",
                 ]
             )
             # TODO: this is a little hacky (I set these values in the function and then reset them now)
-            mutation_metadata_df_exploded[f"nucleotide_positions"] = mutation_metadata_df_exploded[f"nucleotide_positions_{mcrs_source}"]
-            mutation_metadata_df_exploded[f"actual_mutation"] = mutation_metadata_df_exploded[f"actual_mutation_{mcrs_source}"]
-            mutation_metadata_df_exploded[f"start_mutation_position"] = mutation_metadata_df_exploded[f"start_mutation_position_{mcrs_source}"]
-            mutation_metadata_df_exploded[f"end_mutation_position"] = mutation_metadata_df_exploded[f"end_mutation_position_{mcrs_source}"]
+            mutation_metadata_df_exploded["nucleotide_positions"] = mutation_metadata_df_exploded[f"nucleotide_positions_{mcrs_source}"]
+            mutation_metadata_df_exploded["actual_mutation"] = mutation_metadata_df_exploded[f"actual_mutation_{mcrs_source}"]
+            mutation_metadata_df_exploded["start_mutation_position"] = mutation_metadata_df_exploded[f"start_mutation_position_{mcrs_source}"]
+            mutation_metadata_df_exploded["end_mutation_position"] = mutation_metadata_df_exploded[f"end_mutation_position_{mcrs_source}"]
 
         if mutation_metadata_df_exploded["mcrs_source"].unique()[0] == "genome" and mutation_cdna_column in mutation_metadata_df_exploded:
             mutation_metadata_df_exploded = add_mutation_information(
@@ -666,19 +668,19 @@ def info(
             )
             columns_to_explode_extend_values.extend(
                 [
-                    f"nucleotide_positions_cdna",
-                    f"actual_mutation_cdna",
-                    f"start_mutation_position_cdna",
-                    f"end_mutation_position_cdna",
+                    "nucleotide_positions_cdna",
+                    "actual_mutation_cdna",
+                    "start_mutation_position_cdna",
+                    "end_mutation_position_cdna",
                 ]
             )
-            mutation_metadata_df_exploded[f"nucleotide_positions"] = mutation_metadata_df_exploded[f"nucleotide_positions_{mcrs_source}"]
-            mutation_metadata_df_exploded[f"actual_mutation"] = mutation_metadata_df_exploded[f"actual_mutation_{mcrs_source}"]
-            mutation_metadata_df_exploded[f"start_mutation_position"] = mutation_metadata_df_exploded[f"start_mutation_position_{mcrs_source}"]
-            mutation_metadata_df_exploded[f"end_mutation_position"] = mutation_metadata_df_exploded[f"end_mutation_position_{mcrs_source}"]
+            mutation_metadata_df_exploded["nucleotide_positions"] = mutation_metadata_df_exploded[f"nucleotide_positions_{mcrs_source}"]
+            mutation_metadata_df_exploded["actual_mutation"] = mutation_metadata_df_exploded[f"actual_mutation_{mcrs_source}"]
+            mutation_metadata_df_exploded["start_mutation_position"] = mutation_metadata_df_exploded[f"start_mutation_position_{mcrs_source}"]
+            mutation_metadata_df_exploded["end_mutation_position"] = mutation_metadata_df_exploded[f"end_mutation_position_{mcrs_source}"]
 
     # CELL
-    if mcrs_source == "genome" or mcrs_source == "combined":
+    if mcrs_source in {"genome", "combined"}:
         mutation_metadata_df_exploded = mutation_metadata_df_exploded.loc[~((mutation_metadata_df_exploded[mcrs_source_column] == "genome") & ((pd.isna(mutation_metadata_df_exploded["chromosome"])) | (mutation_metadata_df_exploded["mutation_genome"].str.contains("g.nan", na=True))))]
 
     columns_to_explode.extend(columns_to_explode_extend_values)
@@ -699,9 +701,9 @@ def info(
                     mcrs_source=mcrs_source,
                     columns_to_explode=columns_to_explode,
                     seq_id_column_cdna=seq_id_cdna_column,
-                    mutation_cdna_column=mutation_cdna_column,
+                    mut_column_cdna=mutation_cdna_column,
                     seq_id_column_genome=seq_id_genome_column,
-                    mutation_genome_column=mutation_genome_column,
+                    mut_column_genome=mutation_genome_column,
                 )
             except Exception as e:
                 logger.error(f"Error comparing cDNA and genome: {e}")
@@ -830,7 +832,7 @@ def info(
                 logger=logger,
             )
         except Exception as e:
-            logger.error(f"Error aligning to normal genome and building dlist: {e}")
+            logger.error("Error aligning to normal genome and building dlist: %s", e)
             columns_not_successfully_added.extend(
                 [
                     "dlist",

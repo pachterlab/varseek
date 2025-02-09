@@ -45,7 +45,7 @@ def create_temp_files(long_sequence):
     sequence_list = [long_sequence for _ in range(len(mutation_list))]
     temp_fasta_file = tempfile.NamedTemporaryFile(delete=False, suffix='.fasta')
     
-    with open(temp_fasta_file.name, 'w') as fasta_file:
+    with open(temp_fasta_file.name, 'w', encoding="utf-8") as fasta_file:
         for seq_id, sequence in zip(seq_ID_list, sequence_list):
             fasta_file.write(f">{seq_id}\n")
             fasta_file.write(f"{sequence}\n")
@@ -540,6 +540,6 @@ def test_semicolon_merging(long_sequence):
 #         return_mutation_output=True
 #     )
 
-#     assert result[0] == "APPRPSPPHPTPPRPTPPLP"  #* translate is not returned by gget mutate; only stored in update_df
+#     assert result[0] == "APPRPSPPHPTPPRPTPPLP"  #* translate is not returned by vk build; only stored in update_df
 
 #     assert_global_variables_zero()

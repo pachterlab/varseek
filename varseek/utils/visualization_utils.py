@@ -1,15 +1,12 @@
+"""varseek visualization utilities."""
 import json
 import os
-import shutil
-from collections import Counter, OrderedDict, defaultdict
+from collections import Counter, defaultdict
 
 import scanpy as sc
 from rich.console import Console
 from rich.table import Table
 
-console = Console()
-
-import anndata as ad
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -18,11 +15,10 @@ from matplotlib.patches import Rectangle
 from matplotlib.ticker import FuncFormatter, LogLocator, MaxNLocator, MultipleLocator
 from matplotlib_venn import venn2
 from scipy import stats
-from scipy.sparse import csr_matrix
 from scipy.stats import t, ttest_rel
 from statsmodels.stats.contingency_tables import mcnemar
 
-from varseek.constants import codon_to_amino_acid, complement, mutation_pattern
+console = Console()
 
 # Set global settings
 plt.rcParams.update(
@@ -44,8 +40,8 @@ color_map_20_original = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", 
 
 color_map_20 = ["#f08925", "#1f77b4", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf", "#aec7e8", "#ffbb78", "#98df8a", "#ff9896", "#c5b0d5", "#c49c94", "#f7b6d2", "#c7c7c7", "#dbdb8d", "#9edae5"]  # modified to swap 1 and 2 (orange first), and replaced the orange with varseek orange
 
-save_pdf_global = True if os.getenv("VARSEEK_SAVE_PDF") == "TRUE" else False
-dpi = 450
+SAVE_PDF_GLOBAL = (os.getenv("VARSEEK_SAVE_PDF") == "TRUE")
+DPI = 450
 
 
 def calculate_sensitivity_specificity(TP, TN, FP, FN):
@@ -77,7 +73,7 @@ def print_column_summary_stats(df_overlap, column, output_file=None):
             writing_mode = "a"  # Append to the file if it already exists
         else:
             writing_mode = "w"
-        with open(output_file, writing_mode) as f:
+        with open(output_file, writing_mode, encoding="utf-8") as f:
             f.write(stats_summary)
 
     # Print out the results to the console as well
@@ -112,9 +108,9 @@ def plot_histogram_notebook_1(df_overlap, column, x_label="x-axis", title="Histo
     plt.grid(True, which="major", axis="y", ls="-")  # Grid lines for both major and minor ticks
 
     if output_plot_file:
-        plt.savefig(output_plot_file, format="png", dpi=dpi, bbox_inches="tight")
-        if save_pdf_global:
-            plt.savefig(output_plot_file.replace(".png", ".pdf"), format="pdf", dpi=dpi)
+        plt.savefig(output_plot_file, format="png", dpi=DPI, bbox_inches="tight")
+        if SAVE_PDF_GLOBAL:
+            plt.savefig(output_plot_file.replace(".png", ".pdf"), format="pdf", dpi=DPI)
 
     plt.show()
     plt.close()
@@ -135,9 +131,9 @@ def plot_histogram_of_nearby_mutations_7_5(mutation_metadata_df, column, bins, o
     plt.tight_layout()
 
     if output_file:
-        plt.savefig(output_file, format="png", dpi=dpi)
-        if save_pdf_global:
-            plt.savefig(output_file.replace(".png", ".pdf"), format="pdf", dpi=dpi)
+        plt.savefig(output_file, format="png", dpi=DPI)
+        if SAVE_PDF_GLOBAL:
+            plt.savefig(output_file.replace(".png", ".pdf"), format="pdf", dpi=DPI)
 
     plt.show()
     plt.close()
@@ -145,7 +141,7 @@ def plot_histogram_of_nearby_mutations_7_5(mutation_metadata_df, column, bins, o
 
 def retrieve_value_from_metric_file(key_of_interest, metric_file):
     metrics = {}
-    with open(metric_file, "r") as file:
+    with open(metric_file, "r", encoding="utf-8") as file:
         for line in file:
             key, value = line.strip().split(": ")
             metrics[key] = value
@@ -199,11 +195,15 @@ def calculate_metrics(df, header_name=None, check_assertions=False, crude=False,
         median_magnitude_expression_error = "N/A"
 
     if check_assertions:
-        assert int(accuracy) == 1, "Accuracy is not 1"
-        assert int(sensitivity) == 1, "Sensitivity is not 1"
-        assert int(specificity) == 1, "Specificity is not 1"
+        if int(accuracy) != 1:
+            raise AssertionError(f"Accuracy is not 1: {accuracy}")
+        if int(sensitivity) != 1:
+            raise AssertionError(f"Sensitivity is not 1: {sensitivity}")
+        if int(specificity) != 1:
+            raise AssertionError(f"Specificity is not 1: {specificity}")
         if f"mutation_expression_prediction_error{suffix}" in df.columns:
-            assert int(mean_magnitude_expression_error) == 0, "Mean magnitude expression error is not 0"
+            if int(mean_magnitude_expression_error) != 0:
+                raise AssertionError(f"Mean magnitude expression error is not 0: {mean_magnitude_expression_error}")
 
     metric_dictionary = {
         "accuracy": accuracy,
@@ -235,7 +235,7 @@ def calculate_metrics(df, header_name=None, check_assertions=False, crude=False,
             "mean_magnitude_expression_error",
             "median_magnitude_expression_error",
         ]
-        with open(out, "w") as file:
+        with open(out, "w", encoding="utf-8") as file:
             for key in keys_to_save:
                 file.write(f"{key}: {metric_dictionary[key]}\n")
 
@@ -359,7 +359,7 @@ def create_stratified_metric_bar_plot(
             label=f"Average {y_metric} ({overall_metric:.2f})",
         )
 
-    if y_metric == "accuracy" or y_metric == "sensitivity" or y_metric == "specificity":
+    if y_metric in {"accuracy", "sensitivity", "specificity"}:
         plt.ylim(0, 1)
         plt.yticks(np.arange(0, 1.1, 0.1))  # Major ticks every 0.1
         plt.minorticks_on()
@@ -368,7 +368,7 @@ def create_stratified_metric_bar_plot(
     if log_x_axis:
         plt.xscale("log")
 
-    if bins is None and type(grouped_df[x_stratification][0]) != str:
+    if bins is None and not isinstance(grouped_df[x_stratification][0], str):
         plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True, prune="both"))
         if had_zero:
             min_x = 0
@@ -414,11 +414,11 @@ def create_stratified_metric_bar_plot(
     plt.legend()
 
     if out_path is not None:
-        if out_path == True:
+        if out_path is True:
             out_path = f"{y_metric}_vs_{x_stratification}.png"
-        plt.savefig(out_path, bbox_inches="tight", dpi=dpi)
-        if save_pdf_global:
-            plt.savefig(out_path.replace(".png", ".pdf"), format="pdf", dpi=dpi)
+        plt.savefig(out_path, bbox_inches="tight", dpi=DPI)
+        if SAVE_PDF_GLOBAL:
+            plt.savefig(out_path.replace(".png", ".pdf"), format="pdf", dpi=DPI)
 
     plt.show()
     plt.close()
@@ -518,7 +518,7 @@ def plot_histogram(
 
     if log_scale:
         df[column_name] = df[column_name].abs()
-        bins = list([x for x in bins if x >= 0])
+        bins = list(x for x in bins if x >= 0)
 
     # Plot the histogram with log x-axis
     plt.figure(figsize=(4, 3))
@@ -546,9 +546,9 @@ def plot_histogram(
 
     # Save or show the plot
     if out_path is not None:
-        plt.savefig(out_path, bbox_inches="tight", dpi=dpi)
-        if save_pdf_global:
-            plt.savefig(out_path.replace(".png", ".pdf"), format="pdf", dpi=dpi)
+        plt.savefig(out_path, bbox_inches="tight", dpi=DPI)
+        if SAVE_PDF_GLOBAL:
+            plt.savefig(out_path.replace(".png", ".pdf"), format="pdf", dpi=DPI)
     else:
         plt.show()
         plt.close()
@@ -564,7 +564,7 @@ def synthetic_data_summary_plot(df, column, sort_ascending=True, out_path=None):
     if sort_ascending:
         try:
             percentages = percentages.sort_index(ascending=True)
-        except Exception as e:
+        except Exception:
             pass
 
     # Step 3: Plot the percentages as a bar plot
@@ -589,8 +589,8 @@ def synthetic_data_summary_plot(df, column, sort_ascending=True, out_path=None):
 
     if out_path is not None:
         plt.savefig(out_path)
-        if save_pdf_global:
-            plt.savefig(out_path.replace(".png", ".pdf"), format="pdf", dpi=dpi)
+        if SAVE_PDF_GLOBAL:
+            plt.savefig(out_path.replace(".png", ".pdf"), format="pdf", dpi=DPI)
 
     # Show the plot
     plt.show()
@@ -609,9 +609,9 @@ def plot_basic_bar_plot_from_dict(my_dict, y_axis, log_scale=False, output_file=
     plt.tight_layout()
 
     if output_file:
-        plt.savefig(output_file, format="png", dpi=dpi)
-        if save_pdf_global:
-            plt.savefig(output_file.replace(".png", ".pdf"), format="pdf", dpi=dpi)
+        plt.savefig(output_file, format="png", dpi=DPI)
+        if SAVE_PDF_GLOBAL:
+            plt.savefig(output_file.replace(".png", ".pdf"), format="pdf", dpi=DPI)
 
     plt.show()
     plt.close()
@@ -640,9 +640,9 @@ def plot_descending_bar_plot(gene_counts, x_label, y_label, tick_interval=None, 
     plt.tight_layout()
 
     if output_file:
-        plt.savefig(output_file, format="png", dpi=dpi)
-        if save_pdf_global:
-            plt.savefig(output_file.replace(".png", ".pdf"), format="pdf", dpi=dpi)
+        plt.savefig(output_file, format="png", dpi=DPI)
+        if SAVE_PDF_GLOBAL:
+            plt.savefig(output_file.replace(".png", ".pdf"), format="pdf", dpi=DPI)
 
     plt.show()
     plt.close()
@@ -735,11 +735,13 @@ def find_specific_value_from_metric_text_file(file_path, line):
     value = None
 
     # Read the file and extract the value
-    with open(file_path, "r") as file:
+    with open(file_path, "r", encoding="utf-8") as file:
         for looping_line in file:
             if line in looping_line:
                 value = int(looping_line.split(":")[1].strip())
                 return value
+
+    return value
 
 
 def plot_kat_histogram(kat_hist, out_path=None):
@@ -773,9 +775,9 @@ def plot_kat_histogram(kat_hist, out_path=None):
     plt.title("k-mer Spectra for random_sequences.fasta")
 
     # Save the plot
-    plt.savefig(out_path, format="png", dpi=dpi)
-    if save_pdf_global:
-        plt.savefig(out_path.replace(".png", ".pdf"), format="pdf", dpi=dpi)
+    plt.savefig(out_path, format="png", dpi=DPI)
+    if SAVE_PDF_GLOBAL:
+        plt.savefig(out_path.replace(".png", ".pdf"), format="pdf", dpi=DPI)
 
     # Display the plot
     plt.show()
@@ -789,7 +791,9 @@ def plot_items_descending_order(df, x_column, y_column, item_range=(0, 10), xlab
     first_item = item_range[0]
     last_item = item_range[1]
 
-    assert len(df) > first_item, f"First item index {first_item} is out of bounds"
+    if len(df) <= first_item:
+        raise ValueError(f"First item index {first_item} is out of bounds")
+
     last_item = min(last_item, len(df))
 
     if first_item + last_item > 100:
@@ -809,9 +813,9 @@ def plot_items_descending_order(df, x_column, y_column, item_range=(0, 10), xlab
 
     # Save the plot
     if save_path:
-        plt.savefig(save_path, dpi=dpi)
-        if save_pdf_global:
-            plt.savefig(save_path.replace(".png", ".pdf"), format="pdf", dpi=dpi)
+        plt.savefig(save_path, dpi=DPI)
+        if SAVE_PDF_GLOBAL:
+            plt.savefig(save_path.replace(".png", ".pdf"), format="pdf", dpi=DPI)
 
     # Show the plot
     if show:
@@ -838,9 +842,9 @@ def plot_scree(adata, output_plot_file=None):
     plt.title("Scree Plot")
     if output_plot_file:
         os.makedirs(os.path.dirname(output_plot_file), exist_ok=True)
-        plt.savefig(output_plot_file, format="png", dpi=dpi)
-        if save_pdf_global:
-            plt.savefig(output_plot_file.replace(".png", ".pdf"), format="pdf", dpi=dpi)
+        plt.savefig(output_plot_file, format="png", dpi=DPI)
+        if SAVE_PDF_GLOBAL:
+            plt.savefig(output_plot_file.replace(".png", ".pdf"), format="pdf", dpi=DPI)
 
     plt.show()
     plt.close()
@@ -857,7 +861,7 @@ def plot_loading_contributions(adata, PC_index=0, top_genes_stats=100, top_genes
 
     if output_stats_file:
         os.makedirs(os.path.dirname(output_stats_file), exist_ok=True)
-        with open(output_stats_file, "w") as f:
+        with open(output_stats_file, "w", encoding="utf-8") as f:
             for gene, loading in zip(top_gene_names_stats, top_gene_loadings_stats):
                 f.write(f"{gene} {loading}\n")
 
@@ -874,9 +878,9 @@ def plot_loading_contributions(adata, PC_index=0, top_genes_stats=100, top_genes
     plt.gca().invert_yaxis()  # Invert Y-axis for descending order
     if output_plot_file:
         os.makedirs(os.path.dirname(output_plot_file), exist_ok=True)
-        plt.savefig(output_plot_file, format="png", dpi=dpi)
-        if save_pdf_global:
-            plt.savefig(output_plot_file.replace(".png", ".pdf"), format="pdf", dpi=dpi)
+        plt.savefig(output_plot_file, format="png", dpi=DPI)
+        if SAVE_PDF_GLOBAL:
+            plt.savefig(output_plot_file.replace(".png", ".pdf"), format="pdf", dpi=DPI)
     if show:
         plt.show()
     plt.close()
@@ -885,7 +889,8 @@ def plot_loading_contributions(adata, PC_index=0, top_genes_stats=100, top_genes
 def find_resolution_for_target_clusters(adata, target_clusters, tolerance=3, max_iters=10):
     # Initial bounds for resolution
     lower, upper = 0.1, 10
-    assert max_iters > 0, "max_iters must be a positive integer"
+    if max_iters <= 0:
+        raise ValueError("max_iters must be a positive integer")
     for i in range(max_iters):
         # Take the midpoint as the next test resolution
         adata_copy = adata.copy()
@@ -943,9 +948,9 @@ def plot_knn_tissue_frequencies(indices, adata_combined_ccle_rnaseq, output_plot
     plt.title("Frequency of Each Tissue in Nearest Neighbors")
     plt.xticks(rotation=45)
     if output_plot_file:
-        plt.savefig(output_plot_file)
-        if save_pdf_global:
-            plt.savefig(output_plot_file.replace(".png", ".pdf"), format="pdf", dpi=dpi)
+        plt.savefig(output_plot_file, format="png", dpi=DPI)
+        if SAVE_PDF_GLOBAL:
+            plt.savefig(output_plot_file.replace(".png", ".pdf"), format="pdf", dpi=DPI)
     plt.show()
     plt.close()
 
@@ -963,9 +968,9 @@ def plot_ascending_bar_plot_of_cluster_distances(sorted_distances, output_plot_f
     plt.title("Distance from Unknown Sample to Each Cluster Centroid (Ascending Order)")
     plt.xticks(rotation=45)
     if output_plot_file:
-        plt.savefig(output_plot_file, format="png", dpi=dpi)
-        if save_pdf_global:
-            plt.savefig(output_plot_file.replace(".png", ".pdf"), format="pdf", dpi=dpi)
+        plt.savefig(output_plot_file, format="png", dpi=DPI)
+        if SAVE_PDF_GLOBAL:
+            plt.savefig(output_plot_file.replace(".png", ".pdf"), format="pdf", dpi=DPI)
 
     plt.show()
     plt.close()
@@ -982,9 +987,9 @@ def plot_jaccard_bar_plot(tissues, jaccard_values, output_plot_file=None):
     plt.title("Jaccard Index for Each Tissue")
     plt.xticks(rotation=45)
     if output_plot_file:
-        plt.savefig(output_plot_file, format="png", dpi=dpi)
-        if save_pdf_global:
-            plt.savefig(output_plot_file.replace(".png", ".pdf"), format="pdf", dpi=dpi)
+        plt.savefig(output_plot_file, format="png", dpi=DPI)
+        if SAVE_PDF_GLOBAL:
+            plt.savefig(output_plot_file.replace(".png", ".pdf"), format="pdf", dpi=DPI)
 
     plt.show()
     plt.close()
@@ -1049,8 +1054,8 @@ def plot_overall_metrics(metric_dict_collection, primary_metrics=("accuracy", "s
 
         # Add value annotations for the primary metrics
         if display_numbers:
-            for bar, value in zip(bars_primary, y_values_primary):
-                ax1.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f"{value:.3f}", ha="center", va="bottom", fontsize=10)
+            for specific_bar, value in zip(bars_primary, y_values_primary):
+                ax1.text(specific_bar.get_x() + specific_bar.get_width() / 2, specific_bar.get_height(), f"{value:.3f}", ha="center", va="bottom", fontsize=10)
 
         y_values_primary_total.extend(y_values_primary)
 
@@ -1093,7 +1098,7 @@ def plot_overall_metrics(metric_dict_collection, primary_metrics=("accuracy", "s
 
         # Save to a file
         if output_file_p_values:
-            with open(output_file_p_values, "w") as f:
+            with open(output_file_p_values, "w", encoding="utf-8") as f:
                 json.dump(metric_to_tool_to_p_value_dict_of_dicts, f, indent=4)
 
         # # toy p-values for accuracy, sensitivity, and specificity
@@ -1187,7 +1192,7 @@ def calculate_grouped_metric(grouped_df, y_metric, tool):
     elif y_metric == "specificity":
         grouped_df[y_metric_output_column] = grouped_df[TN_column] / (grouped_df[TN_column] + grouped_df[FP_column])
         grouped_df.loc[(grouped_df[TN_column] + grouped_df[FP_column]) == 0, y_metric] = 1.0
-    elif y_metric == "mean_magnitude_expression_error" or y_metric == "mean_expression_error":
+    elif y_metric in {"mean_magnitude_expression_error", "mean_expression_error"}:
         grouped_df[y_metric_output_column] = grouped_df[mutation_expression_prediction_error_column] / grouped_df["number_of_elements_in_the_group"]
     else:
         raise ValueError(f"Invalid y_metric: {y_metric}. Valid options are 'accuracy', 'sensitivity', 'specificity', and 'mutation_expression_prediction_error'")
@@ -1196,7 +1201,8 @@ def calculate_grouped_metric(grouped_df, y_metric, tool):
 
 
 def create_stratified_metric_line_plot(unique_mcrs_df, x_stratification, y_metric, tools, bins=None, keep_strict_bins=False, show_p_values=False, show_confidence_intervals=False, bonferroni=True, output_file=None, show=True, output_file_p_values=None, filter_real_negatives=False):
-    assert x_stratification in unique_mcrs_df.columns, f"Invalid x_stratification: {x_stratification}"
+    if x_stratification not in unique_mcrs_df.columns:
+        raise ValueError(f"Invalid x_stratification: {x_stratification}. Valid options are {unique_mcrs_df.columns.tolist()}")
 
     # removes unnecessary columns for the function
     columns_to_keep_for_function = list(set([x_stratification, "included_in_synthetic_reads_mutant", "number_of_reads_mutant"]))
@@ -1262,7 +1268,8 @@ def create_stratified_metric_line_plot(unique_mcrs_df, x_stratification, y_metri
 
     if y_metric == "mutation_expression_prediction_error":
         for tool in tools:
-            assert f"mutation_expression_prediction_error_{tool}" in unique_mcrs_df.columns, f"mutation_expression_prediction_error_{tool} not in unique_mcrs_df.columns"
+            if f"mutation_expression_prediction_error_{tool}" not in unique_mcrs_df.columns:
+                raise ValueError(f"mutation_expression_prediction_error_{tool} not in unique_mcrs_df.columns")
 
     # created grouped_df
     if y_metric == "mean_magnitude_expression_error":  # calculate sum of magnitudes for this one column
@@ -1355,12 +1362,12 @@ def create_stratified_metric_line_plot(unique_mcrs_df, x_stratification, y_metri
 
     # # Set x-axis to log2 scale
     # if log:  # log can be False (default, not log) or True (defaults to 2) or int (log base)
-    #     if log == True:
+    #     if log is True:
     #         log = 2
     #     plt.xscale("log", base=log)
 
     if output_file_p_values:
-        with open(output_file_p_values, "w") as f:
+        with open(output_file_p_values, "w", encoding="utf-8") as f:
             json.dump(metric_to_tool_to_p_value_dict_of_dicts, f, indent=4)
 
     # Customize plot
@@ -1413,12 +1420,12 @@ def create_benchmarking_legend(tools, outfile=None, show=True):
 
 def write_p_values_to_file(tool_to_p_value_dict, out_file):
     if out_file.endswith(".txt"):
-        with open(out_file, "w") as f:
+        with open(out_file, "w", encoding="utf-8") as f:
             for tool, p_value in tool_to_p_value_dict.items():
                 f.write(f"{tool}: {p_value}\n")
     elif out_file.endswith(".json"):
         # Save to a file
-        with open(out_file, "w") as f:
+        with open(out_file, "w", encoding="utf-8") as f:
             json.dump(tool_to_p_value_dict, f, indent=4)
     else:
         raise ValueError(f"Invalid file extension: {out_file}. Accepted extensions are '.txt' and '.json'.")
@@ -1527,7 +1534,7 @@ def calculate_paired_t_test(unique_mcrs_df, column_root, tools, take_absolute_va
 
 
 def print_json(json_file):
-    with open(json_file, "r") as f:
+    with open(json_file, "r", encoding="utf-8") as f:
         data = json.load(f)
     print(json.dumps(data, indent=4))
 
@@ -1575,15 +1582,15 @@ def compute_95_confidence_interval_margin_of_error(values, take_absolute_value=F
 
 
 def create_stratified_metric_bar_plot_updated(unique_mcrs_df, x_stratification, y_metric, tools, display_numbers=False, show_p_values=False, show_confidence_intervals=True, bonferroni=True, output_file=None, show=True, output_file_p_values=None, filter_real_negatives=False):
-    assert x_stratification in unique_mcrs_df.columns, f"Invalid x_stratification: {x_stratification}"
+    if x_stratification not in unique_mcrs_df.columns:
+        raise ValueError(f"Invalid x_stratification: {x_stratification}. Valid options are {unique_mcrs_df.columns.tolist()}")
 
     # removes unnecessary columns for the function
     columns_to_keep_for_function = list(set([x_stratification, "included_in_synthetic_reads_mutant", "number_of_reads_mutant"]))
     for tool in tools:
         columns_to_keep_for_function.extend([f"TP_{tool}", f"TN_{tool}", f"FP_{tool}", f"FN_{tool}", f"mutation_expression_prediction_error_{tool}", f"mutation_detected_{tool}", f"DP_{tool}"])
-    for column in columns_to_keep_for_function:
-        if column not in unique_mcrs_df.columns:
-            columns_to_keep_for_function.remove(column)
+
+    columns_to_keep_for_function = [column for column in columns_to_keep_for_function if column in unique_mcrs_df.columns]
 
     unique_mcrs_df = unique_mcrs_df.loc[:, columns_to_keep_for_function].copy()  # make a copy to avoid modifying the original DataFrame
     # unique_mcrs_df = unique_mcrs_df.copy()  # make a copy to avoid modifying the original DataFrame
@@ -1605,7 +1612,8 @@ def create_stratified_metric_bar_plot_updated(unique_mcrs_df, x_stratification, 
 
     if y_metric == "mutation_expression_prediction_error":
         for tool in tools:
-            assert f"mutation_expression_prediction_error_{tool}" in unique_mcrs_df.columns, f"mutation_expression_prediction_error_{tool} not in unique_mcrs_df.columns"
+            if f"mutation_expression_prediction_error_{tool}" not in unique_mcrs_df.columns:
+                raise ValueError(f"mutation_expression_prediction_error_{tool} not in unique_mcrs_df.columns")
 
     # created grouped_df
     if y_metric == "mean_magnitude_expression_error":  # calculate sum of magnitudes for this one column
@@ -1652,8 +1660,8 @@ def create_stratified_metric_bar_plot_updated(unique_mcrs_df, x_stratification, 
 
         # Add value annotations for the primary metrics
         if display_numbers:
-            for bar, value in zip(bars_primary, y_values_primary):
-                plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f"{value:.3f}", ha="center", va="bottom", fontsize=10)
+            for specific_bar, value in zip(bars_primary, y_values_primary):
+                plt.text(specific_bar.get_x() + specific_bar.get_width() / 2, specific_bar.get_height(), f"{value:.3f}", ha="center", va="bottom", fontsize=10)
 
         y_values_primary_total.extend(y_values_primary)
 
@@ -1717,11 +1725,11 @@ def create_stratified_metric_bar_plot_updated(unique_mcrs_df, x_stratification, 
 
                         if p_value >= 0.05:  # * increase these values to show more p-values for debugging
                             continue
-                        elif p_value < 0.05 and p_value >= 0.01:
+                        elif 0.01 <= p_value < 0.05:
                             symbol = "*"
-                        elif p_value < 0.01 and p_value >= 0.001:
+                        elif 0.001 <= p_value < 0.01:
                             symbol = "**"
-                        else:
+                        else:  # p_value < 0.001:
                             symbol = "***"
 
                         start_x = x_primary[i] + offsets[0]  # assuming varseek is first element
@@ -1740,7 +1748,7 @@ def create_stratified_metric_bar_plot_updated(unique_mcrs_df, x_stratification, 
                         number_of_p_values_in_this_cluster += 1
 
     if output_file_p_values:
-        with open(output_file_p_values, "w") as f:
+        with open(output_file_p_values, "w", encoding="utf-8") as f:
             json.dump(stratification_to_tool_to_p_value_dict_of_dicts, f, indent=4)
 
     if y_metric in {"accuracy", "sensitivity", "specificity"}:  # "accuracy" in primary_metrics or "sensitivity" in primary_metrics or "specificity" in primary_metrics:

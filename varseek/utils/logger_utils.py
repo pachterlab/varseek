@@ -1,19 +1,19 @@
+"""varseek logger utilities."""
 import base64
 import getpass
 import inspect
 import json
+import shutil
 import logging
 import os
 import re
 import subprocess
 import sys
 import time
-import tracemalloc
 from collections import OrderedDict
 from datetime import datetime
 
 import pandas as pd
-import psutil
 import requests
 from bs4 import BeautifulSoup
 from gget.gget_cosmic import is_valid_email
@@ -23,14 +23,12 @@ from varseek.constants import default_filename_dict
 # Mute numexpr threads info
 logging.getLogger("numexpr").setLevel(logging.WARNING)
 
-from IPython.core.magic import register_cell_magic
-
 
 def set_up_logger(logging_level_name=None, save_logs=False, log_dir=None):
     if logging_level_name is None:
         logging_level_name = os.getenv("VARSEEK_LOGLEVEL", "INFO")
     logging_level = logging.getLevelName(logging_level_name)  # "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"
-    if type(logging_level) != int:  # unknown log level
+    if not isinstance(logging_level, int):  # unknown log level
         logging_level = logging.INFO
     logger = logging.getLogger(__name__)
     logger.setLevel(logging_level)
@@ -85,7 +83,7 @@ def check_file_path_is_string_with_valid_extension(file_path, variable_name, fil
         # check if file_type is a single value or list of values
         if isinstance(file_type, str):
             valid_extensions_for_file_type = valid_extensions.get(file_type)
-        elif isinstance(file_type, list) or isinstance(file_type, set) or isinstance(file_type, tuple):
+        elif isinstance(file_type, (list, set, tuple)):
             valid_extensions_for_file_type = set()
             for ft in file_type:
                 valid_extensions_for_file_type.update(valid_extensions.get(ft))
@@ -102,12 +100,12 @@ def check_file_path_is_string_with_valid_extension(file_path, variable_name, fil
 
 def load_params(file):
     if file.endswith(".json"):
-        with open(file, "r") as f:
+        with open(file, "r", encoding="utf-8") as f:
             return json.load(f)
     elif file.endswith(".yaml") or file.endswith(".yml"):
         import yaml
 
-        with open(file, "r") as f:
+        with open(file, "r", encoding="utf-8") as f:
             return yaml.safe_load(f)
     else:
         print("config file format not recognized. currently supported are json and yaml.")
@@ -167,21 +165,21 @@ def save_params_to_config_file(params=None, out_file="run_config.json"):
         params = make_function_parameter_to_value_dict(levels_up=2)
 
     # Write to JSON
-    with open(out_file, "w") as file:
+    with open(out_file, "w", encoding="utf-8") as file:
         json.dump(params, file, indent=4)
 
 
 def return_kb_arguments(command, remove_dashes=False):
     # Run the help command and capture the output
-    result = subprocess.run(["kb", command, "--help"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    result = subprocess.run(["kb", command, "--help"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
 
     help_output = result.stdout
 
-    # Regex pattern to match options (e.g., -x, --long-option)
-    options_pattern = r"(--?\w[\w-]*)"
+    # # Regex pattern to match options (e.g., -x, --long-option)
+    # options_pattern = r"(--?\w[\w-]*)"
 
-    # Find all matches in the help output
-    arguments = re.findall(options_pattern, help_output)
+    # # Find all matches in the help output
+    # arguments = re.findall(options_pattern, help_output)
 
     line_pattern = r"\n  (--?.*)"
 
@@ -226,7 +224,8 @@ def return_kb_arguments(command, remove_dashes=False):
 
 def print_varseek_dry_run(params, function_name=None):
     if function_name:
-        assert function_name in {"build", "info", "filter", "fastqpp", "clean", "summarize", "ref", "count"}
+        if function_name not in {"build", "info", "filter", "fastqpp", "clean", "summarize", "ref", "count"}:
+            raise ValueError(f"function_name must be one of build, info, filter, fastqpp, clean, summarize, ref, count. Got {function_name}")
         end = "\n  "
         print(f"varseek.varseek_{function_name}.{function_name}(", end=end)
     for param_key, param_value in params.items():
@@ -235,7 +234,7 @@ def print_varseek_dry_run(params, function_name=None):
         print(")")
 
 
-def assign_output_file_name_fordownload_varseek_files(response, out, filetype):
+def assign_output_file_name_for_download_varseek_files(response, out, filetype):
     output_file = os.path.join(out, default_filename_dict[filetype])
     # content_disposition = response.headers.get("Content-Disposition", "")
     # filename = (
@@ -256,12 +255,12 @@ def download_varseek_files(urls_dict, out="."):
     for filetype, url in urls_dict.items():
         os.makedirs(out, exist_ok=True)
 
-        response = requests.get(url, stream=True)
+        response = requests.get(url, stream=True, timeout=(10, 90))
 
         # Check for successful response
         if response.status_code == 200:
             # Extract the filename from the Content-Disposition header
-            output_file_path = assign_output_file_name_fordownload_varseek_files(response=response, out=out, filetype=filetype)
+            output_file_path = assign_output_file_name_for_download_varseek_files(response=response, out=out, filetype=filetype)
 
             with open(output_file_path, "wb") as file:
                 for chunk in response.iter_content(chunk_size=8192):
@@ -277,7 +276,7 @@ def download_varseek_files(urls_dict, out="."):
 
 
 def is_program_installed(program):
-    return os.system(f"which {program}") == 0 or os.path.exists(program)
+    return shutil.which(program) is not None or os.path.exists(program)
 
 
 def report_time_and_memory_of_script(script_path, argparse_flags=None, output_file=None):
@@ -288,10 +287,10 @@ def report_time_and_memory_of_script(script_path, argparse_flags=None, output_fi
     if argparse_flags:
         command += f" {argparse_flags}"
     try:
-        result = subprocess.run(command, shell=True, text=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
+        result = subprocess.run(command, shell=True, text=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE, check=True)
     except Exception as e:
         print(f"Error running command {command}: {e}")
-        return
+        return None
 
     if system == "Linux":
         time_re = r"(?:Elapsed \(wall clock\) time \(.*\):\s+)?(\d+:)?(\d+):(\d+(?:\.\d+)?)"
@@ -339,7 +338,7 @@ def report_time_and_memory_of_script(script_path, argparse_flags=None, output_fi
     if output_file:
         if os.path.dirname(output_file):
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
-        with open(output_file, "w") as f:
+        with open(output_file, "w", encoding="utf-8") as f:
             f.write(time_message + "\n")
             f.write(memory_message + "\n")
 
@@ -411,10 +410,13 @@ def download_box_url(url, output_folder=".", output_file_name=None):
         output_file_name = url.split("/")[-1]
     if "/" not in output_file_name:
         output_file_path = os.path.join(output_folder, output_file_name)
+    else:
+        output_file_path = output_file_name
+        output_folder = os.path.dirname(output_file_name)
     os.makedirs(output_folder, exist_ok=True)
 
     # Download the file
-    response = requests.get(url, stream=True)
+    response = requests.get(url, stream=True, timeout=(10, 90))
     if response.status_code == 200:
         with open(output_file_path, "wb") as file:
             for chunk in response.iter_content(chunk_size=8192):
@@ -537,13 +539,13 @@ def is_valid_int(value, threshold_type=None, threshold_value=None, optional=Fals
 
 try:
     from IPython import get_ipython
+    from IPython.core.magic import register_cell_magic
 
     ip = get_ipython()
 except ImportError:
     ip = None
 
 if ip:
-
     @register_cell_magic
     def cell_runtime(line, cell):  # best version - slight overhead (~0.15s per bash command in a cell), but works on multiline bash commands with variables
         start_time = time.time()
@@ -701,7 +703,7 @@ def find_key_with_trace(data, target_key, path=""):
 
 
 def get_experiment_links(search_url, base_url):
-    response = requests.get(search_url)
+    response = requests.get(search_url, timeout=(10, 90))
     response.raise_for_status()  # Ensure the request was successful
     soup = BeautifulSoup(response.text, "html.parser")
     # Find all experiment links
@@ -722,7 +724,7 @@ def make_entex_df():
         experiment_id = experiment_link.split("/")[-2]
         json_data_url = f"{experiment_link}/?format=json"
 
-        response = requests.get(json_data_url)
+        response = requests.get(json_data_url, timeout=(10, 90))
         response.raise_for_status()
         experiment_data = response.json()
 
@@ -769,7 +771,7 @@ def make_entex_df():
         entex_experiment_dict["fastq_link_pair_1"] = fastq_links[0]
         entex_experiment_dict["fastq_link_pair_2"] = fastq_links[1]
 
-        experiment_data["biosample_ontology"]["term_name"]
+        # experiment_data["biosample_ontology"]["term_name"]
 
         entex_list_of_dicts.append(entex_experiment_dict)
 
@@ -825,7 +827,7 @@ def extract_documentation_file_blocks(file_path, start_pattern, stop_pattern):
     start_regex = re.compile(start_pattern)
     stop_regex = re.compile(stop_pattern)
 
-    with open(file_path, "r") as file:
+    with open(file_path, "r", encoding="utf-8") as file:
         for line in file:
             line = line.rstrip()  # Remove trailing newlines but preserve content
 
@@ -869,7 +871,7 @@ def authenticate_cosmic_credentials(email=None, password=None):
         "https://cancer.sanger.ac.uk/api/mono/products/v1/downloads/scripted?path=grch37/cmc/v101/CancerMutationCensus_AllData_Tsv_v101_GRCh37.tar&bucket=downloads",  # COSMIC CMC - doesn't really matter what it is
     ]
 
-    result = subprocess.run(curl_command, capture_output=True, text=True)
+    result = subprocess.run(curl_command, capture_output=True, text=True, check=True)
 
     try:
         response_data = json.loads(result.stdout)
@@ -896,7 +898,7 @@ def authenticate_cosmic_credentials_via_server(encoded_token):
     """Sends the encoded authentication token to the server for verification."""
     server_url = "https://your-secure-server.com/verify_cosmic"  #!!! modify - see varseek_server/validate_cosmic.py
 
-    response = requests.post(server_url, json={"encoded_token": encoded_token})
+    response = requests.post(server_url, json={"encoded_token": encoded_token}, timeout=20)
 
     if response.status_code == 200 and response.json().get("authenticated"):
         return True
@@ -946,7 +948,7 @@ def save_run_info(out_file="run_info.txt"):
     version = __version__
 
     # Write everything to the file
-    with open(out_file, "w") as f:
+    with open(out_file, "w", encoding="utf-8") as f:
         f.write(f"{timestamp}\n")  # Write the date and time
         f.write(f"Version: {version}\n")  # Write the package version
         f.write(function_call + "\n")  # Write the function call

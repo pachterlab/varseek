@@ -48,12 +48,12 @@ if dtt_or_curl == "dtt":
     # print("Moving files to appropriate folders")
     # move_uuid_folders(base_data_folder = base_data_folder, cohort_metadata_file = cohort_metadata_file)
 elif dtt_or_curl == "curl":
-    with open(controlled_access_token_file, 'r') as file:
+    with open(controlled_access_token_file, 'r', encoding="utf-8") as file:
         token = file.read().strip()
 
     for uuid in uuids:
-        print(f"Downloading {uuid} to {output_folder}")
         output_folder = os.path.join(base_data_folder, uuid) # uuid_to_output_folder_dict[uuid]
+        print(f"Downloading {uuid} to {output_folder}")
         if not os.path.exists(output_folder):
             os.makedirs(output_folder)
             curl_command = f"curl --output-dir '{output_folder}' --remote-name --remote-header-name --header 'X-Auth-Token: {token}' 'https://api.gdc.cancer.gov/data/{uuid}'"

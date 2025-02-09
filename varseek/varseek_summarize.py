@@ -1,28 +1,16 @@
+"""varseek summarize and specific helper functions."""
 import os
 import time
 
 import anndata
-import numpy as np
 import pandas as pd
 import scanpy as sc
 
 from varseek.utils import (
     check_file_path_is_string_with_valid_extension,
-    decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_mode,
-    find_resolution_for_target_clusters,
-    increment_adata_based_on_dlist_fns,
     is_valid_int,
     make_function_parameter_to_value_dict,
-    plot_ascending_bar_plot_of_cluster_distances,
-    plot_contingency_table,
-    plot_items_descending_order,
-    plot_jaccard_bar_plot,
-    plot_knee_plot,
-    plot_knn_tissue_frequencies,
-    plot_loading_contributions,
-    plot_scree,
     print_varseek_dry_run,
-    remove_adata_columns,
     report_time_elapsed,
     save_params_to_config_file,
     save_run_info,
@@ -44,7 +32,7 @@ def validate_input_summarize(params_dict):
             raise ValueError(f"File {adata} does not exist")
 
     if not is_valid_int(params_dict["top_values"], ">=", 1):
-        raise ValueError(f"{param_name} must be an positive integer. Got {params_dict.get(param_name)}.")
+        raise ValueError(f"top_values must be an positive integer. Got {params_dict.get('top_values')}.")
 
     technology = params_dict.get("technology", None)
     technology_valid_values_lower = {x.lower() for x in technology_valid_values}
@@ -100,7 +88,7 @@ def summarize(
     # * 3. Dry-run
     if dry_run:
         print_varseek_dry_run(params_dict, function_name="summarize")
-        return None
+        return
 
     # * 4. Save params to config file and run info file
     config_file = os.path.join(out, "config", "vk_summarize_config.json")
@@ -146,7 +134,7 @@ def summarize(
         adata.var["mcrs_count"] = adata.X.sum(axis=0).A1 if hasattr(adata.X, "A1") else adata.X.sum(axis=0).flatten()
 
     # 1. Number of Mutations with Count > 0 in any Sample/Cell, and for bulk in particular, for each sample; then list the mutations
-    with open(stats_file, "w") as f:
+    with open(stats_file, "w", encoding="utf-8") as f:
         mutations_with_any_count = (adata.X > 0).sum(axis=0)
         mutations_count_any_row = (mutations_with_any_count > 0).sum()
         line = f"Total mutations with count > 0 for any sample/cell: {mutations_count_any_row}"
@@ -158,7 +146,7 @@ def summarize(
                 f.write(line)
 
     mutations_with_nonzero_counts = adata.var_names[mutations_with_any_count > 0]
-    with open(f"{specific_stats_folder}/mutations_with_any_count.txt", "w") as f:
+    with open(f"{specific_stats_folder}/mutations_with_any_count.txt", "w", encoding="utf-8") as f:
         for mutation in mutations_with_nonzero_counts:
             f.write(f"{mutation}\n")
 
@@ -171,9 +159,9 @@ def summarize(
     )
     mutation_names = most_common_mutations.index.tolist()
     mutation_names_top_n = mutation_names[:top_values]
-    with open(stats_file, "a") as f:
+    with open(stats_file, "a", encoding="utf-8") as f:
         f.write(f"Mutations present across the most samples: {', '.join(mutation_names_top_n)}")
-    with open(f"{specific_stats_folder}/mutations_present_across_the_most_samples.txt", "w") as f:
+    with open(f"{specific_stats_folder}/mutations_present_across_the_most_samples.txt", "w", encoding="utf-8") as f:
         f.write("Mutation\tNumber_of_Samples\tTotal_Counts\n")
 
         # Write each mutation's details
@@ -186,9 +174,9 @@ def summarize(
     top_mutations_mcrs_count = adata.var.sort_values(by="mcrs_count", ascending=False)
     mutation_names = top_mutations_mcrs_count.index.tolist()
     mutation_names_top_n = mutation_names[:top_values]
-    with open(stats_file, "a") as f:
+    with open(stats_file, "a", encoding="utf-8") as f:
         f.write(f"Mutations with highest counts across all samples: {', '.join(mutation_names_top_n)}")
-    with open(f"{specific_stats_folder}/mutations_highest_mcrs_count.txt", "w") as f:
+    with open(f"{specific_stats_folder}/mutations_highest_mcrs_count.txt", "w", encoding="utf-8") as f:
         f.write("Mutation\tNumber_of_Samples\tTotal_Counts\n")
 
         # Write each mutation's details
@@ -199,7 +187,7 @@ def summarize(
 
     # --------------------------------------------------------------------------------------------------------
     # 4. Number of Genes with Count > 0 in any Sample/Cell, and for bulk in particular, for each sample; then list the genes
-    with open(stats_file, "a") as f:
+    with open(stats_file, "a", encoding="utf-8") as f:
         # Sum mcrs_count for each gene
         gene_counts = adata.var.groupby("gene_name")["mcrs_count"].sum()
 
@@ -218,7 +206,7 @@ def summarize(
 
     # List of genes with non-zero mcrs_count across all samples
     genes_with_nonzero_counts = gene_counts[gene_counts > 0].index
-    with open(f"{specific_stats_folder}/genes_with_any_count.txt", "w") as f:
+    with open(f"{specific_stats_folder}/genes_with_any_count.txt", "w", encoding="utf-8") as f:
         for gene in genes_with_nonzero_counts:
             f.write(f"{gene}\n")
 
@@ -245,11 +233,11 @@ def summarize(
     )
 
     # Write results to file
-    with open(stats_file, "a") as f:
+    with open(stats_file, "a", encoding="utf-8") as f:
         gene_names_top_n = most_common_genes.index[:top_values].tolist()
         f.write(f"Genes present across the most samples: {', '.join(gene_names_top_n)}\n")
 
-    with open(f"{specific_stats_folder}/genes_present_across_the_most_samples.txt", "w") as f:
+    with open(f"{specific_stats_folder}/genes_present_across_the_most_samples.txt", "w", encoding="utf-8") as f:
         f.write("Gene\tNumber_of_Samples\tTotal_mcrs_count\n")
         for gene, row in most_common_genes.iterrows():
             f.write(f"{gene}\t{row['number_of_samples_in_which_the_gene_is_detected']}\t{row['total_mcrs_count']}\n")
@@ -259,11 +247,11 @@ def summarize(
     top_genes_mcrs_count = gene_presence_df.sort_values(by="total_mcrs_count", ascending=False)
 
     # Write top genes with highest mcrs_count to stats file and detailed file
-    with open(stats_file, "a") as f:
+    with open(stats_file, "a", encoding="utf-8") as f:
         gene_names_top_n = top_genes_mcrs_count.index[:top_values].tolist()
         f.write(f"Genes with highest mcrs_count across all samples: {', '.join(gene_names_top_n)}\n")
 
-    with open(f"{specific_stats_folder}/genes_highest_mcrs_count.txt", "w") as f:
+    with open(f"{specific_stats_folder}/genes_highest_mcrs_count.txt", "w", encoding="utf-8") as f:
         f.write("Gene\tNumber_of_Samples\tTotal_mcrs_count\n")
         for gene, row in top_genes_mcrs_count.iterrows():
             f.write(f"{gene}\t{row['number_of_samples_in_which_the_gene_is_detected']}\t{row['total_mcrs_count']}\n")

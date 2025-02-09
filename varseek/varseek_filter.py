@@ -1,13 +1,10 @@
+"""varseek filter and specific helper functions."""
 import ast
 import csv
 import os
-import re
 import time
-from pdb import set_trace as st
 
-import numpy as np
 import pandas as pd
-from tqdm import tqdm
 
 from .utils import (
     check_file_path_is_string_with_valid_extension,
@@ -29,7 +26,7 @@ logger = set_up_logger()
 
 def apply_filters(df, filters, verbose=False, filtering_report_text_out=None):
     logger.info("Initial mutation report")
-    filtering_report_dict = make_filtering_report(df, logger=logger, verbose=verbose, filtering_report_text_out=filtering_report_text_out)
+    filtering_report_dict = make_filtering_report(df, verbose=verbose, filtering_report_text_out=filtering_report_text_out)
     initial_filtering_report_dict = filtering_report_dict.copy()
 
     for filter in filters:
@@ -81,9 +78,9 @@ def apply_filters(df, filters, verbose=False, filtering_report_text_out=None):
                 try:
                     value = ast.literal_eval(value)
                     if not isinstance(value, set) or not isinstance(value, list) or not isinstance(value, tuple):
-                        raise ValueError(f"Value must be a set, list, tuple, or path to text file")
-                except ValueError:
-                    raise ValueError(f"Value must be a set, list, tuple, or path to text file")
+                        raise ValueError("Value must be a set, list, tuple, or path to text file")
+                except ValueError as exc:
+                    raise ValueError("Value must be a set, list, tuple, or path to text file") from exc
             if rule == "is_in":
                 df = df.loc[df[column].isin(set(value))]
             else:
@@ -103,7 +100,7 @@ def apply_filters(df, filters, verbose=False, filtering_report_text_out=None):
         else:
             raise ValueError(f"Rule '{rule}' not recognized")
 
-        filtering_report_dict = make_filtering_report(df, logger=logger, verbose=verbose, filtering_report_text_out=filtering_report_text_out, prior_filtering_report_dict=filtering_report_dict)
+        filtering_report_dict = make_filtering_report(df, verbose=verbose, filtering_report_text_out=filtering_report_text_out, prior_filtering_report_dict=filtering_report_dict)
 
     if verbose:
         number_of_mutations_total_difference = initial_filtering_report_dict["number_of_mutations_total"] - filtering_report_dict["number_of_mutations_total"]
@@ -187,12 +184,12 @@ def prepare_filters_list(filters):
 
 
 def convert_txt_to_list(txt_path):
-    with open(txt_path, "r") as f:
+    with open(txt_path, "r", encoding="utf-8") as f:
         return [line.strip() for line in f if line.strip()]
 
 
 def filter_id_to_header_csv(id_to_header_csv, id_to_header_csv_filtered, filtered_df_mcrs_ids):
-    with open(id_to_header_csv, mode="r") as infile, open(id_to_header_csv_filtered, mode="w", newline="") as outfile:
+    with open(id_to_header_csv, mode="r", encoding="utf-8") as infile, open(id_to_header_csv_filtered, mode="w", encoding="utf-8", newline="") as outfile:
         reader = csv.reader(infile)
         writer = csv.writer(outfile)
 
@@ -204,7 +201,7 @@ def filter_id_to_header_csv(id_to_header_csv, id_to_header_csv_filtered, filtere
                 writer.writerow(row)
 
 
-def make_filtering_report(mutation_metadata_df, logger=None, verbose=False, filtering_report_text_out=None, prior_filtering_report_dict=None):
+def make_filtering_report(mutation_metadata_df, verbose=False, filtering_report_text_out=None, prior_filtering_report_dict=None):
     if "semicolon_count" not in mutation_metadata_df.columns:
         mutation_metadata_df["semicolon_count"] = mutation_metadata_df["mcrs_header"].str.count(";")
 
@@ -240,7 +237,7 @@ def make_filtering_report(mutation_metadata_df, logger=None, verbose=False, filt
         if os.path.dirname(filtering_report_text_out):
             os.makedirs(os.path.dirname(filtering_report_text_out), exist_ok=True)
         filtering_report_write_mode = "a" if os.path.exists(filtering_report_text_out) else "w"
-        with open(filtering_report_text_out, filtering_report_write_mode) as file:
+        with open(filtering_report_text_out, filtering_report_write_mode, encoding="utf-8") as file:
             file.write(filtering_report)
 
     return {"number_of_vcrss": number_of_vcrss, "number_of_unique_mutations": number_of_unique_mutations, "number_of_merged_mutations": number_of_merged_mutations, "number_of_mutations_total": number_of_mutations_total}
@@ -374,6 +371,7 @@ def filter(
     # * 0. Informational arguments that exit early
     if list_filter_rules:
         print_list_filter_rules()
+        return
 
     # * 1. Start timer
     start_time = time.perf_counter()
@@ -385,7 +383,7 @@ def filter(
     # * 3. Dry-run
     if dry_run:
         print_varseek_dry_run(params_dict, function_name="filter")
-        return None
+        return
     if out is None:
         out = input_dir if input_dir else "."
 
@@ -489,7 +487,7 @@ def filter(
         mutation_metadata_df["semicolon_count"] = mutation_metadata_df["mcrs_header"].str.count(";")
 
     filtering_report_text_out = os.path.join(out, "filtering_report.txt")
-    filtered_df = apply_filters(mutation_metadata_df, filters, verbose=verbose, logger=logger, filtering_report_text_out=filtering_report_text_out)
+    filtered_df = apply_filters(mutation_metadata_df, filters, verbose=verbose, filtering_report_text_out=filtering_report_text_out)
     filtered_df = filtered_df.copy()  # here to avoid pandas warning about assigning to a slice rather than a copy
 
     if "semicolon_count" in mutation_metadata_df.columns:
@@ -504,7 +502,7 @@ def filter(
     filtered_df["fasta_format"] = ">" + filtered_df["mcrs_id"] + "\n" + filtered_df["mcrs_sequence"] + "\n"
 
     if save_mcrs_filtered_fasta_and_t2g:
-        with open(mcrs_filtered_fasta_out, "w") as fasta_file:
+        with open(mcrs_filtered_fasta_out, "w", encoding="utf-8") as fasta_file:
             fasta_file.write("".join(filtered_df["fasta_format"].values))
 
         filtered_df.drop(columns=["fasta_format"], inplace=True)
@@ -527,7 +525,7 @@ def filter(
 
         mutations_with_exactly_1_wt_sequence_per_row["fasta_format_wt"] = ">" + mutations_with_exactly_1_wt_sequence_per_row["mcrs_id"] + "\n" + mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"] + "\n"
 
-        with open(wt_mcrs_filtered_fasta_out, "w") as fasta_file:
+        with open(wt_mcrs_filtered_fasta_out, "w", encoding="utf-8") as fasta_file:
             fasta_file.write("".join(mutations_with_exactly_1_wt_sequence_per_row["fasta_format_wt"].values))
 
         create_mutant_t2g(wt_mcrs_filtered_fasta_out, wt_mcrs_t2g_filtered_out)
