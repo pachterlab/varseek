@@ -14,6 +14,7 @@ import csv
 import requests
 from tqdm import tqdm
 import hashlib
+import networkx as nx
 
 import gzip
 from bisect import bisect_left
@@ -30,8 +31,6 @@ import scipy.sparse as sp
 from Bio import SeqIO
 from Bio.Seq import Seq
 from scipy.sparse import csr_matrix
-from sklearn.metrics import euclidean_distances
-from sklearn.neighbors import NearestNeighbors
 
 from varseek.constants import (
     codon_to_amino_acid,
@@ -41,21 +40,20 @@ from varseek.constants import (
     technology_barcode_and_umi_dict,
     complement_trans
 )
+
+from varseek.utils.logger_utils import is_program_installed
 from varseek.utils.visualization_utils import (
-    plot_ascending_bar_plot_of_cluster_distances,
     plot_basic_bar_plot_from_dict,
     plot_descending_bar_plot,
     plot_histogram_notebook_1,
     plot_histogram_of_nearby_mutations_7_5,
-    plot_jaccard_bar_plot,
-    plot_knn_tissue_frequencies,
     print_column_summary_stats,
 )
 
 tqdm.pandas()
 
 # dlist_pattern_utils = re.compile(r"^(\d+)_(\d+)$")   # re.compile(r"^(unspliced)?(\d+)(;(unspliced)?\d+)*_(\d+)$")   # re.compile(r"^(unspliced)?(ENST\d+:(?:c\.|g\.)\d+(_\d+)?([a-zA-Z>]+))(;(unspliced)?ENST\d+:(?:c\.|g\.)\d+(_\d+)?([a-zA-Z>]+))*_\d+$")
-# TODO: change when I change unspliced notaiton
+# TODO: change when I change unspliced notation
 dlist_pattern_utils = re.compile(
     r"^(\d+)_(\d+)$"  # First pattern: digits underscore digits
     r"|^(unspliced)?(\d+)(;(unspliced)?\d+)*_(\d+)$"  # Second pattern: optional unspliced, digits, underscore, digits
@@ -81,7 +79,7 @@ def read_fastq(fastq_file):
 
                 yield header, sequence, plus_line, quality
     except Exception as e:
-        raise RuntimeError(f"Error reading FASTQ file '{fastq_file}': {e}")
+        raise RuntimeError(f"Error reading FASTQ file '{fastq_file}': {e}") from e
 
 
 def read_fasta(file_path, semicolon_split=False):
@@ -282,17 +280,15 @@ def translate_sequence(sequence, start, end):
 
 def wt_fragment_and_mutant_fragment_share_kmer(mutated_fragment: str, wildtype_fragment: str, k: int) -> bool:
     if len(mutated_fragment) <= k:
-        if mutated_fragment in wildtype_fragment:
+        return bool(mutated_fragment in wildtype_fragment)
+
+    # else:
+    for mutant_position in range(len(mutated_fragment) - k):
+        mutant_kmer = mutated_fragment[mutant_position:(mutant_position + k)]
+        if mutant_kmer in wildtype_fragment:
+            # wt_position = wildtype_fragment.find(mutant_kmer)
             return True
-        else:
-            return False
-    else:
-        for mutant_position in range(len(mutated_fragment) - k):
-            mutant_kmer = mutated_fragment[mutant_position:(mutant_position + k)]
-            if mutant_kmer in wildtype_fragment:
-                # wt_position = wildtype_fragment.find(mutant_kmer)
-                return True
-        return False
+    return False
 
 
 def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_fasta_path, output_csv_path):
@@ -465,10 +461,10 @@ def merge_genome_into_transcriptome_fasta(
 
         if header_transcriptome_corresponding_to_genome in mutant_reference_transcriptome:
             if mutant_reference_transcriptome[header_transcriptome_corresponding_to_genome] != sequence_genome:
-                header_genome_transcriptome_style = f"unspliced{header_transcriptome_corresponding_to_genome}"  # TODO: change when I change unspliced notaiton
+                header_genome_transcriptome_style = f"unspliced{header_transcriptome_corresponding_to_genome}"  # TODO: change when I change unspliced notation
                 mutant_reference_genome_to_keep[header_genome_transcriptome_style] = sequence_genome
         else:
-            header_genome_transcriptome_style = f"unspliced{header_transcriptome_corresponding_to_genome}"  # TODO: change when I change unspliced notaiton
+            header_genome_transcriptome_style = f"unspliced{header_transcriptome_corresponding_to_genome}"  # TODO: change when I change unspliced notation
             mutant_reference_genome_to_keep[header_genome_transcriptome_style] = sequence_genome
 
     mutant_reference_combined = OrderedDict(mutant_reference_transcriptome)
@@ -664,7 +660,10 @@ def get_set_of_headers_from_sam(sam_file, id_to_header_csv=None, check_for_bad_c
     return cleaned_sequence_names
 
 
-def filter_fasta(input_fasta, output_fasta=None, sequence_names_set=set(), keep="not_in_list"):
+def filter_fasta(input_fasta, output_fasta=None, sequence_names_set=None, keep="not_in_list"):
+    if sequence_names_set is None:
+        sequence_names_set = set()
+
     if output_fasta is None:
         output_fasta = input_fasta + ".tmp"  # Write to a temporary file
 
@@ -734,7 +733,7 @@ def phred_to_error_rate(phred_score):
     return 10 ** (-phred_score / 10)
 
 
-def trim_edges_and_adaptors_off_fastq_reads(filename, filename_r2=None, cut_mean_quality=13, cut_window_size=4, qualified_quality_phred=None, unqualified_percent_limit=None, n_base_limit=None, length_required=None, fastp="fastp", out_dir=".", threads=2, suffix="qc"):
+def trim_edges_and_adaptors_off_fastq_reads(filename, filename_r2=None, cut_mean_quality=13, cut_window_size=4, qualified_quality_phred=None, unqualified_percent_limit=None, n_base_limit=None, length_required=None, fastp="fastp", seqtk="seqtk", out_dir=".", threads=2, suffix="qc"):
 
     # output_dir = os.path.dirname(filename)
 
@@ -801,15 +800,15 @@ def trim_edges_and_adaptors_off_fastq_reads(filename, filename_r2=None, cut_mean
 
         # Run the command
         subprocess.run(fastp_command, check=True)
-    except Exception as e:
+    except Exception as e1:
         try:
-            print(f"Error: {e}")
+            print(f"Error: {e1}")
             print("fastp did not work. Trying seqtk")
-            _ = trim_edges_of_fastq_reads_seqtk(filename, seqtk="seqtk", filename_filtered=filename_filtered, minimum_phred=cut_mean_quality, number_beginning=0, number_end=0, suffix=suffix)
+            _ = trim_edges_of_fastq_reads_seqtk(filename, seqtk=seqtk, filename_filtered=filename_filtered, minimum_phred=cut_mean_quality, number_beginning=0, number_end=0, suffix=suffix)
             if filename_r2:
-                _ = trim_edges_of_fastq_reads_seqtk(filename_r2, seqtk="seqtk", filename_filtered=filename_filtered_r2, minimum_phred=cut_mean_quality, number_beginning=0, number_end=0, suffix=suffix)
-        except Exception as e:
-            print(f"Error: {e}")
+                _ = trim_edges_of_fastq_reads_seqtk(filename_r2, seqtk=seqtk, filename_filtered=filename_filtered_r2, minimum_phred=cut_mean_quality, number_beginning=0, number_end=0, suffix=suffix)
+        except Exception as e2:
+            print(f"Error: {e2}")
             print("seqtk did not work. Skipping QC")
             return filename, filename_r2
 
@@ -890,6 +889,7 @@ def replace_low_quality_base_with_N(filename, out_dir=".", seqtk="seqtk", minimu
 # TODO: write this
 def check_if_read_has_index_and_umi_smartseq3(sequence):
     pass
+    # return True/False
 
 
 def split_fastq_reads_by_N(input_fastq_file, out_dir=".", minimum_sequence_length=None, technology="bulk", contains_barcodes_or_umis=False, seqtk="seqtk", logger=None, verbose=True, suffix="splitNs"):  # set to False for bulk and for the paired file of any single-cell technology
@@ -900,7 +900,13 @@ def split_fastq_reads_by_N(input_fastq_file, out_dir=".", minimum_sequence_lengt
 
     technology = technology.lower()
 
-    if technology == "bulk":  # use seqtk
+    if not is_program_installed(seqtk):
+        logger.info("Seqtk is not installed. replace_low_quality_bases_with_N sees significant speedups for bulk technology with seqtk, so it is recommended to install seqtk for this step")
+        seqtk_installed = False
+    else:
+        seqtk_installed = True
+
+    if technology == "bulk" and seqtk_installed:  # use seqtk
         split_reads_by_N_command = f"{seqtk} cutN -n 1 -p 1 {input_fastq_file} | sed '/^$/d' > {output_fastq_file}"
         subprocess.run(split_reads_by_N_command, shell=True, check=True)
         if minimum_sequence_length:
@@ -996,7 +1002,7 @@ def split_fastq_reads_by_N(input_fastq_file, out_dir=".", minimum_sequence_lengt
 
         # printlog(f"Split reads written to {output_fastq_file}")
 
-        return output_fastq_file
+    return output_fastq_file
 
 
 
@@ -1050,18 +1056,6 @@ def extract_problematic_mutation_list(problematic_genes_string, kb_extract_out_d
     problematic_mutations = list(set(problematic_mutations))
 
     return problematic_mutations
-
-
-def drop_duplication_mutations(input, output, mutation_column="mutation_genome"):
-    df = pd.read_csv(input)
-
-    # count number of duplications
-    num_dup = df[mutation_column].str.contains("dup", na=False).sum()
-    print(f"Number of duplication mutations that have been dropped: {num_dup}")
-
-    df_no_dup_mutations = df.loc[~(df[mutation_column].str.contains("dup"))]
-
-    df_no_dup_mutations.to_csv(output, index=False)
 
 
 def join_keys_with_same_values(original_dict):
@@ -1194,7 +1188,7 @@ def count_number_of_spliced_and_unspliced_headers(file):
         spliced = False
         unspliced = False
         for header in headers_list:
-            if "unspliced" in header:  # TODO: change when I change unspliced notaiton
+            if "unspliced" in header:  # TODO: change when I change unspliced notation
                 unspliced = True
             else:
                 spliced = True
@@ -1234,41 +1228,40 @@ def splitext_custom(file_path):
     return base, ext
 
 
-def compute_unique_mutation_header_set(
-    file,
-    id_to_header_csv=None,
-    mutation_fasta_file=None,
-    dlist_style=False,
-    remove_unspliced=True,
-):
-    if id_to_header_csv is not None:
-        base, ext = splitext_custom(file)
-        temp_header_fa = f"{base}_with_headers{ext}"
-        swap_ids_for_headers_in_fasta(file, id_to_header_csv, out_fasta=temp_header_fa)  # * added
-        file = temp_header_fa
+# def compute_unique_mutation_header_set(
+#     file,
+#     id_to_header_csv=None,
+#     dlist_style=False,
+#     remove_unspliced=True,
+# ):
+#     if id_to_header_csv is not None:
+#         base, ext = splitext_custom(file)
+#         temp_header_fa = f"{base}_with_headers{ext}"
+#         swap_ids_for_headers_in_fasta(file, id_to_header_csv, out_fasta=temp_header_fa)  # * added
+#         file = temp_header_fa
 
-    unique_headers = set()
+#     unique_headers = set()
 
-    with open(file, encoding="utf-8") as f:
-        total_lines = sum(1 for _ in f) // 2
-    for headers_concatenated, _ in tqdm(pyfastx.Fastx(file), total=total_lines, desc="Processing headers"):
-        headers_list = headers_concatenated.split("~")
-        for header in headers_list:
-            if dlist_style:
-                if check_dlist_header(header, dlist_pattern_utils):
-                    header = header.rsplit("_", 1)[0]
+#     with open(file, encoding="utf-8") as f:
+#         total_lines = sum(1 for _ in f) // 2
+#     for headers_concatenated, _ in tqdm(pyfastx.Fastx(file), total=total_lines, desc="Processing headers"):
+#         headers_list = headers_concatenated.split("~")
+#         for header in headers_list:
+#             if dlist_style:
+#                 if check_dlist_header(header, dlist_pattern_utils):
+#                     header = header.rsplit("_", 1)[0]
 
-            individual_header_list = header.split(";")
-            for individual_header in individual_header_list:
-                if remove_unspliced:
-                    if "unspliced" in individual_header:  # TODO: change when I change unspliced notaiton
-                        individual_header = individual_header.split("unspliced")[1]  # requires my unspliced mutation to have the format "unspliced{seq_id}_{mutation_id}"
-                unique_headers.add(individual_header)
+#             individual_header_list = header.split(";")
+#             for individual_header in individual_header_list:
+#                 if remove_unspliced:
+#                     if "unspliced" in individual_header:  # TODO: change when I change unspliced notation
+#                         individual_header = individual_header.split("unspliced")[1]  # requires my unspliced mutation to have the format "unspliced{seq_id}_{mutation_id}"
+#                 unique_headers.add(individual_header)
 
-    if id_to_header_csv is not None:
-        os.remove(temp_header_fa)
+#     if id_to_header_csv is not None:
+#         os.remove(temp_header_fa)
 
-    return unique_headers
+#     return unique_headers
 
 
 def apply_enst_format(unique_mutations_genome, cosmic_reference_file_mutation_csv):
@@ -2001,6 +1994,8 @@ def generate_synthetic_reads(
                     (mutant_sequence_rc, "r"),
                 ]
                 wt_sequence_list = [(wt_sequence, "f"), (wt_sequence_rc, "r")]
+            else:
+                raise ValueError(f"Invalid strandedness: {strandedness}")
 
             # Loop through each 150mer of the sequence
             if sample_type != "w":
@@ -2168,6 +2163,8 @@ def build_random_genome_read_df(
         fasta_entry_column = "seq_ID"
         mcrs_start_column = "start_position_for_which_read_contains_mutation_cdna"
         mcrs_end_column = "end_mutation_position_cdna"
+    else:
+        raise ValueError(f"Invalid input_type: {input_type}")
 
     if seed:
         random.seed(seed)
@@ -2268,6 +2265,8 @@ def get_header_set_from_fastq(fastq_file, output_format="set"):
         headers = {header[1:].strip() for header, _, _ in pyfastx.Fastx(fastq_file)}
     elif output_format == "list":
         headers = [header[1:].strip() for header, _, _ in pyfastx.Fastx(fastq_file)]
+    else:
+        raise ValueError(f"Invalid output_format: {output_format}")
     return headers
 
 
@@ -2579,7 +2578,7 @@ def count_nearby_mutations_efficient(df, k, fasta_entry_column, start_column, en
         # Proceed only if group has more than one mutation
         if N > 1:
             # Create mapping from group indices (0 to N-1) to original indices
-            mapping = {i: idx for i, idx in enumerate(indices_original)}
+            mapping = dict(enumerate(indices_original))
 
             # Prepare DataFrames with positions and group indices (0 to N-1)
             df_starts = pd.DataFrame({"position": starts, "index": np.arange(N)})
@@ -2693,7 +2692,7 @@ def count_nearby_mutations_efficient_with_identifiers(df, k, fasta_entry_column,
             # Proceed only if group has more than one mutation
             if N > 1:
                 # Create mapping from group indices (0 to N-1) to original indices
-                mapping = {i: idx for i, idx in enumerate(indices_original)}
+                mapping = dict(enumerate(indices_original))
 
                 # Prepare DataFrames with positions, group indices, and headers
                 df_starts = pd.DataFrame({"position": starts, "index": np.arange(N), "header": headers})
@@ -2975,7 +2974,7 @@ def run_kb_count_dry_run(index, t2g, fastq, kb_count_out, newer_kallisto, k=31, 
     if "--h5ad" in kb_count_dry_run:
         kb_count_dry_run = kb_count_dry_run.replace("--h5ad", "")  # not supported
 
-    result = subprocess.run(kb_count_dry_run, shell=True, stdout=subprocess.PIPE, text=True)
+    result = subprocess.run(kb_count_dry_run, shell=True, stdout=subprocess.PIPE, text=True, check=True)
     commands = result.stdout.strip().split("\n")
 
     for cmd in commands:
@@ -2986,7 +2985,7 @@ def run_kb_count_dry_run(index, t2g, fastq, kb_count_out, newer_kallisto, k=31, 
             cmd_split.insert(2, "--union")
             cmd_split.insert(3, "--dfk-onlist")
             cmd = " ".join(cmd_split)
-        result = subprocess.run(cmd, shell=True)
+        result = subprocess.run(cmd, shell=True, check=True)
         if result.returncode != 0:
             print(f"Command failed: {cmd}")
             break
@@ -3008,7 +3007,7 @@ def create_umi_to_barcode_dict(bus_file, bustools="bustools", barcode_length=16,
     ]
 
     # Run the command and capture the output
-    result = subprocess.run(command, stdout=subprocess.PIPE, text=True)
+    result = subprocess.run(command, stdout=subprocess.PIPE, text=True, check=True)
 
     # Loop through each line of the output (excluding the last line 'Read in X BUS records')
     for line in result.stdout.strip().split("\n"):
@@ -3018,6 +3017,8 @@ def create_umi_to_barcode_dict(bus_file, bustools="bustools", barcode_length=16,
             umi = columns[2]
         elif key_to_use == "fastq_header_position":
             umi = columns[5]
+        else:
+            raise ValueError("key_to_use must be either 'umi' or 'fastq_header_position'")
         barcode = columns[0]  # remember there will be A's for padding to 32 characters
         barcode = barcode[(32 - barcode_length):]  # * remove the padding
         umi_to_barcode_dict[umi] = barcode
@@ -3046,8 +3047,8 @@ def convert_to_list_in_df(value, reference_length=0):
             # If conversion fails, return an empty list or handle accordingly
             if reference_length == 0:
                 return []
-            else:
-                return [np.nan] * reference_length
+            # else:
+            return [np.nan] * reference_length
     return value  # If already a list, return as is
 
 
@@ -3080,7 +3081,7 @@ def increment_adata_based_on_dlist_fns(adata, mcrs_fasta, dlist_fasta, kb_count_
     )
 
     if not os.path.exists(f"{kb_count_out}/bus_df.csv"):
-        bus_df = make_bus_df(kb_count_out, fastq, t2g=t2g, mm=mm, union=False, technology=technology, bustools=bustools, ignore_barcodes=ignore_barcodes)
+        bus_df = make_bus_df(kb_count_out, fastq, t2g_file=t2g, mm=mm, union=False, technology=technology, bustools=bustools, ignore_barcodes=ignore_barcodes)
     else:
         bus_df = pd.read_csv(f"{kb_count_out}/bus_df.csv")
 
@@ -3165,25 +3166,29 @@ def check_for_read_kmer_in_mcrs(read_df, unique_mcrs_df, k, subset=None, strand=
     - The original DataFrame with the new 'read_contains_kmer_in_mcrs' column
     """
 
-    def check_row_for_kmer(row):
+    # Step 1: Create a dictionary to map 'mcrs_header' to 'mcrs_sequence' for fast lookups
+    mcrs_sequence_dict = unique_mcrs_df.set_index("mcrs_header")["mcrs_sequence"].to_dict() if strand != "r" else {}
+    mcrs_sequence_dict_rc = unique_mcrs_df.set_index("mcrs_header")["mcrs_sequence_rc"].to_dict() if strand != "f" else {}
+
+    def check_row_for_kmer(row, strand, k, mcrs_sequence_dict, mcrs_sequence_dict_rc):
         read_sequence = row["read_sequence"]
+        
+        contains_kmer_in_mcrs_f = False
+        contains_kmer_in_mcrs_r = False
+        
         if strand != "r":
             mcrs_sequence = mcrs_sequence_dict.get(row["mcrs_header"], "")
             contains_kmer_in_mcrs_f = contains_kmer_in_mcrs(read_sequence, mcrs_sequence, k)
             if strand == "f":
                 return contains_kmer_in_mcrs_f
+        
         if strand != "f":
             mcrs_sequence_rc = mcrs_sequence_dict_rc.get(row["mcrs_header"], "")
             contains_kmer_in_mcrs_r = contains_kmer_in_mcrs(Seq(read_sequence).reverse_complement(), mcrs_sequence_rc, k)
             if strand == "r":
                 return contains_kmer_in_mcrs_r
+        
         return contains_kmer_in_mcrs_f or contains_kmer_in_mcrs_r
-
-    # Step 1: Create a dictionary to map 'mcrs_header' to 'mcrs_sequence' for fast lookups
-    if strand != "r":
-        mcrs_sequence_dict = unique_mcrs_df.set_index("mcrs_header")["mcrs_sequence"].to_dict()
-    if strand != "f":
-        mcrs_sequence_dict_rc = unique_mcrs_df.set_index("mcrs_header")["mcrs_sequence_rc"].to_dict()
 
     # Step 4: Initialize the column with NaN in the original read_df subset
     if "read_contains_kmer_in_mcrs" not in read_df.columns:
@@ -3191,9 +3196,9 @@ def check_for_read_kmer_in_mcrs(read_df, unique_mcrs_df, k, subset=None, strand=
 
     # Step 5: Apply the function and update the 'read_contains_kmer_in_mcrs' column
     if subset is None:
-        read_df["read_contains_kmer_in_mcrs"] = read_df.apply(lambda row: check_row_for_kmer(row), axis=1)
+        read_df["read_contains_kmer_in_mcrs"] = read_df.apply(lambda row: check_row_for_kmer(row, strand, k, mcrs_sequence_dict, mcrs_sequence_dict_rc), axis=1)
     else:
-        read_df.loc[read_df[subset], "read_contains_kmer_in_mcrs"] = read_df.loc[read_df[subset]].apply(lambda row: check_row_for_kmer(row, k), axis=1)
+        read_df.loc[read_df[subset], "read_contains_kmer_in_mcrs"] = read_df.loc[read_df[subset]].apply(lambda row: check_row_for_kmer(row, strand, k, mcrs_sequence_dict, mcrs_sequence_dict_rc), axis=1, axis=1)
 
     return read_df
 
@@ -3553,6 +3558,8 @@ def get_mcrss_that_pseudoalign_but_arent_dlisted(
             "--workflow=nac",
             "--make-unique",
         ]
+    else:
+        raise ValueError("additional_kb_extract_filtering_workflow must be either 'standard' or 'nac'")
 
     filter_fasta(mcrs_fa, mcrs_fa_filtered_bowtie, sequence_names_set)
 
@@ -3708,6 +3715,7 @@ def explode_df(mutation_metadata_df, columns_to_explode=None):
     print("About to apply safe evals")
     for column in tqdm(columns_to_explode, desc="Checking columns"):
         mutation_metadata_df[column] = mutation_metadata_df.apply(lambda row: safe_literal_eval(row[column]), axis=1)
+        mutation_metadata_df[column] = mutation_metadata_df[column].apply(safe_literal_eval)
 
     mutation_metadata_df_exploded = mutation_metadata_df.explode(list(columns_to_explode)).reset_index(drop=True)
 
@@ -4289,11 +4297,11 @@ def download_ensembl_reference_files(reference_out_dir_sequences_dlist, grch="37
         "cdna": ref_dlist_fa_cdna,
         "gtf": ref_dlist_gtf,
     }
-    
-    for file in file_dict:
-        if not os.path.exists(file_dict[file]):
-            files_to_download_list.append(file)
-    
+
+    for file_source, file_path in file_dict.items():
+        if not os.path.exists(file_path):
+            files_to_download_list.append(file_source)
+
     if files_to_download_list:
         files_to_download = ",".join(files_to_download_list)
         gget_ref_command_dlist = [
@@ -4308,20 +4316,18 @@ def download_ensembl_reference_files(reference_out_dir_sequences_dlist, grch="37
             "-d",
             ensembl_grch_gget,
         ]
-        
+
         subprocess.run(gget_ref_command_dlist, check=True)
-        
+
         for file in files_to_download_list:
-            subprocess.run(["gunzip", f"{file_dict[file]}.gz"])
-    
+            subprocess.run(["gunzip", f"{file_dict[file]}.gz"], check=True)
+
     return ref_dlist_fa_genome, ref_dlist_fa_cdna, ref_dlist_gtf
 
 
 # first tries pysam, then samtools, then finally custom
 def create_fai(fasta_path, fai_path=None):
     try:
-        import pysam
-
         pysam.faidx(fasta_path)
     except Exception:
         try:
@@ -4365,230 +4371,6 @@ def create_fai(fasta_path, fai_path=None):
                     fai_file.write(f"{seq_name.split()[0]}\t{seq_length}\t{seq_start}\t{line_length}\t{line_length_with_newline}\n")
 
 
-def compute_intersection(set1, set2):
-    return len(set1.intersection(set2))
-
-
-def compute_jaccard_index(set1, set2):
-    intersection = len(set1.intersection(set2))
-    union = len(set1.union(set2))
-    return intersection / union
-
-
-# * TODO: this considers only the largest number of nearest neighbors, but not the ordinality, which is especially important because if I look for 15 nearest neighbors but a cancer type of interest only has 3 samples in my dataset then it will have a hard time winning out
-def compute_knn(adata_unknown, adata_combined_ccle_rnaseq, out_dir=".", k=10):
-    # Combine PCA embeddings from both datasets
-    combined_pca_embeddings = np.vstack([adata_combined_ccle_rnaseq.obsm["X_pca"], adata_unknown.obsm["X_pca"]])
-
-    # Fit the k-NN model on the reference dataset
-    reference_embeddings = combined_pca_embeddings.obsm["X_pca"]
-    knn_model = NearestNeighbors(n_neighbors=k, metric="euclidean")
-    knn_model.fit(reference_embeddings)
-
-    # Query the nearest neighbors for each point in `adata_unknown`
-    unknown_embeddings = adata_unknown.obsm["X_pca"]
-    distances, indices = knn_model.kneighbors(unknown_embeddings)
-
-    tissue_counts = plot_knn_tissue_frequencies(
-        indices,
-        adata_combined_ccle_rnaseq,
-        output_plot_file=f"{out_dir}/knn_tissue_frequencies.png",
-    )
-
-    plurality_tissue_counts = np.argmax(tissue_counts, axis=1)
-    print("True cancer type: ", adata_unknown.uns["sample_name"])
-    print("Predicted cancer type: ", plurality_tissue_counts)
-    print(
-        "Predicted cancer type and true cancer type match: ",
-        adata_unknown.uns["sample_name"] == plurality_tissue_counts,
-    )
-
-
-def compute_cluster_centroid_distances(adata_unknown, adata_combined_ccle_rnaseq, out_dir="."):
-    # Ensure PCA has been performed on `adata_combined_ccle_rnaseq` and `adata_unknown`
-    # Get the PCA coordinates for both datasets
-    reference_pca = adata_combined_ccle_rnaseq.obsm["X_pca"]
-    unknown_pca = adata_unknown.obsm["X_pca"]
-
-    # Calculate the centroids of each Leiden cluster
-    cluster_centroids = {}
-    for cluster in adata_combined_ccle_rnaseq.obs["tissue"].unique():
-        # Select cells in the current cluster and compute the centroid
-        cluster_cells = reference_pca[adata_combined_ccle_rnaseq.obs["tissue"] == cluster]
-        centroid = cluster_cells.mean(axis=0)
-        cluster_centroids[cluster] = centroid
-
-    # Convert centroids to an array for easy distance calculation
-    centroid_matrix = np.array(list(cluster_centroids.values()))
-
-    # Calculate distances from the unknown point to each centroid
-    distances = euclidean_distances(unknown_pca, centroid_matrix)
-
-    sorted_distances = sorted(zip(cluster_centroids.keys(), distances[0]), key=lambda x: x[1])
-
-    cluster_centroid_distance_file = f"{out_dir}/cluster_centroid_distances.txt"
-    # Write the sorted distances to a file
-    with open(cluster_centroid_distance_file, "w", encoding="utf-8") as f:
-        for cluster, dist in sorted_distances:
-            f.write(f"Distance from unknown sample to centroid of cluster {cluster}: {dist}\n")
-
-    cluster_centroid_distance_plot_file = f"{out_dir}/cluster_centroid_distances.png"
-    plot_ascending_bar_plot_of_cluster_distances(sorted_distances, output_plot_file=cluster_centroid_distance_plot_file)
-
-    # Output the closest cluster
-    closest_cluster, closest_distance = sorted_distances[0]
-    print("True cancer type: ", adata_unknown.uns["sample_name"])
-    print("Predicted cancer type and distance: ", closest_cluster, closest_distance)
-    print(
-        "Predicted cancer type and true cancer type match: ",
-        adata_unknown.uns["sample_name"] == closest_cluster,
-    )
-
-
-def compute_jaccard_indices(
-    adata_unknown,
-    grouped_tissue_dir,
-    jaccard_type="mutation",
-    out_dir=".",
-    jaccard_or_intersection="jaccard",
-):
-    if jaccard_type == "mutation":
-        column_name = "header_with_gene_name"
-        text_file = "sorted_mutations.txt"
-    elif jaccard_type == "mutated_genes":
-        column_name = "gene_name"
-        text_file = "sorted_mutated_genes.txt"
-    else:
-        raise ValueError("Invalid jaccard_type. Must be 'mutation' or 'mutated_genes'")
-    # Initialize a dictionary to store mutations for each tissue
-    tissue_mutations = {}
-
-    adata_unknown_unique_mutations = set(adata_unknown.var[column_name])
-
-    # Loop through each subfolder in `grouped_tissue_dir`
-    for tissue in os.listdir(grouped_tissue_dir):
-        specific_tissue_dir = os.path.join(grouped_tissue_dir, tissue)
-        sorted_mutations_file = os.path.join(specific_tissue_dir, text_file)
-
-        # Initialize an empty set for mutations in this tissue
-        mutations = set()
-
-        # Check if the file exists in the current tissue folder
-        if os.path.isfile(sorted_mutations_file):
-            with open(sorted_mutations_file, "r", encoding="utf-8") as f:
-                for line in f:
-                    mutation_name = line.split()[0]  # Grab the first column (mutation name)
-                    mutations.add(mutation_name)
-
-        if jaccard_or_intersection == "jaccard":
-            jaccard_index_mutations = compute_jaccard_index(mutations, adata_unknown_unique_mutations)
-        elif jaccard_or_intersection == "intersection":
-            jaccard_index_mutations = compute_intersection(mutations, adata_unknown_unique_mutations)
-
-        tissue_mutations[tissue] = jaccard_index_mutations
-
-    tissues = list(adata_unknown_unique_mutations.keys())
-    jaccard_values = list(adata_unknown_unique_mutations.values())
-
-    sorted_data = sorted(zip(jaccard_values, tissues), reverse=True)
-    tissues, jaccard_values = zip(*sorted_data)
-
-    plot_jaccard_bar_plot(
-        tissues,
-        jaccard_values,
-        output_plot_file=f"{out_dir}/jaccard_bar_plot_{jaccard_type}.png",
-    )
-
-    # Find the tissue with the maximum Jaccard index
-    max_tissue = max(adata_unknown_unique_mutations, key=adata_unknown_unique_mutations.get)
-    max_jaccard = adata_unknown_unique_mutations[max_tissue]
-
-    print("True cancer type: ", adata_unknown.uns["sample_name"])
-    print("Predicted cancer type and jaccard for mutations: ", max_tissue, max_jaccard)
-    print(
-        "Predicted cancer type and true cancer type match: ",
-        adata_unknown.uns["sample_name"] == max_tissue,
-    )
-
-
-# TODO: write this
-def compute_mx_metric():
-    pass
-    # return a list of marker mutations for each cancer type, and provide these as input along with the unknown sample's mutation matrix to *mx assign* (might only work for single-cell)
-    # - identify cancer-specific marker mutations (or genes, and just apply to all of it's mutations in my database) from the literature ("old")
-    # - return a list of marker mutations for each cancer type from my cell lines ("new")
-    # - merge these with *ec merge*
-    # - run *ec index* on the merged marker list
-    # - run *mx extract* on the output of *ec index*
-    # - run *mx clean* on the output of *mx extract*
-    # - run *mx assign* on the output of *mx clean*
-
-
-def predict_cancer_type(
-    adata_path,
-    adata_combined_ccle_rnaseq,
-    pca_components,
-    grouped_tissue_dir,
-    sample_name,
-    sample_to_cancer_type,
-    metric="knn",
-    k=10,
-    use_binary_matrix=False,
-):
-    sample_dir = os.path.dirname(os.path.dirname(adata_path))
-    adata_unknown = sc.read_h5ad(adata_path)
-    adata_unknown.uns["sample_name"] = sample_name
-    adata_unknown.uns["cancer_type"] = sample_to_cancer_type[sample_name]
-
-    if use_binary_matrix:
-        adata_unknown.X = (adata_unknown.X > 0).astype(int)
-
-    # Identify common genes between the two datasets
-    common_genes = adata_unknown.var_names.intersection(adata_combined_ccle_rnaseq.var_names)
-
-    # Subset adata_unknown to include only these common genes
-    adata_unknown = adata_unknown[:, common_genes].copy()
-
-    # Step 2: Center the new data using the mean of the original data
-    # Note: adata_original.X.mean(axis=0) assumes both datasets have the same set of genes/variables
-    mean_center = np.mean(adata_combined_ccle_rnaseq.X, axis=0)
-    adata_unknown_centered = adata_unknown.X - mean_center
-
-    # Step 3: Project the new data into the PCA space of the original data
-    # This will give you the PCA coordinates for adata_unknown in the same space as adata_original
-    adata_unknown.obsm["X_pca"] = adata_unknown_centered.dot(pca_components)
-
-    # Optional: Store the explained variance for reference if needed
-    adata_unknown.uns["pca"] = adata_combined_ccle_rnaseq.uns["pca"]  # Copy explained variance, etc.
-
-    if metric == "knn":
-        compute_knn(
-            adata_unknown=adata_unknown,
-            adata_combined_ccle_rnaseq=adata_combined_ccle_rnaseq,
-            out_dir=sample_dir,
-            k=k,
-        )
-    elif metric == "euclidean":
-        compute_cluster_centroid_distances(
-            adata_unknown=adata_unknown,
-            adata_combined_ccle_rnaseq=adata_combined_ccle_rnaseq,
-            out_dir=sample_dir,
-        )
-    elif metric == "jaccard":
-        compute_jaccard_indices(
-            adata_unknown=adata_unknown,
-            grouped_tissue_dir=grouped_tissue_dir,
-            out_dir=sample_dir,
-        )
-    elif metric == "intersection":
-        compute_jaccard_indices(
-            adata_unknown=adata_unknown,
-            grouped_tissue_dir=grouped_tissue_dir,
-            out_dir=sample_dir,
-        )
-    elif metric == "mx":
-        compute_mx_metric()
-
 
 # to be clear, this removes double counting of the same VCRS on each paired end, which is valid when fragment length < 2*read length OR for long insertions that make VCRS very long (such that the VCRS spans across both ends even when considering the region between the ends)
 def decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_mode(adata, fastq, kb_count_out, t2g, mm, bustools="bustools", split_Ns=False, paired_end_fastqs=False, paired_end_suffix_length=2, technology="bulk", keep_only_insertions=True, ignore_barcodes=False):
@@ -4598,7 +4380,7 @@ def decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_
         raise ValueError("This function currently only works with bulk RNA-seq data")
 
     if not os.path.exists(f"{kb_count_out}/bus_df.csv"):
-        bus_df = make_bus_df(kb_count_out, fastq, t2g=t2g, mm=mm, union=False, technology=technology, bustools=bustools, ignore_barcodes=ignore_barcodes)
+        bus_df = make_bus_df(kb_count_out, fastq, t2g_file=t2g, mm=mm, union=False, technology=technology, bustools=bustools, ignore_barcodes=ignore_barcodes)
     else:
         bus_df = pd.read_csv(f"{kb_count_out}/bus_df.csv")
 
@@ -4666,6 +4448,8 @@ def remove_adata_columns(adata, values_of_interest, operation, var_column_name):
             values_of_interest_set = {line.strip() for line in f}
     elif isinstance(values_of_interest, (list, tuple, set)):
         values_of_interest_set = set(values_of_interest)
+    else:
+        raise ValueError("values_of_interest must be a list, tuple, set, or a file path ending with .txt")
 
     # Step 2: Filter adata.var based on whether 'mcrs_id' is in the set
     columns_to_remove = adata.var.index[adata.var[var_column_name].isin(values_of_interest_set)]
@@ -4688,7 +4472,7 @@ def get_printlog(verbose=True, logger=None):
     return (lambda *args, **kwargs: None) if not verbose else (print if logger is None else logger.info)
 
 
-def trim_edges_off_reads_fastq_list(rnaseq_fastq_files, parity, minimum_base_quality_trim_reads=0, cut_window_size=4, qualified_quality_phred=0, unqualified_percent_limit=100, n_base_limit=None, length_required=None, fastp="fastp", out_dir=".", threads=2, logger=None, verbose=True, suffix="qc"):
+def trim_edges_off_reads_fastq_list(rnaseq_fastq_files, parity, minimum_base_quality_trim_reads=0, cut_window_size=4, qualified_quality_phred=0, unqualified_percent_limit=100, n_base_limit=None, length_required=None, fastp="fastp", seqtk="seqtk", out_dir=".", threads=2, logger=None, verbose=True, suffix="qc"):
     printlog = get_printlog(verbose, logger)
     os.makedirs(out_dir, exist_ok=True)
     rnaseq_fastq_files_quality_controlled = []
@@ -4696,33 +4480,33 @@ def trim_edges_off_reads_fastq_list(rnaseq_fastq_files, parity, minimum_base_qua
         for i in range(len(rnaseq_fastq_files)):
             printlog(f"Trimming {rnaseq_fastq_files[i]}")
             rnaseq_fastq_file, _ = trim_edges_and_adaptors_off_fastq_reads(
-                filename=rnaseq_fastq_files[i], filename_r2=None, cut_mean_quality=minimum_base_quality_trim_reads, cut_window_size=cut_window_size, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, n_base_limit=n_base_limit, length_required=length_required, fastp=fastp, out_dir=out_dir, threads=threads, suffix=suffix
+                filename=rnaseq_fastq_files[i], filename_r2=None, cut_mean_quality=minimum_base_quality_trim_reads, cut_window_size=cut_window_size, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, n_base_limit=n_base_limit, length_required=length_required, fastp=fastp, seqtk=seqtk, out_dir=out_dir, threads=threads, suffix=suffix
             )
             rnaseq_fastq_files_quality_controlled.append(rnaseq_fastq_file)
     elif parity == "paired":
         for i in range(0, len(rnaseq_fastq_files), 2):
             printlog(f"Trimming {rnaseq_fastq_files[i]} and {rnaseq_fastq_files[i + 1]}")
             rnaseq_fastq_file, rnaseq_fastq_file_2 = trim_edges_and_adaptors_off_fastq_reads(
-                filename=rnaseq_fastq_files[i], filename_r2=rnaseq_fastq_files[i + 1], cut_mean_quality=minimum_base_quality_trim_reads, cut_window_size=cut_window_size, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, n_base_limit=n_base_limit, length_required=length_required, fastp=fastp, out_dir=out_dir, threads=threads, suffix=suffix
+                filename=rnaseq_fastq_files[i], filename_r2=rnaseq_fastq_files[i + 1], cut_mean_quality=minimum_base_quality_trim_reads, cut_window_size=cut_window_size, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, n_base_limit=n_base_limit, length_required=length_required, fastp=fastp, seqtk=seqtk, out_dir=out_dir, threads=threads, suffix=suffix
             )
             rnaseq_fastq_files_quality_controlled.extend([rnaseq_fastq_file, rnaseq_fastq_file_2])
 
     return rnaseq_fastq_files_quality_controlled
 
 
-def run_fastqc_and_multiqc(rnaseq_fastq_files_quality_controlled, fastqc_out_dir):
+def run_fastqc_and_multiqc(rnaseq_fastq_files_quality_controlled, fastqc_out_dir, fastqc="fastqc", multiqc="multiqc"):
     os.makedirs(fastqc_out_dir, exist_ok=True)
     rnaseq_fastq_files_quality_controlled_string = " ".join(rnaseq_fastq_files_quality_controlled)
 
     try:
-        fastqc_command = f"fastqc -o {fastqc_out_dir} {rnaseq_fastq_files_quality_controlled_string}"
+        fastqc_command = f"{fastqc} -o {fastqc_out_dir} {rnaseq_fastq_files_quality_controlled_string}"
         subprocess.run(fastqc_command, shell=True, check=True)
     except subprocess.CalledProcessError as e:
         print("Error running fastqc")
         print(e)
 
     try:
-        multiqc_command = f"multiqc --filename multiqc --outdir {fastqc_out_dir} {fastqc_out_dir}/*fastqc*"
+        multiqc_command = f"{multiqc} --filename multiqc --outdir {fastqc_out_dir} {fastqc_out_dir}/*fastqc*"
         subprocess.run(multiqc_command, shell=True, check=True)
     except subprocess.CalledProcessError as e:
         print("Error running multiqc")
@@ -4733,9 +4517,8 @@ def replace_low_quality_bases_with_N_list(rnaseq_fastq_files, minimum_base_quali
     printlog = get_printlog(verbose, logger)
     os.makedirs(out_dir, exist_ok=True)
     rnaseq_fastq_files_replace_low_quality_bases_with_N = []
-    for i in range(len(rnaseq_fastq_files)):
-        printlog(f"Replacing low quality bases with N in {rnaseq_fastq_files[i]}")
-        rnaseq_fastq_file = rnaseq_fastq_files[i]
+    for i, rnaseq_fastq_file in enumerate(rnaseq_fastq_files):
+        printlog(f"Replacing low quality bases with N in {rnaseq_fastq_file}")
         rnaseq_fastq_file = replace_low_quality_base_with_N(rnaseq_fastq_file, seqtk=seqtk, minimum_base_quality=minimum_base_quality, out_dir=out_dir, suffix=suffix)
         rnaseq_fastq_files_replace_low_quality_bases_with_N.append(rnaseq_fastq_file)
         # delete the file in rnaseq_fastq_files[i]
@@ -4745,14 +4528,13 @@ def replace_low_quality_bases_with_N_list(rnaseq_fastq_files, minimum_base_quali
 
 
 # TODO: enable single vs paired end mode (single end works as-is; paired end requires 2 files as input, and for every line it splits in file 1, I will add a line of all Ns in file 2); also get it working for scRNA-seq data (which is single end parity but still requires the paired-end treatment) - get Delaney's help to determine how to treat single cell files
-def split_reads_by_N_list(rnaseq_fastq_files_replace_low_quality_bases_with_N, minimum_sequence_length=None, out_dir=".", delete_original_files=True, logger=None, verbose=True, suffix="splitNs"):
+def split_reads_by_N_list(rnaseq_fastq_files_replace_low_quality_bases_with_N, minimum_sequence_length=None, out_dir=".", delete_original_files=True, logger=None, verbose=True, suffix="splitNs", seqtk="seqtk"):
     printlog = get_printlog(verbose, logger)
     os.makedirs(out_dir, exist_ok=True)
     rnaseq_fastq_files_split_reads_by_N = []
-    for i in range(len(rnaseq_fastq_files_replace_low_quality_bases_with_N)):
-        printlog(f"Splitting reads by N in {rnaseq_fastq_files_replace_low_quality_bases_with_N[i]}")
-        rnaseq_fastq_file = rnaseq_fastq_files_replace_low_quality_bases_with_N[i]
-        rnaseq_fastq_file = split_fastq_reads_by_N(rnaseq_fastq_file, minimum_sequence_length=minimum_sequence_length, out_dir=out_dir, logger=logger, verbose=verbose, suffix=suffix)  # TODO: would need a way of postprocessing to make sure I don't double-count fragmented reads - I would need to see where each fragmented read aligns - perhaps with kb extract or pseudobam
+    for i, rnaseq_fastq_file in enumerate(rnaseq_fastq_files_replace_low_quality_bases_with_N):
+        printlog(f"Splitting reads by N in {rnaseq_fastq_file}")
+        rnaseq_fastq_file = split_fastq_reads_by_N(rnaseq_fastq_file, minimum_sequence_length=minimum_sequence_length, out_dir=out_dir, logger=logger, verbose=verbose, suffix=suffix, seqtk=seqtk)  # TODO: would need a way of postprocessing to make sure I don't double-count fragmented reads - I would need to see where each fragmented read aligns - perhaps with kb extract or pseudobam
         # replace_low_quality_base_with_N_and_split_fastq_reads_by_N(input_fastq_file = rnaseq_fastq_file, output_fastq_file = None, minimum_sequence_length=k, seqtk = seqtk, minimum_base_quality = minimum_base_quality_replace_with_N)
         rnaseq_fastq_files_split_reads_by_N.append(rnaseq_fastq_file)
         # # delete the file in rnaseq_fastq_files_replace_low_quality_bases_with_N[i]
@@ -4820,6 +4602,8 @@ def make_bus_df(kallisto_out, fastq_file_list, t2g_file, mm=False, union=False, 
         elif fastq_file.endswith(".txt"):
             with open(fastq_file, encoding="utf-8") as f:
                 fastq_header_list = f.read().splitlines()
+        else:
+            raise ValueError(f"fastq file {fastq_file} does not have a supported extension")
 
         if technology == "bulk" or "smartseq" in technology.lower():
             if ignore_barcodes:
@@ -5080,7 +4864,8 @@ def adjust_mutation_adata_by_normal_gene_matrix(adata, kb_output_mutation, kb_ou
         bus_df_standard = pd.read_csv(bus_df_standard_path, usecols=["barcode", "UMI", "fastq_header", "transcript_names_final"])
 
     bus_df_standard["transcript_names_final"] = bus_df_standard["transcript_names_final"].apply(safe_literal_eval)
-    bus_df_standard["transcripts_standard"] = bus_df_standard["transcript_names_final"].apply(lambda name_list: tuple([re.match(r"^(ENST\d+)", name).group(0) if re.match(r"^(ENST\d+)", name) else name for name in name_list]))
+    bus_df_standard["transcripts_standard"] = bus_df_standard["transcript_names_final"].apply(lambda name_list: tuple(re.match(r"^(ENST\d+)", name).group(0) if re.match(r"^(ENST\d+)", name) else name for name in name_list))
+
 
     if ignore_barcodes:
         columns_for_merging = ["UMI", "fastq_header", "transcripts_standard"]
@@ -5466,9 +5251,9 @@ def write_vcfs_for_rows(adata, adata_wt_mcrs, adata_vaf, output_dir):
             vcf_file.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
 
             # Iterate through samples (rows in the matrix)
-            for sample_idx in range(len(mutant_counts)):
+            for sample_idx, mutant_count in enumerate(mutant_counts):
                 # Calculate RD and AF
-                rd = mutant_counts[sample_idx] + wt_counts[sample_idx]
+                rd = mutant_count + wt_counts[sample_idx]
                 af = vaf_values[sample_idx]
 
                 # INFO field
@@ -5476,26 +5261,6 @@ def write_vcfs_for_rows(adata, adata_wt_mcrs, adata_vaf, output_dir):
 
                 # Write VCF row
                 vcf_file.write(f"{chrom}\t{pos}\t{var_id}\t{ref}\t{alt}\t.\tPASS\t{info}\n")
-
-
-def add_mutation_type_gatk(df):
-    # Define the conditions
-    conditions = [(df["REF"].str.len() > 1) & (df["ALT"].str.len() == 1), (df["REF"].str.len() == 1) & (df["ALT"].str.len() > 1), (df["REF"].str.len() == 1) & (df["ALT"].str.len() == 1), (df["REF"].str.len() > 1) & (df["ALT"].str.len() > 1)]  # Deletion  # Insertion  # Substitution  # Delins
-
-    # Define the corresponding mutation types
-    mutation_types = ["deletion", "insertion", "substitution", "delins"]
-
-    # Apply the conditions and assign the values to the new column
-    df["mutation_type"] = np.select(conditions, mutation_types, default="unknown")
-
-    # For 'deletion', add 'deleted_bases' column with REF[1:]
-    df.loc[df["mutation_type"] == "deletion", "deleted_bases"] = df["REF"].str[1:]
-
-    # For 'insertion', add 'inserted_bases' column with ALT[1:]
-    df.loc[df["mutation_type"] == "insertion", "inserted_bases"] = df["ALT"].str[1:]
-
-    return df
-
 
 def generate_mutation_notation_from_vcf_columns(row):
     pos = row["POS"]
@@ -5528,58 +5293,6 @@ def generate_mutation_notation_from_vcf_columns(row):
         return f"g.{pos_start}_{pos_end}delins{alt}"
     else:
         return "g.UNKNOWN"
-
-
-def merge_gatk_and_cosmic(df_mut, cosmic_df, exact_position=False):
-    df_mut = df_mut.copy()
-    cosmic_df = cosmic_df.copy()
-
-    if exact_position:
-        # take the intersection of COSMIC and STAR dfs based on CHROM, POS, REF, ALT - but keep the ID from the COSMIC vcf
-        # note that because there may be 2+ rows in COSMIC that share the same chrom, pos, ref, and alt (ie from alternatively spliced mutations), there may be some rows in mut_cosmic_merged_df that are duplicates for all but the ID column - but I don't want to drop these because I want to make sure I consider both headers in my set
-        merged_df = pd.merge(df_mut, cosmic_df, on=["CHROM", "POS", "REF", "ALT"], how="inner", suffixes=("_df1", "_df2"))
-
-        merged_df = merged_df.drop(columns=["ID_df1", "POS_df1"]).rename(columns={"ID_df2": "ID", "POS_df2": "POS"})
-    else:
-        if "mutation_type" not in df_mut.columns:
-            df_mut = add_mutation_type_gatk(df_mut)
-        if "mutation_type" not in cosmic_df.columns:
-            cosmic_df = add_mutation_type_gatk(cosmic_df)
-
-        # Split `df_mut` and `cosmic_df` by mutation type
-        sub_delins_mut = df_mut[df_mut["mutation_type"].isin(["substitution", "delins"])]
-        del_mut = df_mut[df_mut["mutation_type"] == "deletion"]
-        ins_mut = df_mut[df_mut["mutation_type"] == "insertion"]
-
-        sub_delins_cosmic = cosmic_df[cosmic_df["mutation_type"].isin(["substitution", "delins"])]
-        del_cosmic = cosmic_df[cosmic_df["mutation_type"] == "deletion"]
-        ins_cosmic = cosmic_df[cosmic_df["mutation_type"] == "insertion"]
-
-        # 1. Merge substitution and delins
-        sub_delins_merged = pd.merge(sub_delins_mut, sub_delins_cosmic, on=["CHROM", "POS", "REF", "ALT"], how="left", suffixes=("_df1", "_df2"))
-
-        sub_delins_merged = sub_delins_merged.drop(columns=["ID_df1", "mutation_type_df1", "mutation_type_df2", "deleted_bases_df1", "deleted_bases_df2", "inserted_bases_df1", "inserted_bases_df2"]).rename(columns={"ID_df2": "ID"})
-
-        # 2. Merge deletion
-        del_merged = pd.merge(del_mut, del_cosmic, on=["CHROM", "deleted_bases"], how="left", suffixes=("_df1", "_df2"))
-
-        # Filter rows where POS is within a certain range, setting the threshold dynamically based on 'sub' column - subs must be perfect, indels can be within 5
-        del_merged = del_merged[abs(del_merged["POS_df1"] - del_merged["POS_df2"]) <= 5]
-
-        del_merged = del_merged.drop(columns=["ID_df1", "POS_df1", "REF_df1", "ALT_df1", "mutation_type_df1", "mutation_type_df2", "inserted_bases_df1", "inserted_bases_df2", "deleted_bases"]).rename(columns={"ID_df2": "ID", "POS_df2": "POS", "REF_df2": "REF", "ALT_df2": "ALT"})
-
-        # 3. Merge insertion
-        ins_merged = pd.merge(ins_mut, ins_cosmic, on=["CHROM", "inserted_bases"], how="left", suffixes=("_df1", "_df2"))
-
-        # Filter rows where POS is within a certain range, setting the threshold dynamically based on 'sub' column - subs must be perfect, indels can be within 5
-        ins_merged = ins_merged[abs(ins_merged["POS_df1"] - ins_merged["POS_df2"]) <= 5]
-
-        ins_merged = ins_merged.drop(columns=["ID_df1", "POS_df1", "REF_df1", "ALT_df1", "mutation_type_df1", "mutation_type_df2", "deleted_bases_df1", "deleted_bases_df2", "inserted_bases"]).rename(columns={"ID_df2": "ID", "POS_df2": "POS", "REF_df2": "REF", "ALT_df2": "ALT"})
-
-        # Combine all results
-        merged_df = pd.concat([sub_delins_merged, del_merged, ins_merged], ignore_index=True)
-
-        return merged_df
 
 
 def create_mutated_gene_count_matrix_from_mutation_count_matrix(adata, sum_strategy="total_reads", merge_strategy="all", use_binary_matrix=False):
@@ -5615,8 +5328,6 @@ def create_mutated_gene_count_matrix_from_mutation_count_matrix(adata, sum_strat
         gene_names = adata.var[gene_column]
         mcrs_ids = adata.var_names
         # Create a graph where each node is an mcrs_id
-        import networkx as nx
-
         graph = nx.Graph()
         for i, genes in enumerate(gene_names):
             for j in range(i + 1, len(gene_names)):

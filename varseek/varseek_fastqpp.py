@@ -20,6 +20,7 @@ from .utils import (
     sort_fastq_files_for_kb_count,
     split_reads_by_N_list,
     trim_edges_off_reads_fastq_list,
+    is_program_installed
 )
 
 logger = set_up_logger()
@@ -129,17 +130,17 @@ def fastqpp(
     - technology                        (str) Technology used to generate the data. Only used if sort_fastqs=True. To see list of spported technologies, run `kb --list`. Default: None
     - multiplexed                       (bool) Indicates that the fastq files are multiplexed. Only used if sort_fastqs=True and technology is a smartseq technology. Default: None
     - parity                            (str) "single" or "paired". Only relevant if technology is bulk or a smart-seq. Default: "single"
-    - quality_control_fastqs            (bool) If True, run fastp to trim and filter reads. Default: False
+    - quality_control_fastqs            (bool) If True, run fastp to trim and filter reads. Requires fastp or seqtk to be installed. Default: False
     - cut_mean_quality                  (int) The mean quality requirement option in cut_window_size when trimming edges. Only used if quality_control_fastqs=True. if See details with `fastp --help`. Range: 1-36. Default: 20
     - cut_window_size                   (int) The window size with which to calculate cut_mean_quality when trimming edges. Only used if quality_control_fastqs=True. See details with `fastp --help`. Range: 1-1000. Default: 4
     - qualified_quality_phred           (int) The phred quality score for a base to be considered qualified. Only used if quality_control_fastqs=True. See details with `fastp --help`. Range: 0-93. Default: 0 (no average quality filtering)
     - unqualified_percent_limit         (int) The percent of unqualified bases allowed in a read. Only used if quality_control_fastqs=True. See details with `fastp --help`. Range: 1-100. Default: 100 (no average quality filtering)
     - max_ambiguous                     (int) The maximum number of ambiguous bases allowed in a read. Only used if quality_control_fastqs=True. See details with `fastp --help`. Range: 1-50. Default: 50
     - min_read_len                      (int) The minimum length of a read. Only used if quality_control_fastqs=True or replace_low_quality_bases_with_N=True. Recommended to set equal to the value of k in kb ref/count. Default: None (no minimum length)
-    - fastqc_and_multiqc                (bool) If True, run FastQC and MultiQC. Default: False
-    - replace_low_quality_bases_with_N  (bool) If True, replace low quality bases with N. Default: False
+    - fastqc_and_multiqc                (bool) If True, run FastQC and MultiQC. Requires FastQC ± MultiQC to be installed. Default: False
+    - replace_low_quality_bases_with_N  (bool) If True, replace low quality bases with N. Requires seqtk to be installed. Default: False
     - min_base_quality                  (int) The minimum acceptable base quality. Bases below this quality will be masked with 'N'. Only used if replace_low_quality_bases_with_N=True. Range: 0-93. Default: 13
-    - split_reads_by_Ns                 (bool) If True, split reads by Ns into multiple smaller reads. Default: False
+    - split_reads_by_Ns                 (bool) If True, split reads by Ns into multiple smaller reads. If technology == "bulk", then seqtk will speed this up significantly. Default: False
     - concatenate_paired_fastqs         (bool) If True, concatenate paired fastq files. Default: False
     - out                               (str) Output directory. Default: "."
     - delete_intermediate_files         (bool) If True, delete intermediate files. Default: False
@@ -152,6 +153,8 @@ def fastqpp(
     # Hidden arguments (part of kwargs)
     - fastp_path                       (str) Path to fastp. Default: "fastp"
     - seqtk_path                       (str) Path to seqtk. Default: "seqtk"
+    - fastqc_path                      (str) Path to fastqc. Default: "fastqc"
+    - multiqc_path                     (str) Path to multiqc. Default: "multiqc"
     - quality_control_fastqs_out_suffix (str) Suffix to add to fastq files after quality control (preceded by underscore). Default: "qc"
     - replace_low_quality_bases_with_N_out_suffix (str) Suffix to add to fastq files after replacing low quality bases with N (preceded by underscore). Default: "addedNs"
     - split_by_N_out_suffix            (str) Suffix to add to fastq files after splitting by Ns (preceded by underscore). Default: "splitNs"
@@ -230,6 +233,8 @@ def fastqpp(
     # * 7. Define kwargs defaults
     fastp = kwargs.get("fastp_path", "fastp")
     seqtk = kwargs.get("seqtk_path", "seqtk")
+    fastqc = kwargs.get("fastqc_path", "fastqc")
+    multiqc = kwargs.get("multiqc_path", "multiqc")
 
     # * 8. Start the actual function
     fastqs = sort_fastq_files_for_kb_count(fastqs, technology=technology, multiplexed=multiplexed, logger=logger, check_only=(not sort_fastqs), verbose=verbose)
@@ -250,6 +255,9 @@ def fastqpp(
     fastqpp_dict["original"] = fastqs
 
     if quality_control_fastqs:
+        if not is_program_installed(fastp) and not is_program_installed(seqtk):
+            raise ValueError(f"fastp (recommended) or seqtk must be installed to run quality_control_fastqs. Please install at least one of these and try again, or set quality_control_fastqs=False.")  # option for an exception rather than a warning because I think the user would be more frustrated with incorrect results with a log message that could be easy to miss than having to restart their run
+
         # check if any file in fastq_quality_controlled_all_files does not exist
         if not all(os.path.exists(f) for f in fastq_quality_controlled_all_files) or overwrite:
             logger.info("Quality controlling fastq files (trimming adaptors, trimming low-quality read edges, filtering low quality reads)")
@@ -263,6 +271,7 @@ def fastqpp(
                 n_base_limit=max_ambiguous,
                 length_required=min_read_len,
                 fastp=fastp,
+                seqtk=seqtk,
                 out_dir=out,
                 threads=threads,
                 logger=logger,
@@ -274,14 +283,22 @@ def fastqpp(
         fastqpp_dict["quality_controlled"] = fastqs
 
     if fastqc_and_multiqc:
+        if not is_program_installed(fastqc):
+            raise ValueError(f"fastqc must be installed to run fastqc_and_multiqc. Please install it and try again, or set fastqc_and_multiqc=False.")
+        if not is_program_installed(multiqc):
+            logger.warning(f"multiqc is not installed and fastqc_and_multiqc=True. Skipping multiqc step.")
+        
         # check if any file in fastq_quality_controlled_all_files does not exist
         if not all(os.path.exists(f) for f in fastq_fastqc_all_files) or overwrite:
             logger.info("Running FastQC and MultiQC")
-            run_fastqc_and_multiqc(fastqs, out)
+            run_fastqc_and_multiqc(fastqs, out, fastqc=fastqc, multiqc=multiqc)
         else:
             logger.warning("FastQC and MultiQC files already exist. Skipping FastQC and MultiQC step. Use overwrite=True to overwrite existing files.")
 
     if replace_low_quality_bases_with_N:
+        if not is_program_installed(seqtk):
+            raise ValueError(f"seqtk must be installed to run replace_low_quality_bases_with_N. Please install it and try again, or set replace_low_quality_bases_with_N=False.")
+        
         # check if any file in fastq_more_Ns_all_files does not exist
         if not all(os.path.exists(f) for f in fastq_more_Ns_all_files) or overwrite:
             logger.info("Replacing low quality bases with N")
@@ -291,11 +308,11 @@ def fastqpp(
         if not delete_intermediate_files:
             fastqpp_dict["replaced_with_N"] = fastqs
 
-    if split_reads_by_Ns:
+    if split_reads_by_Ns:  # seqtk install is checked internally, as it only applies to the bulk condition and the code can still run with the same output without it (albeit slower)
         # check if any file in fastq_split_by_N_all_files does not exist
         if not all(os.path.exists(f) for f in fastq_split_by_N_all_files) or overwrite:
             logger.info("Splitting reads by Ns")
-            fastqs = split_reads_by_N_list(fastqs, minimum_sequence_length=min_read_len, delete_original_files=delete_intermediate_files, out_dir=out, logger=logger, verbose=verbose, suffix=split_by_N_out_suffix)
+            fastqs = split_reads_by_N_list(fastqs, minimum_sequence_length=min_read_len, delete_original_files=delete_intermediate_files, out_dir=out, logger=logger, verbose=verbose, suffix=split_by_N_out_suffix, seqtk=seqtk)
         else:
             logger.warning("Fastq files with reads split by N already exist. Skipping this step. Use overwrite=True to overwrite existing files.")
         if not delete_intermediate_files:

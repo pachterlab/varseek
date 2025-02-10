@@ -42,7 +42,8 @@ from varseek.utils import (
     swap_ids_for_headers_in_fasta,
     triplet_stats,
     reverse_complement,
-    splitext_custom
+    splitext_custom,
+    is_program_installed
 )
 
 tqdm.pandas()
@@ -213,10 +214,10 @@ columns_to_include_possible_values = OrderedDict(
         ("has_a_nearby_mutation", ("Has a nearby mutation (a boolean of `nearby_mutations_count`)", ["k"])),
         ("mcrs_header_length", ("MCRS header length", ["k"])),
         ("mcrs_sequence_length", ("MCRS sequence length", [])),
-        ("dlist", ("States whether an MCRS k-mer aligns to the reference genome", ["k", "max_ambiguous_mcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
-        ("number_of_alignments_to_normal_human_reference", ("Number of alignments to normal human reference", ["k", "max_ambiguous_mcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
-        ("dlist_substring", ("D-list substring", ["k", "max_ambiguous_mcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
-        ("number_of_substring_matches_to_normal_human_reference", ("Number of substring matches to normal human reference", ["k", "max_ambiguous_mcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
+        ("dlist", ("States whether an MCRS k-mer aligns to the reference genome (requires bowtie2)", ["k", "max_ambiguous_mcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
+        ("number_of_alignments_to_normal_human_reference", ("Number of alignments to normal human reference (requires bowtie2)", ["k", "max_ambiguous_mcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
+        ("dlist_substring", ("D-list substring", ["k", "max_ambiguous_mcrs", "max_ambiguous_reference (requires bowtie2)", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
+        ("number_of_substring_matches_to_normal_human_reference", ("Number of substring matches to normal human reference (requires bowtie2)", ["k", "max_ambiguous_mcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
         ("pseudoaligned_to_human_reference", ("Pseudoaligned to human reference", ["k", "dlist_reference_genome_fasta", "dlist_reference_gtf", "threads", "vcrs_strandedness"])),
         ("pseudoaligned_to_human_reference_despite_not_truly_aligning", ("Pseudoaligned to human reference despite not truly aligning", ["k", "dlist_reference_genome_fasta", "dlist_reference_gtf", "threads", "vcrs_strandedness"])),
         ("number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference", ("Number of k-mers with overlap to other MCRS items in MCRS reference", ["k", "vcrs_strandedness"])),
@@ -231,10 +232,10 @@ columns_to_include_possible_values = OrderedDict(
         ("concatenated_headers_in_mcrs", ("Concatenated headers in MCRS", [])),
         ("number_of_mutations_in_mcrs_header", ("Number of mutations in MCRS header", [])),
         ("mcrs_sequence_rc", ("MCRS sequence reverse complement", [])),
-        ("entries_for_which_this_mcrs_is_substring", ("Entries for which this MCRS is substring", ["threads"])),
-        ("entries_for_which_this_mcrs_is_superstring", ("Entries for which this MCRS is superstring", ["threads"])),
-        ("mcrs_is_substring", ("MCRS is substring", ["threads"])),
-        ("mcrs_is_superstring", ("MCRS is superstring", ["threads"])),
+        ("entries_for_which_this_mcrs_is_substring", ("Entries for which this MCRS is substring (requires bowtie2)", ["threads"])),
+        ("entries_for_which_this_mcrs_is_superstring", ("Entries for which this MCRS is superstring (requires bowtie2)", ["threads"])),
+        ("mcrs_is_substring", ("MCRS is substring (requires bowtie2)", ["threads"])),
+        ("mcrs_is_superstring", ("MCRS is superstring (requires bowtie2)", ["threads"])),
     ]
 )
 
@@ -340,7 +341,7 @@ def info(
 
     # Hidden arguments (part of kwargs):
     - w                                  (int) Maximum length of the MCRS flanking regions. Must be an integer between [1, k-1]. Only utilized for the column 'cdna_and_genome_same'. Corresponds to `w` in the varseek build function. Default: 54.
-    - bowtie_path                        (str) Path to the directory containing the bowtie2 and bowtie2-build executables. Default: None.
+    - bowtie2_path                        (str) Path to the directory containing the bowtie2 and bowtie2-build executables. Default: None.
     - vcrs_strandedness                  (bool) Whether to consider MCRSs as stranded when aligning to the human reference and comparing MCRS k-mers to each other. vcrs_strandedness True corresponds to treating forward and reverse-complement as distinct; False corresponds to treating them as the same. Corresponds to `vcrs_strandedness` in the varseek build function. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference', 'pseudoaligned_to_human_reference', 'pseudoaligned_to_human_reference_despite_not_truly_aligning', 'number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference', 'number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference', 'kmer_overlap_in_mcrs_reference'; and if make_kat_histogram==True. Default: False.
     - near_splice_junction_threshold     (int) Maximum distance from a splice junction to be considered "near" a splice junction. Only utilized for the column 'distance_to_nearest_splice_junction'. Default: 10.
     - reference_cdna_fasta               (str) Path to the reference cDNA fasta file. Only utilized for the column 'cdna_and_genome_same'. Default: None.
@@ -424,7 +425,7 @@ def info(
 
     # * 7. Define kwargs defaults
     w = kwargs.get("w", 54)
-    bowtie_path = kwargs.get("bowtie_path", None)
+    bowtie_path = kwargs.get("bowtie2_path", None)
     vcrs_strandedness = kwargs.get("vcrs_strandedness", False)
     near_splice_junction_threshold = kwargs.get("near_splice_junction_threshold", 10)
     reference_cdna_fasta = kwargs.get("reference_cdna_fasta", None)
@@ -806,6 +807,9 @@ def info(
 
     # TODO: have more columns_to_include options that allows me to do cdna alone, genome alone, or both combined - currently it is either cdna+genome or nothing
     if columns_to_include == "all" or ("dlist" in columns_to_include or "number_of_alignments_to_normal_human_reference" in columns_to_include or "dlist_substring" in columns_to_include or "number_of_substring_matches_to_normal_human_reference" in columns_to_include):
+        if not is_program_installed(bowtie2):
+            bowtie_columns = ["dlist", "number_of_alignments_to_normal_human_reference", "dlist_substring", "number_of_substring_matches_to_normal_human_reference"]
+            raise ValueError(f"bowtie2 must be installed to run for the following columns: {bowtie_columns}. Please install bowtie2 or omit these columns")
         try:
             logger.info("Aligning to normal genome and building dlist")
             mutation_metadata_df, sequence_names_set_union_genome_and_cdna = align_to_normal_genome_and_build_dlist(
@@ -844,29 +848,32 @@ def info(
 
     # CELL
     if make_kat_histogram:
-        kat_output = f"{out}/kat_output/kat.hist"
-        try:
-            kat_hist_command = [
-                "kat",
-                "hist",
-                "-m",
-                str(k),
-                "--threads",
-                str(threads),
-                "-o",
-                kat_output,
-                mcrs_fasta,
-            ]
-            if vcrs_strandedness:
-                # insert as the second element
-                kat_hist_command.insert(2, "--stranded")
-            logger.info("Running KAT")
-            subprocess.run(kat_hist_command, check=True)
-        except Exception as e:
-            logger.error(f"Error running KAT: {e}")
+        if not is_program_installed("kat"):
+            logger.warning(f"kat must be installed to run make_kat_histogram. Skipping make_kat_histogram")
+        else:
+            kat_output = f"{out}/kat_output/kat.hist"
+            try:
+                kat_hist_command = [
+                    "kat",
+                    "hist",
+                    "-m",
+                    str(k),
+                    "--threads",
+                    str(threads),
+                    "-o",
+                    kat_output,
+                    mcrs_fasta,
+                ]
+                if vcrs_strandedness:
+                    # insert as the second element
+                    kat_hist_command.insert(2, "--stranded")
+                logger.info("Running KAT")
+                subprocess.run(kat_hist_command, check=True)
+            except Exception as e:
+                logger.error(f"Error running KAT: {e}")
 
-        if os.path.exists(kat_output):
-            plot_kat_histogram(kat_output)
+            if os.path.exists(kat_output):
+                plot_kat_histogram(kat_output)
 
     # CELL
 
@@ -1012,6 +1019,9 @@ def info(
 
     # Add metadata: mcrs substring and superstring (forward and rc)
     if columns_to_include == "all" or ("entries_for_which_this_mcrs_is_substring" in columns_to_include or "entries_for_which_this_mcrs_is_superstring" in columns_to_include or "mcrs_is_substring" in columns_to_include or "mcrs_is_superstring" in columns_to_include):
+        if not is_program_installed(bowtie2):
+            bowtie_columns = ["entries_for_which_this_mcrs_is_substring", "entries_for_which_this_mcrs_is_superstring", "mcrs_is_substring", "mcrs_is_superstring"]
+            raise ValueError(f"bowtie2 must be installed to run for the following columns: {bowtie_columns}. Please install bowtie2 or omit these columns")
         mcrs_to_mcrs_bowtie_folder = f"{out}/bowtie_mcrs_to_mcrs"
         mcrs_sam_file = f"{mcrs_to_mcrs_bowtie_folder}/mutant_reads_to_mcrs_index.sam"
         substring_output_stat_file = f"{output_stat_folder}/substring_output_stat.txt"

@@ -874,9 +874,9 @@ def main():  # noqa: C901
         help=extract_help_from_doc(info, "w"),
     )
     parser_info.add_argument(
-        "--bowtie_path",
+        "--bowtie2_path",
         required=False,
-        help=extract_help_from_doc(info, "bowtie_path"),
+        help=extract_help_from_doc(info, "bowtie2_path"),
     )
     parser_info.add_argument(
         "-vs",
@@ -1463,6 +1463,18 @@ def main():  # noqa: C901
         required=False,
         default=None,
         help=extract_help_from_doc(fastqpp, "seqtk_path"),
+    )
+    parser_fastqpp.add_argument(
+        "--fastqc_path",
+        required=False,
+        default=None,
+        help=extract_help_from_doc(fastqpp, "fastqc_path"),
+    )
+    parser_fastqpp.add_argument(
+        "--multiqc_path",
+        required=False,
+        default=None,
+        help=extract_help_from_doc(fastqpp, "multiqc_path"),
     )
     parser_fastqpp.add_argument(
         "--quality_control_fastqs_out_suffix",
@@ -2367,7 +2379,7 @@ def main():  # noqa: C901
             overwrite=args.overwrite,
             threads=args.threads,
             verbose=args.quiet,
-            bowtie_path=args.bowtie_path,
+            bowtie2_path=args.bowtie2_path,
             vcrs_strandedness=args.vcrs_strandedness,
             near_splice_junction_threshold=args.near_splice_junction_threshold,
             reference_cdna_fasta=args.reference_cdna_fasta,
@@ -2468,6 +2480,8 @@ def main():  # noqa: C901
             verbose=args.quiet,
             fastp_path=args.fastp_path,
             seqtk_path=args.seqtk_path,
+            fastqc_path=args.fastqc_path,
+            multiqc_path=args.multiqc_path,
             quality_control_fastqs_out_suffix=args.quality_control_fastqs_out_suffix,
             replace_low_quality_bases_with_N_out_suffix=args.replace_low_quality_bases_with_N_out_suffix,
             split_by_N_out_suffix=args.split_by_N_out_suffix,

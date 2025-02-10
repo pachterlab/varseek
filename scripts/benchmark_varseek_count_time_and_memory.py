@@ -80,7 +80,8 @@ star_output_file = os.path.join(output_dir, "STAR_time.txt")
 
 # create synthetic reads
 if k and w:
-    assert k > w, "k must be greater than w"
+    if k <= w:
+        raise ValueError("k must be greater than w")
     read_w = read_length - (k - w)  # note that this does not affect read length, just read *parent* length
 else:
     read_w = read_length - 1
