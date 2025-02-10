@@ -18,6 +18,7 @@ from varseek.utils import (
     save_params_to_config_file,
     save_run_info,
     set_up_logger,
+    check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal
 )
 
 from .constants import prebuilt_vk_ref_files
@@ -330,6 +331,14 @@ def ref(
 
     overwrite_original = params_dict.get("overwrite_original", False)
 
+    params_dict = check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "out", "input_dir")  # check that, if out and input_dir are both provided, they are the same directory; otherwise, if only one is provided, then make them equal to each other
+    params_dict = check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "mcrs_fasta_out", "mcrs_fasta")  # build --> info
+    params_dict = check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "id_to_header_csv_out", "id_to_header_csv")  # build --> info/filter
+    params_dict = check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "mutations_updated_csv_out", "mutations_updated_csv")  # build --> info
+    params_dict = check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "mutations_updated_vk_info_csv_out", "mutations_updated_vk_info_csv")  # info --> filter
+    params_dict = check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "mutations_updated_exploded_vk_info_csv_out", "mutations_updated_exploded_vk_info_csv")  # info --> filter
+    # dlist handled below - see the comment "set d-list argument"
+
     # * 6.5 Just to make the unused parameter coloration go away in VSCode
     filters = filters
     w = w
@@ -399,11 +408,14 @@ def ref(
 
     # set d-list argument
     if dlist == "genome":
-        dlist_kb_argument = dlist_genome_fasta_out
+        dlist_kb_argument = dlist_genome_fasta_out  # for kb ref
+        params_dict["dlist_fasta"] = dlist_genome_fasta_out  # for vk filter
     elif dlist == "transcriptome":
         dlist_kb_argument = dlist_cdna_fasta_out
+        params_dict["dlist_fasta"] = dlist_cdna_fasta_out
     elif dlist == "genome_and_transcriptome":
         dlist_kb_argument = dlist_combined_fasta_out
+        params_dict["dlist_fasta"] = dlist_combined_fasta_out
     elif dlist == "None" or dlist is None:
         dlist_kb_argument = "None"
     else:
@@ -435,8 +447,6 @@ def ref(
         params_dict["overwrite"], params_dict_vk_build["overwrite"] = overwrite_original, overwrite_original
     else:
         logger.warning(f"Skipping vk build because {file_signifying_successful_vk_build_completion} already exists and overwrite=False")
-    if not params_dict.get("input_dir"):  # for vk info/filter
-        params_dict["input_dir"] = params_dict["out"]
 
     # vk info
     if not skip_info:

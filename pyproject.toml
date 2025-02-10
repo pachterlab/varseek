@@ -51,6 +51,7 @@ dev = [
     "nbval>=0.10.0",
     "nbdime>=4.0.2",
     "flake8>=7.0.0",
+    "bandit>=1.8.2",
 ]
 analysis = [
     "matplotlib-venn>=1.0.0",

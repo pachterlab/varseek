@@ -15,6 +15,7 @@ from varseek.utils import (
     save_run_info,
     set_up_logger,
     sort_fastq_files_for_kb_count,
+    check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal
 )
 from varseek.varseek_clean import needs_for_normal_genome_matrix
 
@@ -46,16 +47,6 @@ varseek_count_only_allowable_kb_count_arguments = {
     "one_argument": {"--tmp", "--kallisto", "--bustools", "-w", "-r", "-m", "--inleaved", "--filter", "filter-threshold", "-N", "--threshold", "--platform"},
     "multiple_arguments": set(),
 }  # don't include d-list, t, i, k, workflow here because I do it myself later
-
-
-def check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, dir1, dir2):
-    if params_dict.get(dir1) is not None and params_dict.get(dir2) is not None and params_dict.get(dir1) != params_dict.get(dir2):
-        raise ValueError(f"{dir1} and {dir2} must be the same directory")
-    elif params_dict.get(dir1) is not None and params_dict.get(dir2) is None:
-        params_dict[dir2] = params_dict.get(dir1)
-    elif params_dict.get(dir1) is None and params_dict.get(dir2) is not None:
-        params_dict[dir1] = params_dict.get(dir2)
-    return params_dict
 
 
 def validate_input_count(params_dict):

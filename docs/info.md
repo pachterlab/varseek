@@ -6,7 +6,6 @@ Input table
 | mcrs_fasta                                                           | .fa                  | False                  | mcrs_fasta_out                                       | ...                             |
 | id_to_header_csv                                                | .csv                | False                  | id_to_header_csv_out                            | ...                             |
 | mutations_updated_csv                                      | .csv                | False                  | mutations_updated_csv_out                   | ...                             |
-| mutations_updated_csv                                      | .csv                | False                  | mutations_updated_csv_out                   | ...                             |
 | gtf                                                                        | .csv                | False                  | gtf                                                            | ...                             |
 | dlist_reference_genome_fasta                            | .csv                | False                  | N/A                                                          | ...                             |
 | dlist_reference_cdna_fasta                                 | .csv                | False                  | N/A                                                          | ...                             |
