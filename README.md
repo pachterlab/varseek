@@ -9,29 +9,36 @@
 
 ![alt text](https://github.com/pachterlab/varseek/blob/main/figures/logo.png?raw=true)
 
-`varseek` is a free, open-source command-line tool and Python package that provides mutation screening of RNA-seq and DNA-seq data using k-mer-based alignment against a reference of known mutations. The name comes from "seeking variants" or, alternatively, "seeing k-variants" (where a "k-variant" is defined as a k-mer containing a variant).
+`varseek` is a free, open-source command-line tool and Python package that provides variant screening of RNA-seq and DNA-seq data using k-mer-based alignment against a reference of known variants. The name comes from "seeking variants" or, alternatively, "seeing k-variants" (where a "k-variant" is defined as a k-mer containing a variant).
   
-![alt text](https://github.com/pachterlab/varseek/blob/main/figures/varseek_overview.png?raw=true)
+![alt text](https://github.com/pachterlab/varseek/blob/main/figures/varseek_overview_simple.png?raw=true)
+
+The two commands used in a standard workflow are `varseek ref` and `varseek count`. `varseek ref` generates a variant-containing reference sequence (VCRS) index that serves as the basis for variant calling. `varseek count` aligns RNA-seq or DNA-seq reads against the VCRS index and generates a variant count matrix. The variant count matrix can be used for downstream analysis. Each step wraps around other steps within the varseek package and the kb-python package, as described below.
+
+![alt text](https://github.com/pachterlab/varseek/blob/main/figures/varseek_overview_simple.png?raw=true)
 
 The functions of `varseek` are described in the table below.
 
-| Description                                                    | Bash                   | Python                    |
-|----------------------------------------------------------------|------------------------|---------------------------|
-| Build a mutation-containing reference sequence (MCRS) file     | `varseek build ...`       | `varseek.build(...)`         |
-| Describe the MCRS reference in a dataframe                     | `varseek info ...`    | `varseek.info(...)`      |
-| Filter the MCRS file based on the CSV generated from varseek info | `varseek filter ...`    | `varseek.filter(...)`      |
-| Run standard processing on the mutation count matrix           | `varseek clean ...`        | `varseek.clean(...)`          |
-| Analyze the mutation count matrix results                      | `varseek summarize ...`         | `varseek.summarize(...)`           |
-| Create synthetic RNA-seq dataset with mutation reads           | `varseek sim ...`        | `varseek.sim(...)`          |
+| Description                                                       | Bash              | Python (with `import varseek as vk`) |
+|-------------------------------------------------------------------|-------------------|--------------------------------------|
+| Build a variant-containing reference sequence (VCRS) fasta file   | `vk build ...`    | `vk.build(...)`                      |
+| Describe the VCRS reference in a dataframe for filtering          | `vk info ...`     | `vk.info(...)`                       |
+| Filter the VCRS file based on the CSV generated from varseek info | `vk filter ...`   | `vk.filter(...)`                     |
+| Preprocess the FASTQ files before pseudoalignment                 | `vk fastqpp ...`  | `vk.fastqpp(...)`                    |
+| Process the variant count matrix                                  | `vk clean ...`    | `vk.clean(...)`                      |
+| Analyze the variant count matrix results                          | `vk summarize ...`| `vk.summarize(...)`                  |
+| Wrap vk build, vk info, vk filter, and kb ref                     | `vk ref ...`      | `vk.ref(...)`                        |
+| Wrap vk fastqpp, kb count, vk clean, and vk summarize             | `vk count ...`    | `vk.count(...)`                      |
+| Create synthetic RNA-seq dataset with variant-containing reads    | `vk sim ...`      | `vk.sim(...)`                        |
 
-After aligning and generating a mutation count matrix with `varseek`, you can explore the data using our pre-built notebooks. The notebooks are described in the table below.
+After aligning and generating a variant count matrix with `varseek`, you can explore the data using our pre-built notebooks. The notebooks are described in the table below.
 
 | Description                                   | Notebook                                                                 |
 |-----------------------------------------------|--------------------------------------------------------------------------------------|
-| Preprocessing the mutation count matrix       | [3_matrix_preprocessing.ipynb](./3_matrix_preprocessing.ipynb)                       |
-| Sequence visualization of mutations           | [4_1_mutation_analysis_sequence_visualization.ipynb](./4_1_mutation_analysis_sequence_visualization.ipynb) |
-| Heatmap visualization of mutation patterns    | [4_2_mutation_analysis_heatmaps.ipynb](./4_2_mutation_analysis_heatmaps.ipynb)       |
-| Protein-level mutation analysis               | [4_3_mutation_analysis_protein_mutation.ipynb](./4_3_mutation_analysis_protein_mutation.ipynb) |
+| Preprocessing the variant count matrix        | [3_matrix_preprocessing.ipynb](./3_matrix_preprocessing.ipynb)                       |
+| Sequence visualization of variants            | [4_1_variant_analysis_sequence_visualization.ipynb](./4_1_variant_analysis_sequence_visualization.ipynb) |
+| Heatmap visualization of variant patterns     | [4_2_variant_analysis_heatmaps.ipynb](./4_2_variant_analysis_heatmaps.ipynb)       |
+| Protein-level variant analysis                | [4_3_variant_analysis_protein_variant.ipynb](./4_3_variant_analysis_protein_variant.ipynb) |
 | Heatmap analysis of gene expression           | [5_1_gene_analysis_heatmaps.ipynb](./5_1_gene_analysis_heatmaps.ipynb)               |
 | Drug-target analysis for genes                | [5_2_gene_analysis_drugs.ipynb](./5_2_gene_analysis_drugs.ipynb)                     |
 | Pathway analysis using Enrichr                | [6_1_pathway_analysis_enrichr.ipynb](./6_1_pathway_analysis_enrichr.ipynb)           |
@@ -55,69 +62,17 @@ Or with conda:
 conda install -c bioconda varseek
 ```
 
-For use in Python:
-```python
-# Python
-import varseek as vk
-```
-
 # 🪄 Quick start guide
-Command line:
-```bash
-# Build a mutation-containing reference sequence (MCRS) reference file
-$ vk build ...
-
-# Describe the MCRS reference in a dataframe
-$ vk info ...
-
-# Filter the MCRS reference based on the CSV generated from vk info
-$ vk filter ...
-
-# Run standard processing on the mutation count matrix
-$ vk clean ...
-
-# Analyze the results of the mutation count matrix
-$ vk summarize ...
-
-# Create a synthetic RNA-seq dataset consisting of mutation-containing reads from the MCRS reference
-$ vk sim ...
-
-```
-Python (Python / Jupyter Lab / Google Colab):
-```python  
-import varseek as vk
-
-# Build a mutation-containing reference sequence (MCRS) reference file
-vk.build(...)
-
-# Describe the MCRS reference in a dataframe
-vk.info(...)
-
-# Filter the MCRS reference based on the CSV generated from vk info
-vk.filter(...)
-
-# Run standard processing on the mutation count matrix
-vk.clean(...)
-
-# Analyze the results of the mutation count matrix
-vk.summarize(...)
-
-# Create a synthetic RNA-seq dataset consisting of mutation-containing reads from the MCRS reference
-vk.sim(...)
-```
-
-
-# Quick start guide
 1. Acquire a reference - follow one of the below options:
 a. Download pre-built reference – standard workflow
 View all downloadable references: `vk ref --list_downloadable_references`
-`vk ref --download --mutations MUTATIONS --sequences SEQUENCES`
+`vk ref --download --variants VARIANTS --sequences SEQUENCES`
 
 b. Make custom reference – screen for user-defined variants
-`vk ref --mutations MUTATIONS --sequences SEQUENCES ...`
+`vk ref --variants VARIANTS --sequences SEQUENCES ...`
 
 c. Customize reference building process – customize the VCRS filtering process (e.g., add additional information by which to filter, add custom filtering logic, tune filtering parameters based on the results of intermediate steps, etc.)
-`vk build --mutations MUTATIONS --sequences SEQUENCES ...`
+`vk build --variants VARIANTS --sequences SEQUENCES ...`
 (optional) `vk info --input_dir INPUT_DIR ...`
 (optional) `vk filter --input_dir INPUT_DIR ...`
 `kb ref --workflow custom --index INDEX ...`
@@ -132,6 +87,7 @@ b. Customize variant screening process - additional fastq preprocessing, custom 
 (optional) fastq quality control
 (optional) `vk fastqpp ... --fastqs FASTQ1 FASTQ2...`
 `kb count --index INDEX --t2g T2G ... --fastqs FASTQ1 FASTQ2...`
+(optional) `kb count --index REFERENCE_INDEX --t2g REFERENCE_T2G ... --fastqs FASTQ1 FASTQ2...`
 (optional) `vk clean --adata ADATA ...`
 (optional) `vk summarize --adata ADATA ...`
 
@@ -145,4 +101,4 @@ b. Jupyter - see varseek/notebooks for examples to get started, and [GitHub - pa
 
 FAQs:
 - Q: I want to add a custom filter to my VCRS index. How can I do this?
-- A: First run vk build with the desired parameters to generate the vcrs.fa file. Optionally run this file through vk info and vk filter if any filtering performed by these steps is desired. Then, write any necessary logic to filter undesired entries out of the VCRS reference file. Generate a new file with vk.utils.create_mutant_t2g. Then pass the filtered vcrs fasta file into kb ref with --workflow custom.
+- A: First run vk build with the desired parameters to generate the vcrs.fa file. Optionally run this file through vk info and vk filter if any filtering performed by these steps is desired. Then, write any necessary logic to filter undesired entries out of the VCRS reference file. Generate a new t2g file with vk.utils.create_mutant_t2g. Then pass the filtered vcrs fasta file into kb ref with --workflow custom.
