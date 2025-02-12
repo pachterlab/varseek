@@ -107,12 +107,12 @@ fastq_output_path_max_reads = os.path.join(tmp_dir, f"reads_{number_of_reads_max
 
 print(f"Building synthetic reads for {number_of_reads_max} reads")
 _ = vk.sim(
-    mutation_metadata_df = cosmic_mutations,
-    fastq_output_path = fastq_output_path_max_reads,
-    sample_type="all",
+    mutations = cosmic_mutations,
+    reads_fastq_out = fastq_output_path_max_reads,
     number_of_mutations_to_sample=number_of_mutations_to_sample,
     strand=strand,
-    number_of_reads_per_sample=100,  # 100 mutant, 100 wild-type
+    number_of_reads_per_mutation_m=100,
+    number_of_reads_per_mutation_w=100,
     read_length=read_length,
     seed=random_seed,
     add_noise_sequencing_error=add_noise_sequencing_error,
@@ -126,7 +126,7 @@ _ = vk.sim(
     seq_id_column=seq_id_column,
     mut_column=mut_column,
     reference_out_dir=reference_out_dir,
-    out_dir_vk_build=out_dir_vk_build,
+    vk_build_out_dir=out_dir_vk_build,
     k=k,
     w=w
 )

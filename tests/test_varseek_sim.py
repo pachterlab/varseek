@@ -16,15 +16,15 @@ from varseek.utils import (
 
 @pytest.fixture
 def temporary_output_files():
-    with tempfile.NamedTemporaryFile(suffix=".csv") as mutation_metadata_df_out, \
-        tempfile.NamedTemporaryFile(suffix=".csv") as read_df_out, \
-        tempfile.NamedTemporaryFile(suffix=".fq") as fastq_output_path:
+    with tempfile.NamedTemporaryFile(suffix=".csv") as mutations_updated_csv_out, \
+        tempfile.NamedTemporaryFile(suffix=".csv") as reads_csv_out, \
+        tempfile.NamedTemporaryFile(suffix=".fq") as reads_fastq_out:
         
         # Dictionary of temporary paths
         temp_files = {
-            "mutation_metadata_df_out": mutation_metadata_df_out.name,
-            "read_df_out": read_df_out.name,
-            "fastq_output_path": fastq_output_path.name
+            "mutations_updated_csv_out": mutations_updated_csv_out.name,
+            "reads_csv_out": reads_csv_out.name,
+            "reads_fastq_out": reads_fastq_out.name
         }
         
         yield temp_files  # Provide paths to test
@@ -40,15 +40,14 @@ def test_basic_sim(toy_mutation_metadata_df_with_read_parents_path, temporary_ou
     error_rate = 0.01
     max_errors = 0
 
-    mutation_metadata_df_out, read_df_out, fastq_output_path = temporary_output_files["mutation_metadata_df_out"], temporary_output_files["read_df_out"], temporary_output_files["fastq_output_path"]
+    mutations_updated_csv_out, reads_csv_out, reads_fastq_out = temporary_output_files["mutations_updated_csv_out"], temporary_output_files["reads_csv_out"], temporary_output_files["reads_fastq_out"]
 
     simulated_df_dict_from_test = vk.sim(
-        mutation_metadata_df = toy_mutation_metadata_df_with_read_parents_path,
-        fastq_output_path = fastq_output_path,
-        sample_type="m",
+        mutations = toy_mutation_metadata_df_with_read_parents_path,
+        reads_fastq_out = reads_fastq_out,
         number_of_mutations_to_sample=number_of_mutations_to_sample,
         strand=strand,
-        number_of_reads_per_sample="all",  # not used when number_of_reads_per_sample_m and number_of_reads_per_sample_w are provided
+        number_of_reads_per_mutation_m="all",
         read_length=read_length,
         seed=seed,
         add_noise=add_noise,
@@ -56,17 +55,16 @@ def test_basic_sim(toy_mutation_metadata_df_with_read_parents_path, temporary_ou
         max_errors=max_errors,
         with_replacement=False,
         sequences=None,
-        mutation_metadata_df_path=None,
         seq_id_column="seq_ID",
         mut_column="mutation",
         reference_out_dir=None,
-        out_dir_vk_build=None,
+        vk_build_out_dir=None,
         filters=filters,
-        read_df_out=read_df_out,
-        mutation_metadata_df_out=mutation_metadata_df_out,
+        reads_csv_out=reads_csv_out,
+        mutations_updated_csv_out=mutations_updated_csv_out,
     )
 
-    read_df_from_test, mutation_metadata_df_from_test = simulated_df_dict_from_test["read_df"], simulated_df_dict_from_test["mutation_metadata_df"]
+    read_df_from_test, mutation_metadata_df_from_test = simulated_df_dict_from_test["read_df"], simulated_df_dict_from_test["mutations"]
     
     output_metadata_df_expected = pd.read_csv(toy_mutation_metadata_df_with_read_parents_path)
 

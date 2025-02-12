@@ -1088,36 +1088,11 @@ def main():  # noqa: C901
     )
     parser_sim.add_argument(
         "-m",
-        "--mutation_metadata_df",
+        "--mutations",
         default=None,
-        type=strpath_or_df,
+        type=strpath_or_strnonpath_or_df,
         required=True,
-        help=extract_help_from_doc(sim, "mutation_metadata_df"),
-    )
-    parser_sim.add_argument(
-        "--fastq_output_path",
-        default=None,
-        required=False,
-        help=extract_help_from_doc(sim, "fastq_output_path"),
-    )
-    parser_sim.add_argument(
-        "--fastq_parent_path",
-        default=None,
-        required=False,
-        help=extract_help_from_doc(sim, "fastq_parent_path"),
-    )
-    parser_sim.add_argument(
-        "--read_df_parent",
-        default=None,
-        type=strpath_or_df,
-        required=False,
-        help=extract_help_from_doc(sim, "read_df_parent"),
-    )
-    parser_sim.add_argument(
-        "--sample_type",
-        default=None,
-        required=False,
-        help=extract_help_from_doc(sim, "sample_type"),
+        help=extract_help_from_doc(sim, "mutations"),
     )
     parser_sim.add_argument(
         "--number_of_mutations_to_sample",
@@ -1127,28 +1102,31 @@ def main():  # noqa: C901
         help=extract_help_from_doc(sim, "number_of_mutations_to_sample"),
     )
     parser_sim.add_argument(
-        "--strand",
+        "--number_of_reads_per_mutation_m",
+        default="all",
+        required=False,
+        help=extract_help_from_doc(sim, "number_of_reads_per_mutation_m"),
+    )
+    parser_sim.add_argument(
+        "--number_of_reads_per_mutation_w",
+        default="all",
+        required=False,
+        help=extract_help_from_doc(sim, "number_of_reads_per_mutation_w"),
+    )
+    parser_sim.add_argument(
+        "--sample_m_and_w_from_same_locations",
         action="store_true",
-        required=False,
+        help=extract_help_from_doc(sim, "sample_m_and_w_from_same_locations"),
+    )
+    parser_sim.add_argument(
+        "--with_replacement",
+        action="store_true",
+        help=extract_help_from_doc(sim, "with_replacement"),
+    )
+    parser_sim.add_argument(
+        "--strand",
+        choices=["f", "r", "both", "random", None],
         help=extract_help_from_doc(sim, "strand"),
-    )
-    parser_sim.add_argument(
-        "--number_of_reads_per_sample",
-        type=lambda x: int(x) if x is not None else None,
-        required=False,
-        help=extract_help_from_doc(sim, "number_of_reads_per_sample"),
-    )
-    parser_sim.add_argument(
-        "--number_of_reads_per_sample_m",
-        type=lambda x: int(x) if x is not None else None,
-        required=False,
-        help=extract_help_from_doc(sim, "number_of_reads_per_sample_m"),
-    )
-    parser_sim.add_argument(
-        "--number_of_reads_per_sample_w",
-        type=lambda x: int(x) if x is not None else None,
-        required=False,
-        help=extract_help_from_doc(sim, "number_of_reads_per_sample_w"),
     )
     parser_sim.add_argument(
         "--read_length",
@@ -1158,129 +1136,196 @@ def main():  # noqa: C901
         help=extract_help_from_doc(sim, "read_length"),
     )
     parser_sim.add_argument(
-        "--seed",
-        default=42,
-        type=int,
+        "-f",
+        "--filters",
+        nargs="*",  # Accept multiple sequential filters or a single JSON file
+        type=str,
         required=False,
-        help=extract_help_from_doc(sim, "seed"),
+        help=extract_help_from_doc(sim, "filters"),
     )
     parser_sim.add_argument(
-        "--add_noise",
+        "--add_noise_sequencing_error",
         action="store_true",
-        required=False,
-        help=extract_help_from_doc(sim, "add_noise"),
+        help=extract_help_from_doc(sim, "add_noise_sequencing_error"),
+    )
+    parser_sim.add_argument(
+        "--add_noise_base_quality",
+        action="store_true",
+        help=extract_help_from_doc(sim, "add_noise_base_quality"),
     )
     parser_sim.add_argument(
         "--error_rate",
-        default=0.0001,
-        type=float,
         required=False,
+        default=0.0001,
         help=extract_help_from_doc(sim, "error_rate"),
     )
     parser_sim.add_argument(
-        "--max_errors",
-        default=float("inf"),
-        type=is_int_or_float_or_inf,
+        "--error_distribution",
         required=False,
+        default=(0.85, 0.1, 0.05),
+        help=extract_help_from_doc(sim, "error_distribution"),
+    )
+    parser_sim.add_argument(
+        "--max_errors",
+        required=False,
+        default=float("inf"),
         help=extract_help_from_doc(sim, "max_errors"),
     )
     parser_sim.add_argument(
-        "--with_replacement",
-        action="store_true",
+        "--mutant_sequence_read_parent_column",
         required=False,
-        help=extract_help_from_doc(sim, "with_replacement"),
+        default="mutant_sequence_read_parent",
+        help=extract_help_from_doc(sim, "mutant_sequence_read_parent_column"),
+    )
+    parser_sim.add_argument(
+        "--wt_sequence_read_parent_column",
+        required=False,
+        default="wt_sequence_read_parent",
+        help=extract_help_from_doc(sim, "wt_sequence_read_parent_column"),
+    )
+    parser_sim.add_argument(
+        "--mutant_sequence_read_parent_rc_column",
+        required=False,
+        default="mutant_sequence_read_parent_rc",
+        help=extract_help_from_doc(sim, "mutant_sequence_read_parent_rc_column"),
+    )
+    parser_sim.add_argument(
+        "--wt_sequence_read_parent_rc_column",
+        required=False,
+        default="wt_sequence_read_parent_rc",
+        help=extract_help_from_doc(sim, "wt_sequence_read_parent_rc_column"),
+    )
+    parser_sim.add_argument(
+        "--reads_fastq_parent",
+        required=False,
+        help=extract_help_from_doc(sim, "reads_fastq_parent"),
+    )
+    parser_sim.add_argument(
+        "--reads_csv_parent",
+        required=False,
+        help=extract_help_from_doc(sim, "reads_csv_parent"),
+    )
+    parser_sim.add_argument(
+        "--out",
+        required=False,
+        type=str,
+        default=".",
+        help=extract_help_from_doc(sim, "out"),
+    )
+    parser_sim.add_argument(
+        "--reads_fastq_out",
+        required=False,
+        help=extract_help_from_doc(sim, "reads_fastq_out"),
+    )
+    parser_sim.add_argument(
+        "--mutations_updated_csv_out",
+        required=False,
+        help=extract_help_from_doc(sim, "mutations_updated_csv_out"),
+    )
+    parser_sim.add_argument(
+        "--reads_csv_out",
+        required=False,
+        help=extract_help_from_doc(sim, "reads_csv_out"),
+    )
+    parser_sim.add_argument(
+        "--disable_save_mutations_updated_csv",
+        action="store_true",
+        help=extract_help_from_doc(sim, "save_mutations_updated_csv", disable=True),
+    )
+    parser_sim.add_argument(
+        "--disable_save_read_csv",
+        action="store_true",
+        help=extract_help_from_doc(sim, "save_read_csv", disable=True),
+    )
+    parser_sim.add_argument(
+        "--vk_build_out_dir",
+        required=False,
+        type=str,
+        default=".",
+        help=extract_help_from_doc(sim, "vk_build_out_dir"),
     )
     parser_sim.add_argument(
         "--sequences",
-        default=None,
         required=False,
         help=extract_help_from_doc(sim, "sequences"),
     )
     parser_sim.add_argument(
-        "--mutation_metadata_df_path",
-        default=None,
-        required=False,
-        help=extract_help_from_doc(sim, "mutation_metadata_df_path"),
-    )
-    parser_sim.add_argument(
-        "--reference_out_dir",
-        default=None,
-        required=False,
-        help=extract_help_from_doc(sim, "reference_out_dir"),
-    )
-    parser_sim.add_argument(
-        "--out_dir_vk_build",
-        default=None,
-        required=False,
-        help=extract_help_from_doc(sim, "out_dir_vk_build"),
-    )
-    parser_sim.add_argument(
         "--seq_id_column",
-        default=None,
         required=False,
+        type=str,
+        default="seq_ID",
         help=extract_help_from_doc(sim, "seq_id_column"),
     )
     parser_sim.add_argument(
         "--mut_column",
-        default=None,
         required=False,
+        type=str,
+        default="mutation",
         help=extract_help_from_doc(sim, "mut_column"),
     )
     parser_sim.add_argument(
-        "--gtf",
-        default=None,
+        "--k",
         required=False,
-        help=extract_help_from_doc(sim, "gtf"),
+        type=int,
+        default=59,
+        help=extract_help_from_doc(sim, "k"),
     )
     parser_sim.add_argument(
-        "--gtf_transcript_id_column",
-        default=None,
+        "--w",
         required=False,
-        help=extract_help_from_doc(sim, "gtf_transcript_id_column"),
+        type=int,
+        default=54,
+        help=extract_help_from_doc(sim, "w"),
     )
     parser_sim.add_argument(
         "--sequences_cdna",
-        default=None,
         required=False,
         help=extract_help_from_doc(sim, "sequences_cdna"),
     )
     parser_sim.add_argument(
         "--seq_id_column_cdna",
-        default=None,
         required=False,
         help=extract_help_from_doc(sim, "seq_id_column_cdna"),
     )
     parser_sim.add_argument(
         "--mut_column_cdna",
-        default=None,
         required=False,
         help=extract_help_from_doc(sim, "mut_column_cdna"),
     )
     parser_sim.add_argument(
         "--sequences_genome",
-        default=None,
         required=False,
         help=extract_help_from_doc(sim, "sequences_genome"),
     )
     parser_sim.add_argument(
         "--seq_id_column_genome",
-        default=None,
         required=False,
         help=extract_help_from_doc(sim, "seq_id_column_genome"),
     )
     parser_sim.add_argument(
         "--mut_column_genome",
-        default=None,
         required=False,
         help=extract_help_from_doc(sim, "mut_column_genome"),
     )
     parser_sim.add_argument(
-        "-f",
-        "--filters",
-        nargs="*",  # Accept multiple sequential filters or a single JSON file
-        type=str,
-        required=True,
-        help=extract_help_from_doc(sim, "filters"),
+        "--seed",
+        required=False,
+        help=extract_help_from_doc(sim, "seed"),
+    )
+    parser_sim.add_argument(
+        "--gzip_output_fastq",
+        action="store_true",
+        help=extract_help_from_doc(sim, "gzip_output_fastq"),
+    )
+    parser_sim.add_argument(
+        "--dry_run",
+        action="store_true",
+        help=extract_help_from_doc(sim, "dry_run"),
+    )
+    parser_sim.add_argument(
+        "--verbose",
+        action="store_true",
+        help=extract_help_from_doc(sim, "verbose"),
     )
     parser_sim.add_argument(
         "-q",
@@ -2440,21 +2485,50 @@ def main():  # noqa: C901
         filter_rules = prepare_filters_list(args.filters)
 
         simulated_df_dict = sim(
-            mutation_metadata_df=args.mutation_metadata_df,
-            fastq_output_path=args.fastq_output_path,
-            fastq_parent_path=args.fastq_parent_path,
-            read_df_parent=args.read_df_parent,
-            sample_type=args.sample_type,
-            n=args.n,
-            strand=args.strand,
-            number_of_reads_per_sample=args.number_of_reads_per_sample,
-            read_length=args.read_length,
-            seed=args.seed,
-            add_noise=args.add_noise,
+            mutations=args.mutations,
+            number_of_mutations_to_sample=args.number_of_mutations_to_sample,
+            number_of_reads_per_mutation_m=args.number_of_reads_per_mutation_m,
+            number_of_reads_per_mutation_w=args.number_of_reads_per_mutation_w,
+            sample_m_and_w_from_same_locations=args.sample_m_and_w_from_same_locations,
             with_replacement=args.with_replacement,
+            strand=args.strand,
+            read_length=args.read_length,
             filters=filter_rules,
+            add_noise_sequencing_error=args.add_noise_sequencing_error,
+            add_noise_base_quality=args.add_noise_base_quality,
+            error_rate=args.error_rate,
+            error_distribution=args.error_distribution,
+            max_errors=args.max_errors,
+            mutant_sequence_read_parent_column=args.mutant_sequence_read_parent_column,
+            wt_sequence_read_parent_column=args.wt_sequence_read_parent_column,
+            mutant_sequence_read_parent_rc_column=args.mutant_sequence_read_parent_rc_column,
+            wt_sequence_read_parent_rc_column=args.wt_sequence_read_parent_rc_column,
+            reads_fastq_parent=args.reads_fastq_parent,
+            reads_csv_parent=args.reads_csv_parent,
+            out=args.out,
+            reads_fastq_out=args.reads_fastq_out,
+            mutations_updated_csv_out=args.mutations_updated_csv_out,
+            reads_csv_out=args.reads_csv_out,
+            save_mutations_updated_csv=args.disable_save_mutations_updated_csv,
+            save_read_csv=args.disable_save_read_csv,
+            vk_build_out_dir=args.vk_build_out_dir,
+            sequences=args.sequences,
+            seq_id_column=args.seq_id_column,
+            mut_column=args.mut_column,
+            k=args.k,
+            w=args.w,
+            sequences_cdna=args.sequences_cdna,
+            seq_id_column_cdna=args.seq_id_column_cdna,
+            mut_column_cdna=args.mut_column_cdna,
+            sequences_genome=args.sequences_genome,
+            seq_id_column_genome=args.seq_id_column_genome,
+            mut_column_genome=args.mut_column_genome,
+            seed=args.seed,
+            gzip_output_fastq=args.gzip_output_fastq,
+            dry_run=args.dry_run,
             verbose=args.quiet,
-            **kwargs,
+            **kwargs
+
         )
 
         # * optionally do something with simulated_df_dict (e.g., save, or print to console)

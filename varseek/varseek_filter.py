@@ -262,9 +262,9 @@ def validate_input_filter(params_dict):
 
     # filters
     filters = params_dict["filters"]
-    if isinstance(filters, str):
-        if not os.path.isfile(filters) or not filters.endswith(".txt"):
-            raise ValueError(f"Invalid filters: {filters}")
+    # if isinstance(filters, str):  # commented out because I want to leave open the possibility of a single string filter
+    #     if not os.path.isfile(filters) or not filters.endswith(".txt"):
+    #         raise ValueError(f"Invalid filters: {filters}")
 
     if not (isinstance(filters, dict) or isinstance(filters, str) or isinstance(filters, list) or isinstance(filters, tuple) or isinstance(filters, set)):
         raise ValueError(f"Invalid filters: {filters}")
