@@ -14,12 +14,12 @@ from varseek.utils import (
     run_command_with_error_logging,
 )
 
-all_supported_tools_to_benchmark = {"varseek", "gatk_haplotypecaller", "gatk_mutect2", "strelka2", "varscan"}
-tools_that_require_star_alignment = {"gatk_haplotypecaller", "gatk_mutect2", "strelka2", "varscan"}
+all_supported_tools_to_benchmark = {"varseek", "gatk_haplotypecaller", "gatk_mutect2", "strelka2", "varscan", "deepvariant"}
+tools_that_require_star_alignment = {"gatk_haplotypecaller", "gatk_mutect2", "strelka2", "varscan", "deepvariant"}
 
 ### ARGUMENTS ###
 number_of_reads_list = [1, 4, 16, 64, 256, 1024]  # number of reads, in millions
-tools_to_benchmark = {"varseek", "gatk_haplotypecaller", "gatk_mutect2", "strelka2", "varscan"}
+tools_to_benchmark = {"varseek", "gatk_haplotypecaller", "gatk_mutect2", "strelka2", "varscan", "deepvariant"}
 
 read_length = 150
 k = 59
@@ -56,6 +56,11 @@ VARSCAN_INSTALL_PATH = os.path.join(opt_dir, "VarScan.v2.3.9.jar")
 tmp_dir = "tmp"
 output_dir = "/Users/joeyrich/Desktop/local/varseek/logs"
 reference_out_dir = "/Users/joeyrich/Documents/Caltech/Pachter/reference"
+
+deepvariant_model = os.path.join(tmp_dir, "deepvariant_model")
+model_checkpoint_data_path = os.path.join(deepvariant_model, "model.ckpt.data-00000-of-00001")
+model_checkpoint_index_path = os.path.join(deepvariant_model, "model.ckpt.index")
+model_checkpoint_meta_path = os.path.join(deepvariant_model, "model.ckpt.meta")
 ### ARGUMENTS ###
 
 # # set random seeds
@@ -69,12 +74,15 @@ os.makedirs(tmp_dir)  # purposely not using exist_ok=True to ensure that the dir
 out_dir_vk_build = os.path.join(tmp_dir, "vk_build")
 update_df_out = os.path.join(out_dir_vk_build, "updated_df.csv")
 
+os.makedirs(out_dir_vk_build, exist_ok=True)
+
 script_dir = os.path.dirname(os.path.abspath(__file__))  # the parent directory of this current file (this file should be in scripts/)
 vk_count_script_path = os.path.join(script_dir, "run_varseek_count_for_benchmarking_time_and_memory.py")
 gatk_haplotypecaller_script_path = os.path.join(script_dir, "run_gatk_for_benchmarking_time_and_memory.py")
 gatk_mutect2_script_path = os.path.join(script_dir, "run_gatk_for_benchmarking_time_and_memory.py")
 strelka_script_path = os.path.join(script_dir, "run_strelka_for_benchmarking_time_and_memory.py")
 varscan_script_path = os.path.join(script_dir, "run_varscan_for_benchmarking_time_and_memory.py")
+deepvariant_script_path = os.path.join(script_dir, "run_deepvariant_for_benchmarking_time_and_memory.py")
 
 star_output_file = os.path.join(output_dir, "STAR_time.txt")
 
@@ -90,7 +98,6 @@ else:
 for tool in tools_to_benchmark:
     if tool not in all_supported_tools_to_benchmark:
         raise ValueError(f"Tool {tool} is not supported. Supported tools are: {all_supported_tools_to_benchmark}")
-
 
 #* Make synthetic reads corresponding to the largest value in number_of_reads_list - if desired, I can replace this with real data
 cosmic_mutations = pd.read_csv(cosmic_mutations_path)
@@ -134,9 +141,10 @@ if not os.path.exists(vk_ref_index_path) or not os.path.exists(vk_ref_t2g_path):
 
 #* install seqtk if not installed
 if not is_program_installed(seqtk):
-    subprocess.run("git clone https://github.com/lh3/seqtk.git", shell=True, check=True)
-    subprocess.run("cd seqtk && make", shell=True, check=True)
-    seqtk = os.path.join(script_dir, "seqtk/seqtk")
+    raise ValueError("seqtk is required to run this script. Please install seqtk and ensure that it is in your PATH.")
+    # subprocess.run("git clone https://github.com/lh3/seqtk.git", shell=True, check=True)
+    # subprocess.run("cd seqtk && make", shell=True, check=True)
+    # seqtk = os.path.join(script_dir, "seqtk/seqtk")
 
 #* Download/build necessary files for alternative variant calling tools
 if any(tool in tools_that_require_star_alignment for tool in tools_to_benchmark):  # check if any tool in tools_to_benchmark requires STAR alignment
@@ -174,9 +182,10 @@ if any(tool in tools_that_require_star_alignment for tool in tools_to_benchmark)
     os.makedirs(star_genome_dir, exist_ok=True)
 
     if not os.path.exists(STAR):
-        star_tarball = os.path.join(opt_dir, "2.7.11b.tar.gz")
-        subprocess.run(["wget", "-O", star_tarball, "https://github.com/alexdobin/STAR/archive/2.7.11b.tar.gz"], check=True)
-        subprocess.run(["tar", "-xzf", star_tarball, "-C", opt_dir], check=True)
+        raise ValueError("STAR is required to run STAR. Please install STAR and ensure that it is in your PATH.")
+        # star_tarball = os.path.join(opt_dir, "2.7.11b.tar.gz")
+        # subprocess.run(["wget", "-O", star_tarball, "https://github.com/alexdobin/STAR/archive/2.7.11b.tar.gz"], check=True)
+        # subprocess.run(["tar", "-xzf", star_tarball, "-C", opt_dir], check=True)
 
     #* Build STAR index
     star_build_command = [
@@ -211,6 +220,16 @@ if any(tool in tools_that_require_star_alignment for tool in tools_to_benchmark)
     if not os.path.exists(f"{genomes1000_vcf}.idx"):
         run_command_with_error_logging(index_feature_file_command)
 
+if "deepvariant" in tools_to_benchmark:
+    if not os.path.exists(model_checkpoint_data_path):
+        subprocess.run(f"curl https://storage.googleapis.com/deepvariant/models/DeepVariant/1.4.0/DeepVariant-inception_v3-1.4.0+data-rnaseq_standard/model.ckpt.data-00000-of-00001 > {model_checkpoint_data_path}", check=True, shell=True)
+
+    if not os.path.exists(model_checkpoint_index_path):
+        subprocess.run(f"curl https://storage.googleapis.com/deepvariant/models/DeepVariant/1.4.0/DeepVariant-inception_v3-1.4.0+data-rnaseq_standard/model.ckpt.index > {model_checkpoint_index_path}", check=True, shell=True)
+
+    if not os.path.exists(model_checkpoint_meta_path):
+        subprocess.run(f"curl https://storage.googleapis.com/deepvariant/models/DeepVariant/1.4.0/DeepVariant-inception_v3-1.4.0+data-rnaseq_standard/model.ckpt.meta > {model_checkpoint_meta_path}", check=True, shell=True)
+
 if ("gatk_haplotypecaller" in tools_to_benchmark or "gatk_mutect2" in tools_to_benchmark):
     if not is_program_installed(java):
         raise ValueError("Java is required to run GATK. Please install Java and ensure that it is in your PATH.")
@@ -218,22 +237,26 @@ if ("gatk_haplotypecaller" in tools_to_benchmark or "gatk_mutect2" in tools_to_b
         # wget https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.12%2B7/OpenJDK17U-jdk_x64_linux_hotspot_17.0.12_7.tar.gz
         # tar -xvf OpenJDK17U-jdk_x64_linux_hotspot_17.0.12_7.tar.gz
     if not os.path.exists(picard_jar):
-        subprocess.run(["wget", "https://github.com/broadinstitute/picard/releases/download/3.3.0/picard.jar", "-O", picard_jar], check=True)
+        raise ValueError("Picard is required to run GATK. Please install Picard and ensure that it is in your PATH.")
+        # subprocess.run(["wget", "https://github.com/broadinstitute/picard/releases/download/3.3.0/picard.jar", "-O", picard_jar], check=True)
     if not os.path.exists(gatk):
-        os.chdir(opt_dir)
-        gatk_dir_name = os.path.join(opt_dir, "gatk-4.6.0.0")
-        subprocess.run(["wget", "https://github.com/broadinstitute/gatk/releases/download/4.6.0.0/gatk-4.6.0.0.zip", "-O", "gatk-4.6.0.0.zip"], check=True)
-        subprocess.run(["unzip", "gatk-4.6.0.0.zip"], check=True)
-        os.environ['PATH'] = f"{gatk_dir_name}:{os.environ['PATH']}"
+        raise ValueError("GATK is required to run GATK. Please install GATK and ensure that it is in your PATH.")
+        # os.chdir(opt_dir)
+        # gatk_dir_name = os.path.join(opt_dir, "gatk-4.6.0.0")
+        # subprocess.run(["wget", "https://github.com/broadinstitute/gatk/releases/download/4.6.0.0/gatk-4.6.0.0.zip", "-O", "gatk-4.6.0.0.zip"], check=True)
+        # subprocess.run(["unzip", "gatk-4.6.0.0.zip"], check=True)
+        # os.environ['PATH'] = f"{gatk_dir_name}:{os.environ['PATH']}"
 
 
 if "strelka2" in tools_to_benchmark and not os.path.exists(STRELKA_INSTALL_PATH):
-    strelka_tarball = f"{STRELKA_INSTALL_PATH}.tar.bz2"
-    subprocess.run(["wget", "-O", strelka_tarball, "https://github.com/Illumina/strelka/releases/download/v2.9.10/strelka-2.9.10.centos6_x86_64.tar.bz2"], check=True)
-    subprocess.run(["tar", "-xvjf", strelka_tarball, "-C", opt_dir], check=True)
+    raise ValueError("Strelka2 is required to run Strelka2. Please install Strelka2 and ensure that it is in your PATH.")
+    # strelka_tarball = f"{STRELKA_INSTALL_PATH}.tar.bz2"
+    # subprocess.run(["wget", "-O", strelka_tarball, "https://github.com/Illumina/strelka/releases/download/v2.9.10/strelka-2.9.10.centos6_x86_64.tar.bz2"], check=True)
+    # subprocess.run(["tar", "-xvjf", strelka_tarball, "-C", opt_dir], check=True)
 
 if "varscan" in tools_to_benchmark and not os.path.exists(VARSCAN_INSTALL_PATH):
-    subprocess.run(["wget", "-O", VARSCAN_INSTALL_PATH, "https://sourceforge.net/projects/varscan/files/VarScan.v2.3.9.jar/download"], check=True)
+    raise ValueError("VarScan is required to run VarScan. Please install VarScan and ensure that it is in your PATH.")
+    # subprocess.run(["wget", "-O", VARSCAN_INSTALL_PATH, "https://sourceforge.net/projects/varscan/files/VarScan.v2.3.9.jar/download"], check=True)
 
 
 #* Run variant calling tools
@@ -311,6 +334,13 @@ for number_of_reads in number_of_reads_list:
         output_file = os.path.join(output_dir, f"varscan_threads_{threads}_reads_{number_of_reads}_time_and_memory.txt")
         argparse_flags = f"--synthetic_read_fastq {fastq_output_path} --reference_genome_fasta {reference_genome_fasta} --reference_genome_gtf {reference_genome_gtf} --star_genome_dir {star_genome_dir} --threads {threads} --read_length {read_length} --VARSCAN_INSTALL_PATH {VARSCAN_INSTALL_PATH} --tmp {tmp_dir} --aligned_and_unmapped_bam {aligned_and_unmapped_bam}"
         _ = report_time_and_memory_of_script(varscan_script_path, output_file = output_file, argparse_flags = argparse_flags)
+
+    if "deepvariant" in tools_to_benchmark:
+        #* Variant calling: VarScan
+        print(f"Deepvariant, {number_of_reads} reads")
+        output_file = os.path.join(output_dir, f"deepvariant_threads_{threads}_reads_{number_of_reads}_time_and_memory.txt")
+        argparse_flags = f"--synthetic_read_fastq {fastq_output_path} --reference_genome_fasta {reference_genome_fasta} --reference_genome_gtf {reference_genome_gtf} --star_genome_dir {star_genome_dir} --threads {threads} --read_length {read_length} --tmp {tmp_dir} --aligned_and_unmapped_bam {aligned_and_unmapped_bam}"
+        _ = report_time_and_memory_of_script(deepvariant_script_path, output_file = output_file, argparse_flags = argparse_flags)
 
     os.remove(fastq_output_path)
 

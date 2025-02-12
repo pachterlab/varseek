@@ -319,7 +319,7 @@ def info(
 
     # Output file paths:
     - out                                (str) Path to the directory where the output files will be saved. Default: `input_dir`.
-    - reference_out_dir                      (str) Path to the directory where the reference files will be saved. Default: `out`.
+    - reference_out_dir                  (str) Path to the directory where the reference files will be saved. Default: `out`/reference.
     - mutations_updated_vk_info_csv_out  (str) Path to the output csv file containing the updated dataframe with the additional columns. Default: `out`/mutation_metadata_df_updated_vk_info.csv.
     - mutations_updated_exploded_vk_info_csv_out (str) Path to the output csv file containing the exploded dataframe with the additional columns. Default: `out`/mutation_metadata_df_updated_vk_info_exploded.csv.
     - dlist_genome_fasta_out             (str) Path to the output fasta file containing the d-list sequences for the genome-based alignmed. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference'. Default: `out`/dlist_genome.fa.
@@ -449,10 +449,10 @@ def info(
         t2t_reference_dir = os.path.join(reference_out_dir, "t2t")
         dlist_reference_genome_fasta, dlist_reference_cdna_fasta, dlist_reference_gtf = download_t2t_reference_files(t2t_reference_dir)
     elif dlist_reference_genome_fasta == "grch37" or dlist_reference_cdna_fasta == "grch37" or dlist_reference_gtf == "grch37":
-        grch37_reference_dir = os.path.join(reference_out_dir, "grch37")
+        grch37_reference_dir = os.path.join(reference_out_dir, f"ensembl_grch37_release{dlist_reference_ensembl_release}")
         dlist_reference_genome_fasta, dlist_reference_cdna_fasta, dlist_reference_gtf = download_ensembl_reference_files(grch37_reference_dir, grch=37, ensembl_release=dlist_reference_ensembl_release)
     elif dlist_reference_genome_fasta == "grch38" or dlist_reference_cdna_fasta == "grch38" or dlist_reference_gtf == "grch38":
-        grch38_reference_dir = os.path.join(reference_out_dir, "grch38")
+        grch38_reference_dir = os.path.join(reference_out_dir, f"ensembl_grch38_release{dlist_reference_ensembl_release}")
         dlist_reference_genome_fasta, dlist_reference_cdna_fasta, dlist_reference_gtf = download_ensembl_reference_files(grch38_reference_dir, grch=38, ensembl_release=dlist_reference_ensembl_release)
 
     columns_to_explode = ["header", "order"]

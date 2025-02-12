@@ -3,6 +3,7 @@ import inspect
 import os
 import subprocess
 import time
+import requests
 
 import varseek as vk
 from varseek.utils import (
@@ -24,6 +25,7 @@ from varseek.utils import (
 from .constants import prebuilt_vk_ref_files
 
 logger = set_up_logger()
+COSMIC_CREDENTIAL_VALIDATION_URL = "https://varseek-server-3relpk35fa-wl.a.run.app"
 
 mode_parameters = {
     "very_sensitive": {},
@@ -110,9 +112,6 @@ def validate_input_ref(params_dict):
                     pass
 
 
-# for determining when to check for cosmic credentials
-mutation_values_for_cosmic = {"cosmic_cmc"}
-
 # a list of dictionaries with keys "mutations", "sequences", and "description"
 downloadable_references = [
     {"mutations": "cosmic_cmc", "sequences": "cdna", "description": "COSMIC Cancer Mutation Census version 100 - Ensembl GRCh37 release 93 cDNA reference annotations. All default arguments of varseek ref (k=59, w=54, filters, no d-list, etc.)."},
@@ -138,6 +137,7 @@ def ref(
     dlist_reference_source="T2T",
     config=None,
     out=".",
+    reference_out_dir=None,
     index_out=None,
     t2g_out=None,  # intentionally avoid having this name clash with the t2g from vk build and vk filter, as it could refer to either (depending on whether or not filtering will occur)
     download=False,
@@ -214,6 +214,7 @@ def ref(
 
     # Optional output file paths: (only needed if changing/customizing file names or locations):
     - out           (str) Output directory. Default: ".".
+    - reference_out_dir  (str) Path to the directory where the reference files will be saved. Default: `out`/reference.
     - index_out (str) Path to output mcrs index file. Default: `out`/mcrs_index.idx.
     - t2g_out (str) Path to output mcrs t2g file to be used in alignment. Default: `out`/mcrs_t2g.txt.
 
@@ -345,6 +346,7 @@ def ref(
     mode = mode
     verbose = verbose
     dlist_reference_source = dlist_reference_source
+    reference_out_dir=reference_out_dir
 
     # * 7. Define kwargs defaults
     # Nothing to see here
@@ -388,13 +390,17 @@ def ref(
         # $ I opt to keep it like this rather than converting the keys of prebuilt_vk_ref_files to a tuple of many arguments for user simplicity - simply document the uploaded references, but no need to differentiate - but if I do end up having multiple reference documents with the same values for mutations and sequences, then switch over to this approach where the dict keys are tuples
         file_dict = prebuilt_vk_ref_files.get(mutations, {}).get(sequences, {})  # when I add mode: file_dict = prebuilt_vk_ref_files.get(mutations, {}).get(sequences, {}).get(mode, {})
         if file_dict:
-            if mutations in mutation_values_for_cosmic:
-                # encoded_cosmic_credentials = encode_cosmic_credentials(cosmic_email, cosmic_password)  #!! uncomment once I'm ready to try out server
-                # if not authenticate_cosmic_credentials_via_server(encoded_cosmic_credentials):  #!! uncomment once I'm ready to try out server
-                if not authenticate_cosmic_credentials(cosmic_email, cosmic_password):  #!! erase once I'm ready to try out server
-                    raise ValueError(f"Trying to download a COSMIC-based index (mutations={mutations}) with invalid COSMIC credentials")
-            print(f"Downloading reference files with mutations={mutations}, sequences={sequences}")
-            vk_ref_output_dict = download_varseek_files(file_dict, out=out)  # TODO: replace with DOI download (will need to replace prebuilt_vk_ref_files urls with DOIs)
+            if file_dict['index'] == "COSMIC":
+                response = requests.post(COSMIC_CREDENTIAL_VALIDATION_URL, json={"email": cosmic_email, "password": cosmic_password, "mutations": mutations, "sequences": sequences})
+                if response.status_code == 200:
+                    file_dict = response.json()  # Converts JSON to dict
+                    file_dict = file_dict.get("download_links")
+                    logger.info("Successfully verified COSMIC credentials.")
+                    logger.warning("According to COSMIC regulations, please do not share any data that utilizes the COSMIC database. See more here: https://cancer.sanger.ac.uk/cosmic/help/terms")
+                else:
+                    raise ValueError(f"Failed to verify COSMIC credentials. Status code: {response.status_code}")
+            logger.info(f"Downloading reference files with mutations={mutations}, sequences={sequences}")
+            vk_ref_output_dict = download_varseek_files(file_dict, out=out)  # TODO: replace with DOI download (will need to replace prebuilt_vk_ref_files urls with DOIs) - ensure if this is allowed with COSMIC
             if index_out and vk_ref_output_dict["index"] != index_out:
                 os.rename(vk_ref_output_dict["index"], index_out)
                 vk_ref_output_dict["index"] = index_out

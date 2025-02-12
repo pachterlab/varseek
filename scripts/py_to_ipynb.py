@@ -1,11 +1,5 @@
 import argparse
-
 import nbformat as nbf
-
-# Path to your script
-python_in_path = '/home/jrich/Desktop/varseek/notebooks/test_module.py'
-notebook_out_path = '/home/jrich/Desktop/varseek/notebooks/test_module.ipynb'
-comment_marker_deliniator = '# CELL'
 
 def module_to_notebook(python_in_path, notebook_out_path, comment_marker_deliniator):
     # Read your script
@@ -101,7 +95,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert a Python script to a Jupyter notebook.")
     parser.add_argument('-i', '--input', required=True, help="Path to the input Python script")
     parser.add_argument('-o', '--output', help="Path to the output Jupyter notebook")
-    parser.add_argument('-d', '--delimiter', default='# CELL', help="Comment marker for cell splits (default: '# CELL')")
+    parser.add_argument('-d', '--delimiter', type=str, default='# CELL', help="Comment marker for cell splits (default: '# CELL')")
 
     # Parse the arguments
     args = parser.parse_args()

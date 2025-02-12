@@ -1,16 +1,16 @@
 """varseek package initialization module."""
 import logging
 
-from .utils import *  # noqa: F401, F403  # only imports what is in __all__ in .utils/__init__.py
-from .varseek_build import build  # noqa: F401
-from .varseek_clean import clean  # noqa: F401
-from .varseek_count import count  # noqa: F401
-from .varseek_fastqpp import fastqpp  # noqa: F401
-from .varseek_filter import filter  # noqa: F401
-from .varseek_info import info  # noqa: F401
-from .varseek_ref import ref  # noqa: F401
-from .varseek_sim import sim  # noqa: F401
-from .varseek_summarize import summarize  # noqa: F401
+from .utils import *  # only imports what is in __all__ in .utils/__init__.py
+from .varseek_build import build
+from .varseek_clean import clean
+from .varseek_count import count
+from .varseek_fastqpp import fastqpp
+from .varseek_filter import filter
+from .varseek_info import info
+from .varseek_ref import ref
+from .varseek_sim import sim
+from .varseek_summarize import summarize
 
 # Mute numexpr threads info
 logging.getLogger("numexpr").setLevel(logging.WARNING)

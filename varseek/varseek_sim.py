@@ -20,6 +20,11 @@ from .utils import (
 tqdm.pandas()
 logger = set_up_logger()
 
+def validate_input_sim(params_dict):
+    if params_dict['sample_m_and_w_from_same_locations'] is True:
+        if params_dict['number_of_reads_per_sample_m'] != params_dict['number_of_reads_per_sample_w']:
+            raise ValueError("When sample_m_and_w_from_same_locations is True, number_of_reads_per_sample_m must be equal to number_of_reads_per_sample_w")
+
 
 def sim(
     mutation_metadata_df,
@@ -28,12 +33,11 @@ def sim(
     read_df_parent=None,
     read_df_out=None,
     mutation_metadata_df_out=None,
-    sample_type="all",
     number_of_mutations_to_sample=1500,
     strand=None,
-    number_of_reads_per_sample=None,
-    number_of_reads_per_sample_m=None,
-    number_of_reads_per_sample_w=None,
+    number_of_reads_per_sample_m="all",
+    number_of_reads_per_sample_w="all",
+    sample_m_and_w_from_same_locations=False,
     read_length=150,
     seed=42,
     k=None,
@@ -72,10 +76,9 @@ def sim(
     - read_df_parent           (str or pd.DataFrame) Path to the csv file containing the read dataframe.
     - sample_type              (str) Type of reads to simulate. Possible values: 'm', 'w', 'all'.
     - number_of_mutations_to_sample     (int) Number of mutations to sample.
-    - strand                   (str) Strand to simulate reads from. Possible values: 'f', 'r', 'both', or None.
-    - number_of_reads_per_sample (int) Number of reads to simulate per mutation. Not used if both number_of_reads_per_sample_m and number_of_reads_per_sample_w are provided.
-    - number_of_reads_per_sample_m (int) Number of reads to simulate per mutation for mutant reads. Only used if sample_type is 'm' and number_of_reads_per_sample is None.
-    - number_of_reads_per_sample_w (int) Number of reads to simulate per mutation for wild-type reads. Only used if sample_type is 'w' and number_of_reads_per_sample is None.
+    - strand                   (str) Strand to simulate reads from. Possible values: 'f' (forward strand), 'r' (reverse complement strand), 'both' (both strands), or None (select a strand at ).
+    - number_of_reads_per_sample_m (int) Number of reads to simulate per mutation for mutant reads.
+    - number_of_reads_per_sample_w (int) Number of reads to simulate per mutation for wild-type reads.
     - read_length              (int) Length of the reads to simulate.
     - seed                     (int) Seed for random number generation.
     - add_noise_sequencing_error                (bool) Whether to add noise to the reads.
@@ -95,25 +98,12 @@ def sim(
     - filters                  (dict) Dictionary containing the filters to apply to the mutation metadata dataframe.
     - **kwargs                 (dict) Additional keyword arguments to pass to varseek.build.
     """
-    if number_of_reads_per_sample is None and number_of_reads_per_sample_m is None and number_of_reads_per_sample_w is None:
-        number_of_reads_per_sample = "all"
-        number_of_reads_per_sample_m = "all"
-        number_of_reads_per_sample_w = "all"
-
-    if number_of_reads_per_sample_m is not None and number_of_reads_per_sample_w is not None:
-        number_of_reads_per_sample = None
-
-    if number_of_reads_per_sample_m is None and number_of_reads_per_sample_w is None and sample_type == "all":
-        number_of_reads_per_sample_m = number_of_reads_per_sample
-        number_of_reads_per_sample_w = number_of_reads_per_sample
-
-    if number_of_reads_per_sample_m is None and sample_type == "m":
-        number_of_reads_per_sample_m = number_of_reads_per_sample
-        number_of_reads_per_sample_w = 0
-
-    if number_of_reads_per_sample_w is None and sample_type == "w":
-        number_of_reads_per_sample_w = number_of_reads_per_sample
-        number_of_reads_per_sample_m = 0
+    if number_of_reads_per_sample_m == 0:
+        sample_type = "w"
+    elif number_of_reads_per_sample_w == 0:
+        sample_type = "m"
+    else:
+        sample_type = "all"
 
     if isinstance(mutation_metadata_df, str) and os.path.exists(mutation_metadata_df):
         mutation_metadata_df = pd.read_csv(mutation_metadata_df)
@@ -350,6 +340,16 @@ def sim(
 
     with_replacement_original = with_replacement
 
+    #!!! erase
+    # if strand == "both":
+    #     if number_of_reads_per_sample_m % 2 != 0:
+    #         logger.warning(f"because strand == both, setting number_of_reads_per_sample_m to {number_of_reads_per_sample_m - 1} per strand")
+    #     number_of_reads_per_sample_m = number_of_reads_per_sample_m // 2
+        
+    #     if number_of_reads_per_sample_w % 2 != 0:
+    #         logger.warning(f"because strand == both, setting number_of_reads_per_sample_w to {number_of_reads_per_sample_w - 1} per strand")
+    #     number_of_reads_per_sample_w = number_of_reads_per_sample_w // 2
+
     # Write to a FASTA file
     total_fragments = 0
     skipped = 0
@@ -370,79 +370,76 @@ def sim(
             valid_starting_index_max_mutant = int(mutant_sequence_length - read_length + 1)
             valid_starting_index_max_wt = int(wt_sequence_length - read_length + 1)
 
-            if number_of_reads_per_sample == "all":  # sample all reads from sample_type (wt and/or mutant)
-                read_start_indices_mutant = list(range(valid_starting_index_max_mutant))
-                read_start_indices_wt = list(range(valid_starting_index_max_wt))
-
-                number_of_reads_mutant = len(read_start_indices_mutant)
-                number_of_reads_wt = len(read_start_indices_wt)
-
-            elif number_of_reads_per_sample is None:  # sample number_of_reads_per_sample_m from mutant (if sample_type != "w") and number_of_reads_per_sample_w from wt (if sample_type != "m")
-                number_of_reads_per_sample_m = int(number_of_reads_per_sample_m)
-                number_of_reads_per_sample_w = int(number_of_reads_per_sample_w)
-
-                number_of_reads_mutant = number_of_reads_per_sample_m
-                number_of_reads_wt = number_of_reads_per_sample_w
-
-                if number_of_reads_per_sample_m > valid_starting_index_max_mutant:
-                    logger.info("Setting with_replacement = True for this round")
-                    with_replacement = True
-
-                if with_replacement:
-                    read_start_indices_mutant = random.choices(
-                        range(valid_starting_index_max_mutant),
-                        k=number_of_reads_per_sample_m,
-                    )
-
+            if not sample_m_and_w_from_same_locations:
+                if number_of_reads_per_sample_m == "all":
+                    read_start_indices_mutant = list(range(valid_starting_index_max_mutant))
+                    number_of_reads_mutant = len(read_start_indices_mutant)
                 else:
-                    read_start_indices_mutant = random.sample(range(valid_starting_index_max_mutant), number_of_reads_per_sample_m)
+                    number_of_reads_per_sample_m = int(number_of_reads_per_sample_m)
+                    number_of_reads_mutant = number_of_reads_per_sample_m
 
-                with_replacement = with_replacement_original
+                    if number_of_reads_per_sample_m > valid_starting_index_max_mutant:
+                        logger.info("Setting with_replacement = True for this round")
+                        with_replacement = True
+                    
+                    if with_replacement:
+                        read_start_indices_mutant = random.choices(range(valid_starting_index_max_mutant), k=number_of_reads_per_sample_m)
+                    else:
+                        read_start_indices_mutant = random.sample(range(valid_starting_index_max_mutant), number_of_reads_per_sample_m)
 
-                if number_of_reads_per_sample_w > valid_starting_index_max_wt:
-                    logger.info("Setting with_replacement = True for this round")
-                    with_replacement = True
+                    with_replacement = with_replacement_original
 
-                if with_replacement:
-                    read_start_indices_wt = random.choices(
-                        range(valid_starting_index_max_wt),
-                        k=number_of_reads_per_sample_w,
-                    )
+                # repeat but for wt
+                if number_of_reads_per_sample_w == "all":
+                    read_start_indices_wt = list(range(valid_starting_index_max_wt))
+                    number_of_reads_wt = len(read_start_indices_wt)
                 else:
-                    read_start_indices_wt = random.sample(
-                        range(valid_starting_index_max_wt),
-                        number_of_reads_per_sample_w,
-                    )
+                    number_of_reads_per_sample_w = int(number_of_reads_per_sample_w)
+                    number_of_reads_wt = number_of_reads_per_sample_w
 
-                with_replacement = with_replacement_original
+                    if number_of_reads_per_sample_w > valid_starting_index_max_wt:
+                        logger.info("Setting with_replacement = True for this round")
+                        with_replacement = True
 
-            else:  # sample number_of_reads_per_sample (int) from sample_type (wt and/or mutant), and in the same locations if sample_type == "all"
-                valid_starting_index_max = min(valid_starting_index_max_mutant, valid_starting_index_max_wt)
-                number_of_reads_per_sample = int(number_of_reads_per_sample)
-                number_of_reads = number_of_reads_per_sample
+                    if with_replacement:
+                        read_start_indices_wt = random.choices(range(valid_starting_index_max_wt), k=number_of_reads_per_sample_w)
+                    else:
+                        read_start_indices_wt = random.sample(range(valid_starting_index_max_wt), number_of_reads_per_sample_w)
 
-                if number_of_reads_per_sample > valid_starting_index_max:
-                    logger.info("Setting with_replacement = True for this round")
-                    with_replacement = True
+                    with_replacement = with_replacement_original
+            else:
+                if number_of_reads_per_sample_m == "all" and number_of_reads_per_sample_w == "all":  # I asserted earlier that these must be equal in this condition
+                    read_start_indices_mutant = list(range(valid_starting_index_max_mutant))
+                    read_start_indices_wt = list(range(valid_starting_index_max_wt))
 
-                if with_replacement:
-                    read_start_indices_mutant = random.choices(
-                        range(valid_starting_index_max),
-                        k=number_of_reads_per_sample,
-                    )
-
+                    number_of_reads_mutant = len(read_start_indices_mutant)
+                    number_of_reads_wt = len(read_start_indices_wt)
                 else:
-                    read_start_indices_mutant = random.sample(
-                        range(valid_starting_index_max),
-                        number_of_reads_per_sample,
-                    )
+                    valid_starting_index_max = min(valid_starting_index_max_mutant, valid_starting_index_max_wt)
+                    number_of_reads_per_sample = int(number_of_reads_per_sample_m)  # which I asserted to be the same as number_of_reads_per_sample_w
 
-                with_replacement = with_replacement_original
+                    if number_of_reads_per_sample > valid_starting_index_max:
+                        logger.info("Setting with_replacement = True for this round")
+                        with_replacement = True
+                    
+                    if with_replacement:
+                        read_start_indices_mutant = random.choices(
+                            range(valid_starting_index_max),
+                            k=number_of_reads_per_sample,
+                        )
 
-                read_start_indices_wt = read_start_indices_mutant
+                    else:
+                        read_start_indices_mutant = random.sample(
+                            range(valid_starting_index_max),
+                            number_of_reads_per_sample,
+                        )
+                    
+                    read_start_indices_wt = read_start_indices_mutant
 
-                number_of_reads_mutant = number_of_reads
-                number_of_reads_wt = number_of_reads
+                    with_replacement = with_replacement_original
+
+                    number_of_reads_mutant = number_of_reads_per_sample
+                    number_of_reads_wt = number_of_reads_per_sample
 
             if strand is False or strand is None:
                 mutant_sequence_list = [random.choice([(mutant_sequence, "f"), (mutant_sequence_rc, "r")])]
@@ -453,18 +450,15 @@ def sim(
             elif strand[0] == "r":
                 mutant_sequence_list = [(mutant_sequence_rc, "r")]
                 wt_sequence_list = [(wt_sequence_rc, "r")]
-            elif strand == "both" or strand is True:
-                mutant_sequence_list = [
-                    (mutant_sequence, "f"),
-                    (mutant_sequence_rc, "r"),
-                ]
+            elif strand == "both":
+                mutant_sequence_list = [(mutant_sequence, "f"), (mutant_sequence_rc, "r")]
                 wt_sequence_list = [(wt_sequence, "f"), (wt_sequence_rc, "r")]
             else:
                 raise ValueError(f"Invalid strand value: {strand}")
 
             # Loop through each 150mer of the sequence
             if sample_type != "w":
-                if number_of_reads_per_sample == "all" and (strand == "both" or strand is True):
+                if strand == "both":
                     number_of_reads_mutant = number_of_reads_mutant * 2  # since now both strands are being sampled
 
                 new_column_dict["number_of_reads_mutant"].append(number_of_reads_mutant)
@@ -512,7 +506,7 @@ def sim(
                 noisy_read_indices_mutant = []
 
             if sample_type != "m":
-                if number_of_reads_per_sample == "all" and (strand == "both" or strand is True):
+                if strand == "both":
                     number_of_reads_wt = number_of_reads_wt * 2  # since now both strands are being sampled
                 new_column_dict["number_of_reads_wt"].append(number_of_reads_wt)
                 new_column_dict["list_of_read_starting_indices_wt"].append(read_start_indices_wt)

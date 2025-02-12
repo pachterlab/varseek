@@ -37,6 +37,8 @@ After aligning and generating a mutation count matrix with `varseek`, you can ex
 | Pathway analysis using Enrichr                | [6_1_pathway_analysis_enrichr.ipynb](./6_1_pathway_analysis_enrichr.ipynb)           |
 | Gene Ontology enrichment analysis (GOEA)      | [6_2_pathway_analysis_goea.ipynb](./6_2_pathway_analysis_goea.ipynb)                 |
 
+You can find more examples of how to use varseek in the GitHub repository for our preprint [GitHub - pachterlab/RLSRWP_2025](https://github.com/pachterlab/RLSRWP_2025.git).
+
     
 If you use `varseek` in a publication, please cite the following study:    
 ```
@@ -136,7 +138,7 @@ b. Customize variant screening process - additional fastq preprocessing, custom 
 
 3. Analyze results
 a. View results of vk summarize (txt, vcf, Anndata - in OUT from vk count)
-b. Jupyter - see varseek/notebooks for examples to get started, and XXXXX for figures from our first preprint
+b. Jupyter - see varseek/notebooks for examples to get started, and [GitHub - pachterlab/RLSRWP_2025](https://github.com/pachterlab/RLSRWP_2025.git) for figures from our first preprint
 
 
 

@@ -14,7 +14,7 @@ authors = [
 maintainers = [
     {name = "Joseph Rich", email = "josephrich98@gmail.com"}
 ]
-requires-python = ">=3.7"
+requires-python = ">=3.9"
 keywords = ["varseek", "bioinformatics", "variant-analysis", "k-mer", "RNA-seq", "DNA-seq"]
 classifiers = [
     "Environment :: Console",

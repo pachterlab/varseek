@@ -1979,6 +1979,13 @@ def main():  # noqa: C901
         help=extract_help_from_doc(ref, "out"),
     )
     parser_ref.add_argument(
+        "--reference_out_dir",
+        type=str,
+        required=False,
+        default=None,
+        help=extract_help_from_doc(ref, "reference_out_dir"),
+    )
+    parser_ref.add_argument(
         "-i",
         "--index_out",
         required=False,
@@ -2578,6 +2585,7 @@ def main():  # noqa: C901
             mode=args.mode,
             dlist=args.dlist,
             out=args.out,
+            reference_out_dir=args.reference_out_dir,
             index_out=args.index_out,
             t2g_out=args.t2g_out,
             download=args.download,

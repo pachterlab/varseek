@@ -121,7 +121,17 @@ default_filename_dict = {"index": "mcrs_index.idx", "t2g": "mcrs_t2g.txt"}
 
 # * add more keys here as needed (e.g., k, w, d-list, dlist_reference_source, etc)
 # * if I add modes to varseek ref, then have it be dict[mutations][sequences][mode]
-prebuilt_vk_ref_files = {"cosmic_cmc": {"cdna": {"index": "", "t2g": ""}, "genome": {"index": "", "t2g": ""}}}
+#* for cosmic, leave the value "COSMIC" in place of a link (used for authentication), and keep the links in varseek_server/validate_cosmic.py; for others, replace with a link
+prebuilt_vk_ref_files = {
+    "cosmic_cmc":{
+        "cdna": {
+            "index": "COSMIC",  # leave it as "COSMIC"
+            "t2g": "COSMIC"},
+        "genome": {
+            "index": "COSMIC",
+            "t2g": "COSMIC"}
+        }
+    }
 
 supported_databases_and_corresponding_reference_sequence_type = {
     "cosmic_cmc": {

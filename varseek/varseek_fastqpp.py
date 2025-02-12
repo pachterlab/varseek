@@ -192,6 +192,10 @@ def fastqpp(
     # * 5. Set up default folder/file input paths, and make sure the necessary ones exist
     # all input files for vk fastqpp are required in the varseek workflow, so this is skipped
 
+    # * 5.5 Quick warning
+    if replace_low_quality_bases_with_N and not split_reads_by_Ns:
+        logger.warning("Setting split_reads_by_Ns=True is recommended when replace_low_quality_bases_with_N=True")
+
     # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
     quality_control_fastqs_out_suffix = kwargs.get("quality_control_fastqs_out_suffix", "qc")
     replace_low_quality_bases_with_N_out_suffix = kwargs.get("replace_low_quality_bases_with_N_out_suffix", "addedNs")
@@ -241,7 +245,7 @@ def fastqpp(
 
     if technology.lower() != "bulk" and "smartseq" not in technology.lower():
         parity = "single"
-
+    
     if (concatenate_paired_fastqs or split_reads_by_Ns) and parity == "paired":
         if not concatenate_paired_fastqs:
             logger.info("Setting concatenate_paired_fastqs=True")

@@ -341,6 +341,10 @@ def clean(
     # * 7. Define kwargs defaults
 
     # * 8. Start the actual function
+    if remove_doublets and not doublet_detection:
+        logger.warning("remove_doublets is True, but doublet_detection is False. Setting doublet_detection to True.")
+        doublet_detection = True
+    
     if technology.lower() != "bulk" and "smartseq" not in technology.lower():
         parity = "single"
 
@@ -402,6 +406,7 @@ def clean(
 
     if apply_single_end_mode_on_paired_end_data_correction:
         # TODO: test this; also add union
+        # TODO; also enforce that when each pair has a pseudoalignment, that the variants belong to the same gene
         adata = decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_mode(
             adata,
             fastq=fastqs,

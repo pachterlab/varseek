@@ -20,9 +20,11 @@ from .conftest import (
 
 test_directory = os.path.abspath("")
 ground_truth_folder = os.path.join(test_directory, "pytest_ground_truth")
-cosmic_csv_path_starting = "/home/jrich/data/varseek_data_fresh/pytest_ground_truth/CancerMutationCensus_AllData_v100_GRCh37_mutation_workflow_with_cdna_subsampled_pytest.csv"
-reference_folder_parent = "/home/jrich/data/varseek_data_fresh/reference"
-reference_folder = "/home/jrich/data/varseek_data_fresh/reference/ensembl_grch37_release93"
+reference_folder_parent = os.path.join(test_directory, "data", "reference")
+reference_folder = os.path.join(reference_folder_parent, "ensembl_grch37_release93")
+cosmic_csv_path_starting = os.path.join(ground_truth_folder, "CancerMutationCensus_AllData_v100_GRCh37_mutation_workflow_with_cdna_subsampled_pytest.csv")
+
+
 sample_size=2000
 columns_to_drop_info_filter = None  # ["nearby_mutations", "number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference", "number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference", "overlapping_kmers", "mcrs_items_with_overlapping_kmers_in_mcrs_reference", "kmer_overlap_in_mcrs_reference"]
 make_new_gt = False

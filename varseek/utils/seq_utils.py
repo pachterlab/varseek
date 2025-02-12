@@ -3198,7 +3198,7 @@ def check_for_read_kmer_in_mcrs(read_df, unique_mcrs_df, k, subset=None, strand=
     if subset is None:
         read_df["read_contains_kmer_in_mcrs"] = read_df.apply(lambda row: check_row_for_kmer(row, strand, k, mcrs_sequence_dict, mcrs_sequence_dict_rc), axis=1)
     else:
-        read_df.loc[read_df[subset], "read_contains_kmer_in_mcrs"] = read_df.loc[read_df[subset]].apply(lambda row: check_row_for_kmer(row, strand, k, mcrs_sequence_dict, mcrs_sequence_dict_rc), axis=1, axis=1)
+        read_df.loc[read_df[subset], "read_contains_kmer_in_mcrs"] = read_df.loc[read_df[subset]].apply(lambda row: check_row_for_kmer(row, strand, k, mcrs_sequence_dict, mcrs_sequence_dict_rc), axis=1)
 
     return read_df
 
