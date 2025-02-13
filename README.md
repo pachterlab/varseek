@@ -2,7 +2,7 @@
 [![pypi version](https://img.shields.io/pypi/v/varseek)](https://pypi.org/project/varseek)
 [![image](https://anaconda.org/bioconda/varseek/badges/version.svg)](https://anaconda.org/bioconda/varseek)
 ![Downloads](https://static.pepy.tech/personalized-badge/varseek?period=total&units=international_system&left_color=grey&right_color=brightgreen&left_text=downloads)
-[![Conda](https://img.shields.io/conda/dn/bioconda/varseek?logo=Anaconda)](https://anaconda.org/bioconda/varseek)
+[![Downloads](https://img.shields.io/conda/dn/bioconda/varseek?logo=Anaconda)](https://anaconda.org/bioconda/varseek)
 [![license](https://img.shields.io/pypi/l/varseek)](LICENSE)
 ![status](https://github.com/pachterlab/varseek/actions/workflows/ci.yml/badge.svg)
 ![Code Coverage](https://img.shields.io/badge/Coverage-83%25-green.svg)
