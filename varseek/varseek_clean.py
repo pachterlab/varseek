@@ -135,9 +135,7 @@ def validate_input_clean(params_dict):
         "vcrs_index": "index",
         "vcrs_t2g": "t2g",
         "mcrs_fasta": "fasta",
-        "id_to_header_csv": "csv",
         "dlist_fasta": "fasta",
-        "mutations_updated_csv": "csv",
         "adata_reference_genome": "adata",
         "adata_vcrs_clean_out": "adata",
         "adata_reference_genome_clean_out": "adata",
@@ -192,11 +190,7 @@ def clean(
     vcrs_index=None,
     vcrs_t2g=None,
     mcrs_fasta=None,
-    id_to_header_csv=None,
     dlist_fasta=None,
-    mutations_updated_csv=None,
-    mcrs_id_column="mcrs_id",
-    mutations_updated_csv_columns=None,
     kb_count_vcrs_dir=None,
     kb_count_reference_genome_dir=None,
     out=".",  # output paths
@@ -255,11 +249,7 @@ def clean(
     - vcrs_index                            (str): Path to the VCRS index file. Default: None.
     - vcrs_t2g                              (str): Path to the VCRS t2g file. Default: None.
     - mcrs_fasta                            (str): Path to the VCRS fasta file. Default: None.
-    - id_to_header_csv                      (str): Path to the VCRS id to header csv file. Default: None.
     - dlist_fasta                           (str): Path to the dlist fasta file. Default: None.
-    - mutations_updated_csv                 (str): Path to the mutations updated csv file. Default: None.
-    - mcrs_id_column                        (str): Column name in the mutations updated csv file. Default: "mcrs_id".
-    - mutations_updated_csv_columns         (list): List of columns to use in the mutations updated csv file. Default: None.
     - kb_count_vcrs_dir                     (str): Path to the kb count output directory for the VCRS reference. Default: None.
     - kb_count_reference_genome_dir         (str): Path to the kb count output directory for the reference genome. Default: None.
 
@@ -277,6 +267,11 @@ def clean(
     - kallisto                              (str): Path to the kallisto binary. Default: None.
     - bustools                              (str): Path to the bustools binary. Default: None.
     - verbose                               (bool): Whether to print verbose output. Default: False.
+
+    # Hidden arguments
+    - id_to_header_csv                      (str): Path to the VCRS id to header csv file. Default: None.
+    - mutations_updated_csv                 (str): Path to the mutations updated csv file. Default: None.
+    - mcrs_id_column                        (str): Column name in the mutations updated csv file. Default: "mcrs_id".
     """
     # * 1. Start timer
     start_time = time.perf_counter()
@@ -305,6 +300,10 @@ def clean(
     # * 5. Set up default folder/file input paths, and make sure the necessary ones exist
     if kb_count_reference_genome_dir and not adata_reference_genome:
         adata_reference_genome = os.path.join(kb_count_reference_genome_dir, "counts_unfiltered", "adata.h5ad")
+
+    id_to_header_csv = kwargs.get("id_to_header_csv", None)
+    mutations_updated_csv = kwargs.get("mutations_updated_csv", None)
+    mcrs_id_column = kwargs.get("mcrs_id_column", "mcrs_id")
 
     if vk_ref_dir:  # make sure all of the defaults below match vk info/filter
         vcrs_index = os.path.join(vk_ref_dir, "mcrs_index.idx") if not vcrs_index else vcrs_index
@@ -339,6 +338,7 @@ def clean(
     os.makedirs(output_figures_dir, exist_ok=True)
 
     # * 7. Define kwargs defaults
+    # id_to_header_csv is currently the only kwargs and was defined in step 5
 
     # * 8. Start the actual function
     if remove_doublets and not doublet_detection:
@@ -390,14 +390,7 @@ def clean(
         if isinstance(adata_reference_genome, str) and os.path.exists(adata_reference_genome) and adata_reference_genome.endswith(".h5ad"):
             adata_reference_genome = sc.read_h5ad(adata_reference_genome)
 
-    #!!! if it turns out I don't need IDs, then erase this
-    if mutations_updated_csv_columns or not id_to_header_csv:
-        if not mutations_updated_csv_columns:
-            mutations_updated_csv_columns = ["mcrs_id", "mcrs_header"]  #!!! dont hard-code
-        if mutations_updated_csv and isinstance(mutations_updated_csv, str) and os.path.exists(mutations_updated_csv):
-            mutations_updated_csv = pd.read_csv(mutations_updated_csv, index_col=0, usecols=mutations_updated_csv_columns)
-            adata.var = adata.var.merge(mutations_updated_csv, on=mcrs_id_column, how="left")
-    if id_to_header_csv and not mutations_updated_csv:
+    if id_to_header_csv:
         if isinstance(id_to_header_csv, str) and os.path.exists(id_to_header_csv):
             id_to_header_df = pd.read_csv(id_to_header_csv, index_col=0)
             adata.var = adata.var.merge(id_to_header_df, on=mcrs_id_column, how="left")

@@ -378,12 +378,15 @@ def ref(
             params_dict["mcrs_t2g_out"] = t2g_out  # pass this custom path into vk build
             mcrs_t2g_out = t2g_out  # pass this custom path into the output dict of vk ref
         mcrs_t2g_for_alignment = mcrs_t2g_out
+        if params_dict.get("use_IDs") is None:  # if someone has a strong preference, then who am I to tell them otherwise - but otherwise, I will want to override the default to False for vk build
+            params_dict["use_IDs"] = False
     else:
         mcrs_fasta_for_index = mcrs_filtered_fasta_out
         if t2g_out:
             params_dict["mcrs_t2g_filtered_out"] = t2g_out
             mcrs_t2g_filtered_out = t2g_out
         mcrs_t2g_for_alignment = mcrs_t2g_filtered_out
+        # don't touch use_IDs - if not provided, then will resort to defaults (True for vk build, False for vk filter); if provided, then will be passed into vk build and vk filter
 
     # download if download argument is True
     if download:
@@ -456,6 +459,8 @@ def ref(
 
     # vk info
     if not skip_info:
+        if params_dict.get("use_IDs", None) is False:
+            logger.warning("use_IDs=False is not recommended for vk info, as the headers output by vk build can break some programs that read fasta files due to the inclusion of '>' symbols in substitutions and the potentially long length of the headers (with multiple combined headers and/or long insertions). Consider setting use_IDs=True (use IDs throughout the workflow) or leaving this parameter blank (will use IDs in vk build so that vk info runs properly [unless vk info/filter will not be run, in which case it will use headers], and will use headers in vk filter so that the output is more readable).")
         if not os.path.exists(file_signifying_successful_vk_info_completion) or overwrite:
             params_dict["overwrite"], params_dict_vk_info["overwrite"] = True, True
             logger.info("Running vk info")

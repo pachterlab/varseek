@@ -1,7 +1,7 @@
 """varseek constant values."""
 
 # allowable_kwargs = {
-#     "varseek_build": {"insertion_size_limit", "min_seq_len", "optimize_flanking_regions", "remove_seqs_with_wt_kmers", "required_insertion_overlap_length", "merge_identical", "merge_identical_strandedness", "replace_original_headers", "cosmic_release", "cosmic_grch", "cosmic_email", "cosmic_password", "save_files"},
+#     "varseek_build": {"insertion_size_limit", "min_seq_len", "optimize_flanking_regions", "remove_seqs_with_wt_kmers", "required_insertion_overlap_length", "merge_identical", "merge_identical_strandedness", "use_IDs", "cosmic_release", "cosmic_grch", "cosmic_email", "cosmic_password", "save_files"},
 #     "varseek_info": {"bowtie_path"},
 #     "varseek_filter": {"filter_all_dlists", "dlist_genome_fasta", "dlist_cdna_fasta", "dlist_genome_filtered_fasta_out", "dlist_cdna_filtered_fasta_out"},
 #     "kb_ref": set(),

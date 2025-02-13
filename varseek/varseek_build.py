@@ -380,7 +380,7 @@ def validate_input_build(params_dict):
         "remove_seqs_with_wt_kmers",
         "merge_identical",
         "vcrs_strandedness",
-        "replace_original_headers",
+        "use_IDs",
         "save_wt_mcrs_fasta_and_t2g",
         "save_mutations_updated_csv",
         "store_full_sequences",
@@ -524,10 +524,10 @@ def build(
     - reference_out_dir                  (str) Path to reference file directory to be downloaded if 'mutations' is a supported database and the file corresponding to 'sequences' does not exist.
                                          Default: <out>/reference.
     - mcrs_fasta_out                     (str) Path to output fasta file containing the VCRSs.
-                                         If replace_original_headers=False, then the fasta headers will be the values in the column 'mut_ID' (semicolon-jooined if merge_identical=True).
-                                         Otherwise, if replace_original_headers=True (default), then the fasta headers will be of the form 'vcrs_<int>' where <int> is a unique integer. Default: "<out>/mcrs.fa"
+                                         If use_IDs=False, then the fasta headers will be the values in the column 'mut_ID' (semicolon-jooined if merge_identical=True).
+                                         Otherwise, if use_IDs=True (default), then the fasta headers will be of the form 'vcrs_<int>' where <int> is a unique integer. Default: "<out>/mcrs.fa"
     - mutations_updated_csv_out          (str) Path to output csv file containing the updated DataFrame. Only valid if save_mutations_updated_csv=True. Default: "<out>/mutation_metadata_df.csv"
-    - id_to_header_csv_out               (str) File name of csv file containing the mapping of unique IDs to the original sequence headers if replace_original_headers=True. Default: "<out>/id_to_header_mapping.csv"
+    - id_to_header_csv_out               (str) File name of csv file containing the mapping of unique IDs to the original sequence headers if use_IDs=True. Default: "<out>/id_to_header_mapping.csv"
     - mcrs_t2g_out                       (str) Path to output t2g file containing the transcript-to-gene mapping for the MCRSs. Used in kallisto | bustools workflow. Default: "<out>/mcrs_t2g.txt"
     - wt_mcrs_fasta_out                  (str) Path to output fasta file containing the wildtype sequence counterparts of the mutation-containing reference sequences (MCRSs). Default: "<out>/wt_mcrs.fa"
     - wt_mcrs_t2g_out                    (str) Path to output t2g file containing the transcript-to-gene mapping for the wildtype MCRSs. Default: "<out>/wt_mcrs_t2g.txt"
@@ -575,7 +575,7 @@ def build(
     - merge_identical                    (True/False) Whether to merge sequence-identical VCRSs in the output (identical VCRSs will be merged by concatenating the sequence
                                          headers for all identical sequences with semicolons). Default: True
     - vcrs_strandedness                  (True/False) Whether to consider the forward and reverse-complement mutant sequences as distinct if merging identical sequences. Only effective when merge_identical is also True. Default: False (ie consider forward and reverse-complement sequences to be equivalent).
-    - replace_original_headers           (True/False) Whether to keep the original sequence headers in the output fasta file, or to replace them with unique IDs of the form 'vcrs_<int>.
+    - use_IDs           (True/False) Whether to keep the original sequence headers in the output fasta file, or to replace them with unique IDs of the form 'vcrs_<int>.
                                          If False, then an additional file at the path <id_to_header_csv_out> will be formed that maps sequence IDs from the fasta file to the <mut_id_column>. Default: True.
 
     # # specific databases
@@ -665,7 +665,7 @@ def build(
     required_insertion_overlap_length = kwargs.get("required_insertion_overlap_length", 6)  # set to None for original vk build
     merge_identical = kwargs.get("merge_identical", True)
     vcrs_strandedness = kwargs.get("vcrs_strandedness", False)
-    replace_original_headers = kwargs.get("replace_original_headers", True)
+    use_IDs = kwargs.get("use_IDs", True)
 
     # # rather than rename mutations to variants throughout the code, simply do the reassignment here
     # if isinstance(variants, pd.DataFrame):
@@ -1557,7 +1557,7 @@ def build(
 
     mutations["header"] = mutations["header"].str[1:]  # remove the > character
 
-    if replace_original_headers:  # or (mut_id_column in mutations.columns and not merge_identical):
+    if use_IDs:  # or (mut_id_column in mutations.columns and not merge_identical):
         mutations["mcrs_id"] = generate_unique_ids(len(mutations))
         if save_files:
             mutations[["mcrs_id", "header"]].to_csv(id_to_header_csv_out, index=False)  # make the mapping csv

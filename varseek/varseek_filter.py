@@ -367,6 +367,7 @@ def filter(
     dlist_genome_filtered_fasta_out (str) Path to the filtered genome dlist fasta file. Default: None.
     dlist_cdna_filtered_fasta_out (str) Path to the filtered cDNA dlist fasta file. Default: None.
     save_mcrs_filtered_fasta_and_t2g (bool) If True, save the filtered mcrs fasta and t2g files. Default: True.
+    use_IDs (bool) If True, use IDs instead of headers. Default: False.
     """
     # * 0. Informational arguments that exit early
     if list_filter_rules:
@@ -402,6 +403,7 @@ def filter(
     dlist_genome_filtered_fasta_out = kwargs.get("dlist_genome_filtered_fasta_out", None)
     dlist_cdna_filtered_fasta_out = kwargs.get("dlist_cdna_filtered_fasta_out", None)
     save_mcrs_filtered_fasta_and_t2g = kwargs.get("save_mcrs_filtered_fasta_and_t2g", True)
+    use_IDs = kwargs.get("use_IDs", False)
 
     if filter_all_dlists:
         if not dlist_genome_fasta:
@@ -497,9 +499,13 @@ def filter(
         filtered_df.to_csv(mutations_updated_filtered_csv_out, index=False)
 
     # make mcrs_filtered_fasta_out
-    filtered_df["mcrs_id"] = filtered_df["mcrs_id"].astype(str)
+    if use_IDs:
+        output_fasta_header_column = "mcrs_id"
+    else:
+        output_fasta_header_column = "mcrs_header"
+    filtered_df[output_fasta_header_column] = filtered_df[output_fasta_header_column].astype(str)
 
-    filtered_df["fasta_format"] = ">" + filtered_df["mcrs_id"] + "\n" + filtered_df["mcrs_sequence"] + "\n"
+    filtered_df["fasta_format"] = ">" + filtered_df[output_fasta_header_column] + "\n" + filtered_df["mcrs_sequence"] + "\n"
 
     if save_mcrs_filtered_fasta_and_t2g:
         with open(mcrs_filtered_fasta_out, "w", encoding="utf-8") as fasta_file:
@@ -512,7 +518,7 @@ def filter(
 
     # make wt_mcrs_filtered_fasta_out and wt_mcrs_t2g_filtered_out iff save_wt_mcrs_fasta_and_t2g is True
     if save_wt_mcrs_fasta_and_t2g:
-        mutations_with_exactly_1_wt_sequence_per_row = filtered_df[["mcrs_id", "wt_sequence"]].copy()
+        mutations_with_exactly_1_wt_sequence_per_row = filtered_df[[output_fasta_header_column, "wt_sequence"]].copy()
 
         mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"] = mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"].apply(safe_literal_eval)
 
@@ -523,7 +529,7 @@ def filter(
             # Step 2: Convert the list to a string
             mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"] = mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"].apply(lambda x: x[0])
 
-        mutations_with_exactly_1_wt_sequence_per_row["fasta_format_wt"] = ">" + mutations_with_exactly_1_wt_sequence_per_row["mcrs_id"] + "\n" + mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"] + "\n"
+        mutations_with_exactly_1_wt_sequence_per_row["fasta_format_wt"] = ">" + mutations_with_exactly_1_wt_sequence_per_row[output_fasta_header_column] + "\n" + mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"] + "\n"
 
         with open(wt_mcrs_filtered_fasta_out, "w", encoding="utf-8") as fasta_file:
             fasta_file.write("".join(mutations_with_exactly_1_wt_sequence_per_row["fasta_format_wt"].values))
@@ -534,7 +540,7 @@ def filter(
 
     filtered_df.reset_index(drop=True, inplace=True)
 
-    filtered_df_mcrs_ids = set(filtered_df["mcrs_id"])
+    filtered_df_mcrs_ids = set(filtered_df["mcrs_id"])  # no need to use output_fasta_header_column here because output_fasta_header_column is only necessary when saving the fasta files (this is using the IDs just to check for membership, not to save to a file any differently)
 
     # make mutations_updated_exploded_filtered_csv_out iff mutations_updated_exploded_vk_info_csv exists
     if save_mutations_updated_filtered_csvs and mutations_updated_exploded_vk_info_csv and os.path.isfile(mutations_updated_exploded_vk_info_csv):
@@ -551,12 +557,13 @@ def filter(
     # make dlist_filtered_fasta_out iff dlist_fasta exists
     if dlist_fasta and os.path.isfile(dlist_fasta):
         filter_fasta(dlist_fasta, dlist_filtered_fasta_out, filtered_df_mcrs_ids)
+        # TODO: when use_IDs=False (which is the default), convert the IDs to headers (in a copied file is fine) - will take some parsing because the dlist headers also have the k-mer position of the original VCRS, so I probably want to remove these or otherwise deal with these to ensure seamless swapping
 
     if filter_all_dlists:
         if dlist_genome_fasta and os.path.isfile(dlist_genome_fasta):
-            filter_fasta(dlist_genome_fasta, dlist_genome_filtered_fasta_out, filtered_df_mcrs_ids)
+            filter_fasta(dlist_genome_fasta, dlist_genome_filtered_fasta_out, filtered_df_mcrs_ids)  # TODO: same as above (when use_IDs=False...)
         if dlist_cdna_fasta and os.path.isfile(dlist_cdna_fasta):
-            filter_fasta(dlist_cdna_fasta, dlist_cdna_filtered_fasta_out, filtered_df_mcrs_ids)
+            filter_fasta(dlist_cdna_fasta, dlist_cdna_filtered_fasta_out, filtered_df_mcrs_ids)  # TODO: same as above (when use_IDs=False...)
 
     # make id_to_header_filtered_csv_out iff id_to_header_csv exists
     if id_to_header_csv and os.path.isfile(id_to_header_csv):

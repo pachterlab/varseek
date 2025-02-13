@@ -575,10 +575,10 @@ def main():  # noqa: C901
     )
     parser_build.add_argument(
         "-droh",
-        "--disable_replace_original_headers",
+        "--disable_use_IDs",
         action="store_false",
         required=False,
-        help=extract_help_from_doc(build, "replace_original_headers", disable=True),
+        help=extract_help_from_doc(build, "use_IDs", disable=True),
     )
     parser_build.add_argument(
         "--cosmic_release",
@@ -1073,7 +1073,13 @@ def main():  # noqa: C901
         "--disable_save_mcrs_filtered_fasta_and_t2g",
         action="store_false",
         required=False,
-        help=extract_help_from_doc(filter, "disable_save_mcrs_filtered_fasta_and_t2g", disable=True),
+        help=extract_help_from_doc(filter, "save_mcrs_filtered_fasta_and_t2g", disable=True),
+    )
+    parser_filter.add_argument(
+        "--disable_use_IDs",
+        action="store_false",
+        required=False,
+        help=extract_help_from_doc(filter, "use_IDs", disable=True),
     )
 
     # NEW PARSER
@@ -2065,7 +2071,7 @@ def main():  # noqa: C901
         "-dmic",
         "--disable_minimum_info_columns",
         action="store_false",
-        help=extract_help_from_doc(ref, "disable_minimum_info_columns", disable=True),
+        help=extract_help_from_doc(ref, "minimum_info_columns", disable=True),
     )
     parser_ref.add_argument(
         "--overwrite",
@@ -2209,7 +2215,7 @@ def main():  # noqa: C901
         "--disable_fastqpp",
         action="store_true",
         required=False,
-        help=extract_help_from_doc(count, "disable_fastqpp"),
+        help=extract_help_from_doc(count, "disable_fastqpp"), # not disable=True because the acual python argument is named disable_fastqpp
     )
     parser_count.add_argument(
         "--disable_clean",
@@ -2375,7 +2381,7 @@ def main():  # noqa: C901
             required_insertion_overlap_length=args.required_insertion_overlap_length,
             merge_identical=args.disable_merge_identical,
             vcrs_strandedness=args.vcrs_strandedness,
-            replace_original_headers=args.disable_replace_original_headers,
+            use_IDs=args.disable_use_IDs,
             cosmic_release=args.cosmic_release,
             cosmic_grch=args.cosmic_grch,
             cosmic_email=args.cosmic_email,
@@ -2475,6 +2481,7 @@ def main():  # noqa: C901
             dlist_genome_filtered_fasta_out=args.dlist_genome_filtered_fasta_out,
             dlist_cdna_filtered_fasta_out=args.dlist_cdna_filtered_fasta_out,
             save_mcrs_filtered_fasta_and_t2g=args.disable_save_mcrs_filtered_fasta_and_t2g,
+            use_IDs=args.disable_use_IDs,
             **kwargs,
         )
 

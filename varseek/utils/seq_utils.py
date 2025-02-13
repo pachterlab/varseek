@@ -4815,7 +4815,7 @@ def match_paired_ends_after_single_end_run(bus_df_path, gene_name_type="mcrs_id"
 
 
 # TODO: unsure if this works for sc
-def adjust_mutation_adata_by_normal_gene_matrix(adata, kb_output_mutation, kb_output_standard, id_to_header_csv=None, mutation_metadata_csv=None, adata_output_path=None, t2g_mutation=None, t2g_standard=None, fastq_file_list=None, mm=False, union=False, technology="bulk", parity="single", bustools="bustools", ignore_barcodes=False, verbose=False):
+def adjust_mutation_adata_by_normal_gene_matrix(adata, kb_output_mutation, kb_output_standard, id_to_header_csv=None, adata_output_path=None, t2g_mutation=None, t2g_standard=None, fastq_file_list=None, mm=False, union=False, technology="bulk", parity="single", bustools="bustools", ignore_barcodes=False, verbose=False):
     if not adata:
         adata = f"{kb_output_mutation}/counts_unfiltered/adata.h5ad"
     if isinstance(adata, str):
@@ -4823,8 +4823,6 @@ def adjust_mutation_adata_by_normal_gene_matrix(adata, kb_output_mutation, kb_ou
 
     bus_df_mutation_path = f"{kb_output_mutation}/bus_df.csv"
     bus_df_standard_path = f"{kb_output_standard}/bus_df.csv"
-    if not id_to_header_csv and not mutation_metadata_csv:
-        raise ValueError("Either id_to_header_csv or mutation_metadata_csv must be provided")
 
     if not os.path.exists(bus_df_mutation_path):
         bus_df_mutation = make_bus_df(
@@ -4841,13 +4839,14 @@ def adjust_mutation_adata_by_normal_gene_matrix(adata, kb_output_mutation, kb_ou
         bus_df_mutation = pd.read_csv(bus_df_mutation_path)
 
     bus_df_mutation["gene_names_final"] = bus_df_mutation["gene_names_final"].apply(safe_literal_eval)
-    bus_df_mutation.rename(columns={"gene_names_final": "MCRS_ids_final", "count": "count_value"}, inplace=True)
+    bus_df_mutation.rename(columns={"gene_names_final": "MCRS_headers_final", "count": "count_value"}, inplace=True)
 
     if id_to_header_csv:
+        bus_df_mutation.rename(columns={"MCRS_headers_final": "MCRS_ids_final"}, inplace=True)
         id_to_header_dict = make_mapping_dict(id_to_header_csv, dict_key="id")
         bus_df_mutation["MCRS_headers_final"] = bus_df_mutation["MCRS_ids_final"].apply(lambda name_list: [id_to_header_dict.get(name, name) for name in name_list])
 
-        bus_df_mutation["transcripts_MCRS"] = bus_df_mutation["MCRS_headers_final"].apply(lambda string_list: tuple({s.split(":")[0] for s in string_list}))
+    bus_df_mutation["transcripts_MCRS"] = bus_df_mutation["MCRS_headers_final"].apply(lambda string_list: tuple({s.split(":")[0] for s in string_list}))
 
     if not os.path.exists(bus_df_standard_path):
         bus_df_standard = make_bus_df(
