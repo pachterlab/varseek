@@ -693,8 +693,6 @@ def build(
         "actual_mutation",
     ]
 
-    sequences_original = ""
-
     if isinstance(mutations, str):
         if mutations in supported_databases_and_corresponding_reference_sequence_type and "cosmic" in mutations:
             if not cosmic_release:
@@ -718,7 +716,6 @@ def build(
     if isinstance(sequences, str) and ("." in sequences or (mutations in supported_databases_and_corresponding_reference_sequence_type and sequences in supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_download_commands"])):
         if mutations in supported_databases_and_corresponding_reference_sequence_type and sequences in supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_download_commands"]:
             # TODO: expand beyond COSMIC
-            sequences_original = sequences
             if "cosmic" in mutations:
                 ensembl_version = supported_databases_and_corresponding_reference_sequence_type[mutations]["database_version_to_reference_release"][cosmic_release]
                 reference_out_sequences = f"{reference_out_dir}/ensembl_grch{grch}_release{ensembl_version}"
@@ -809,7 +806,7 @@ def build(
             reference_out_cosmic = f"{reference_out_dir}/cosmic"
             mutations = f"{reference_out_cosmic}/CancerMutationCensus_AllData_Tsv_v{cosmic_release}_GRCh{grch}/CancerMutationCensus_AllData_v{cosmic_release}_GRCh{grch}_mutation_workflow.csv"
 
-            if not os.path.isfile(mutations):
+            if not os.path.isfile(mutations):  # DO NOT specify column names in gget mutate - I instead code them in later
                 gget.cosmic(
                     None,
                     grch_version=grch,
@@ -841,7 +838,7 @@ def build(
                     logger.info("COSMIC CMC genome strand information is not fully accurate. Improving with gtf information.")
                     improve_genome_strand_information(mutations, mutation_genome_column_name="mutation_genome")
 
-            if sequences_original == "cdna":
+            if "cdna" in sequences:  # covers whether sequences == "cdna" or sequences == "PATH/TO/Homo_sapiens.GRCh37.cdna.all.fa"
                 mutations_with_cdna = mutations.replace(".csv", "_with_cdna.csv")
                 if not os.path.isfile(mutations_with_cdna):
                     convert_mutation_cds_locations_to_cdna(
@@ -852,14 +849,24 @@ def build(
                     )
 
                 mutations = mutations_with_cdna
+                seq_id_column = "seq_ID"
+                mut_column = "mutation"
 
-            elif sequences_original == "genome":
+            elif sequences == "genome" or "primary_assembly" in sequences:  # covers whether sequences == "genome" or sequences == "PATH/TO/Homo_sapiens.GRCh37.dna.primary_assembly.fa"
                 mutations_no_duplications = mutations.replace(".csv", "_no_duplications.csv")
                 if not os.path.isfile(mutations_no_duplications):
                     logger.info("COSMIC genome location is not accurate for duplications. Dropping duplications in a copy of the csv file.")
                     drop_duplication_mutations(mutations, mutations_no_duplications)  # COSMIC incorrectly records genome positions of duplications
 
                 mutations = mutations_no_duplications
+                seq_id_column = "chromosome"
+                mut_column = "mutation_genome"
+            
+            elif "cds" in sequences:  # covers whether sequences == "cds" or sequences == "PATH/TO/Homo_sapiens.GRCh37.cds.all.fa"
+                seq_id_column = "seq_ID"
+                mut_column = "mutation_cds" if "mutation_cds" in mutations.columns else "mutation"  # checks if CDS mutation column was renamed by convert_mutation_cds_locations_to_cdna
+            
+            # mut_id_column = "mutation_id"
 
     original_mutations_type = "string"
 
@@ -1007,8 +1014,12 @@ def build(
 
     if mut_id_column is not None:
         mutations["header"] = ">" + mutations[mut_id_column]
+        if verbose:
+            logger.info("Using the %s column as the mutation header column.", mut_id_column)
     else:
         mutations["header"] = ">" + mutations[seq_id_column] + ":" + mutations[mut_column]
+        if verbose:
+            logger.info("Using the colon-joined %s columns as the mutation header column.", f"{seq_id_column}:{mut_column}")
 
     # make a set of all initial mutation IDs
     mutations["header_temp"] = mutations["header"].str[1:]

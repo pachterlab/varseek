@@ -1,7 +1,7 @@
 # varseek
 [![pypi version](https://img.shields.io/pypi/v/varseek)](https://pypi.org/project/varseek)
 [![image](https://anaconda.org/bioconda/varseek/badges/version.svg)](https://anaconda.org/bioconda/varseek)
-# [![Downloads](https://static.pepy.tech/personalized-badge/varseek?period=total&units=international_system&left_color=grey&right_color=brightgreen&left_text=downloads)](https://pepy.tec$
+# [![Downloads](https://static.pepy.tech/personalized-badge/varseek?period=total&units=international_system&left_color=grey&right_color=brightgreen&left_text=downloads)]
 # [![Conda](https://img.shields.io/conda/dn/bioconda/varseek?logo=Anaconda)](https://anaconda.org/bioconda/varseek)
 [![license](https://img.shields.io/pypi/l/varseek)](LICENSE)
 ![status](https://github.com/pachterlab/varseek/actions/workflows/ci.yml/badge.svg)
@@ -15,7 +15,7 @@
 
 The two commands used in a standard workflow are `varseek ref` and `varseek count`. `varseek ref` generates a variant-containing reference sequence (VCRS) index that serves as the basis for variant calling. `varseek count` aligns RNA-seq or DNA-seq reads against the VCRS index and generates a variant count matrix. The variant count matrix can be used for downstream analysis. Each step wraps around other steps within the varseek package and the kb-python package, as described below.
 
-![alt text](https://github.com/pachterlab/varseek/blob/main/figures/varseek_overview_simple.png?raw=true)
+![alt text](https://github.com/pachterlab/varseek/blob/main/figures/varseek_overview.png?raw=true)
 
 The functions of `varseek` are described in the table below.
 
@@ -63,38 +63,44 @@ conda install -c bioconda varseek
 ```
 
 # 🪄 Quick start guide
-1. Acquire a reference - follow one of the below options:
-a. Download pre-built reference – standard workflow
-View all downloadable references: `vk ref --list_downloadable_references`
-`vk ref --download --variants VARIANTS --sequences SEQUENCES`
+## 1. Acquire a Reference
 
-b. Make custom reference – screen for user-defined variants
-`vk ref --variants VARIANTS --sequences SEQUENCES ...`
+Follow one of the below options:
 
-c. Customize reference building process – customize the VCRS filtering process (e.g., add additional information by which to filter, add custom filtering logic, tune filtering parameters based on the results of intermediate steps, etc.)
-`vk build --variants VARIANTS --sequences SEQUENCES ...`
-(optional) `vk info --input_dir INPUT_DIR ...`
-(optional) `vk filter --input_dir INPUT_DIR ...`
-`kb ref --workflow custom --index INDEX ...`
+### a. Download a Pre-built Reference (Standard Workflow)
+- (optional) View all downloadable references: `vk ref --list_downloadable_references`
+- `vk ref --download --variants VARIANTS --sequences SEQUENCES`
 
+### b. Make custom reference – screen for user-defined variants
+- `vk ref --variants VARIANTS --sequences SEQUENCES ...`
 
-2. Screen for variants - follow one of the below options:
-a. Standard workflow
-(optional) fastq quality control
-`vk count --index INDEX --t2g T2G ... --fastqs FASTQ1 FASTQ2...`
-
-b. Customize variant screening process - additional fastq preprocessing, custom count matrix processing
-(optional) fastq quality control
-(optional) `vk fastqpp ... --fastqs FASTQ1 FASTQ2...`
-`kb count --index INDEX --t2g T2G ... --fastqs FASTQ1 FASTQ2...`
-(optional) `kb count --index REFERENCE_INDEX --t2g REFERENCE_T2G ... --fastqs FASTQ1 FASTQ2...`
-(optional) `vk clean --adata ADATA ...`
-(optional) `vk summarize --adata ADATA ...`
+### c. Customize reference building process – customize the VCRS filtering process (e.g., add additional information by which to filter, add custom filtering logic, tune filtering parameters based on the results of intermediate steps, etc.)
+- `vk build --variants VARIANTS --sequences SEQUENCES ...`
+- (optional) `vk info --input_dir INPUT_DIR ...`
+- (optional) `vk filter --input_dir INPUT_DIR ...`
+- `kb ref --workflow custom --index INDEX ...`
 
 
-3. Analyze results
-a. View results of vk summarize (txt, vcf, Anndata - in OUT from vk count)
-b. Jupyter - see varseek/notebooks for examples to get started, and [GitHub - pachterlab/RLSRWP_2025](https://github.com/pachterlab/RLSRWP_2025.git) for figures from our first preprint
+## 2. Screen for variants
+
+Follow one of the below options:
+
+## a. Standard workflow
+- (optional) fastq quality control
+- `vk count --index INDEX --t2g T2G ... --fastqs FASTQ1 FASTQ2...`
+
+## b. Customize variant screening process - additional fastq preprocessing, custom count matrix processing
+- (optional) fastq quality control
+- (optional) `vk fastqpp ... --fastqs FASTQ1 FASTQ2...`
+- `kb count --index INDEX --t2g T2G ... --fastqs FASTQ1 FASTQ2...`
+- (optional) `kb count --index REFERENCE_INDEX --t2g REFERENCE_T2G ... --fastqs FASTQ1 FASTQ2...`
+- (optional) `vk clean --adata ADATA ...`
+- (optional) `vk summarize --adata ADATA ...`
+
+
+## 3. Analyze results
+### a. View results of vk summarize (txt, vcf, Anndata - in OUT from vk count)
+### b. Jupyter - see varseek/notebooks for examples to get started, and [GitHub - pachterlab/RLSRWP_2025](https://github.com/pachterlab/RLSRWP_2025.git) for figures from our first preprint
 
 
 

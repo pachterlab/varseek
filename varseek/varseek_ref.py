@@ -114,8 +114,8 @@ def validate_input_ref(params_dict):
 
 # a list of dictionaries with keys "mutations", "sequences", and "description"
 downloadable_references = [
-    {"mutations": "cosmic_cmc", "sequences": "cdna", "description": "COSMIC Cancer Mutation Census version 100 - Ensembl GRCh37 release 93 cDNA reference annotations. All default arguments of varseek ref (k=59, w=54, filters, no d-list, etc.)."},
-    {"mutations": "cosmic_cmc", "sequences": "genome", "description": "COSMIC Cancer Mutation Census version 100 - Ensembl GRCh37 release 93 genome reference annotations. All default arguments of varseek ref (k=59, w=54, filters, no d-list, etc.)."},
+    {"mutations": "cosmic_cmc", "sequences": "cdna", "description": "COSMIC Cancer Mutation Census version 100 - Ensembl GRCh37 release 93 cDNA reference annotations. All default arguments of varseek ref (k=59, w=54, filters, no d-list, etc.). Header format (showing the column(s) from the original database used): 'seq_ID':'mutation'"},
+    {"mutations": "cosmic_cmc", "sequences": "genome", "description": "COSMIC Cancer Mutation Census version 100 - Ensembl GRCh37 release 93 genome reference annotations. All default arguments of varseek ref (k=59, w=54, filters, no d-list, etc.). Header format (showing the column(s) from the original database used): 'chromosome':'mutation_genome'"},
 ]
 
 
