@@ -575,7 +575,7 @@ def build(
     - merge_identical                    (True/False) Whether to merge sequence-identical VCRSs in the output (identical VCRSs will be merged by concatenating the sequence
                                          headers for all identical sequences with semicolons). Default: True
     - vcrs_strandedness                  (True/False) Whether to consider the forward and reverse-complement mutant sequences as distinct if merging identical sequences. Only effective when merge_identical is also True. Default: False (ie consider forward and reverse-complement sequences to be equivalent).
-    - use_IDs           (True/False) Whether to keep the original sequence headers in the output fasta file, or to replace them with unique IDs of the form 'vcrs_<int>.
+    - use_IDs                            (True/False) Whether to keep the original sequence headers in the output fasta file, or to replace them with unique IDs of the form 'vcrs_<int>.
                                          If False, then an additional file at the path <id_to_header_csv_out> will be formed that maps sequence IDs from the fasta file to the <mut_id_column>. Default: True.
 
     # # specific databases
@@ -1543,9 +1543,9 @@ def build(
         mutations = mutations.drop(columns=["semicolon_count"])
 
         merging_report = f"""
-        Number of mutations total: {number_of_mutations_total}
-        Number of mutations merged: {number_of_merged_mutations}
-        Number of unique mutations: {number_of_unique_mutations}
+        Number of variants total: {number_of_mutations_total}
+        Number of variants merged: {number_of_merged_mutations}
+        Number of unique variants: {number_of_unique_mutations}
         Number of VCRSs: {number_of_vcrss}
         """
 
