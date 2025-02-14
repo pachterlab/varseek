@@ -1,4 +1,5 @@
 """varseek ref and specific helper functions."""
+
 import inspect
 import os
 import subprocess
@@ -347,7 +348,7 @@ def ref(
     mode = mode
     verbose = verbose
     dlist_reference_source = dlist_reference_source
-    reference_out_dir=reference_out_dir
+    reference_out_dir = reference_out_dir
 
     # * 7. Define kwargs defaults
     # Nothing to see here
@@ -394,7 +395,7 @@ def ref(
         # $ I opt to keep it like this rather than converting the keys of prebuilt_vk_ref_files to a tuple of many arguments for user simplicity - simply document the uploaded references, but no need to differentiate - but if I do end up having multiple reference documents with the same values for variants and sequences, then switch over to this approach where the dict keys are tuples
         file_dict = prebuilt_vk_ref_files.get(variants, {}).get(sequences, {})  # when I add mode: file_dict = prebuilt_vk_ref_files.get(variants, {}).get(sequences, {}).get(mode, {})
         if file_dict:
-            if file_dict['index'] == "COSMIC":
+            if file_dict["index"] == "COSMIC":
                 response = requests.post(COSMIC_CREDENTIAL_VALIDATION_URL, json={"email": cosmic_email, "password": cosmic_password, "variants": variants, "sequences": sequences})
                 if response.status_code == 200:
                     file_dict = response.json()  # Converts JSON to dict
@@ -527,31 +528,14 @@ def ref(
         else:
             logger.warning(f"Skipping kb ref because {file_signifying_successful_kb_ref_completion} already exists and overwrite=False")
 
-
     #!!! erase if removing wt vcrs feature
     wt_vcrs_fasta_out = params_dict.get("vcrs_fasta_out", os.path.join(out, "wt_vcrs.fa"))  # make sure this matches vk build
     wt_vcrs_filtered_fasta_out = params_dict.get("vcrs_filtered_fasta_out", os.path.join(out, "wt_vcrs_filtered.fa"))  # make sure this matches vk filter
     vcrs_wt_fasta_for_index = wt_vcrs_fasta_out if skip_filter else wt_vcrs_filtered_fasta_out
     wt_vcrs_index_out = params_dict.get("wt_vcrs_index_out", os.path.join(out, "wt_vcrs_index.idx"))
     file_signifying_successful_wt_vcrs_kb_ref_completion = wt_vcrs_index_out
-    
-    kb_ref_wt_vcrs_command = [
-        "kb",
-        "ref",
-        "--workflow",
-        "custom",
-        "-t",
-        str(threads),
-        "-i",
-        wt_vcrs_index_out,
-        "--d-list",
-        "None",
-        "-k",
-        str(k),
-        "--overwrite",
-        True,  # set to True here regardless of the overwrite argument because I would only even enter this block if kb count was only partially run (as seen by the lack of existing of file_signifying_successful_wt_vcrs_kb_ref_completion), in which case I should overwrite anyways
-        vcrs_wt_fasta_for_index
-    ]
+
+    kb_ref_wt_vcrs_command = ["kb", "ref", "--workflow", "custom", "-t", str(threads), "-i", wt_vcrs_index_out, "--d-list", "None", "-k", str(k), "--overwrite", True, vcrs_wt_fasta_for_index]  # set to True here regardless of the overwrite argument because I would only even enter this block if kb count was only partially run (as seen by the lack of existing of file_signifying_successful_wt_vcrs_kb_ref_completion), in which case I should overwrite anyways
 
     if dry_run:
         print(kb_ref_wt_vcrs_command)

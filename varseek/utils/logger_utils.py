@@ -1,4 +1,5 @@
 """varseek logger utilities."""
+
 import base64
 import getpass
 import inspect
@@ -546,6 +547,7 @@ except ImportError:
     ip = None
 
 if ip:
+
     @register_cell_magic
     def cell_runtime(line, cell):  # best version - slight overhead (~0.15s per bash command in a cell), but works on multiline bash commands with variables
         start_time = time.time()
@@ -831,6 +833,7 @@ def get_printlog(verbose=True, logger=None):
     if verbose=True and not logger --> print
     """
     return (lambda *args, **kwargs: None) if not verbose else (print if logger is None else logger.info)
+
 
 def splitext_custom(file_path):
     if not isinstance(file_path, pathlib.PosixPath):

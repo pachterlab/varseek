@@ -1,4 +1,5 @@
 """varseek sequencing utilities."""
+
 import ast
 import csv
 import gzip
@@ -96,7 +97,7 @@ def get_header_set_from_fasta(synthetic_read_fa):
     return {header for header, _ in pyfastx.Fastx(synthetic_read_fa)}
 
 
-def create_mutant_t2g(mutation_reference_file_fasta, out="./cancer_mutant_reference_t2g.txt"):
+def create_identity_t2g(mutation_reference_file_fasta, out="./cancer_mutant_reference_t2g.txt"):
     if not os.path.exists(out):
         with open(mutation_reference_file_fasta, "r", encoding="utf-8") as fasta, open(out, "w", encoding="utf-8") as t2g:
             for line in fasta:
@@ -152,7 +153,7 @@ def fasta_to_fastq(fasta_file, fastq_file, quality_score="I", k=None, add_noise=
                 fastq.write(f"{quality_scores}\n")
             else:
                 for i in range(len(sequence) - k + 1):
-                    kmer = sequence[i:(i + k)]
+                    kmer = sequence[i : (i + k)]
                     if add_noise:
                         quality_scores = generate_noisy_quality_scores(kmer, average_quality_for_noisy_reads, sd_quality_for_noisy_reads)  # don't pass seed in here since it is already set earlier
                     else:
@@ -163,6 +164,7 @@ def fasta_to_fastq(fasta_file, fastq_file, quality_score="I", k=None, add_noise=
                     fastq.write("+\n")
                     fastq.write(f"{quality_scores}\n")
 
+
 def reverse_complement(sequence):
     if pd.isna(sequence):  # Check if the sequence is NaN
         return np.nan
@@ -171,6 +173,7 @@ def reverse_complement(sequence):
 
 def slow_reverse_complement(sequence):
     return "".join(complement.get(nucleotide, "N") for nucleotide in sequence[::-1])
+
 
 def filter_fasta(input_fasta, output_fasta=None, sequence_names_set=None, keep="not_in_list"):
     if sequence_names_set is None:
@@ -282,9 +285,6 @@ def apply_enst_format(unique_mutations_genome, cosmic_reference_file_mutation_cs
     return unique_mutations_genome_enst_format
 
 
-
-
-
 # Not used
 def convert_nonsemicolon_headers_to_semicolon_joined_headers(nonsemicolon_read_headers_set, semicolon_reference_headers_set):
     # Step 1: Initialize the mapping dictionary
@@ -323,7 +323,6 @@ def create_read_header_to_reference_header_mapping_df(varseek_build_reference_he
     return df
 
 
-
 def safe_literal_eval(val):
     if isinstance(val, str) and val.startswith("[") and val.endswith("]"):
         val = val.replace("np.nan", "None").replace("nan", "None").replace("<NA>", "None")
@@ -341,8 +340,6 @@ def safe_literal_eval(val):
         return val
 
 
-
-
 def get_header_set_from_fastq(fastq_file, output_format="set"):
     if output_format == "set":
         headers = {header[1:].strip() for header, _, _ in pyfastx.Fastx(fastq_file)}
@@ -351,7 +348,6 @@ def get_header_set_from_fastq(fastq_file, output_format="set"):
     else:
         raise ValueError(f"Invalid output_format: {output_format}")
     return headers
-
 
 
 def create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(input_fasta, low_memory=False):
@@ -364,9 +360,8 @@ def create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splittin
     return mutant_reference
 
 
-
-def contains_kmer_in_mcrs(read_sequence, vcrs_sequence, k):
-    return any(read_sequence[i:(i + k)] in vcrs_sequence for i in range(len(read_sequence) - k + 1))
+def contains_kmer_in_vcrs(read_sequence, vcrs_sequence, k):
+    return any(read_sequence[i : (i + k)] in vcrs_sequence for i in range(len(read_sequence) - k + 1))
 
 
 def check_for_read_kmer_in_vcrs(read_df, unique_vcrs_df, k, subset=None, strand=None):
@@ -389,22 +384,22 @@ def check_for_read_kmer_in_vcrs(read_df, unique_vcrs_df, k, subset=None, strand=
 
     def check_row_for_kmer(row, strand, k, vcrs_sequence_dict, vcrs_sequence_dict_rc):
         read_sequence = row["read_sequence"]
-        
+
         contains_kmer_in_vcrs_f = False
         contains_kmer_in_vcrs_r = False
-        
+
         if strand != "r":
             vcrs_sequence = vcrs_sequence_dict.get(row["vcrs_header"], "")
             contains_kmer_in_vcrs_f = contains_kmer_in_vcrs(read_sequence, vcrs_sequence, k)
             if strand == "f":
                 return contains_kmer_in_vcrs_f
-        
+
         if strand != "f":
             vcrs_sequence_rc = vcrs_sequence_dict_rc.get(row["vcrs_header"], "")
             contains_kmer_in_vcrs_r = contains_kmer_in_vcrs(Seq(read_sequence).reverse_complement(), vcrs_sequence_rc, k)
             if strand == "r":
                 return contains_kmer_in_vcrs_r
-        
+
         return contains_kmer_in_vcrs_f or contains_kmer_in_vcrs_r
 
     # Step 4: Initialize the column with NaN in the original read_df subset
@@ -518,9 +513,6 @@ def get_valid_ensembl_gene_id_bulk(
 # gene_id
 
 
-
-
-
 def make_mapping_dict(id_to_header_csv, dict_key="id"):
     mapping_dict = {}
     with open(id_to_header_csv, newline="", encoding="utf-8") as csvfile:
@@ -568,9 +560,6 @@ def swap_headers_for_ids_in_fasta(in_fasta, id_to_header_csv, out_fasta=None):
     print("Swapping complete")
 
 
-
-
-
 def compare_dicts(dict1, dict2):
     # Find keys that are only in one of the dictionaries
     keys_only_in_dict1 = dict1.keys() - dict2.keys()
@@ -588,7 +577,6 @@ def compare_dicts(dict1, dict2):
         print("Keys with differing values:", differing_values)
     if not keys_only_in_dict1 and not keys_only_in_dict2 and not differing_values:
         print("Dictionaries are identical.")
-
 
 
 def download_t2t_reference_files(reference_out_dir_sequences_dlist):
@@ -665,7 +653,6 @@ def download_ensembl_reference_files(reference_out_dir_sequences_dlist, grch="37
     return ref_dlist_fa_genome, ref_dlist_fa_cdna, ref_dlist_gtf
 
 
-
 def get_mutation_type_series(mutation_series):
     # Extract mutation type id using the regex pattern
     mutation_type_id = mutation_series.str.extract(mutation_pattern)[1]
@@ -694,7 +681,8 @@ def get_mutation_type_series(mutation_series):
 
     return mutation_type_array
 
-def add_mcrs_mutation_type(mutations_df, var_column="vcrs_header"):
+
+def add_vcrs_mutation_type(mutations_df, var_column="vcrs_header"):
     mutations_df = mutations_df.copy()
 
     # Split the var_column by ';'
@@ -770,9 +758,9 @@ def add_mutation_type(mutations, var_column):
     return mutations
 
 
-
 rnaseq_fastq_filename_pattern_bulk = re.compile(r"([^/]+)_(\d+)\.(fastq|fq)(\.gz)?$")  # eg SRR8615037_1.fastq.gz
 rnaseq_fastq_filename_pattern_illumina = re.compile(r"^([\w.-]+)_L\d+_R[12]_\d{3}\.(fastq|fq)(\.gz)?$")  # SAMPLE_LANE_R[12]_001.fastq.gz where SAMPLE is letters, numbers, underscores; LANE is numbers with optional leading 0s; pair is either 1 or 2; and it has .fq or .fastq extension (or .fq.gz or .fastq.gz)
+
 
 def bulk_sort_order_for_kb_count_fastqs(filepath):
     # Define order for read types

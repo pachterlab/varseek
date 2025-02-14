@@ -36,6 +36,7 @@ from varseek.utils.visualization_utils import (
 
 tqdm.pandas()
 
+
 def remove_dlist_duplicates(input_file, output_file=None):
     if output_file is None:
         output_file = input_file + ".tmp"  # Write to a temporary file
@@ -192,6 +193,7 @@ def process_sam_file(sam_file):
             fields = line.split("\t")
             yield fields
 
+
 def get_set_of_headers_from_sam(sam_file, id_to_header_csv=None, check_for_bad_cigars=False, k="", return_set=True):
     sequence_names = []
 
@@ -226,6 +228,7 @@ def sequence_match(vcrs_sequence, dlist_sequence, strandedness=False):
     else:
         # Check both forward and reverse complement
         return (vcrs_sequence in dlist_sequence) or (vcrs_sequence in reverse_complement(dlist_sequence))
+
 
 def remove_mutations_which_are_a_perfect_substring_of_wt_reference_genome(
     mutation_reference_file_fasta,
@@ -298,7 +301,7 @@ def select_contiguous_substring(sequence, kmer, read_length=150):
     start_position = random.randint(min_start_position, max_start_position)
 
     # Extract the 20-character substring
-    selected_substring = sequence[start_position:(start_position + read_length)]
+    selected_substring = sequence[start_position : (start_position + read_length)]
 
     return selected_substring
 
@@ -319,7 +322,6 @@ def remove_Ns_fasta(fasta_file, max_ambiguous_reference=0):
 
     os.replace(fasta_file_temp, fasta_file)
     print(f"Removed {i} sequences with Ns from {fasta_file}")
-
 
 
 def count_nearby_mutations_efficient(df, k, fasta_entry_column, start_column, end_column, header_column=None):
@@ -539,10 +541,10 @@ def count_nearby_mutations_efficient_with_identifiers(df, k, fasta_entry_column,
     return df
 
 
-def create_df_of_mcrs_to_self_headers(
-    mcrs_sam_file,
-    mcrs_fa,
-    bowtie_mcrs_reference_folder,
+def create_df_of_vcrs_to_self_headers(
+    vcrs_sam_file,
+    vcrs_fa,
+    bowtie_vcrs_reference_folder,
     bowtie_path=None,
     threads=2,
     strandedness=False,
@@ -557,17 +559,17 @@ def create_df_of_mcrs_to_self_headers(
         bowtie2_build = f"{bowtie_path}/bowtie2-build"
         bowtie2 = f"{bowtie_path}/bowtie2"
 
-    if not os.path.exists(mcrs_sam_file):
-        if not os.path.exists(bowtie_mcrs_reference_folder) or not os.listdir(bowtie_mcrs_reference_folder):
+    if not os.path.exists(vcrs_sam_file):
+        if not os.path.exists(bowtie_vcrs_reference_folder) or not os.listdir(bowtie_vcrs_reference_folder):
             print("Running bowtie2 build")
-            os.makedirs(bowtie_mcrs_reference_folder, exist_ok=True)
-            bowtie_reference_prefix = os.path.join(bowtie_mcrs_reference_folder, "vcrs")
+            os.makedirs(bowtie_vcrs_reference_folder, exist_ok=True)
+            bowtie_reference_prefix = os.path.join(bowtie_vcrs_reference_folder, "vcrs")
             subprocess.run(
                 [
                     bowtie2_build,  # Path to the bowtie2-build executable
                     "--threads",
                     str(threads),  # Number of threads
-                    mcrs_fa,  # Input FASTA file
+                    vcrs_fa,  # Input FASTA file
                     bowtie_reference_prefix,  # Output reference folder
                 ],
                 check=True,
@@ -602,9 +604,9 @@ def create_df_of_mcrs_to_self_headers(
             "-x",
             bowtie_reference_prefix,  # Reference folder for alignment
             "-U",
-            mcrs_fa,  # Input FASTA file
+            vcrs_fa,  # Input FASTA file
             "-S",
-            mcrs_sam_file,  # Output SAM file
+            vcrs_sam_file,  # Output SAM file
         ]
 
         if strandedness:
@@ -635,7 +637,7 @@ def create_df_of_mcrs_to_self_headers(
     superstring_to_substring_list_dict = defaultdict(list)
 
     print("Processing SAM file")
-    for fields in process_sam_file(mcrs_sam_file):
+    for fields in process_sam_file(vcrs_sam_file):
         read_name = fields[0]
         ref_name = fields[2]
 
@@ -664,21 +666,7 @@ def create_df_of_mcrs_to_self_headers(
     return substring_to_superstring_df, superstring_to_substring_df
 
 
-def compare_cdna_and_genome(
-        mutation_metadata_df_exploded,
-        varseek_build_temp_folder="vk_build_tmp",
-        reference_cdna_fasta="cdna",
-        reference_genome_fasta="genome",
-        mutations_csv=None,
-        w=30,
-        mcrs_source="cdna",
-        columns_to_explode=None,
-        seq_id_column_cdna="seq_ID",
-        var_column_cdna="mutation_cdna",
-        seq_id_column_genome="chromosome",
-        var_column_genome="mutation_genome",
-        delete_temp_dir=True
-    ):
+def compare_cdna_and_genome(mutation_metadata_df_exploded, varseek_build_temp_folder="vk_build_tmp", reference_cdna_fasta="cdna", reference_genome_fasta="genome", mutations_csv=None, w=30, vcrs_source="cdna", columns_to_explode=None, seq_id_column_cdna="seq_ID", var_column_cdna="mutation_cdna", seq_id_column_genome="chromosome", var_column_genome="mutation_genome", delete_temp_dir=True):
     from varseek.varseek_build import build
 
     if columns_to_explode is None:
@@ -774,11 +762,11 @@ def compare_cdna_and_genome(
             "cdna_and_genome_same",
         ] = np.nan
 
-    if mcrs_source == "combined":
+    if vcrs_source == "combined":
         column_to_merge = "header_cdna"
     else:
         column_to_merge = "header"
-        combined_updated_df.rename(columns={f"header_{mcrs_source}": "header"}, inplace=True)
+        combined_updated_df.rename(columns={f"header_{vcrs_source}": "header"}, inplace=True)
 
     # mutation_metadata_df_exploded = explode_df(mutation_metadata_df, columns_to_explode)
 
@@ -793,16 +781,13 @@ def compare_cdna_and_genome(
     # mutation_metadata_df, columns_to_explode = collapse_df(mutation_metadata_df_exploded, columns_to_explode, columns_to_explode_extend_values = ["cdna_and_genome_same"])
 
     # # mutation_metadata_df["cdna_and_genome_same"] = mutation_metadata_df["cdna_and_genome_same"].fillna("unsure")  # because I'm filling values with unsure, I must specify == True if indexing true values
-    # # mutation_metadata_df = mutation_metadata_df.loc[~((mutation_metadata_df["cdna_and_genome_same"] == "True") & (mutation_metadata_df["mcrs_source"] == "genome"))]  #* uncomment to filter out rows derived from genome where cDNA and genome are the same (I used to filter these out because they are redundant and I only wanted to keep rows where genome differed from cDNA)
+    # # mutation_metadata_df = mutation_metadata_df.loc[~((mutation_metadata_df["cdna_and_genome_same"] == "True") & (mutation_metadata_df["vcrs_source"] == "genome"))]  #* uncomment to filter out rows derived from genome where cDNA and genome are the same (I used to filter these out because they are redundant and I only wanted to keep rows where genome differed from cDNA)
 
     # delete temp folder and all contents
     if delete_temp_dir:
         shutil.rmtree(varseek_build_temp_folder)
 
     return mutation_metadata_df_exploded, columns_to_explode
-
-
-
 
 
 def check_dlist_header(dlist_header, pattern):
@@ -812,9 +797,11 @@ def check_dlist_header(dlist_header, pattern):
 def get_long_headers(fasta_file, length_threshold=250):
     return {header for header, _ in pyfastx.Fastx(fasta_file) if len(header) > length_threshold}
 
+
 def hash_kmer_security_specified(kmer):
     """Return the MD5 hash of a k-mer as a hexadecimal string."""
     return hashlib.md5(kmer.encode("utf-8"), usedforsecurity=False).hexdigest()
+
 
 def hash_kmer(kmer):
     """Return the MD5 hash of a k-mer as a hexadecimal string."""
@@ -887,37 +874,36 @@ def count_kmer_overlaps_new(fasta_file, k=31, strandedness=False, vcrs_id_column
 def generate_kmers(sequence, k, strandedness=True):
     """Generate k-mers of length k from a sequence."""
     if strandedness:
-        return [sequence[i:(i + k)] for i in range(len(sequence) - k + 1)]
+        return [sequence[i : (i + k)] for i in range(len(sequence) - k + 1)]
     else:
-        list_f = [sequence[i:(i + k)] for i in range(len(sequence) - k + 1)]
+        list_f = [sequence[i : (i + k)] for i in range(len(sequence) - k + 1)]
         sequence_rc = reverse_complement(sequence)
-        list_rc = [sequence_rc[i:(i + k)] for i in range(len(sequence_rc) - k + 1)]
+        list_rc = [sequence_rc[i : (i + k)] for i in range(len(sequence_rc) - k + 1)]
         return list_f + list_rc
 
 
-def get_mcrs_headers_that_are_substring_dlist(
+def get_vcrs_headers_that_are_substring_dlist(
     mutation_reference_file_fasta,
     dlist_fasta_file,
     header_column_name="vcrs_id",
     strandedness=False,
 ):
-    mcrs_headers_that_are_substring_dlist = []
+    vcrs_headers_that_are_substring_dlist = []
 
     mutant_reference = create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(mutation_reference_file_fasta)  # TODO: replace with pyfastx
 
     for dlist_header, dlist_sequence in pyfastx.Fastx(dlist_fasta_file):
         vcrs_header = dlist_header.rsplit("_", 1)[0]
         if sequence_match(mutant_reference[vcrs_header], dlist_sequence, strandedness=strandedness):
-            mcrs_headers_that_are_substring_dlist.append(vcrs_header)
+            vcrs_headers_that_are_substring_dlist.append(vcrs_header)
 
-    df = pd.DataFrame(mcrs_headers_that_are_substring_dlist, columns=[header_column_name]).drop_duplicates()
+    df = pd.DataFrame(vcrs_headers_that_are_substring_dlist, columns=[header_column_name]).drop_duplicates()
 
-    df["substring_alignment_to_reference_count_total"] = df[header_column_name].map(pd.Series(mcrs_headers_that_are_substring_dlist).value_counts())
+    df["substring_alignment_to_reference_count_total"] = df[header_column_name].map(pd.Series(vcrs_headers_that_are_substring_dlist).value_counts())
 
     df["substring_alignment_to_reference"] = True
 
     return df
-
 
 
 def longest_homopolymer(sequence):
@@ -943,7 +929,7 @@ def longest_homopolymer(sequence):
 
 def triplet_stats(sequence):
     # Create a list of 3-mers (triplets) from the sequence
-    triplets = [sequence[i:(i + 3)] for i in range(len(sequence) - 2)]
+    triplets = [sequence[i : (i + 3)] for i in range(len(sequence) - 2)]
 
     # Number of distinct triplets
     distinct_triplets = set(triplets)
@@ -973,10 +959,11 @@ def parse_fastq(file_path):
 
     return problematic_mutations
 
-def get_mcrss_that_pseudoalign_but_arent_dlisted(
+
+def get_vcrss_that_pseudoalign_but_arent_dlisted(
     mutation_metadata_df,
     vcrs_id_column,
-    mcrs_fa,
+    vcrs_fa,
     sequence_names_set,
     human_reference_genome_fa,
     human_reference_gtf,
@@ -991,9 +978,9 @@ def get_mcrss_that_pseudoalign_but_arent_dlisted(
 ):
     if ref_folder_kb is None:
         ref_folder_kb = out_dir_notebook
-    mcrs_fa_base, mcrs_fa_ext = splitext_custom(mcrs_fa)
-    mcrs_fa_filtered_bowtie = f"{mcrs_fa_base}_filtered_bowtie{mcrs_fa_ext}"
-    mcrs_fQ_filtered_bowtie = f"{mcrs_fa_base}_filtered_bowtie.fq"
+    vcrs_fa_base, vcrs_fa_ext = splitext_custom(vcrs_fa)
+    vcrs_fa_filtered_bowtie = f"{vcrs_fa_base}_filtered_bowtie{vcrs_fa_ext}"
+    vcrs_fQ_filtered_bowtie = f"{vcrs_fa_base}_filtered_bowtie.fq"
     kb_ref_wt = f"{ref_folder_kb}/reference"
     os.makedirs(kb_ref_wt, exist_ok=True)
     kb_human_reference_index_file = f"{kb_ref_wt}/index.idx"
@@ -1018,9 +1005,9 @@ def get_mcrss_that_pseudoalign_but_arent_dlisted(
     else:
         raise ValueError("additional_kb_extract_filtering_workflow must be either 'standard' or 'nac'")
 
-    filter_fasta(mcrs_fa, mcrs_fa_filtered_bowtie, sequence_names_set)
+    filter_fasta(vcrs_fa, vcrs_fa_filtered_bowtie, sequence_names_set)
 
-    fasta_to_fastq(mcrs_fa_filtered_bowtie, mcrs_fQ_filtered_bowtie, k=None)
+    fasta_to_fastq(vcrs_fa_filtered_bowtie, vcrs_fQ_filtered_bowtie, k=None)
 
     kb_ref_command = (
         [
@@ -1032,9 +1019,9 @@ def get_mcrss_that_pseudoalign_but_arent_dlisted(
             kb_human_reference_t2g_file,
             "-f1",
             kb_human_reference_f1_file,
-        ] +
-        kb_ref_workflow_line +
-        [
+        ]
+        + kb_ref_workflow_line
+        + [
             "--d-list=None",
             "-k",
             str(k),
@@ -1067,7 +1054,7 @@ def get_mcrss_that_pseudoalign_but_arent_dlisted(
         kb_human_reference_index_file,
         "-g",
         kb_human_reference_t2g_file,
-        mcrs_fQ_filtered_bowtie,
+        vcrs_fQ_filtered_bowtie,
     ]
 
     if strandedness:
@@ -1101,7 +1088,7 @@ def get_mcrss_that_pseudoalign_but_arent_dlisted(
 
 
 def get_df_overlap(
-    mcrs_fa,
+    vcrs_fa,
     out_dir_notebook=".",
     k=31,
     strandedness=False,
@@ -1110,7 +1097,7 @@ def get_df_overlap(
     output_plot_folder=None,
 ):
     df_overlap_save_path = f"{out_dir_notebook}/kmer_overlap_stats.csv"
-    df_overlap = count_kmer_overlaps_new(mcrs_fa, k=k, strandedness=strandedness, vcrs_id_column=vcrs_id_column)
+    df_overlap = count_kmer_overlaps_new(vcrs_fa, k=k, strandedness=strandedness, vcrs_id_column=vcrs_id_column)
     df_overlap.to_csv(df_overlap_save_path, index=False)
 
     print_column_summary_stats(
@@ -1134,19 +1121,20 @@ def get_df_overlap(
         output_plot_file=kmer_plot_file,
     )
 
-    mcrs_plot_file = f"{output_plot_folder}/mcrs_overlap_histogram.png"
+    vcrs_plot_file = f"{output_plot_folder}/vcrs_overlap_histogram.png"
 
     plot_histogram_notebook_1(
         df_overlap,
         column="number_of_other_VCRSs_with_overlapping_kmers",
-        x_label="Number of MCRS items with Overlapping K-mers",
-        title="Histogram of MCRS items with Overlapping K-mers",
-        output_plot_file=mcrs_plot_file,
+        x_label="Number of VCRS items with Overlapping K-mers",
+        title="Histogram of VCRS items with Overlapping K-mers",
+        output_plot_file=vcrs_plot_file,
     )
 
     df_overlap[vcrs_id_column] = df_overlap[vcrs_id_column].astype(str)
 
     return df_overlap
+
 
 def convert_to_list_in_df(value, reference_length=0):
     if isinstance(value, str):
@@ -1160,6 +1148,7 @@ def convert_to_list_in_df(value, reference_length=0):
             # else:
             return [np.nan] * reference_length
     return value  # If already a list, return as is
+
 
 def explode_df(mutation_metadata_df, columns_to_explode=None):
     if columns_to_explode is None:
@@ -1600,7 +1589,7 @@ def calculate_nearby_mutations(
     vcrs_source_column,
     k,
     output_plot_folder,
-    mcrs_source,
+    vcrs_source,
     mutation_metadata_df_exploded,
     columns_to_explode=None,
 ):
@@ -1615,7 +1604,7 @@ def calculate_nearby_mutations(
         "has_a_nearby_variant",
     ]
 
-    if mcrs_source != "combined":
+    if vcrs_source != "combined":
         mutation_metadata_df_exploded_copy = mutation_metadata_df_exploded.copy()
         mutation_metadata_df_exploded_copy = count_nearby_mutations_efficient_with_identifiers(
             mutation_metadata_df_exploded_copy,
@@ -1738,7 +1727,7 @@ def align_to_normal_genome_and_build_dlist(
 
     ref_folder_genome_bowtie = f"{reference_out}/bowtie_index_genome"
     ref_prefix_genome_full = f"{ref_folder_genome_bowtie}/{ref_prefix}"
-    output_sam_file_genome = f"{out_dir_notebook}/bowtie_mcrs_kmers_to_genome/alignment.sam"
+    output_sam_file_genome = f"{out_dir_notebook}/bowtie_vcrs_kmers_to_genome/alignment.sam"
 
     if not os.path.exists(ref_folder_genome_bowtie) or not os.listdir(ref_folder_genome_bowtie):
         run_bowtie_build_dlist(
@@ -1778,7 +1767,7 @@ def align_to_normal_genome_and_build_dlist(
             remove_duplicates=False,
         )
 
-    dlist_substring_genome_df = get_mcrs_headers_that_are_substring_dlist(
+    dlist_substring_genome_df = get_vcrs_headers_that_are_substring_dlist(
         mutation_reference_file_fasta=mutations,
         dlist_fasta_file=dlist_fasta_file_genome_full,
         strandedness=strandedness,
@@ -1795,7 +1784,7 @@ def align_to_normal_genome_and_build_dlist(
 
     ref_folder_cdna_bowtie = f"{reference_out}/bowtie_index_cdna"
     ref_prefix_cdna_full = f"{ref_folder_cdna_bowtie}/{ref_prefix}"
-    output_sam_file_cdna = f"{out_dir_notebook}/bowtie_mcrs_kmers_to_cdna/alignment.sam"
+    output_sam_file_cdna = f"{out_dir_notebook}/bowtie_vcrs_kmers_to_cdna/alignment.sam"
 
     if not os.path.exists(ref_folder_cdna_bowtie) or not os.listdir(ref_folder_cdna_bowtie):
         run_bowtie_build_dlist(
@@ -1835,7 +1824,7 @@ def align_to_normal_genome_and_build_dlist(
             remove_duplicates=False,
         )
 
-    dlist_substring_cdna_df = get_mcrs_headers_that_are_substring_dlist(
+    dlist_substring_cdna_df = get_vcrs_headers_that_are_substring_dlist(
         mutation_reference_file_fasta=mutations,
         dlist_fasta_file=dlist_fasta_file_cdna_full,
         strandedness=strandedness,

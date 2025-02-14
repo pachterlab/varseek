@@ -1,4 +1,5 @@
 """varseek clean and specific helper functions."""
+
 import os
 import subprocess
 import time
@@ -10,7 +11,7 @@ import scanpy as sc
 from packaging import version
 
 from varseek.utils import (
-    adjust_mutation_adata_by_normal_gene_matrix,
+    adjust_variant_adata_by_normal_gene_matrix,
     check_file_path_is_string_with_valid_extension,
     decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_mode,
     increment_adata_based_on_dlist_fns,
@@ -349,7 +350,7 @@ def clean(
     if remove_doublets and not doublet_detection:
         logger.warning("remove_doublets is True, but doublet_detection is False. Setting doublet_detection to True.")
         doublet_detection = True
-    
+
     if technology.lower() != "bulk" and "smartseq" not in technology.lower():
         parity = "single"
 
@@ -455,7 +456,7 @@ def clean(
 
     if qc_against_gene_matrix:
         # TODO: test this
-        adata = adjust_mutation_adata_by_normal_gene_matrix(adata, kb_output_mutation=kb_count_vcrs_dir, kb_output_standard=kb_count_reference_genome_dir, id_to_header_csv=id_to_header_csv, t2g_mutation=vcrs_t2g, t2g_standard=None, fastq_file_list=fastqs, mm=mm, union=union, technology=technology, parity=parity, bustools=bustools, verbose=verbose)
+        adata = adjust_variant_adata_by_normal_gene_matrix(adata, kb_count_vcrs_dir=kb_count_vcrs_dir, kb_count_reference_genome_dir=kb_count_reference_genome_dir, id_to_header_csv=id_to_header_csv, vcrs_t2g=vcrs_t2g, t2g_standard=None, fastq_file_list=fastqs, mm=mm, union=union, technology=technology, parity=parity, bustools=bustools, verbose=verbose)
 
     if sum_rows and adata.shape[0] > 1:
         # Sum across barcodes (rows)

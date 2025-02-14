@@ -107,4 +107,4 @@ Follow one of the below options:
 
 FAQs:
 - Q: I want to add a custom filter to my VCRS index. How can I do this?
-- A: First run vk build with the desired parameters to generate the vcrs.fa file. Optionally run this file through vk info and vk filter if any filtering performed by these steps is desired. Then, write any necessary logic to filter undesired entries out of the VCRS reference file. Generate a new t2g file with vk.utils.create_mutant_t2g. Then pass the filtered vcrs fasta file into kb ref with --workflow custom.
+- A: First run vk build with the desired parameters to generate the vcrs.fa file. Optionally run this file through vk info and vk filter if any filtering performed by these steps is desired. Then, write any necessary logic to filter undesired entries out of the VCRS reference file. Generate a new t2g file with vk.utils.create_identity_t2g. Then pass the filtered vcrs fasta file into kb ref with --workflow custom.

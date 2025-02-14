@@ -1,4 +1,5 @@
 """varseek build and specific helper functions."""
+
 import os
 import re
 import subprocess
@@ -21,7 +22,7 @@ from .utils import (
     check_file_path_is_string_with_valid_extension,
     convert_chromosome_value_to_int_when_possible,
     convert_mutation_cds_locations_to_cdna,
-    create_mutant_t2g,
+    create_identity_t2g,
     generate_mutation_notation_from_vcf_columns,
     generate_unique_ids,
     is_valid_int,
@@ -183,18 +184,7 @@ def improve_genome_strand_information(cosmic_reference_file_mutation_csv, mutati
     )
 
     df.drop(
-        columns=[
-            "GENOME_START",
-            "GENOME_STOP",
-            "nucleotide_positions",
-            "actual_variant",
-            "actual_variant_rc",
-            "variant_type",
-            "mut_nucleotides",
-            "mut_nucleotides_rc",
-            "actual_variant_final",
-            "strand_modified"
-        ],
+        columns=["GENOME_START", "GENOME_STOP", "nucleotide_positions", "actual_variant", "actual_variant_rc", "variant_type", "mut_nucleotides", "mut_nucleotides_rc", "actual_variant_final", "strand_modified"],
         inplace=True,
     )  # drop all columns except mutation_genome (and the original ones)
 
@@ -385,7 +375,7 @@ def validate_input_build(params_dict):
         raise ValueError(f"w should be less than k. Got w={w}, k={k}.")
 
     # required_insertion_overlap_length
-    if params_dict.get("required_insertion_overlap_length") is not None and not isinstance(params_dict.get('required_insertion_overlap_length'), (int, str)):
+    if params_dict.get("required_insertion_overlap_length") is not None and not isinstance(params_dict.get("required_insertion_overlap_length"), (int, str)):
         raise ValueError(f"required_insertion_overlap_length must be an int, a string, or None. Got {type(params_dict.get('required_insertion_overlap_length'))}.")
 
     # Boolean
@@ -419,6 +409,8 @@ def validate_input_build(params_dict):
 
 
 accepted_build_file_types = {".csv", ".tsv", ".vcf"}
+
+
 def build(
     sequences,
     variants,
@@ -750,7 +742,7 @@ def build(
                     gtf = gtf_file
 
                     if not os.path.isfile(genome_file) or not os.path.isfile(gtf_file):
-                        logger.warning("Downloading reference sequences with %s. Note that this requires curl >=7.73.0", ' '.join(sequences_download_command_list))
+                        logger.warning("Downloading reference sequences with %s. Note that this requires curl >=7.73.0", " ".join(sequences_download_command_list))
                         subprocess.run(sequences_download_command_list, check=True)
 
                         subprocess.run(["gunzip", f"{genome_file}.gz"], check=True)
@@ -763,7 +755,7 @@ def build(
                     cds_file = cds_file.replace("GRCH_NUMBER", grch)
                     cds_file = f"{reference_out_sequences}/{cds_file}"
                     if not os.path.isfile(cds_file) and sequences == "cds":
-                        logger.warning("Downloading reference sequences with %s. Note that this requires curl >=7.73.0", ' '.join(sequences_download_command_list))
+                        logger.warning("Downloading reference sequences with %s. Note that this requires curl >=7.73.0", " ".join(sequences_download_command_list))
                         subprocess.run(sequences_download_command_list, check=True)
 
                         subprocess.run(["gunzip", f"{cds_file}.gz"], check=True)
@@ -772,7 +764,7 @@ def build(
                         cdna_file = cdna_file.replace("GRCH_NUMBER", grch)
                         cdna_file = f"{reference_out_sequences}/{cdna_file}"
                         if not os.path.isfile(cdna_file):
-                            logger.warning("Downloading reference sequences with %s. Note that this requires curl >=7.73.0", ' '.join(sequences_download_command_list))
+                            logger.warning("Downloading reference sequences with %s. Note that this requires curl >=7.73.0", " ".join(sequences_download_command_list))
                             subprocess.run(sequences_download_command_list, check=True)
 
                             subprocess.run(["gunzip", f"{cds_file}.gz"], check=True)
@@ -807,7 +799,7 @@ def build(
             - A single sequence to be mutated passed as a string (e.g. 'AGCTAGCT')
             """
         )
-    
+
     if os.path.isfile(mutations):
         mutations_path = mutations  # will account for mutations in supported_databases_and_corresponding_reference_sequence_type once the file is defined in the conditional
     else:
@@ -837,12 +829,7 @@ def build(
                 mutations = pd.read_csv(mutations_path)
 
                 if gtf is not None:
-                    mutations = merge_gtf_transcript_locations_into_cosmic_csv(
-                        mutations,
-                        gtf,
-                        gtf_transcript_id_column=gtf_transcript_id_column,
-                        output_mutations_path=mutations_path
-                    )
+                    mutations = merge_gtf_transcript_locations_into_cosmic_csv(mutations, gtf, gtf_transcript_id_column=gtf_transcript_id_column, output_mutations_path=mutations_path)
                     columns_to_keep.extend(
                         [
                             "start_transcript_position",
@@ -879,11 +866,11 @@ def build(
 
                 seq_id_column = "chromosome"
                 var_column = "mutation_genome"
-            
+
             elif "cds" in sequences:  # covers whether sequences == "cds" or sequences == "PATH/TO/Homo_sapiens.GRCh37.cds.all.fa"
                 seq_id_column = "seq_ID"
                 var_column = "mutation"  # if "mutation_cds" not in mutations.columns else "mutation_cds"  # checks if CDS mutation column was renamed by convert_mutation_cds_locations_to_cdna
-            
+
             var_id_column = "mutation_id" if var_id_column is not None else None  # use the id column if the user wanted to; otherwise keep as default
 
     original_mutations_type = "string"
@@ -1001,7 +988,8 @@ def build(
             These sequences and their corresponding mutations will not be included in the output.
             Ensure that the sequence IDs correspond to the string following the > character in the 'sequences' FASTA file (do NOT include spaces or dots).
             """,
-            len(seqs_not_found), ", ".join(seqs_not_found[seq_id_column].values)
+            len(seqs_not_found),
+            ", ".join(seqs_not_found[seq_id_column].values),
         )
     elif len(seqs_not_found) > 0:
         logger.warning(
@@ -1010,7 +998,7 @@ def build(
             These sequences and their corresponding mutations will not be included in the output.
             Ensure that the sequence IDs correspond to the string following the > character in the 'sequences' FASTA file (do NOT include spaces or dots).
             """,
-            len(seqs_not_found)
+            len(seqs_not_found),
         )
 
     # Drop inputs for sequences that were not found
@@ -1514,10 +1502,8 @@ def build(
             agg_columns = [col for col in mutations.columns if col != "variant_sequence"]
 
         if save_variants_updated_csv:
-            logger.warning("Merging rows of identical VCRS can take a while if save_variants_updated_csv=True since it will concatenate all VCRSs too)")
-            mutations = (
-                mutations.groupby(group_key, sort=False).agg({col: ("first" if col in columns_not_to_semicolon_join else (";".join if col == "header" else lambda x: list(x.fillna(np.nan)))) for col in agg_columns}).reset_index(drop=merge_identical_rc)
-            )  # lambda x: list(x) will make simple list, but lengths will be inconsistent with NaN values  # concatenate values with semicolons: lambda x: `";".join(x.astype(str))`   # drop if merging by variant_sequence_and_rc_tuple, but not if merging by variant_sequence
+            logger.warning("Merging rows of identical VCRSs can take a while if save_variants_updated_csv=True since it will concatenate all VCRSs too)")
+            mutations = mutations.groupby(group_key, sort=False).agg({col: ("first" if col in columns_not_to_semicolon_join else (";".join if col == "header" else lambda x: list(x.fillna(np.nan)))) for col in agg_columns}).reset_index(drop=merge_identical_rc)  # lambda x: list(x) will make simple list, but lengths will be inconsistent with NaN values  # concatenate values with semicolons: lambda x: `";".join(x.astype(str))`   # drop if merging by variant_sequence_and_rc_tuple, but not if merging by variant_sequence
 
         else:
             mutations_temp = mutations.groupby(group_key, sort=False, group_keys=False)["header"].apply(";".join).reset_index()
@@ -1619,7 +1605,7 @@ def build(
         with open(vcrs_fasta_out, "w", encoding="utf-8") as fasta_file:
             fasta_file.write("".join(mutations["fasta_format"].values))
 
-        create_mutant_t2g(vcrs_fasta_out, vcrs_t2g_out)
+        create_identity_t2g(vcrs_fasta_out, vcrs_t2g_out)
 
     if verbose:
         logger.info("FASTA file containing VCRSs created at %s.", vcrs_fasta_out)
@@ -1628,7 +1614,7 @@ def build(
     if save_wt_vcrs_fasta_and_t2g:
         with open(wt_vcrs_fasta_out, "w", encoding="utf-8") as fasta_file:
             fasta_file.write("".join(mutations_with_exactly_1_wt_sequence_per_row["fasta_format_wt"].values))
-        create_mutant_t2g(wt_vcrs_fasta_out, wt_vcrs_t2g_out)  # separate t2g is needed because it may have a subset of the rows of mutant (because it doesn't contain any VCRSs with merged mutations and 2+ originating WT sequences)
+        create_identity_t2g(wt_vcrs_fasta_out, wt_vcrs_t2g_out)  # separate t2g is needed because it may have a subset of the rows of mutant (because it doesn't contain any VCRSs with merged mutations and 2+ originating WT sequences)
 
     # When stream_output is True, return list of mutated seqs
     if return_variant_output:

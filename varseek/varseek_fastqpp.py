@@ -1,4 +1,5 @@
 """varseek fastqpp and specific helper functions."""
+
 import os
 import time
 
@@ -245,7 +246,7 @@ def fastqpp(
 
     if technology.lower() != "bulk" and "smartseq" not in technology.lower():
         parity = "single"
-    
+
     if (concatenate_paired_fastqs or split_reads_by_Ns) and parity == "paired":
         if not concatenate_paired_fastqs:
             logger.info("Setting concatenate_paired_fastqs=True")
@@ -291,7 +292,7 @@ def fastqpp(
             raise ValueError(f"fastqc must be installed to run fastqc_and_multiqc. Please install it and try again, or set fastqc_and_multiqc=False.")
         if not is_program_installed(multiqc):
             logger.warning(f"multiqc is not installed and fastqc_and_multiqc=True. Skipping multiqc step.")
-        
+
         # check if any file in fastq_quality_controlled_all_files does not exist
         if not all(os.path.exists(f) for f in fastq_fastqc_all_files) or overwrite:
             logger.info("Running FastQC and MultiQC")
@@ -302,7 +303,7 @@ def fastqpp(
     if replace_low_quality_bases_with_N:
         if not is_program_installed(seqtk):
             raise ValueError(f"seqtk must be installed to run replace_low_quality_bases_with_N. Please install it and try again, or set replace_low_quality_bases_with_N=False.")
-        
+
         # check if any file in fastq_more_Ns_all_files does not exist
         if not all(os.path.exists(f) for f in fastq_more_Ns_all_files) or overwrite:
             logger.info("Replacing low quality bases with N")

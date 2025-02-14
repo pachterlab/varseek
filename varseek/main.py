@@ -1,4 +1,5 @@
 """main function for argparse."""
+
 import argparse
 import inspect
 import math
@@ -267,7 +268,7 @@ def main():  # noqa: C901
 
     # NEW PARSER
     # build parser arguments
-    build_desc = "Build a mutation-containing reference sequence (MCRS) file."
+    build_desc = "Build a mutation-containing reference sequence (VCRS) file."
 
     parser_build = parent_subparsers.add_parser(
         "build",
@@ -610,7 +611,7 @@ def main():  # noqa: C901
     )
 
     # NEW PARSER
-    info_desc = "Takes in the input directory containing with the MCRS fasta file generated from varseek build, and returns a dataframe with additional columns containing information about the mutations."
+    info_desc = "Takes in the input directory containing with the VCRS fasta file generated from varseek build, and returns a dataframe with additional columns containing information about the mutations."
     parser_info = parent_subparsers.add_parser(
         "info",
         parents=[parent],
@@ -712,7 +713,7 @@ def main():  # noqa: C901
         "--vcrs_id_column",
         type=str,
         required=False,
-        default="mcrs_id",
+        default="vcrs_id",
         help=extract_help_from_doc(info, "vcrs_id_column"),
     )
     parser_info.add_argument(
@@ -726,7 +727,7 @@ def main():  # noqa: C901
         "--vcrs_source_column",
         type=str,
         required=False,
-        default="mcrs_source",
+        default="vcrs_source",
         help=extract_help_from_doc(info, "vcrs_source_column"),
     )
     parser_info.add_argument(
@@ -1305,11 +1306,13 @@ def main():  # noqa: C901
     parser_sim.add_argument(
         "--seq_id_column_cdna",
         required=False,
+        default="seq_ID",
         help=extract_help_from_doc(sim, "seq_id_column_cdna"),
     )
     parser_sim.add_argument(
         "--var_column_cdna",
         required=False,
+        default="mutation",
         help=extract_help_from_doc(sim, "var_column_cdna"),
     )
     parser_sim.add_argument(
@@ -1320,11 +1323,13 @@ def main():  # noqa: C901
     parser_sim.add_argument(
         "--seq_id_column_genome",
         required=False,
+        default="chromosome",
         help=extract_help_from_doc(sim, "seq_id_column_genome"),
     )
     parser_sim.add_argument(
         "--var_column_genome",
         required=False,
+        default="mutation_genome",
         help=extract_help_from_doc(sim, "var_column_genome"),
     )
     parser_sim.add_argument(
@@ -1675,18 +1680,18 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "sum_rows"),
     )
     parser_clean.add_argument(
-        "--mcrs_id_set_to_exclusively_keep",
+        "--vcrs_id_set_to_exclusively_keep",
         nargs="+",
         type=str,
         required=False,
-        help=extract_help_from_doc(clean, "mcrs_id_set_to_exclusively_keep"),
+        help=extract_help_from_doc(clean, "vcrs_id_set_to_exclusively_keep"),
     )
     parser_clean.add_argument(
-        "--mcrs_id_set_to_exclude",
+        "--vcrs_id_set_to_exclude",
         nargs="+",
         type=str,
         required=False,
-        help=extract_help_from_doc(clean, "mcrs_id_set_to_exclude"),
+        help=extract_help_from_doc(clean, "vcrs_id_set_to_exclude"),
     )
     parser_clean.add_argument(
         "--transcript_set_to_exclusively_keep",
@@ -2032,10 +2037,10 @@ def main():  # noqa: C901
             "substring_alignment_to_reference:equal=none",  # filter out mutations which are a substring of the reference genome
             "pseudoaligned_to_reference_despite_not_truly_aligning:is_not_true",  # filter out mutations which pseudoaligned to human genome despite not truly aligning
             "alignment_to_reference:equal=none",  # *** erase eventually when I want to d-list  # filter out mutations which are capable of being d-listed (given that I filter out the substrings above)
-            "number_of_kmers_with_overlap_to_other_VCRSs:less_than=999999",  # filter out mutations which overlap with other MCRSs in the reference
-            "number_of_other_VCRSs_with_overlapping_kmers:less_than=999999",  # filter out mutations which overlap with other MCRSs in the reference
-            "longest_homopolymer_length:bottom_percent=99.99",  # filters out MCRSs with repeating single nucleotide - 99.99 keeps the bottom 99.99% (fraction 0.9999) ie filters out the top 0.01%
-            "triplet_complexity:top_percent=99.9",  # filters out MCRSs with repeating triplets - 99.9 keeps the top 99.9% (fraction 0.999) ie filters out the bottom 0.1%
+            "number_of_kmers_with_overlap_to_other_VCRSs:less_than=999999",  # filter out mutations which overlap with other VCRSs in the reference
+            "number_of_other_VCRSs_with_overlapping_kmers:less_than=999999",  # filter out mutations which overlap with other VCRSs in the reference
+            "longest_homopolymer_length:bottom_percent=99.99",  # filters out VCRSs with repeating single nucleotide - 99.99 keeps the bottom 99.99% (fraction 0.9999) ie filters out the top 0.01%
+            "triplet_complexity:top_percent=99.9",  # filters out VCRSs with repeating triplets - 99.9 keeps the top 99.9% (fraction 0.999) ie filters out the bottom 0.1%
         ),
         help=extract_help_from_doc(ref, "filters"),
     )
@@ -2251,7 +2256,7 @@ def main():  # noqa: C901
         "--disable_fastqpp",
         action="store_true",
         required=False,
-        help=extract_help_from_doc(count, "disable_fastqpp"), # not disable=True because the acual python argument is named disable_fastqpp
+        help=extract_help_from_doc(count, "disable_fastqpp"),  # not disable=True because the acual python argument is named disable_fastqpp
     )
     parser_count.add_argument(
         "--disable_clean",
@@ -2306,7 +2311,7 @@ def main():  # noqa: C901
         help=extract_help_from_doc(count, "use_num"),
     )
 
-    #* Define return values
+    # * Define return values
     args, unknown_args = parent_parser.parse_known_args()
 
     kwargs = {unknown_args[i].lstrip("--"): unknown_args[i + 1] for i in range(0, len(unknown_args), 2)}
@@ -2363,7 +2368,7 @@ def main():  # noqa: C901
         for key, value in params.items():
             setattr(args, key, value)
 
-    #* build return
+    # * build return
     if args.command == "build":
         if isinstance(args.sequences, list) and len(args.sequences) == 1:
             seqs = args.sequences[0]
@@ -2431,7 +2436,7 @@ def main():  # noqa: C901
             for mut_seq in build_results:
                 print(mut_seq)
 
-    #* info return
+    # * info return
     if args.command == "info":
         info_results = info(
             input_dir=args.input_dir,
@@ -2484,7 +2489,7 @@ def main():  # noqa: C901
 
         # * optionally do something with info_results (e.g., save, or print to console)
 
-    #* filter return
+    # * filter return
     if args.command == "filter":
         filter_rules = prepare_filters_list(args.filters)
 
@@ -2526,60 +2531,15 @@ def main():  # noqa: C901
 
         # * optionally do something with filter_results (e.g., save, or print to console)
 
-    #* sim return
+    # * sim return
     if args.command == "sim":
         filter_rules = prepare_filters_list(args.filters)
 
-        simulated_df_dict = sim(
-            mutations=args.mutations,
-            number_of_variants_to_sample=args.number_of_variants_to_sample,
-            number_of_reads_per_variant_alt=args.number_of_reads_per_variant_alt,
-            number_of_reads_per_variant_ref=args.number_of_reads_per_variant_ref,
-            sample_ref_and_alt_reads_from_same_locations=args.sample_ref_and_alt_reads_from_same_locations,
-            with_replacement=args.with_replacement,
-            strand=args.strand,
-            read_length=args.read_length,
-            filters=filter_rules,
-            add_noise_sequencing_error=args.add_noise_sequencing_error,
-            add_noise_base_quality=args.add_noise_base_quality,
-            error_rate=args.error_rate,
-            error_distribution=args.error_distribution,
-            max_errors=args.max_errors,
-            variant_sequence_read_parent_column=args.variant_sequence_read_parent_column,
-            ref_sequence_read_parent_column=args.ref_sequence_read_parent_column,
-            variant_sequence_read_parent_rc_column=args.variant_sequence_read_parent_rc_column,
-            ref_sequence_read_parent_rc_column=args.ref_sequence_read_parent_rc_column,
-            reads_fastq_parent=args.reads_fastq_parent,
-            reads_csv_parent=args.reads_csv_parent,
-            out=args.out,
-            reads_fastq_out=args.reads_fastq_out,
-            variants_updated_csv_out=args.variants_updated_csv_out,
-            reads_csv_out=args.reads_csv_out,
-            save_variants_updated_csv=args.disable_save_variants_updated_csv,
-            save_reads_csv=args.disable_save_reads_csv,
-            vk_build_out_dir=args.vk_build_out_dir,
-            sequences=args.sequences,
-            seq_id_column=args.seq_id_column,
-            var_column=args.var_column,
-            k=args.k,
-            w=args.w,
-            sequences_cdna=args.sequences_cdna,
-            seq_id_column_cdna=args.seq_id_column_cdna,
-            var_column_cdna=args.var_column_cdna,
-            sequences_genome=args.sequences_genome,
-            seq_id_column_genome=args.seq_id_column_genome,
-            var_column_genome=args.var_column_genome,
-            seed=args.seed,
-            gzip_reads_fastq_out=args.gzip_reads_fastq_out,
-            dry_run=args.dry_run,
-            verbose=args.quiet,
-            **kwargs
-
-        )
+        simulated_df_dict = sim(mutations=args.mutations, number_of_variants_to_sample=args.number_of_variants_to_sample, number_of_reads_per_variant_alt=args.number_of_reads_per_variant_alt, number_of_reads_per_variant_ref=args.number_of_reads_per_variant_ref, sample_ref_and_alt_reads_from_same_locations=args.sample_ref_and_alt_reads_from_same_locations, with_replacement=args.with_replacement, strand=args.strand, read_length=args.read_length, filters=filter_rules, add_noise_sequencing_error=args.add_noise_sequencing_error, add_noise_base_quality=args.add_noise_base_quality, error_rate=args.error_rate, error_distribution=args.error_distribution, max_errors=args.max_errors, variant_sequence_read_parent_column=args.variant_sequence_read_parent_column, ref_sequence_read_parent_column=args.ref_sequence_read_parent_column, variant_sequence_read_parent_rc_column=args.variant_sequence_read_parent_rc_column, ref_sequence_read_parent_rc_column=args.ref_sequence_read_parent_rc_column, reads_fastq_parent=args.reads_fastq_parent, reads_csv_parent=args.reads_csv_parent, out=args.out, reads_fastq_out=args.reads_fastq_out, variants_updated_csv_out=args.variants_updated_csv_out, reads_csv_out=args.reads_csv_out, save_variants_updated_csv=args.disable_save_variants_updated_csv, save_reads_csv=args.disable_save_reads_csv, vk_build_out_dir=args.vk_build_out_dir, sequences=args.sequences, seq_id_column=args.seq_id_column, var_column=args.var_column, k=args.k, w=args.w, sequences_cdna=args.sequences_cdna, seq_id_column_cdna=args.seq_id_column_cdna, var_column_cdna=args.var_column_cdna, sequences_genome=args.sequences_genome, seq_id_column_genome=args.seq_id_column_genome, var_column_genome=args.var_column_genome, seed=args.seed, gzip_reads_fastq_out=args.gzip_reads_fastq_out, dry_run=args.dry_run, verbose=args.quiet, **kwargs)
 
         # * optionally do something with simulated_df_dict (e.g., save, or print to console)
 
-    #* fastqpp return
+    # * fastqpp return
     if args.command == "fastqpp":
         fastqpp_results = filter(
             fastqs=args.fastqs,
@@ -2618,7 +2578,7 @@ def main():  # noqa: C901
 
         # * optionally do something with fastqpp_results (e.g., save, or print to console)
 
-    #* clean return
+    # * clean return
     if args.command == "clean":
         clean_results = clean(
             adata_vcrs=args.adata_vcrs,
@@ -2638,8 +2598,8 @@ def main():  # noqa: C901
             remove_doublets=args.remove_doublets,
             cpm_normalization=args.cpm_normalization,
             sum_rows=args.sum_rows,
-            mcrs_id_set_to_exclusively_keep=args.mcrs_id_set_to_exclusively_keep,
-            mcrs_id_set_to_exclude=args.mcrs_id_set_to_exclude,
+            vcrs_id_set_to_exclusively_keep=args.vcrs_id_set_to_exclusively_keep,
+            vcrs_id_set_to_exclude=args.vcrs_id_set_to_exclude,
             transcript_set_to_exclusively_keep=args.transcript_set_to_exclusively_keep,
             transcript_set_to_exclude=args.transcript_set_to_exclude,
             gene_set_to_exclusively_keep=args.gene_set_to_exclusively_keep,
@@ -2682,7 +2642,7 @@ def main():  # noqa: C901
 
         # * optionally do something with clean_results (e.g., save, or print to console)
 
-    #* summarize return
+    # * summarize return
     if args.command == "summarize":
         summarize_results = summarize(
             top_values=args.top_values,
@@ -2700,7 +2660,7 @@ def main():  # noqa: C901
 
         # * optionally do something with summarize_results (e.g., save, or print to console)
 
-    #* ref return
+    # * ref return
     if args.command == "ref":
         ref_results = ref(
             sequences=args.sequences,
@@ -2723,7 +2683,7 @@ def main():  # noqa: C901
 
         # * optionally do something with ref_results (e.g., save, or print to console)
 
-    #* count return
+    # * count return
     if args.command == "count":
         count_results = count(
             fastqs=args.fastqs,

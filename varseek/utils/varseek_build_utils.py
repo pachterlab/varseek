@@ -30,7 +30,7 @@ def convert_chromosome_value_to_int_when_possible(val):
 def translate_sequence(sequence, start, end):
     amino_acid_sequence = ""
     for i in range(start, end, 3):
-        codon = sequence[i:(i + 3)].upper()
+        codon = sequence[i : (i + 3)].upper()
         amino_acid = codon_to_amino_acid.get(codon, "X")  # Use 'X' for unknown or incomplete codons
         amino_acid_sequence += amino_acid
 
@@ -43,7 +43,7 @@ def wt_fragment_and_mutant_fragment_share_kmer(mutated_fragment: str, wildtype_f
 
     # else:
     for mutant_position in range(len(mutated_fragment) - k):
-        mutant_kmer = mutated_fragment[mutant_position:(mutant_position + k)]
+        mutant_kmer = mutated_fragment[mutant_position : (mutant_position + k)]
         if mutant_kmer in wildtype_fragment:
             # wt_position = wildtype_fragment.find(mutant_kmer)
             return True
@@ -162,7 +162,7 @@ def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_
     )
 
     df.rename(columns={"mutation": "mutation_cdna", "mutation_cds": "mutation"}, inplace=True)  # new as of Feb 2025
-    df_merged = df_original.merge(df[['mutation', 'mutation_cdna']], on='mutation', how='left')  # new as of Feb 2025
+    df_merged = df_original.merge(df[["mutation", "mutation_cdna"]], on="mutation", how="left")  # new as of Feb 2025
 
     # Write to new CSV
     df_merged.to_csv(output_csv_path, index=False)  # new as of Feb 2025 (replaced df.to_csv with df_merged.to_csv)

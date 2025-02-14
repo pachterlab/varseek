@@ -11,7 +11,7 @@ from Bio.SeqRecord import SeqRecord
 
 import varseek as vk
 from varseek.utils import (
-    add_mcrs_mutation_type,
+    add_vcrs_mutation_type,
     align_to_normal_genome_and_build_dlist,
     calculate_nearby_mutations,
     collapse_df,
@@ -19,10 +19,10 @@ from varseek.utils import (
     compare_dicts,
     compute_distance_to_closest_splice_junction,
     count_kmer_overlaps_new,
-    create_df_of_mcrs_to_self_headers,
+    create_df_of_vcrs_to_self_headers,
     explode_df,
     get_df_overlap,
-    get_mcrss_that_pseudoalign_but_arent_dlisted,
+    get_vcrss_that_pseudoalign_but_arent_dlisted,
     longest_homopolymer,
     triplet_stats,
 )
@@ -32,7 +32,7 @@ from varseek.varseek_info import add_mutation_information
 @pytest.fixture
 def temporary_output_files():
     with tempfile.NamedTemporaryFile(suffix=".csv") as output_metadata_df, \
-         tempfile.NamedTemporaryFile(suffix=".fasta") as output_mcrs_fasta, \
+         tempfile.NamedTemporaryFile(suffix=".fasta") as output_vcrs_fasta, \
          tempfile.NamedTemporaryFile(suffix=".fasta") as output_dlist_fasta, \
          tempfile.NamedTemporaryFile(suffix=".csv") as output_id_to_header_csv, \
          tempfile.NamedTemporaryFile(suffix=".txt") as output_t2g:
@@ -40,7 +40,7 @@ def temporary_output_files():
         # Dictionary of temporary paths
         temp_files = {
             "output_metadata_df": output_metadata_df.name,
-            "output_mcrs_fasta": output_mcrs_fasta.name,
+            "output_vcrs_fasta": output_vcrs_fasta.name,
             "output_dlist_fasta": output_dlist_fasta.name,
             "output_id_to_header_csv": output_id_to_header_csv.name,
             "output_t2g": output_t2g.name
@@ -60,7 +60,7 @@ def test_add_mutation_information(toy_mutation_metadata_df_exploded):
             toy_mutation_metadata_df_exploded.drop(column, axis=1, inplace=True)
 
     mutation_metadata_df = toy_mutation_metadata_df_exploded[["mutation", "seq_ID", "vcrs_id", "vcrs_header", "vcrs_sequence"]].copy()
-    output_df = add_mutation_information(mutation_metadata_df, mutation_column="mutation", mcrs_source="cdna")
+    output_df = add_mutation_information(mutation_metadata_df, mutation_column="mutation", vcrs_source="cdna")
     output_df = output_df[expected_df.columns]
 
     # Assert that the output matches the expected DataFrame
@@ -171,7 +171,7 @@ def test_calculate_nearby_mutations(mock_helpers_visualization):
         vcrs_source_column="seq_ID",
         k=10,
         output_plot_folder="mock_folder",
-        mcrs_source="not_combined",
+        vcrs_source="not_combined",
         mutation_metadata_df_exploded=mutation_metadata_df_exploded,
         columns_to_explode=None
     )
@@ -316,7 +316,7 @@ def test_count_kmer_overlaps(mock_helpers):
         pd.testing.assert_frame_equal(df, expected_df)
 
 
-def test_add_mcrs_mutation_type(mock_helpers):
+def test_add_vcrs_mutation_type(mock_helpers):
     # Create a toy DataFrame
     data = {
         "vcrs_header": [
@@ -332,7 +332,7 @@ def test_add_mcrs_mutation_type(mock_helpers):
     mutation_metadata_df = pd.DataFrame(data)
 
     # Run the function
-    result_df = add_mcrs_mutation_type(mutation_metadata_df, var_column="vcrs_header")
+    result_df = add_vcrs_mutation_type(mutation_metadata_df, var_column="vcrs_header")
 
     # Expected results
     expected_mutation_type = ["insertion", "substitution", "mixed", "delins", "duplication", "substitution", np.nan]
@@ -358,5 +358,5 @@ def test_add_mcrs_mutation_type(mock_helpers):
 
 # compare_cdna_and_genome - requires having a toy reference genome and toy reference transcriptome, and it generally just relies on vk build working for both cdna and genome
 # align_to_normal_genome_and_build_dlist
-# get_mcrss_that_pseudoalign_but_arent_dlisted
-# create_df_of_mcrs_to_self_headers - pretty simple logic - bowtie align MCRS's to themselves, go through the SAM file, and consider the reads the substrings and the reference items the superstrings
+# get_vcrss_that_pseudoalign_but_arent_dlisted
+# create_df_of_vcrs_to_self_headers - pretty simple logic - bowtie align VCRS's to themselves, go through the SAM file, and consider the reads the substrings and the reference items the superstrings

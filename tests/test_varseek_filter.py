@@ -27,7 +27,7 @@ def add_numeric_value_column_to_df_that_applies_range_of_len_df(toy_mutation_met
 @pytest.fixture
 def temporary_output_files():
     with tempfile.NamedTemporaryFile(suffix=".csv") as output_metadata_df, \
-         tempfile.NamedTemporaryFile(suffix=".fasta") as output_mcrs_fasta, \
+         tempfile.NamedTemporaryFile(suffix=".fasta") as output_vcrs_fasta, \
          tempfile.NamedTemporaryFile(suffix=".fasta") as output_dlist_fasta, \
          tempfile.NamedTemporaryFile(suffix=".csv") as output_id_to_header_csv, \
          tempfile.NamedTemporaryFile(suffix=".txt") as output_t2g:
@@ -35,7 +35,7 @@ def temporary_output_files():
         # Dictionary of temporary paths
         temp_files = {
             "output_metadata_df": output_metadata_df.name,
-            "output_mcrs_fasta": output_mcrs_fasta.name,
+            "output_vcrs_fasta": output_vcrs_fasta.name,
             "output_dlist_fasta": output_dlist_fasta.name,
             "output_id_to_header_csv": output_id_to_header_csv.name,
             "output_t2g": output_t2g.name
@@ -45,10 +45,10 @@ def temporary_output_files():
 
         # Temporary files are automatically cleaned up after `yield`
 
-def test_no_filters_metadata_df(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_mcrs_fa_path, temporary_output_files):
+def test_no_filters_metadata_df(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_vcrs_fa_path, temporary_output_files):
     filters = []
 
-    output_metadata_df, output_mcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_mcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
+    output_metadata_df, output_vcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_vcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
 
     output_metadata_df_from_test = vk.filter(
         input_dir = ".",
@@ -57,7 +57,7 @@ def test_no_filters_metadata_df(toy_mutation_metadata_df_path, dlist_file_small_
         dlist_fasta=dlist_file_small_path,
         id_to_header_csv=toy_id_to_header_mapping_csv_path,
         variants_updated_filtered_csv_out=output_metadata_df,
-        vcrs_filtered_fasta_out=output_mcrs_fasta,
+        vcrs_filtered_fasta_out=output_vcrs_fasta,
         dlist_filtered_fasta_out=output_dlist_fasta,
         id_to_header_filtered_csv_out=output_id_to_header_csv,
         vcrs_t2g_filtered_out=output_t2g,
@@ -69,10 +69,10 @@ def test_no_filters_metadata_df(toy_mutation_metadata_df_path, dlist_file_small_
     pd.testing.assert_frame_equal(output_metadata_df_from_test, output_metadata_df_expected)
 
 
-def test_no_filters_mcrs_fa(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_mcrs_fa_path, temporary_output_files):
+def test_no_filters_vcrs_fa(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_vcrs_fa_path, temporary_output_files):
     filters = []
     
-    output_metadata_df, output_mcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_mcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
+    output_metadata_df, output_vcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_vcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
 
     output_metadata_df_from_test = vk.filter(
         input_dir = ".",
@@ -81,29 +81,29 @@ def test_no_filters_mcrs_fa(toy_mutation_metadata_df_path, dlist_file_small_path
         dlist_fasta=dlist_file_small_path,
         id_to_header_csv=toy_id_to_header_mapping_csv_path,
         variants_updated_filtered_csv_out=output_metadata_df,
-        vcrs_filtered_fasta_out=output_mcrs_fasta,
+        vcrs_filtered_fasta_out=output_vcrs_fasta,
         dlist_filtered_fasta_out=output_dlist_fasta,
         id_to_header_filtered_csv_out=output_id_to_header_csv,
         vcrs_t2g_filtered_out=output_t2g,
         return_variants_updated_filtered_csv_df=True
     )
 
-    mcrs_fasta_header_to_sequence_dict_from_test = create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(output_mcrs_fasta)
+    vcrs_fasta_header_to_sequence_dict_from_test = create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(output_vcrs_fasta)
 
-    # mcrs_fasta_header_to_sequence_dict_expected = create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(toy_mcrs_fa_path)
+    # vcrs_fasta_header_to_sequence_dict_expected = create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(toy_vcrs_fa_path)
 
     mutation_metadata_df_prefiltering = pd.read_csv(toy_mutation_metadata_df_path)
 
     # mutation_metadata_df_prefiltering['vcrs_id'] = mutation_metadata_df_prefiltering['vcrs_id'].astype(str)
 
-    mcrs_fasta_header_to_sequence_dict_expected = mutation_metadata_df_prefiltering.set_index('vcrs_id')['vcrs_sequence'].to_dict()
+    vcrs_fasta_header_to_sequence_dict_expected = mutation_metadata_df_prefiltering.set_index('vcrs_id')['vcrs_sequence'].to_dict()
 
-    assert dict(mcrs_fasta_header_to_sequence_dict_from_test) == dict(mcrs_fasta_header_to_sequence_dict_expected)
+    assert dict(vcrs_fasta_header_to_sequence_dict_from_test) == dict(vcrs_fasta_header_to_sequence_dict_expected)
 
-def test_no_filters_dlist_fa(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_mcrs_fa_path, temporary_output_files):
+def test_no_filters_dlist_fa(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_vcrs_fa_path, temporary_output_files):
     filters = []
     
-    output_metadata_df, output_mcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_mcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
+    output_metadata_df, output_vcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_vcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
 
     output_metadata_df_from_test = vk.filter(
         input_dir = ".",
@@ -112,7 +112,7 @@ def test_no_filters_dlist_fa(toy_mutation_metadata_df_path, dlist_file_small_pat
         dlist_fasta=dlist_file_small_path,
         id_to_header_csv=toy_id_to_header_mapping_csv_path,
         variants_updated_filtered_csv_out=output_metadata_df,
-        vcrs_filtered_fasta_out=output_mcrs_fasta,
+        vcrs_filtered_fasta_out=output_vcrs_fasta,
         dlist_filtered_fasta_out=output_dlist_fasta,
         id_to_header_filtered_csv_out=output_id_to_header_csv,
         vcrs_t2g_filtered_out=output_t2g,
@@ -126,10 +126,10 @@ def test_no_filters_dlist_fa(toy_mutation_metadata_df_path, dlist_file_small_pat
     assert dict(dlist_fasta_header_to_sequence_dict_from_test) == dict(dlist_fasta_header_to_sequence_dict_expected)
 
 
-def test_no_filters_id_to_header_mapping_csv(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_mcrs_fa_path, temporary_output_files):
+def test_no_filters_id_to_header_mapping_csv(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_vcrs_fa_path, temporary_output_files):
     filters = []
     
-    output_metadata_df, output_mcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_mcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
+    output_metadata_df, output_vcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_vcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
 
     output_metadata_df_from_test = vk.filter(
         input_dir = ".",
@@ -138,7 +138,7 @@ def test_no_filters_id_to_header_mapping_csv(toy_mutation_metadata_df_path, dlis
         dlist_fasta=dlist_file_small_path,
         id_to_header_csv=toy_id_to_header_mapping_csv_path,
         variants_updated_filtered_csv_out=output_metadata_df,
-        vcrs_filtered_fasta_out=output_mcrs_fasta,
+        vcrs_filtered_fasta_out=output_vcrs_fasta,
         dlist_filtered_fasta_out=output_dlist_fasta,
         id_to_header_filtered_csv_out=output_id_to_header_csv,
         vcrs_t2g_filtered_out=output_t2g,
@@ -152,10 +152,10 @@ def test_no_filters_id_to_header_mapping_csv(toy_mutation_metadata_df_path, dlis
     dict(id_to_header_dict_from_test) == dict(id_to_header_dict_from_expected)
 
 
-def test_no_filters_id_to_header_mapping_t2g(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_mcrs_fa_path, temporary_output_files):
+def test_no_filters_id_to_header_mapping_t2g(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_vcrs_fa_path, temporary_output_files):
     filters = []
     
-    output_metadata_df, output_mcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_mcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
+    output_metadata_df, output_vcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_vcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
 
     output_metadata_df_from_test = vk.filter(
         input_dir = ".",
@@ -164,7 +164,7 @@ def test_no_filters_id_to_header_mapping_t2g(toy_mutation_metadata_df_path, dlis
         dlist_fasta=dlist_file_small_path,
         id_to_header_csv=toy_id_to_header_mapping_csv_path,
         variants_updated_filtered_csv_out=output_metadata_df,
-        vcrs_filtered_fasta_out=output_mcrs_fasta,
+        vcrs_filtered_fasta_out=output_vcrs_fasta,
         dlist_filtered_fasta_out=output_dlist_fasta,
         id_to_header_filtered_csv_out=output_id_to_header_csv,
         vcrs_t2g_filtered_out=output_t2g,
@@ -177,10 +177,10 @@ def test_no_filters_id_to_header_mapping_t2g(toy_mutation_metadata_df_path, dlis
 
     dict(t2g_from_test) == dict(t2g_from_expected)
 
-def test_single_filter_min_metadata_df(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_mcrs_fa_path, temporary_output_files):
+def test_single_filter_min_metadata_df(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_vcrs_fa_path, temporary_output_files):
     filters = ['numeric_value:greater_than=3']
 
-    output_metadata_df, output_mcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_mcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
+    output_metadata_df, output_vcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_vcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
 
     add_numeric_value_column_to_df_that_applies_range_of_len_df(toy_mutation_metadata_df_path)
 
@@ -191,7 +191,7 @@ def test_single_filter_min_metadata_df(toy_mutation_metadata_df_path, dlist_file
         dlist_fasta=dlist_file_small_path,
         id_to_header_csv=toy_id_to_header_mapping_csv_path,
         variants_updated_filtered_csv_out=output_metadata_df,
-        vcrs_filtered_fasta_out=output_mcrs_fasta,
+        vcrs_filtered_fasta_out=output_vcrs_fasta,
         dlist_filtered_fasta_out=output_dlist_fasta,
         id_to_header_filtered_csv_out=output_id_to_header_csv,
         vcrs_t2g_filtered_out=output_t2g,
@@ -207,10 +207,10 @@ def test_single_filter_min_metadata_df(toy_mutation_metadata_df_path, dlist_file
     pd.testing.assert_frame_equal(output_metadata_df_from_test, output_metadata_df_expected)
 
 
-def test_single_filter_min_mcrs_fa(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_mcrs_fa_path, temporary_output_files):
+def test_single_filter_min_vcrs_fa(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_vcrs_fa_path, temporary_output_files):
     filters = ['numeric_value:greater_or_equal=3']
     
-    output_metadata_df, output_mcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_mcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
+    output_metadata_df, output_vcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_vcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
 
     add_numeric_value_column_to_df_that_applies_range_of_len_df(toy_mutation_metadata_df_path)
 
@@ -221,26 +221,26 @@ def test_single_filter_min_mcrs_fa(toy_mutation_metadata_df_path, dlist_file_sma
         dlist_fasta=dlist_file_small_path,
         id_to_header_csv=toy_id_to_header_mapping_csv_path,
         variants_updated_filtered_csv_out=output_metadata_df,
-        vcrs_filtered_fasta_out=output_mcrs_fasta,
+        vcrs_filtered_fasta_out=output_vcrs_fasta,
         dlist_filtered_fasta_out=output_dlist_fasta,
         id_to_header_filtered_csv_out=output_id_to_header_csv,
         vcrs_t2g_filtered_out=output_t2g,
         return_variants_updated_filtered_csv_df=True
     )
 
-    mcrs_fasta_header_to_sequence_dict_from_test = create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(output_mcrs_fasta)
+    vcrs_fasta_header_to_sequence_dict_from_test = create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(output_vcrs_fasta)
 
     mutation_metadata_df_prefiltering = pd.read_csv(toy_mutation_metadata_df_path)
     mutation_metadata_df_filtered = mutation_metadata_df_prefiltering.iloc[3:].reset_index(drop=True)
 
-    mcrs_fasta_header_to_sequence_dict_expected = mutation_metadata_df_filtered.set_index('vcrs_id')['vcrs_sequence'].to_dict()
+    vcrs_fasta_header_to_sequence_dict_expected = mutation_metadata_df_filtered.set_index('vcrs_id')['vcrs_sequence'].to_dict()
 
-    assert dict(mcrs_fasta_header_to_sequence_dict_from_test) == dict(mcrs_fasta_header_to_sequence_dict_expected)
+    assert dict(vcrs_fasta_header_to_sequence_dict_from_test) == dict(vcrs_fasta_header_to_sequence_dict_expected)
 
-def test_single_filter_min_dlist_fa(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_mcrs_fa_path, temporary_output_files):
+def test_single_filter_min_dlist_fa(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_vcrs_fa_path, temporary_output_files):
     filters = ['numeric_value:greater_or_equal=3']
     
-    output_metadata_df, output_mcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_mcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
+    output_metadata_df, output_vcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_vcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
 
     add_numeric_value_column_to_df_that_applies_range_of_len_df(toy_mutation_metadata_df_path)
 
@@ -251,7 +251,7 @@ def test_single_filter_min_dlist_fa(toy_mutation_metadata_df_path, dlist_file_sm
         dlist_fasta=dlist_file_small_path,
         id_to_header_csv=toy_id_to_header_mapping_csv_path,
         variants_updated_filtered_csv_out=output_metadata_df,
-        vcrs_filtered_fasta_out=output_mcrs_fasta,
+        vcrs_filtered_fasta_out=output_vcrs_fasta,
         dlist_filtered_fasta_out=output_dlist_fasta,
         id_to_header_filtered_csv_out=output_id_to_header_csv,
         vcrs_t2g_filtered_out=output_t2g,
@@ -273,10 +273,10 @@ def test_single_filter_min_dlist_fa(toy_mutation_metadata_df_path, dlist_file_sm
     assert dict(dlist_fasta_header_to_sequence_dict_from_test) == dict(dlist_fasta_header_to_sequence_dict_expected)
 
 
-def test_single_filter_min_id_to_header_mapping_csv(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_mcrs_fa_path, temporary_output_files):
+def test_single_filter_min_id_to_header_mapping_csv(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_vcrs_fa_path, temporary_output_files):
     filters = ['numeric_value:greater_or_equal=3']
     
-    output_metadata_df, output_mcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_mcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
+    output_metadata_df, output_vcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_vcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
 
     add_numeric_value_column_to_df_that_applies_range_of_len_df(toy_mutation_metadata_df_path)
 
@@ -287,7 +287,7 @@ def test_single_filter_min_id_to_header_mapping_csv(toy_mutation_metadata_df_pat
         dlist_fasta=dlist_file_small_path,
         id_to_header_csv=toy_id_to_header_mapping_csv_path,
         variants_updated_filtered_csv_out=output_metadata_df,
-        vcrs_filtered_fasta_out=output_mcrs_fasta,
+        vcrs_filtered_fasta_out=output_vcrs_fasta,
         dlist_filtered_fasta_out=output_dlist_fasta,
         id_to_header_filtered_csv_out=output_id_to_header_csv,
         vcrs_t2g_filtered_out=output_t2g,
@@ -307,10 +307,10 @@ def test_single_filter_min_id_to_header_mapping_csv(toy_mutation_metadata_df_pat
     dict(id_to_header_dict_from_test) == dict(id_to_header_dict_from_expected)
 
 
-def test_single_filter_min_id_to_header_mapping_t2g(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_mcrs_fa_path, temporary_output_files):
+def test_single_filter_min_id_to_header_mapping_t2g(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_vcrs_fa_path, temporary_output_files):
     filters = ['numeric_value:greater_or_equal=3']
     
-    output_metadata_df, output_mcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_mcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
+    output_metadata_df, output_vcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_vcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
 
     add_numeric_value_column_to_df_that_applies_range_of_len_df(toy_mutation_metadata_df_path)
 
@@ -321,7 +321,7 @@ def test_single_filter_min_id_to_header_mapping_t2g(toy_mutation_metadata_df_pat
         dlist_fasta=dlist_file_small_path,
         id_to_header_csv=toy_id_to_header_mapping_csv_path,
         variants_updated_filtered_csv_out=output_metadata_df,
-        vcrs_filtered_fasta_out=output_mcrs_fasta,
+        vcrs_filtered_fasta_out=output_vcrs_fasta,
         dlist_filtered_fasta_out=output_dlist_fasta,
         id_to_header_filtered_csv_out=output_id_to_header_csv,
         vcrs_t2g_filtered_out=output_t2g,
@@ -342,10 +342,10 @@ def test_single_filter_min_id_to_header_mapping_t2g(toy_mutation_metadata_df_pat
     dict(t2g_from_test) == dict(t2g_from_expected)
 
 
-def test_multi_filter_min_max_metadata_df(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_mcrs_fa_path, temporary_output_files):
+def test_multi_filter_min_max_metadata_df(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_vcrs_fa_path, temporary_output_files):
     filters = ['numeric_value:greater_or_equal=3', 'numeric_value2:less_than=7']
 
-    output_metadata_df, output_mcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_mcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
+    output_metadata_df, output_vcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_vcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
 
     add_numeric_value_column_to_df_that_applies_range_of_len_df(toy_mutation_metadata_df_path, column_name="numeric_value")
     add_numeric_value_column_to_df_that_applies_range_of_len_df(toy_mutation_metadata_df_path, column_name="numeric_value2")
@@ -357,7 +357,7 @@ def test_multi_filter_min_max_metadata_df(toy_mutation_metadata_df_path, dlist_f
         dlist_fasta=dlist_file_small_path,
         id_to_header_csv=toy_id_to_header_mapping_csv_path,
         variants_updated_filtered_csv_out=output_metadata_df,
-        vcrs_filtered_fasta_out=output_mcrs_fasta,
+        vcrs_filtered_fasta_out=output_vcrs_fasta,
         dlist_filtered_fasta_out=output_dlist_fasta,
         id_to_header_filtered_csv_out=output_id_to_header_csv,
         vcrs_t2g_filtered_out=output_t2g,
@@ -373,10 +373,10 @@ def test_multi_filter_min_max_metadata_df(toy_mutation_metadata_df_path, dlist_f
     pd.testing.assert_frame_equal(output_metadata_df_from_test, output_metadata_df_expected)
 
 
-def test_multi_filter_between_equal_metadata_df(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_mcrs_fa_path, temporary_output_files):
+def test_multi_filter_between_equal_metadata_df(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_vcrs_fa_path, temporary_output_files):
     filters = ['numeric_value:between=2,7', 'chromosome_single:equal=1']
 
-    output_metadata_df, output_mcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_mcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
+    output_metadata_df, output_vcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_vcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
 
     add_numeric_value_column_to_df_that_applies_range_of_len_df(toy_mutation_metadata_df_path, column_name="numeric_value")
 
@@ -394,7 +394,7 @@ def test_multi_filter_between_equal_metadata_df(toy_mutation_metadata_df_path, d
         dlist_fasta=dlist_file_small_path,
         id_to_header_csv=toy_id_to_header_mapping_csv_path,
         variants_updated_filtered_csv_out=output_metadata_df,
-        vcrs_filtered_fasta_out=output_mcrs_fasta,
+        vcrs_filtered_fasta_out=output_vcrs_fasta,
         dlist_filtered_fasta_out=output_dlist_fasta,
         id_to_header_filtered_csv_out=output_id_to_header_csv,
         vcrs_t2g_filtered_out=output_t2g,
@@ -415,11 +415,11 @@ def test_multi_filter_between_equal_metadata_df(toy_mutation_metadata_df_path, d
     pd.testing.assert_frame_equal(output_metadata_df_from_test, output_metadata_df_expected)
 
 
-def test_multi_filter_contains_istrue_isfalse_metadata_df(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_mcrs_fa_path, temporary_output_files):
+def test_multi_filter_contains_istrue_isfalse_metadata_df(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_vcrs_fa_path, temporary_output_files):
     vcrs_id_set = {"seq1204954474446204", "seq1693806423259989", "seq1784404960707341", "seq2241452516841814", "seq9627237534759445"} # elements 0, 2, 4, 6, 8
     filters = [f'vcrs_id:is_in={vcrs_id_set}', 'bool_col1:is_true', 'bool_col2:is_false']
     
-    output_metadata_df, output_mcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_mcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
+    output_metadata_df, output_vcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_vcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
 
     df = pd.read_csv(toy_mutation_metadata_df_path)
     
@@ -439,7 +439,7 @@ def test_multi_filter_contains_istrue_isfalse_metadata_df(toy_mutation_metadata_
         dlist_fasta=dlist_file_small_path,
         id_to_header_csv=toy_id_to_header_mapping_csv_path,
         variants_updated_filtered_csv_out=output_metadata_df,
-        vcrs_filtered_fasta_out=output_mcrs_fasta,
+        vcrs_filtered_fasta_out=output_vcrs_fasta,
         dlist_filtered_fasta_out=output_dlist_fasta,
         id_to_header_filtered_csv_out=output_id_to_header_csv,
         vcrs_t2g_filtered_out=output_t2g,
@@ -457,8 +457,8 @@ def test_multi_filter_contains_istrue_isfalse_metadata_df(toy_mutation_metadata_
     pd.testing.assert_frame_equal(output_metadata_df_from_test, output_metadata_df_expected)
 
 
-def test_multi_filter_contains_isnull_isnotnull_metadata_df(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_mcrs_fa_path, temporary_output_files):    
-    output_metadata_df, output_mcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_mcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
+def test_multi_filter_contains_isnull_isnotnull_metadata_df(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_vcrs_fa_path, temporary_output_files):    
+    output_metadata_df, output_vcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_vcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
 
     filters = [f'int_col:is_null', 'str_col:is_not_null']
 
@@ -478,7 +478,7 @@ def test_multi_filter_contains_isnull_isnotnull_metadata_df(toy_mutation_metadat
         dlist_fasta=dlist_file_small_path,
         id_to_header_csv=toy_id_to_header_mapping_csv_path,
         variants_updated_filtered_csv_out=output_metadata_df,
-        vcrs_filtered_fasta_out=output_mcrs_fasta,
+        vcrs_filtered_fasta_out=output_vcrs_fasta,
         dlist_filtered_fasta_out=output_dlist_fasta,
         id_to_header_filtered_csv_out=output_id_to_header_csv,
         vcrs_t2g_filtered_out=output_t2g,

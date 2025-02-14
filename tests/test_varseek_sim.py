@@ -70,24 +70,24 @@ def test_basic_sim(toy_mutation_metadata_df_with_read_parents_path, temporary_ou
 
     for _, row in read_df_from_test.iterrows():
         read_index = row['read_index']
-        mcrs_id = row['mcrs_id']
+        vcrs_id = row['vcrs_id']
         read_sequence = row['read_sequence']
         read_length = len(read_sequence)
 
-        # Find the row in mutation_metadata_df_from_test that matches mcrs_id
-        matching_row = output_metadata_df_expected.loc[output_metadata_df_expected['mcrs_id'] == mcrs_id]
+        # Find the row in mutation_metadata_df_from_test that matches vcrs_id
+        matching_row = output_metadata_df_expected.loc[output_metadata_df_expected['vcrs_id'] == vcrs_id]
         
         if matching_row.empty:
-            raise ValueError(f"No match found for mcrs_id: {mcrs_id}")
+            raise ValueError(f"No match found for vcrs_id: {vcrs_id}")
 
         # Extract the vcrs_sequence
         vcrs_sequence = matching_row.iloc[0]['mutant_sequence_read_parent']
         
         # Extract the slice from vcrs_sequence
-        mcrs_sequence_slice = vcrs_sequence[read_index : read_index + read_length]
+        vcrs_sequence_slice = vcrs_sequence[read_index : read_index + read_length]
 
         # Assert that the extracted slice is equal to read_sequence
-        assert mcrs_sequence_slice == read_sequence, (
-            f"Mismatch for mcrs_id {mcrs_id} at index {read_index}:\n"
-            f"Expected: {read_sequence}\nFound: {mcrs_sequence_slice}"
+        assert vcrs_sequence_slice == read_sequence, (
+            f"Mismatch for vcrs_id {vcrs_id} at index {read_index}:\n"
+            f"Expected: {read_sequence}\nFound: {vcrs_sequence_slice}"
         )

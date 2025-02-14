@@ -1,4 +1,5 @@
 """varseek count and specific helper functions."""
+
 import inspect
 import os
 import subprocess
@@ -91,9 +92,7 @@ def validate_input_count(params_dict):
 
     out = params_dict.get("out", ".")
     kb_count_reference_genome_out_dir = params_dict.get("kb_count_reference_genome_out_dir", f"{out}/kb_count_out_reference_genome")
-    if params_dict.get("qc_against_gene_matrix") and not os.path.exists(
-        kb_count_reference_genome_out_dir
-    ):  # align to this genome if (1) adata doesn't exist and (2) qc_against_gene_matrix=True (because I need the BUS file for this)  # purposely omitted overwrite because it is reasonable to expect that someone has pre-computed this matrix and doesn't want it recomputed under any circumstances (and if they did, then simply point to a different directory)
+    if params_dict.get("qc_against_gene_matrix") and not os.path.exists(kb_count_reference_genome_out_dir):  # align to this genome if (1) adata doesn't exist and (2) qc_against_gene_matrix=True (because I need the BUS file for this)  # purposely omitted overwrite because it is reasonable to expect that someone has pre-computed this matrix and doesn't want it recomputed under any circumstances (and if they did, then simply point to a different directory)
         species = params_dict.get("species", None)
         if not isinstance(species, str) and species not in supported_downloadable_normal_reference_genomes_with_kb_ref:
             raise ValueError(f"Species {species} is not supported. Supported values are {supported_downloadable_normal_reference_genomes_with_kb_ref}. See more details at https://github.com/pachterlab/kallisto-transcriptome-indices/")
@@ -443,7 +442,7 @@ def count(
             else:
                 logger.info(f"Running kb ref for reference genome with command: {' '.join(kb_ref_command)}")
                 subprocess.run(kb_ref_command, check=True)
-        
+
         #!!! WT vcrs alignment, copied from previous notebook 1_2 (still not implemented in here correctly)
         # if os.path.exists(wt_vcrs_index) and (not os.path.exists(kb_count_out_wt_vcrs) or len(os.listdir(kb_count_out_wt_vcrs)) == 0):
         #     kb_count_command = ["kb", "count", "-t", str(threads), "-k", str(k), "-i", wt_vcrs_index, "-g", wt_vcrs_t2g, "-x", technology, "--num", "--h5ad", "--parity", "single", "--strand", strand, "-o", kb_count_out_wt_vcrs] + rnaseq_fastq_files_final

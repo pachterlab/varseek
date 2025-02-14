@@ -1,4 +1,5 @@
 """varseek filter and specific helper functions."""
+
 import ast
 import csv
 import os
@@ -8,18 +9,18 @@ import pandas as pd
 
 from .utils import (
     check_file_path_is_string_with_valid_extension,
-    create_mutant_t2g,
+    create_identity_t2g,
     extract_documentation_file_blocks,
     fasta_summary_stats,
     filter_fasta,
     make_function_parameter_to_value_dict,
+    make_mapping_dict,
     print_varseek_dry_run,
     report_time_elapsed,
     safe_literal_eval,
     save_params_to_config_file,
     save_run_info,
     set_up_logger,
-    make_mapping_dict
 )
 
 logger = set_up_logger()
@@ -208,7 +209,7 @@ def make_filtering_report(variant_metadata_df, vcrs_header_column="vcrs_header",
 
     # number of VCRSs
     number_of_vcrss = len(variant_metadata_df)
-    
+
     # number of unique variants
     number_of_unique_variants = (variant_metadata_df["semicolon_count"] == 0).sum()
 
@@ -494,7 +495,7 @@ def filter(
         variant_metadata_df = variants_updated_vk_info_csv
 
     if vcrs_header_column not in variant_metadata_df.columns:
-        if (id_to_header_csv and os.path.isfile(id_to_header_csv)):
+        if id_to_header_csv and os.path.isfile(id_to_header_csv):
             id_to_header_dict = make_mapping_dict(id_to_header_csv, dict_key="id")
 
             if id_to_header_dict is not None:
@@ -532,7 +533,7 @@ def filter(
         filtered_df.drop(columns=["fasta_format"], inplace=True)
 
         # make vcrs_t2g_filtered_out
-        create_mutant_t2g(vcrs_filtered_fasta_out, vcrs_t2g_filtered_out)
+        create_identity_t2g(vcrs_filtered_fasta_out, vcrs_t2g_filtered_out)
 
     # make wt_vcrs_filtered_fasta_out and wt_vcrs_t2g_filtered_out iff save_wt_vcrs_fasta_and_t2g is True
     if save_wt_vcrs_fasta_and_t2g:
@@ -552,7 +553,7 @@ def filter(
         with open(wt_vcrs_filtered_fasta_out, "w", encoding="utf-8") as fasta_file:
             fasta_file.write("".join(variants_with_exactly_1_wt_sequence_per_row["fasta_format_wt"].values))
 
-        create_mutant_t2g(wt_vcrs_filtered_fasta_out, wt_vcrs_t2g_filtered_out)
+        create_identity_t2g(wt_vcrs_filtered_fasta_out, wt_vcrs_t2g_filtered_out)
 
         fasta_summary_stats(vcrs_filtered_fasta_out)
 

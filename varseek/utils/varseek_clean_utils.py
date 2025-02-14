@@ -18,8 +18,8 @@ from varseek.constants import (
     technology_barcode_and_umi_dict,
 )
 from varseek.utils.seq_utils import (
-    add_mcrs_mutation_type,
     add_mutation_type,
+    add_vcrs_mutation_type,
     create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting,
     get_header_set_from_fastq,
     make_mapping_dict,
@@ -27,6 +27,7 @@ from varseek.utils.seq_utils import (
 )
 
 tqdm.pandas()
+
 
 def run_kb_count_dry_run(index, t2g, fastq, kb_count_out, newer_kallisto, k=31, threads=1):
     # if not os.path.exists(newer_kallisto):  # uncommented because the newest release of kb has the correct kallisto version
@@ -83,25 +84,22 @@ def create_umi_to_barcode_dict(bus_file, bustools="bustools", barcode_length=16,
         else:
             raise ValueError("key_to_use must be either 'umi' or 'fastq_header_position'")
         barcode = columns[0]  # remember there will be A's for padding to 32 characters
-        barcode = barcode[(32 - barcode_length):]  # * remove the padding
+        barcode = barcode[(32 - barcode_length) :]  # * remove the padding
         umi_to_barcode_dict[umi] = barcode
 
     return umi_to_barcode_dict
 
 
-def check_if_read_dlisted_by_one_of_its_respective_dlist_sequences(vcrs_header, mcrs_header_to_seq_dict, dlist_header_to_seq_dict, k):
-    # do a bowtie (or manual) alignment of breaking the mcrs seq into k-mers and aligning to the dlist seqs dervied from the same mcrs header
+def check_if_read_dlisted_by_one_of_its_respective_dlist_sequences(vcrs_header, vcrs_header_to_seq_dict, dlist_header_to_seq_dict, k):
+    # do a bowtie (or manual) alignment of breaking the vcrs seq into k-mers and aligning to the dlist seqs dervied from the same vcrs header
     dlist_header_to_seq_dict_filtered = {key: value for key, value in dlist_header_to_seq_dict.items() if vcrs_header == key.rsplit("_", 1)[0]}
-    vcrs_sequence = mcrs_header_to_seq_dict[vcrs_header]
+    vcrs_sequence = vcrs_header_to_seq_dict[vcrs_header]
     for i in range(len(vcrs_sequence) - k + 1):
-        kmer = vcrs_sequence[i:(i + k)]
+        kmer = vcrs_sequence[i : (i + k)]
         for dlist_sequence in dlist_header_to_seq_dict_filtered.values():
             if kmer in dlist_sequence:
                 return True
     return False
-
-
-
 
 
 def increment_adata_based_on_dlist_fns(adata, vcrs_fasta, dlist_fasta, kb_count_out, index, t2g, fastq, newer_kallisto, k=31, mm=False, technology="bulk", bustools="bustools", ignore_barcodes=False):
@@ -126,7 +124,7 @@ def increment_adata_based_on_dlist_fns(adata, vcrs_fasta, dlist_fasta, kb_count_
     n_rows, n_cols = adata.X.shape
     increment_matrix = csr_matrix((n_rows, n_cols))
 
-    mcrs_header_to_seq_dict = create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(vcrs_fasta)
+    vcrs_header_to_seq_dict = create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(vcrs_fasta)
     dlist_header_to_seq_dict = create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(dlist_fasta)
     var_names_to_idx_in_adata_dict = {name: idx for idx, name in enumerate(adata.var_names)}
 
@@ -141,7 +139,7 @@ def increment_adata_based_on_dlist_fns(adata, vcrs_fasta, dlist_fasta, kb_count_
                 if vcrs_header != "dlist":
                     read_dlisted_by_one_of_its_respective_dlist_sequences = check_if_read_dlisted_by_one_of_its_respective_dlist_sequences(
                         vcrs_header=vcrs_header,
-                        mcrs_header_to_seq_dict=mcrs_header_to_seq_dict,
+                        vcrs_header_to_seq_dict=vcrs_header_to_seq_dict,
                         dlist_header_to_seq_dict=dlist_header_to_seq_dict,
                         k=k,
                     )
@@ -150,9 +148,9 @@ def increment_adata_based_on_dlist_fns(adata, vcrs_fasta, dlist_fasta, kb_count_
             if not read_dlisted_by_one_of_its_respective_dlist_sequences:
                 # barcode_idx = [i for i, name in enumerate(adata.obs_names) if barcode.endswith(name)][0]  # if I did not remove the padding
                 barcode_idx = np.where(adata.obs_names == row["barcode"])[0][0]  # if I previously removed the padding
-                mcrs_idxs = [var_names_to_idx_in_adata_dict[header] for header in row["gene_names_final"] if header in var_names_to_idx_in_adata_dict]
+                vcrs_idxs = [var_names_to_idx_in_adata_dict[header] for header in row["gene_names_final"] if header in var_names_to_idx_in_adata_dict]
 
-                increment_matrix[barcode_idx, mcrs_idxs] += row["count"]
+                increment_matrix[barcode_idx, vcrs_idxs] += row["count"]
 
     # print("Gene list:", list(adata.var.index))
     # print(
@@ -196,10 +194,10 @@ def decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_
         bus_df = pd.read_csv(f"{kb_count_out}/bus_df.csv")
 
     if "vcrs_mutation_type" not in adata.var.columns:
-        adata.var = add_mcrs_mutation_type(adata.var, var_column="vcrs_header")
+        adata.var = add_vcrs_mutation_type(adata.var, var_column="vcrs_header")
 
     if keep_only_insertions:  # valid when fragment length >= 2*read length
-        # Can only count for insertions (lengthens the MCRS)
+        # Can only count for insertions (lengthens the VCRS)
         mutation_types_with_a_chance_of_being_double_counted_after_N_split = {
             "insertion",
             "delins",
@@ -235,8 +233,8 @@ def decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_
 
                 if count > 0:
                     barcode_idx = np.where(adata.obs_names == row["barcode"])[0][0]  # if I previously removed the padding
-                    mcrs_idxs = [var_names_to_idx_in_adata_dict[header] for header in row["gene_names_final"] if header in var_names_to_idx_in_adata_dict]
-                    decrement_matrix[barcode_idx, mcrs_idxs] += count
+                    vcrs_idxs = [var_names_to_idx_in_adata_dict[header] for header in row["gene_names_final"] if header in var_names_to_idx_in_adata_dict]
+                    decrement_matrix[barcode_idx, vcrs_idxs] += count
                 tested_read_header_bases.add(read_header_base)
 
     if not isinstance(adata.X, csr_matrix):
@@ -272,9 +270,6 @@ def remove_adata_columns(adata, values_of_interest, operation, var_column_name):
         adata = adata[:, ~adata.var_names.isin(columns_to_remove)]
 
     return adata
-
-
-
 
 
 def intersect_lists(series):
@@ -475,7 +470,6 @@ def make_bus_df(kallisto_out, fastq_file_list, t2g_file, mm=False, union=False, 
     return bus_df
 
 
-
 # TODO: test
 def match_paired_ends_after_single_end_run(bus_df_path, gene_name_type="vcrs_id", id_to_header_csv=None):
     if os.path.exists(bus_df_path):
@@ -527,12 +521,12 @@ def match_paired_ends_after_single_end_run(bus_df_path, gene_name_type="vcrs_id"
     if gene_name_type == "vcrs_id":
         id_to_header_dict = make_mapping_dict(id_to_header_csv, dict_key="id")
 
-        bus_df["mcrs_header_list"] = bus_df["gene_names_final"].apply(lambda gene_list: [id_to_header_dict.get(gene, gene) for gene in gene_list])
+        bus_df["vcrs_header_list"] = bus_df["gene_names_final"].apply(lambda gene_list: [id_to_header_dict.get(gene, gene) for gene in gene_list])
 
-        bus_df["mcrs_header_list_pair"] = bus_df["gene_names_final_pair"].apply(lambda gene_list: [id_to_header_dict.get(gene, gene) for gene in gene_list])
+        bus_df["vcrs_header_list_pair"] = bus_df["gene_names_final_pair"].apply(lambda gene_list: [id_to_header_dict.get(gene, gene) for gene in gene_list])
 
-        bus_df["ensembl_transcript_list"] = [value.split(":")[0] for value in bus_df["mcrs_header_list"]]
-        bus_df["ensembl_transcript_list_pair"] = [value.split(":")[0] for value in bus_df["mcrs_header_list_pair"]]
+        bus_df["ensembl_transcript_list"] = [value.split(":")[0] for value in bus_df["vcrs_header_list"]]
+        bus_df["ensembl_transcript_list_pair"] = [value.split(":")[0] for value in bus_df["vcrs_header_list_pair"]]
 
         # TODO: map ENST to ENSG
         bus_df["gene_list"] = ""
@@ -550,20 +544,20 @@ def match_paired_ends_after_single_end_run(bus_df_path, gene_name_type="vcrs_id"
 
 
 # TODO: unsure if this works for sc
-def adjust_mutation_adata_by_normal_gene_matrix(adata, kb_output_mutation, kb_output_standard, id_to_header_csv=None, adata_output_path=None, t2g_mutation=None, t2g_standard=None, fastq_file_list=None, mm=False, union=False, technology="bulk", parity="single", bustools="bustools", ignore_barcodes=False, verbose=False):
+def adjust_variant_adata_by_normal_gene_matrix(adata, kb_count_vcrs_dir, kb_count_reference_genome_dir, id_to_header_csv=None, adata_output_path=None, vcrs_t2g=None, t2g_standard=None, fastq_file_list=None, mm=False, union=False, technology="bulk", parity="single", bustools="bustools", ignore_barcodes=False, verbose=False):
     if not adata:
-        adata = f"{kb_output_mutation}/counts_unfiltered/adata.h5ad"
+        adata = f"{kb_count_vcrs_dir}/counts_unfiltered/adata.h5ad"
     if isinstance(adata, str):
         adata = sc.read_h5ad(adata)
 
-    bus_df_mutation_path = f"{kb_output_mutation}/bus_df.csv"
-    bus_df_standard_path = f"{kb_output_standard}/bus_df.csv"
+    bus_df_mutation_path = f"{kb_count_vcrs_dir}/bus_df.csv"
+    bus_df_standard_path = f"{kb_count_reference_genome_dir}/bus_df.csv"
 
     if not os.path.exists(bus_df_mutation_path):
         bus_df_mutation = make_bus_df(
-            kallisto_out=kb_output_mutation,
+            kallisto_out=kb_count_vcrs_dir,
             fastq_file_list=fastq_file_list,  # make sure this is in the same order as passed into kb count - [sample1, sample2, etc] OR [sample1_pair1, sample1_pair2, sample2_pair1, sample2_pair2, etc]
-            t2g_file=t2g_mutation,
+            t2g_file=vcrs_t2g,
             mm=mm,
             union=union,
             technology=technology,
@@ -574,18 +568,18 @@ def adjust_mutation_adata_by_normal_gene_matrix(adata, kb_output_mutation, kb_ou
         bus_df_mutation = pd.read_csv(bus_df_mutation_path)
 
     bus_df_mutation["gene_names_final"] = bus_df_mutation["gene_names_final"].apply(safe_literal_eval)
-    bus_df_mutation.rename(columns={"gene_names_final": "MCRS_headers_final", "count": "count_value"}, inplace=True)
+    bus_df_mutation.rename(columns={"gene_names_final": "VCRS_headers_final", "count": "count_value"}, inplace=True)
 
     if id_to_header_csv:
-        bus_df_mutation.rename(columns={"MCRS_headers_final": "MCRS_ids_final"}, inplace=True)
+        bus_df_mutation.rename(columns={"VCRS_headers_final": "VCRS_ids_final"}, inplace=True)
         id_to_header_dict = make_mapping_dict(id_to_header_csv, dict_key="id")
-        bus_df_mutation["MCRS_headers_final"] = bus_df_mutation["MCRS_ids_final"].apply(lambda name_list: [id_to_header_dict.get(name, name) for name in name_list])
+        bus_df_mutation["VCRS_headers_final"] = bus_df_mutation["VCRS_ids_final"].apply(lambda name_list: [id_to_header_dict.get(name, name) for name in name_list])
 
-    bus_df_mutation["transcripts_MCRS"] = bus_df_mutation["MCRS_headers_final"].apply(lambda string_list: tuple({s.split(":")[0] for s in string_list}))
+    bus_df_mutation["transcripts_VCRS"] = bus_df_mutation["VCRS_headers_final"].apply(lambda string_list: tuple({s.split(":")[0] for s in string_list}))
 
     if not os.path.exists(bus_df_standard_path):
         bus_df_standard = make_bus_df(
-            kallisto_out=kb_output_standard,
+            kallisto_out=kb_count_reference_genome_dir,
             fastq_file_list=fastq_file_list,  # make sure this is in the same order as passed into kb count - [sample1, sample2, etc] OR [sample1_pair1, sample1_pair2, sample2_pair1, sample2_pair2, etc]
             t2g_file=t2g_standard,
             mm=mm,
@@ -600,7 +594,6 @@ def adjust_mutation_adata_by_normal_gene_matrix(adata, kb_output_mutation, kb_ou
     bus_df_standard["transcript_names_final"] = bus_df_standard["transcript_names_final"].apply(safe_literal_eval)
     bus_df_standard["transcripts_standard"] = bus_df_standard["transcript_names_final"].apply(lambda name_list: tuple(re.match(r"^(ENST\d+)", name).group(0) if re.match(r"^(ENST\d+)", name) else name for name in name_list))
 
-
     if ignore_barcodes:
         columns_for_merging = ["UMI", "fastq_header", "transcripts_standard"]
         columns_for_merging_without_transcripts_standard = ["UMI", "fastq_header"]
@@ -611,7 +604,7 @@ def adjust_mutation_adata_by_normal_gene_matrix(adata, kb_output_mutation, kb_ou
     bus_df_mutation = bus_df_mutation.merge(bus_df_standard[columns_for_merging], on=columns_for_merging_without_transcripts_standard, how="left", suffixes=("", "_standard"))  # keep barcode designations of mutation bus df (which aligns with the adata object)
 
     # TODO: I think this might be the inverse logic in the "any" line
-    bus_df_mutation["mcrs_matrix_received_a_count_from_a_read_that_aligned_to_a_different_gene"] = bus_df_mutation.apply(lambda row: (row["counted_in_count_matrix"] and any(transcript in row["transcripts_standard"] for transcript in row["transcripts_mcrs"])), axis=1)
+    bus_df_mutation["vcrs_matrix_received_a_count_from_a_read_that_aligned_to_a_different_gene"] = bus_df_mutation.apply(lambda row: (row["counted_in_count_matrix"] and any(transcript in row["transcripts_standard"] for transcript in row["transcripts_vcrs"])), axis=1)
 
     n_rows, n_cols = adata.X.shape
     decrement_matrix = csr_matrix((n_rows, n_cols))
@@ -619,11 +612,11 @@ def adjust_mutation_adata_by_normal_gene_matrix(adata, kb_output_mutation, kb_ou
     var_names_to_idx_in_adata_dict = {name: idx for idx, name in enumerate(adata.var_names)}
 
     # iterate through the rows where the erroneous counting occurred
-    for row in bus_df_mutation.loc[bus_df_mutation["mcrs_matrix_received_a_count_from_a_read_that_aligned_to_a_different_gene"]].itertuples():
+    for row in bus_df_mutation.loc[bus_df_mutation["vcrs_matrix_received_a_count_from_a_read_that_aligned_to_a_different_gene"]].itertuples():
         barcode_idx = np.where(adata.obs_names == row.barcode)[0][0]  # if I previously removed the padding
-        mcrs_idxs = [var_names_to_idx_in_adata_dict[header] for header in row.MCRS_ids_final if header in var_names_to_idx_in_adata_dict]
+        vcrs_idxs = [var_names_to_idx_in_adata_dict[header] for header in row.VCRS_ids_final if header in var_names_to_idx_in_adata_dict]
 
-        decrement_matrix[barcode_idx, mcrs_idxs] += row.count_value
+        decrement_matrix[barcode_idx, vcrs_idxs] += row.count_value
 
     if not isinstance(adata.X, csr_matrix):
         adata.X = adata.X.tocsr()
@@ -638,7 +631,7 @@ def adjust_mutation_adata_by_normal_gene_matrix(adata, kb_output_mutation, kb_ou
 
     # save adata
     if not adata_output_path:
-        adata_output_path = f"{kb_output_mutation}/counts_unfiltered/adata_adjusted_by_gene_alignments.h5ad"
+        adata_output_path = f"{kb_count_vcrs_dir}/counts_unfiltered/adata_adjusted_by_gene_alignments.h5ad"
 
     adata.write(adata_output_path)
 
@@ -665,18 +658,18 @@ def match_adata_orders(adata, adata_ref):
     return adata_padded
 
 
-def make_vaf_matrix(adata_mutant_mcrs_path, adata_wt_mcrs_path, adata_vaf_output=None, mutant_vcf=None):
-    adata_mutant_mcrs = sc.read_h5ad(adata_mutant_mcrs_path)
-    adata_wt_mcrs = sc.read_h5ad(adata_wt_mcrs_path)
+def make_vaf_matrix(adata_mutant_vcrs_path, adata_wt_vcrs_path, adata_vaf_output=None, mutant_vcf=None):
+    adata_mutant_vcrs = sc.read_h5ad(adata_mutant_vcrs_path)
+    adata_wt_vcrs = sc.read_h5ad(adata_wt_vcrs_path)
 
-    adata_mutant_mcrs_path_out = adata_mutant_mcrs_path.replace(".h5ad", "_with_vaf.h5ad")
-    adata_wt_mcrs_path_out = adata_wt_mcrs_path.replace(".h5ad", "_with_vaf.h5ad")
+    adata_mutant_vcrs_path_out = adata_mutant_vcrs_path.replace(".h5ad", "_with_vaf.h5ad")
+    adata_wt_vcrs_path_out = adata_wt_vcrs_path.replace(".h5ad", "_with_vaf.h5ad")
 
-    adata_wt_mcrs_padded = match_adata_orders(adata=adata_wt_mcrs, adata_ref=adata_mutant_mcrs)
+    adata_wt_vcrs_padded = match_adata_orders(adata=adata_wt_vcrs, adata_ref=adata_mutant_vcrs)
 
     # Perform element-wise division (handle sparse matrices)
-    mutant_X = adata_mutant_mcrs.X
-    wt_X = adata_wt_mcrs_padded.X
+    mutant_X = adata_mutant_vcrs.X
+    wt_X = adata_wt_vcrs_padded.X
 
     if sp.issparse(mutant_X) and sp.issparse(wt_X):
         # Calculate the denominator: mutant_X + wt_X (element-wise addition for sparse matrices)
@@ -697,7 +690,7 @@ def make_vaf_matrix(adata_mutant_mcrs_path, adata_wt_mcrs_path, adata_vaf_output
         result_matrix = np.nan_to_num(mutant_X / denominator, nan=0.0, posinf=0.0, neginf=0.0)
 
     # Create a new AnnData object with the result
-    adata_result = ad.AnnData(X=result_matrix, obs=adata_mutant_mcrs.obs, var=adata_mutant_mcrs.var)
+    adata_result = ad.AnnData(X=result_matrix, obs=adata_mutant_vcrs.obs, var=adata_mutant_vcrs.var)
 
     if not adata_vaf_output:
         adata_vaf_output = "./adata_vaf.h5ad"
@@ -707,26 +700,26 @@ def make_vaf_matrix(adata_mutant_mcrs_path, adata_wt_mcrs_path, adata_vaf_output
 
     # merge wt allele depth into mutant adata
     # Ensure indices of adata2.var and adata1.var are aligned
-    merged_var = adata_mutant_mcrs.var.copy()  # Start with adata1.var
+    merged_var = adata_mutant_vcrs.var.copy()  # Start with adata1.var
 
-    # Add the "mcrs_count" from adata2 as "wt_count" into adata1.var
-    merged_var["wt_count"] = adata_wt_mcrs.var["mcrs_count"].rename("wt_count")
+    # Add the "vcrs_count" from adata2 as "wt_count" into adata1.var
+    merged_var["wt_count"] = adata_wt_vcrs.var["vcrs_count"].rename("wt_count")
 
     # Assign the updated var back to adata1
-    adata_mutant_mcrs.var = merged_var
+    adata_mutant_vcrs.var = merged_var
 
     # Ensure there are no division by zero errors
-    mcrs_count = adata_mutant_mcrs.var["mcrs_count"]
-    wt_count = adata_mutant_mcrs.var["wt_count"]
+    vcrs_count = adata_mutant_vcrs.var["vcrs_count"]
+    wt_count = adata_mutant_vcrs.var["wt_count"]
 
     # Calculate VAF
-    adata_mutant_mcrs.var["vaf_across_samples"] = mcrs_count / (mcrs_count + wt_count)
+    adata_mutant_vcrs.var["vaf_across_samples"] = vcrs_count / (vcrs_count + wt_count)
 
-    # wherever wt_count has a NaN, I want adata_mutant_mcrs.var["vaf_across_samples"] to have a NaN
-    adata_mutant_mcrs.var.loc[wt_count.isna(), "vaf_across_samples"] = pd.NA
+    # wherever wt_count has a NaN, I want adata_mutant_vcrs.var["vaf_across_samples"] to have a NaN
+    adata_mutant_vcrs.var.loc[wt_count.isna(), "vaf_across_samples"] = pd.NA
 
-    adata_mutant_mcrs.write(adata_mutant_mcrs_path_out)
-    adata_wt_mcrs.write(adata_wt_mcrs_path_out)
+    adata_mutant_vcrs.write(adata_mutant_vcrs_path_out)
+    adata_wt_vcrs.write(adata_wt_vcrs_path_out)
 
     return adata_vaf_output
 
@@ -842,15 +835,11 @@ def add_vcf_info_to_cosmic_tsv(cosmic_tsv, reference_genome_fasta, cosmic_df_out
 
     # ins and dup, starting position not 1
     cosmic_df.loc[(((cosmic_df["mutation_type"] == "insertion") | (cosmic_df["mutation_type"] == "duplication")) & (cosmic_df["POS"].astype(int) != 1)), "ref_updated"] = cosmic_df.loc[(((cosmic_df["mutation_type"] == "insertion") | (cosmic_df["mutation_type"] == "duplication")) & (cosmic_df["POS"].astype(int) != 1)), "original_nucleotide"]
-    cosmic_df.loc[(((cosmic_df["mutation_type"] == "insertion") | (cosmic_df["mutation_type"] == "duplication")) & (cosmic_df["POS"].astype(int) != 1)), "alt_updated"] = (
-        cosmic_df.loc[(((cosmic_df["mutation_type"] == "insertion") | (cosmic_df["mutation_type"] == "duplication")) & (cosmic_df["POS"].astype(int) != 1)), "original_nucleotide"] + cosmic_df.loc[(((cosmic_df["mutation_type"] == "insertion") | (cosmic_df["mutation_type"] == "duplication")) & (cosmic_df["POS"].astype(int) != 1)), "ALT"]
-    )
+    cosmic_df.loc[(((cosmic_df["mutation_type"] == "insertion") | (cosmic_df["mutation_type"] == "duplication")) & (cosmic_df["POS"].astype(int) != 1)), "alt_updated"] = cosmic_df.loc[(((cosmic_df["mutation_type"] == "insertion") | (cosmic_df["mutation_type"] == "duplication")) & (cosmic_df["POS"].astype(int) != 1)), "original_nucleotide"] + cosmic_df.loc[(((cosmic_df["mutation_type"] == "insertion") | (cosmic_df["mutation_type"] == "duplication")) & (cosmic_df["POS"].astype(int) != 1)), "ALT"]
 
     # ins and dup, starting position 1
     cosmic_df.loc[(((cosmic_df["mutation_type"] == "insertion") | (cosmic_df["mutation_type"] == "duplication")) & (cosmic_df["POS"].astype(int) == 1)), "ref_updated"] = cosmic_df.loc[(((cosmic_df["mutation_type"] == "insertion") | (cosmic_df["mutation_type"] == "duplication")) & (cosmic_df["POS"].astype(int) == 1)), "original_nucleotide"]
-    cosmic_df.loc[(((cosmic_df["mutation_type"] == "insertion") | (cosmic_df["mutation_type"] == "duplication")) & (cosmic_df["POS"].astype(int) == 1)), "alt_updated"] = (
-        cosmic_df.loc[(((cosmic_df["mutation_type"] == "insertion") | (cosmic_df["mutation_type"] == "duplication")) & (cosmic_df["POS"].astype(int) == 1)), "ALT"] + cosmic_df.loc[(((cosmic_df["mutation_type"] == "insertion") | (cosmic_df["mutation_type"] == "duplication")) & (cosmic_df["POS"].astype(int) == 1)), "original_nucleotide"]
-    )
+    cosmic_df.loc[(((cosmic_df["mutation_type"] == "insertion") | (cosmic_df["mutation_type"] == "duplication")) & (cosmic_df["POS"].astype(int) == 1)), "alt_updated"] = cosmic_df.loc[(((cosmic_df["mutation_type"] == "insertion") | (cosmic_df["mutation_type"] == "duplication")) & (cosmic_df["POS"].astype(int) == 1)), "ALT"] + cosmic_df.loc[(((cosmic_df["mutation_type"] == "insertion") | (cosmic_df["mutation_type"] == "duplication")) & (cosmic_df["POS"].astype(int) == 1)), "original_nucleotide"]
 
     # del, starting position not 1
     cosmic_df.loc[((cosmic_df["mutation_type"] == "deletion") & (cosmic_df["POS"].astype(int) != 1)), "ref_updated"] = cosmic_df.loc[((cosmic_df["mutation_type"] == "deletion") & (cosmic_df["POS"].astype(int) != 1)), "original_nucleotide"] + cosmic_df.loc[((cosmic_df["mutation_type"] == "deletion") & (cosmic_df["POS"].astype(int) != 1)), "REF"]
@@ -919,13 +908,13 @@ def write_to_vcf(adata_var, output_file):
 
 
 # TODO: make sure this works for rows with just ID and everything else blank (due to different mutations being concatenated)
-def write_vcfs_for_rows(adata, adata_wt_mcrs, adata_vaf, output_dir):
+def write_vcfs_for_rows(adata, adata_wt_vcrs, adata_vaf, output_dir):
     """
     Write a VCF file for each row (variant) in adata.var.
 
     Parameters:
         adata: AnnData object with mutant counts.
-        adata_wt_mcrs: AnnData object with wild-type counts.
+        adata_wt_vcrs: AnnData object with wild-type counts.
         adata_vaf: AnnData object with VAF values.
         output_dir: Directory to save VCF files.
     """
@@ -940,7 +929,7 @@ def write_vcfs_for_rows(adata, adata_wt_mcrs, adata_vaf, output_dir):
 
         # Extract corresponding matrix values
         mutant_counts = adata[:, vcrs_id].X.flatten()  # Extract as 1D array
-        wt_counts = adata_wt_mcrs[:, vcrs_id].X.flatten()  # Extract as 1D array
+        wt_counts = adata_wt_vcrs[:, vcrs_id].X.flatten()  # Extract as 1D array
         vaf_values = adata_vaf[:, vcrs_id].X.flatten()  # Extract as 1D array
 
         # Create VCF file for the row
@@ -964,6 +953,7 @@ def write_vcfs_for_rows(adata, adata_wt_mcrs, adata_vaf, output_dir):
 
                 # Write VCF row
                 vcf_file.write(f"{chrom}\t{pos}\t{var_id}\t{ref}\t{alt}\t.\tPASS\t{info}\n")
+
 
 def generate_mutation_notation_from_vcf_columns(row):
     pos = row["POS"]

@@ -9,7 +9,7 @@ import pytest
 import varseek as vk
 from varseek.utils import (
     create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting,
-    create_mutant_t2g,
+    create_identity_t2g,
     make_mapping_dict,
     reverse_complement
 )
@@ -292,7 +292,7 @@ def toy_id_to_header_mapping_csv_path(vcrs_id_and_header_and_sequence_standard_l
 def toy_t2g_path(toy_vcrs_fa_path):
     temp_t2g = tempfile.NamedTemporaryFile(delete=False, suffix='.txt')
 
-    create_mutant_t2g(toy_vcrs_fa_path, out=temp_t2g.name)
+    create_identity_t2g(toy_vcrs_fa_path, out=temp_t2g.name)
 
     yield temp_t2g.name
 

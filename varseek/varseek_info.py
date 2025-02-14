@@ -1,4 +1,5 @@
 """varseek info and specific helper functions."""
+
 # CELL
 import os
 import subprocess
@@ -12,7 +13,7 @@ from tqdm import tqdm
 
 from varseek.constants import mutation_pattern
 from varseek.utils import (
-    add_mcrs_mutation_type,
+    add_vcrs_mutation_type,
     align_to_normal_genome_and_build_dlist,
     calculate_nearby_mutations,
     calculate_total_gene_info,
@@ -20,13 +21,13 @@ from varseek.utils import (
     collapse_df,
     compare_cdna_and_genome,
     compute_distance_to_closest_splice_junction,
-    create_df_of_mcrs_to_self_headers,
+    create_df_of_vcrs_to_self_headers,
     download_ensembl_reference_files,
     download_t2t_reference_files,
     explode_df,
     fasta_summary_stats,
     get_df_overlap,
-    get_mcrss_that_pseudoalign_but_arent_dlisted,
+    get_vcrss_that_pseudoalign_but_arent_dlisted,
     is_program_installed,
     is_valid_int,
     longest_homopolymer,
@@ -82,7 +83,7 @@ def add_some_mutation_information_when_cdna_and_genome_combined(df, columns_to_c
     return df
 
 
-def add_mutation_information(mutation_metadata_df, mutation_column="mutation", mcrs_source="cdna"):
+def add_mutation_information(mutation_metadata_df, mutation_column="mutation", vcrs_source="cdna"):
     mutation_metadata_df[["nucleotide_positions", "actual_variant"]] = mutation_metadata_df[mutation_column].str.extract(mutation_pattern)
 
     split_positions = mutation_metadata_df["nucleotide_positions"].str.split("_", expand=True)
@@ -95,11 +96,11 @@ def add_mutation_information(mutation_metadata_df, mutation_column="mutation", m
 
     mutation_metadata_df[["start_variant_position", "end_variant_position"]] = mutation_metadata_df[["start_variant_position", "end_variant_position"]].astype("Int64")
 
-    if mcrs_source is not None:
-        mutation_metadata_df[f"nucleotide_positions_{mcrs_source}"] = mutation_metadata_df["nucleotide_positions"]
-        mutation_metadata_df[f"actual_variant_{mcrs_source}"] = mutation_metadata_df["actual_variant"]
-        mutation_metadata_df[f"start_variant_position_{mcrs_source}"] = mutation_metadata_df["start_variant_position"]
-        mutation_metadata_df[f"end_variant_position_{mcrs_source}"] = mutation_metadata_df["end_variant_position"]
+    if vcrs_source is not None:
+        mutation_metadata_df[f"nucleotide_positions_{vcrs_source}"] = mutation_metadata_df["nucleotide_positions"]
+        mutation_metadata_df[f"actual_variant_{vcrs_source}"] = mutation_metadata_df["actual_variant"]
+        mutation_metadata_df[f"start_variant_position_{vcrs_source}"] = mutation_metadata_df["start_variant_position"]
+        mutation_metadata_df[f"end_variant_position_{vcrs_source}"] = mutation_metadata_df["end_variant_position"]
 
     return mutation_metadata_df
 
@@ -147,14 +148,8 @@ def validate_input_info(params_dict):
         if not params_dict.get("dlist_reference_genome_fasta") == params_dict.get("dlist_reference_gtf"):
             raise ValueError(f"dlist_reference_genome_fasta and dlist_reference_gtf must be the same value when using a supported dlist reference. Got {params_dict.get('dlist_reference_genome_fasta')} and {params_dict.get('dlist_reference_gtf')}.")
     # check if dlist_reference_source is not a valid value and the 3 dlist file parameters are also not valid values (i.e., a real file or a supported dlist reference)
-    if not params_dict.get("dlist_reference_source") in supported_dlist_reference_values and not (
-        (os.path.isfile(params_dict.get("dlist_reference_genome_fasta")) or params_dict.get("dlist_reference_genome_fasta") in supported_dlist_reference_values) and
-        (os.path.isfile(params_dict.get("dlist_reference_cdna_fasta")) or params_dict.get("dlist_reference_cdna_fasta") in supported_dlist_reference_values) and
-        (os.path.isfile(params_dict.get("dlist_reference_gtf")) or params_dict.get("dlist_reference_gtf") in supported_dlist_reference_values)
-    ):
-        raise ValueError(
-            f"Invalid value for dlist_reference_source: {params_dict.get('dlist_reference_source')} without specifying dlist_reference_genome_fasta, dlist_reference_cdna_fasta, and dlist_reference_gtf. dlist_reference_source must be one of {supported_dlist_reference_values}, or the other arguments must be provided (each as valid file paths or one of {supported_dlist_reference_values})."
-        )
+    if not params_dict.get("dlist_reference_source") in supported_dlist_reference_values and not ((os.path.isfile(params_dict.get("dlist_reference_genome_fasta")) or params_dict.get("dlist_reference_genome_fasta") in supported_dlist_reference_values) and (os.path.isfile(params_dict.get("dlist_reference_cdna_fasta")) or params_dict.get("dlist_reference_cdna_fasta") in supported_dlist_reference_values) and (os.path.isfile(params_dict.get("dlist_reference_gtf")) or params_dict.get("dlist_reference_gtf") in supported_dlist_reference_values)):
+        raise ValueError(f"Invalid value for dlist_reference_source: {params_dict.get('dlist_reference_source')} without specifying dlist_reference_genome_fasta, dlist_reference_cdna_fasta, and dlist_reference_gtf. dlist_reference_source must be one of {supported_dlist_reference_values}, or the other arguments must be provided (each as valid file paths or one of {supported_dlist_reference_values}).")
 
     # column names
     for column in ["vcrs_id_column", "vcrs_sequence_column", "vcrs_source_column", "var_column", "seq_id_column", "variant_cdna_column", "seq_id_cdna_column", "variant_genome_column", "seq_id_genome_column"]:
@@ -314,7 +309,7 @@ def info(
     # Column names in variants_updated_csv:
     - vcrs_id_column                     (str) Name of the column containing the VCRS IDs in `variants_updated_csv`. Only used if `variants_updated_csv` exists (i.e., was generated from varseek build). Default: 'vcrs_id'.
     - vcrs_sequence_column               (str) Name of the column containing the VCRS sequences in `variants_updated_csv`. Only used if `variants_updated_csv` exists (i.e., was generated from varseek build). Default: 'mutant_sequence'.
-    - vcrs_source_column                 (str) Name of the column containing the source of the VCRS (cdna or genome) in `variants_updated_csv`. Only used if `variants_updated_csv` exists (i.e., was generated from varseek build). Default: 'mcrs_source'.
+    - vcrs_source_column                 (str) Name of the column containing the source of the VCRS (cdna or genome) in `variants_updated_csv`. Only used if `variants_updated_csv` exists (i.e., was generated from varseek build). Default: 'vcrs_source'.
     - var_column                         (str) Name of the column containing the variants in `variants_updated_csv`. Only used if `variants_updated_csv` exists (i.e., was generated from varseek build). Default: 'mutation_cdna'.
     - seq_id_column                      (str) Name of the column containing the sequence IDs in `variants_updated_csv`. Only used if `variants_updated_csv` exists (i.e., was generated from varseek build). Default: 'seq_ID'.
     - variant_cdna_column               (str) Name of the column containing the cDNA variants in `variants_updated_csv`. Only used if `variants_updated_csv` exists (i.e., was generated from varseek build) and contains information regarding both genome and cDNA notation (essential if running spliced + unspliced workflow, optional otherwise). Default: 'mutation_cdna'.
@@ -487,8 +482,8 @@ def info(
     if id_to_header_csv is not None:
         id_to_header_dict = make_mapping_dict(id_to_header_csv, dict_key="id")
         # header_to_id_dict = {value: key for key, value in id_to_header_dict.items()}
-        mcrs_fasta_base, mcrs_fasta_ext = splitext_custom(vcrs_fasta)
-        temp_header_fa = f"{mcrs_fasta_base}_with_headers{mcrs_fasta_ext}"
+        vcrs_fasta_base, vcrs_fasta_ext = splitext_custom(vcrs_fasta)
+        temp_header_fa = f"{vcrs_fasta_base}_with_headers{vcrs_fasta_ext}"
         swap_ids_for_headers_in_fasta(vcrs_fasta, id_to_header_csv, out_fasta=temp_header_fa)
     else:
         id_to_header_dict = None
@@ -527,18 +522,18 @@ def info(
         contains_enst = mutation_metadata_df["vcrs_header"].iloc[0].find("ENST") != -1  # TODO: this just differentiates cdna from genome based on searching for ENST, but there may be other ways to discern cDNA from genome
 
         if contains_enst:
-            mcrs_source = "cdna"
+            vcrs_source = "cdna"
         else:
-            mcrs_source = "genome"
+            vcrs_source = "genome"
 
-        mutation_metadata_df[vcrs_source_column] = mcrs_source
+        mutation_metadata_df[vcrs_source_column] = vcrs_source
 
         mutation_metadata_df["header_list"] = mutation_metadata_df["vcrs_header"].str.split(";")
         mutation_metadata_df["order_list"] = mutation_metadata_df["header_list"].apply(lambda x: list(range(len(x))))
 
-        mcrs_header_has_merged_values = mutation_metadata_df["vcrs_header"].apply(lambda x: isinstance(x, str) and ";" in x).any()
+        vcrs_header_has_merged_values = mutation_metadata_df["vcrs_header"].apply(lambda x: isinstance(x, str) and ";" in x).any()
 
-        if mcrs_header_has_merged_values:
+        if vcrs_header_has_merged_values:
             mutation_metadata_df_exploded = explode_df(mutation_metadata_df, columns_to_explode)
         else:
             mutation_metadata_df_exploded = mutation_metadata_df
@@ -547,9 +542,9 @@ def info(
 
         mutation_metadata_df_exploded["seq_ID"] = mutation_metadata_df_exploded["seq_ID"].astype(str)
 
-        mutation_metadata_df_exploded = add_mutation_information(mutation_metadata_df_exploded, mcrs_source=mcrs_source)
+        mutation_metadata_df_exploded = add_mutation_information(mutation_metadata_df_exploded, vcrs_source=vcrs_source)
 
-        if mcrs_source == "genome":
+        if vcrs_source == "genome":
             mutation_metadata_df_exploded.rename(
                 columns={"seq_ID": "chromosome", "mutation": "mutation_genome"},
                 inplace=True,
@@ -592,41 +587,41 @@ def info(
         mutation_metadata_df["order_list"] = mutation_metadata_df["header_list"].apply(lambda x: list(range(len(x))))
 
         if vcrs_source_column in mutation_metadata_df.columns:
-            mcrs_source = mutation_metadata_df[vcrs_source_column].unique()
-            if len(mcrs_source) > 1:
-                mcrs_source = "combined"
+            vcrs_source = mutation_metadata_df[vcrs_source_column].unique()
+            if len(vcrs_source) > 1:
+                vcrs_source = "combined"
             else:
-                mcrs_source = mcrs_source[0]
+                vcrs_source = vcrs_source[0]
         else:
             contains_enst = mutation_metadata_df["vcrs_header"].iloc[0].find("ENST") != -1  # TODO: this just differentiates cdna from genome based on searching for ENST, but there may be other ways to discern cDNA from genome
 
             if contains_enst:
-                mcrs_source = "cdna"
+                vcrs_source = "cdna"
             else:
-                mcrs_source = "genome"
+                vcrs_source = "genome"
 
-            mutation_metadata_df[vcrs_source_column] = mcrs_source
+            mutation_metadata_df[vcrs_source_column] = vcrs_source
 
-        if mcrs_source == "combined":
+        if vcrs_source == "combined":
             mutation_metadata_df = add_some_mutation_information_when_cdna_and_genome_combined(mutation_metadata_df, columns_to_explode)
         else:
-            mutation_metadata_df[f"nucleotide_positions_{mcrs_source}"] = mutation_metadata_df["nucleotide_positions"]
-            mutation_metadata_df[f"actual_variant_{mcrs_source}"] = mutation_metadata_df["actual_variant"]
-            mutation_metadata_df[f"start_variant_position_{mcrs_source}"] = mutation_metadata_df["start_variant_position"]
-            mutation_metadata_df[f"end_variant_position_{mcrs_source}"] = mutation_metadata_df["end_variant_position"]
+            mutation_metadata_df[f"nucleotide_positions_{vcrs_source}"] = mutation_metadata_df["nucleotide_positions"]
+            mutation_metadata_df[f"actual_variant_{vcrs_source}"] = mutation_metadata_df["actual_variant"]
+            mutation_metadata_df[f"start_variant_position_{vcrs_source}"] = mutation_metadata_df["start_variant_position"]
+            mutation_metadata_df[f"end_variant_position_{vcrs_source}"] = mutation_metadata_df["end_variant_position"]
 
         columns_to_explode.extend(
             [
-                f"nucleotide_positions_{mcrs_source}",
-                f"actual_variant_{mcrs_source}",
-                f"start_variant_position_{mcrs_source}",
-                f"end_variant_position_{mcrs_source}",
+                f"nucleotide_positions_{vcrs_source}",
+                f"actual_variant_{vcrs_source}",
+                f"start_variant_position_{vcrs_source}",
+                f"end_variant_position_{vcrs_source}",
             ]
         )
 
-        mcrs_header_has_merged_values = mutation_metadata_df["vcrs_header"].apply(lambda x: isinstance(x, str) and ";" in x).any()
+        vcrs_header_has_merged_values = mutation_metadata_df["vcrs_header"].apply(lambda x: isinstance(x, str) and ";" in x).any()
 
-        if mcrs_header_has_merged_values:
+        if vcrs_header_has_merged_values:
             mutation_metadata_df_exploded = explode_df(mutation_metadata_df, columns_to_explode)
         else:
             mutation_metadata_df_exploded = mutation_metadata_df
@@ -650,7 +645,7 @@ def info(
             mutation_metadata_df_exploded = add_mutation_information(
                 mutation_metadata_df_exploded,
                 mutation_column=variant_genome_column,
-                mcrs_source="genome",
+                vcrs_source="genome",
             )
             columns_to_explode_extend_values.extend(
                 [
@@ -661,16 +656,16 @@ def info(
                 ]
             )
             # TODO: this is a little hacky (I set these values in the function and then reset them now)
-            mutation_metadata_df_exploded["nucleotide_positions"] = mutation_metadata_df_exploded[f"nucleotide_positions_{mcrs_source}"]
-            mutation_metadata_df_exploded["actual_variant"] = mutation_metadata_df_exploded[f"actual_variant_{mcrs_source}"]
-            mutation_metadata_df_exploded["start_variant_position"] = mutation_metadata_df_exploded[f"start_variant_position_{mcrs_source}"]
-            mutation_metadata_df_exploded["end_variant_position"] = mutation_metadata_df_exploded[f"end_variant_position_{mcrs_source}"]
+            mutation_metadata_df_exploded["nucleotide_positions"] = mutation_metadata_df_exploded[f"nucleotide_positions_{vcrs_source}"]
+            mutation_metadata_df_exploded["actual_variant"] = mutation_metadata_df_exploded[f"actual_variant_{vcrs_source}"]
+            mutation_metadata_df_exploded["start_variant_position"] = mutation_metadata_df_exploded[f"start_variant_position_{vcrs_source}"]
+            mutation_metadata_df_exploded["end_variant_position"] = mutation_metadata_df_exploded[f"end_variant_position_{vcrs_source}"]
 
         if mutation_metadata_df_exploded[vcrs_source_column].unique()[0] == "genome" and variant_cdna_column in mutation_metadata_df_exploded:
             mutation_metadata_df_exploded = add_mutation_information(
                 mutation_metadata_df_exploded,
                 mutation_column=variant_cdna_column,
-                mcrs_source="cdna",
+                vcrs_source="cdna",
             )
             columns_to_explode_extend_values.extend(
                 [
@@ -680,13 +675,13 @@ def info(
                     "end_variant_position_cdna",
                 ]
             )
-            mutation_metadata_df_exploded["nucleotide_positions"] = mutation_metadata_df_exploded[f"nucleotide_positions_{mcrs_source}"]
-            mutation_metadata_df_exploded["actual_variant"] = mutation_metadata_df_exploded[f"actual_variant_{mcrs_source}"]
-            mutation_metadata_df_exploded["start_variant_position"] = mutation_metadata_df_exploded[f"start_variant_position_{mcrs_source}"]
-            mutation_metadata_df_exploded["end_variant_position"] = mutation_metadata_df_exploded[f"end_variant_position_{mcrs_source}"]
+            mutation_metadata_df_exploded["nucleotide_positions"] = mutation_metadata_df_exploded[f"nucleotide_positions_{vcrs_source}"]
+            mutation_metadata_df_exploded["actual_variant"] = mutation_metadata_df_exploded[f"actual_variant_{vcrs_source}"]
+            mutation_metadata_df_exploded["start_variant_position"] = mutation_metadata_df_exploded[f"start_variant_position_{vcrs_source}"]
+            mutation_metadata_df_exploded["end_variant_position"] = mutation_metadata_df_exploded[f"end_variant_position_{vcrs_source}"]
 
     # CELL
-    if mcrs_source in {"genome", "combined"}:
+    if vcrs_source in {"genome", "combined"}:
         mutation_metadata_df_exploded = mutation_metadata_df_exploded.loc[~((mutation_metadata_df_exploded[vcrs_source_column] == "genome") & ((pd.isna(mutation_metadata_df_exploded["chromosome"])) | (mutation_metadata_df_exploded["mutation_genome"].str.contains("g.nan", na=True))))]
 
     columns_to_explode.extend(columns_to_explode_extend_values)
@@ -704,7 +699,7 @@ def info(
                     reference_genome_fasta=reference_genome_fasta,
                     mutations_csv=mutations_csv,
                     w=w,
-                    mcrs_source=mcrs_source,
+                    vcrs_source=vcrs_source,
                     columns_to_explode=columns_to_explode,
                     seq_id_column_cdna=seq_id_cdna_column,
                     var_column_cdna=variant_cdna_column,
@@ -761,7 +756,7 @@ def info(
                 vcrs_source_column=vcrs_source_column,
                 k=k,
                 output_plot_folder=output_plot_folder,
-                mcrs_source=mcrs_source,
+                vcrs_source=vcrs_source,
                 mutation_metadata_df_exploded=mutation_metadata_df_exploded,
                 columns_to_explode=columns_to_explode,
             )
@@ -770,7 +765,7 @@ def info(
             columns_not_successfully_added.extend(["nearby_variants", "nearby_variants_count", "has_a_nearby_variant"])
 
     # CELL
-    if mcrs_header_has_merged_values:
+    if vcrs_header_has_merged_values:
         logger.info("Collapsing dataframe")
         mutation_metadata_df, columns_to_explode = collapse_df(
             mutation_metadata_df_exploded,
@@ -801,7 +796,7 @@ def info(
 
     # CELL
 
-    # TODO: calculate if VCRS was optimized - compare MCRS_length to length of unoptimized - exclude subs, and calculate max([2*w + length(added) - length(removed)], [2*w - 1])
+    # TODO: calculate if VCRS was optimized - compare VCRS_length to length of unoptimized - exclude subs, and calculate max([2*w + length(added) - length(removed)], [2*w - 1])
 
     if bowtie_path is not None:
         bowtie2_build = f"{bowtie_path}/bowtie2-build"
@@ -810,9 +805,8 @@ def info(
         bowtie2_build = "bowtie2-build"
         bowtie2 = "bowtie2"
 
-
     # TODO: have more columns_to_include options that allows me to do cdna alone, genome alone, or both combined - currently it is either cdna+genome or nothing
-    if columns_to_include == "all" or ("alignment_to_reference" in columns_to_include or "alignment_to_reference_count_total" in columns_to_include or 'alignment_to_reference_count_cdna' in columns_to_include or 'alignment_to_reference_count_genome' in columns_to_include or "substring_alignment_to_reference" in columns_to_include or "substring_alignment_to_reference_count_total" in columns_to_include or "substring_alignment_to_reference_count_cdna" in columns_to_include or "substring_alignment_to_reference_count_genome" in columns_to_include):
+    if columns_to_include == "all" or ("alignment_to_reference" in columns_to_include or "alignment_to_reference_count_total" in columns_to_include or "alignment_to_reference_count_cdna" in columns_to_include or "alignment_to_reference_count_genome" in columns_to_include or "substring_alignment_to_reference" in columns_to_include or "substring_alignment_to_reference_count_total" in columns_to_include or "substring_alignment_to_reference_count_cdna" in columns_to_include or "substring_alignment_to_reference_count_genome" in columns_to_include):
         if not is_program_installed(bowtie2):
             bowtie_columns = ["alignment_to_reference", "alignment_to_reference_count_total", "alignment_to_reference_count_cdna", "alignment_to_reference_count_genome", "substring_alignment_to_reference", "substring_alignment_to_reference_count_total", "substring_alignment_to_reference_count_cdna", "substring_alignment_to_reference_count_genome"]
             raise ValueError(f"bowtie2 must be installed to run for the following columns: {bowtie_columns}. Please install bowtie2 or omit these columns")
@@ -894,14 +888,14 @@ def info(
         else:
             column_name = "pseudoaligned_to_reference_despite_not_truly_aligning"
 
-        ref_folder_kb = f"{reference_out_dir}/kb_index_for_mcrs_pseudoalignment_to_reference_genome"
+        ref_folder_kb = f"{reference_out_dir}/kb_index_for_vcrs_pseudoalignment_to_reference_genome"
 
         try:
             logger.info("Getting VCRSs that pseudoalign but aren't dlisted")
-            mutation_metadata_df = get_mcrss_that_pseudoalign_but_arent_dlisted(
+            mutation_metadata_df = get_vcrss_that_pseudoalign_but_arent_dlisted(
                 mutation_metadata_df=mutation_metadata_df,
                 vcrs_id_column=vcrs_id_column,
-                mcrs_fa=vcrs_fasta,
+                vcrs_fa=vcrs_fasta,
                 sequence_names_set=sequence_names_set_union_genome_and_cdna,
                 human_reference_genome_fa=dlist_reference_genome_fasta,
                 human_reference_gtf=dlist_reference_gtf,
@@ -920,7 +914,7 @@ def info(
 
     # CELL
 
-    if columns_to_include == "all" or ("number_of_kmers_with_overlap_to_other_VCRSs" in columns_to_include or "number_of_other_VCRSs_with_overlapping_kmers" in columns_to_include or 'VCRSs_with_overlapping_kmers' in columns_to_include or "kmer_overlap_with_other_VCRSs" in columns_to_include):
+    if columns_to_include == "all" or ("number_of_kmers_with_overlap_to_other_VCRSs" in columns_to_include or "number_of_other_VCRSs_with_overlapping_kmers" in columns_to_include or "VCRSs_with_overlapping_kmers" in columns_to_include or "kmer_overlap_with_other_VCRSs" in columns_to_include):
         try:
             logger.info("Calculating overlap between VCRS items")
             df_overlap_stat_file = f"{output_stat_folder}/df_overlap_stat.txt"
@@ -998,7 +992,7 @@ def info(
     if columns_to_include == "all" or "vcrs_mutation_type" in columns_to_include:
         try:
             logger.info("Adding VCRS mutation type")
-            mutation_metadata_df = add_mcrs_mutation_type(mutation_metadata_df, var_column="vcrs_header")
+            mutation_metadata_df = add_vcrs_mutation_type(mutation_metadata_df, var_column="vcrs_header")
         except Exception as e:
             logger.error(f"Error adding VCRS mutation type: {e}")
             columns_not_successfully_added.append("vcrs_mutation_type")
@@ -1033,16 +1027,16 @@ def info(
         if not is_program_installed(bowtie2):
             bowtie_columns = ["VCRSs_for_which_this_VCRS_is_a_substring", "VCRSs_for_which_this_VCRS_is_a_superstring", "VCRS_is_a_substring_of_another_VCRS", "VCRS_is_a_superstring_of_another_VCRS"]
             raise ValueError(f"bowtie2 must be installed to run for the following columns: {bowtie_columns}. Please install bowtie2 or omit these columns")
-        mcrs_to_mcrs_bowtie_folder = f"{out}/bowtie_vcrs_to_vcrs"
-        mcrs_sam_file = f"{mcrs_to_mcrs_bowtie_folder}/mutant_reads_to_vcrs_index.sam"
+        vcrs_to_vcrs_bowtie_folder = f"{out}/bowtie_vcrs_to_vcrs"
+        vcrs_sam_file = f"{vcrs_to_vcrs_bowtie_folder}/mutant_reads_to_vcrs_index.sam"
         substring_output_stat_file = f"{output_stat_folder}/substring_output_stat.txt"
 
         try:
             logger.info("Creating VCRS to self headers")
-            substring_to_superstring_df, superstring_to_substring_df = create_df_of_mcrs_to_self_headers(
-                mcrs_sam_file=mcrs_sam_file,
-                mcrs_fa=vcrs_fasta,
-                bowtie_mcrs_reference_folder=mcrs_to_mcrs_bowtie_folder,
+            substring_to_superstring_df, superstring_to_substring_df = create_df_of_vcrs_to_self_headers(
+                vcrs_sam_file=vcrs_sam_file,
+                vcrs_fa=vcrs_fasta,
+                bowtie_vcrs_reference_folder=vcrs_to_vcrs_bowtie_folder,
                 bowtie_path=bowtie_path,
                 threads=threads,
                 strandedness=vcrs_strandedness,

@@ -1,4 +1,5 @@
 """varseek summarize and specific helper functions."""
+
 import os
 import time
 
@@ -42,7 +43,7 @@ def validate_input_summarize(params_dict):
 
     if not isinstance(params_dict["out"], str):
         raise ValueError("out must be a string.")
-    
+
     if not isinstance(params_dict["vcrs_id"], str):
         raise ValueError("vcrs_id must be a string.")
 

@@ -1,4 +1,5 @@
 """varseek package initialization module."""
+
 import logging
 
 from .utils import *  # only imports what is in __all__ in .utils/__init__.py

@@ -170,10 +170,10 @@ def test_file_processing(cosmic_csv_path, cds_and_cdna_files, genome_and_gtf_fil
         "substring_alignment_to_reference:equal=none",  # filter out mutations which are a substring of the reference genome
         "pseudoaligned_to_reference_despite_not_truly_aligning:is_not_true",  # filter out mutations which pseudoaligned to human genome despite not truly aligning
         "alignment_to_reference:equal=none",  #*** erase eventually when I want to d-list  # filter out mutations which are capable of being d-listed (given that I filter out the substrings above)
-        "number_of_kmers_with_overlap_to_other_VCRSs:less_than=999999",  # filter out mutations which overlap with other MCRSs in the reference
-        "number_of_other_VCRSs_with_overlapping_kmers:less_than=999999",  # filter out mutations which overlap with other MCRSs in the reference
-        "longest_homopolymer_length:less_or_equal=6",  # filters out MCRSs with repeating single nucleotide - eg 6
-        "triplet_complexity:greater_or_equal=0.2"  # filters out MCRSs with repeating triplets - eg 0.2
+        "number_of_kmers_with_overlap_to_other_VCRSs:less_than=999999",  # filter out mutations which overlap with other VCRSs in the reference
+        "number_of_other_VCRSs_with_overlapping_kmers:less_than=999999",  # filter out mutations which overlap with other VCRSs in the reference
+        "longest_homopolymer_length:less_or_equal=6",  # filters out VCRSs with repeating single nucleotide - eg 6
+        "triplet_complexity:greater_or_equal=0.2"  # filters out VCRSs with repeating triplets - eg 0.2
     ]
 
     
@@ -233,11 +233,11 @@ def test_file_processing(cosmic_csv_path, cds_and_cdna_files, genome_and_gtf_fil
             columns_to_include="all",
             vcrs_id_column="vcrs_id",
             vcrs_sequence_column="variant_sequence",
-            vcrs_source_column="vcrs_source",  # if input df has concatenated cdna and header MCRS's, then I want to know whether it came from cdna or genome
-            seqid_cdna_column="seq_ID",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome  # TODO: implement these 4 column name arguments
-            seqid_genome_column="chromosome",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome
-            variant_cdna_column="mutation_cdna",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome
-            variant_genome_column="mutation_genome",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome
+            vcrs_source_column="vcrs_source",  # if input df has concatenated cdna and header VCRS's, then I want to know whether it came from cdna or genome
+            seqid_cdna_column="seq_ID",  # if input df has concatenated cdna and header VCRS's, then I want a way of mapping from cdna to genome  # TODO: implement these 4 column name arguments
+            seqid_genome_column="chromosome",  # if input df has concatenated cdna and header VCRS's, then I want a way of mapping from cdna to genome
+            variant_cdna_column="mutation_cdna",  # if input df has concatenated cdna and header VCRS's, then I want a way of mapping from cdna to genome
+            variant_genome_column="mutation_genome",  # if input df has concatenated cdna and header VCRS's, then I want a way of mapping from cdna to genome
             gtf=gtf_path,  # for distance to nearest splice junction
             mutation_metadata_df_out_path=None,
             out=out_dir_notebook,
@@ -257,7 +257,7 @@ def test_file_processing(cosmic_csv_path, cds_and_cdna_files, genome_and_gtf_fil
         dlist_fasta = f"{out_dir_notebook}/dlist.fa"
         mutation_metadata_df_out_path = os.path.join(out_dir_notebook, "mutation_metadata_df_vk_info.csv")
         mutation_metadata_df_out_exploded_path = os.path.join(out_dir_notebook, "mutation_metadata_df_vk_info_exploded.csv")
-        mcrs_fasta_vk_filter = os.path.join(out_dir_notebook, "vcrs_filtered.fa")
+        vcrs_fasta_vk_filter = os.path.join(out_dir_notebook, "vcrs_filtered.fa")
         output_metadata_df_vk_filter = os.path.join(out_dir_notebook, "variants_updated_filtered.csv")
         dlist_fasta_vk_filter = os.path.join(out_dir_notebook, "dlist_filtered.fa")
         t2g_vk_filter = os.path.join(out_dir_notebook, "t2g_filtered.txt")
@@ -266,7 +266,7 @@ def test_file_processing(cosmic_csv_path, cds_and_cdna_files, genome_and_gtf_fil
         dlist_fasta_ground_truth = f"{ground_truth_folder}/dlist.fa"
         mutation_metadata_df_out_path_ground_truth = f"{ground_truth_folder}/variants_updated.csv"
         mutation_metadata_df_out_exploded_path_ground_truth = f"{ground_truth_folder}/mutation_metadata_df_exploded.csv"
-        mcrs_fasta_vk_filter_ground_truth = f"{ground_truth_folder}/vcrs_filtered.fa"
+        vcrs_fasta_vk_filter_ground_truth = f"{ground_truth_folder}/vcrs_filtered.fa"
         output_metadata_df_vk_filter_ground_truth = f"{ground_truth_folder}/variants_updated_filtered.csv"
         dlist_fasta_vk_filter_ground_truth = f"{ground_truth_folder}/dlist_filtered.fa"
         t2g_vk_filter_ground_truth = f"{ground_truth_folder}/t2g_filtered.txt"
@@ -288,7 +288,7 @@ def test_file_processing(cosmic_csv_path, cds_and_cdna_files, genome_and_gtf_fil
             input_dir=out_dir_notebook,
             filters = fasta_filters,
             variants_updated_vk_info_csv = mutation_metadata_df_out_path,
-            vcrs_filtered_fasta_out=mcrs_fasta_vk_filter,
+            vcrs_filtered_fasta_out=vcrs_fasta_vk_filter,
             variants_updated_filtered_csv_out=output_metadata_df_vk_filter,
             dlist_fasta=dlist_fasta,
             dlist_filtered_fasta_out=dlist_fasta_vk_filter,
@@ -299,13 +299,13 @@ def test_file_processing(cosmic_csv_path, cds_and_cdna_files, genome_and_gtf_fil
         )
 
         if make_new_gt:
-            shutil.copy(mcrs_fasta_vk_filter, mcrs_fasta_vk_filter_ground_truth)
+            shutil.copy(vcrs_fasta_vk_filter, vcrs_fasta_vk_filter_ground_truth)
             shutil.copy(output_metadata_df_vk_filter, output_metadata_df_vk_filter_ground_truth)
             shutil.copy(dlist_fasta_vk_filter, dlist_fasta_vk_filter_ground_truth)
             shutil.copy(t2g_vk_filter, t2g_vk_filter_ground_truth)
             shutil.copy(id_to_header_csv_vk_filter, id_to_header_csv_vk_filter_ground_truth)
 
-        compare_two_fastas_without_regard_for_order_of_entries(mcrs_fasta_vk_filter, mcrs_fasta_vk_filter_ground_truth)
+        compare_two_fastas_without_regard_for_order_of_entries(vcrs_fasta_vk_filter, vcrs_fasta_vk_filter_ground_truth)
 
         compare_two_dataframes_without_regard_for_order_of_rows_or_columns(output_metadata_df_vk_filter, output_metadata_df_vk_filter_ground_truth, columns_to_drop = columns_to_drop_info_filter)
 

@@ -9,7 +9,7 @@ import pytest
 import scanpy as sc
 
 import varseek as vk
-from varseek.utils import create_mutant_t2g, make_bus_df
+from varseek.utils import create_identity_t2g, make_bus_df
 
 
 @pytest.fixture
@@ -43,17 +43,17 @@ def temp_fastq_file(tmp_path):
 @pytest.fixture
 def temp_fasta_file(tmp_path):
     fasta_content = (
-        ">mcrs1\n"
+        ">vcrs1\n"
         "AGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGTAT\n"
-        ">mcrs2\n"
+        ">vcrs2\n"
         "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGG\n"
-        ">mcrs3\n"
+        ">vcrs3\n"
         "ATGCTGACTGACTGCTGACTGCTAGCTGACGTCATCAGTACGTACGATGCTGACTGACTGCTGACTGCTAGCTGACGTCATCAGTACGTACG\n"
-        ">mcrs4\n"
+        ">vcrs4\n"
         "AAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAA\n"
-        ">mcrs5\n"
+        ">vcrs5\n"
         "AAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAA\n"
-        ">mcrs6\n"
+        ">vcrs6\n"
         "AGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGTTT\n"
     )
     fasta_path = tmp_path / "test_sequences.fasta"
@@ -84,7 +84,7 @@ def test_bustools_df_bulk(temp_fastq_file, temp_fasta_file, temp_index_file, tem
     k = "31"
     kb_ref_command = ["kb", "ref", "--workflow", "custom", "-t", "16", "-i", temp_index_file, "--d-list", "None", "-k", k, temp_fasta_file]
     subprocess.run(kb_ref_command, check=True)
-    create_mutant_t2g(temp_fasta_file, temp_t2g_file)
+    create_identity_t2g(temp_fasta_file, temp_t2g_file)
     
     kb_count_command = ["kb", "count", "-t", "16", "-k", str(k), "-i", temp_index_file, "-g", temp_t2g_file, "-x", "bulk", "--strand", "forward", "--num", "--h5ad", "--parity", "single", "-o", temp_kb_count_out_folder, temp_fastq_file]
     subprocess.run(kb_count_command, check=True)
@@ -97,7 +97,7 @@ def test_bustools_df_bulk(temp_fastq_file, temp_fasta_file, temp_index_file, tem
     bus_df = make_bus_df(kallisto_out = temp_kb_count_out_folder, fastq_file_list = temp_fastq_file, t2g_file = temp_t2g_file, mm = False, union = False, technology = "bulk", bustools = bustools)
     read_to_ref_dict = dict(zip(bus_df['fastq_header'], bus_df['gene_names_final']))
 
-    assert read_to_ref_dict == {'seq1': ['mcrs1', 'mcrs6'], 'seq2': ['mcrs2'], 'seq3': ['mcrs1', 'mcrs6'], 'seq5': ['mcrs2', 'mcrs4', 'mcrs5']}
+    assert read_to_ref_dict == {'seq1': ['vcrs1', 'vcrs6'], 'seq2': ['vcrs2'], 'seq3': ['vcrs1', 'vcrs6'], 'seq5': ['vcrs2', 'vcrs4', 'vcrs5']}
 
     adata_path = f"{temp_kb_count_out_folder}/counts_unfiltered/adata.h5ad"
     adata = sc.read_h5ad(adata_path)

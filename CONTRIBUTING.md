@@ -38,7 +38,7 @@ Commit the changes once you are happy with them.
 
 1. Review the content for technical accuracy.
 2. Copy-edit the changes/comments for grammar, spelling, and adherence to the general style of existing varseek code.
-3. Format your code using [black](https://black.readthedocs.io/en/stable/getting_started.html), with `-l 400`, as well as isort with `--profile black`.
+3. Format your code using [black](https://black.readthedocs.io/en/stable/getting_started.html), with `-l 99999`, as well as isort with `--profile black`.
 4. Make sure the unit tests pass:
     - Developer dependencies can be installed with `pip install varseek[dev]`
     - Run existing unit tests from the varseek repository root with `pytest`

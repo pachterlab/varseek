@@ -12,7 +12,7 @@ from varseek.utils.seq_utils import fasta_to_fastq, reverse_complement
 tqdm.pandas()
 
 
-def merge_synthetic_read_info_into_mutations_metadata_df(mutation_metadata_df, sampled_reference_df, sample_type="all"):
+def merge_synthetic_read_info_into_variants_metadata_df(mutation_metadata_df, sampled_reference_df, sample_type="all"):
     if sample_type != "m":
         mutation_metadata_df_new = mutation_metadata_df.merge(
             sampled_reference_df[
@@ -117,7 +117,6 @@ def merge_synthetic_read_info_into_mutations_metadata_df(mutation_metadata_df, s
     return mutation_metadata_df_new
 
 
-
 def is_in_ranges(num, ranges):
     if not ranges:
         return False
@@ -142,7 +141,7 @@ def append_row(read_df, id_value, header_value, sequence_value, start_position, 
             "vcrs_mutation_type": None,
             "mutant_read": False,
             "wt_read": True,
-            "region_included_in_mcrs_reference": False,
+            "region_included_in_vcrs_reference": False,
             "noise_added": added_noise,
             # All other columns will be NaN automatically
         }
@@ -210,7 +209,7 @@ def build_random_genome_read_df(
 
     fasta_entries = list(pyfastx.Fastx(reference_fasta_file_path))
     if read_df is None:
-        column_names = ["read_id", "read_header", "read_sequence", "reference_header", "vcrs_header", "mutant_read", "wt_read", "region_included_in_mcrs_reference", "noise_added"]
+        column_names = ["read_id", "read_header", "read_sequence", "reference_header", "vcrs_header", "mutant_read", "wt_read", "region_included_in_vcrs_reference", "noise_added"]
         read_df = pd.DataFrame(columns=column_names)
 
     if input_type == "genome":
@@ -218,12 +217,12 @@ def build_random_genome_read_df(
         chromosomes.extend(["X", "Y", "MT"])
         fasta_entries = [entry for entry in fasta_entries if entry[0] not in chromosomes]
         fasta_entry_column = "chromosome"
-        mcrs_start_column = "start_position_for_which_read_contains_mutation_genome"
-        mcrs_end_column = "end_mutation_position_genome"
+        vcrs_start_column = "start_position_for_which_read_contains_mutation_genome"
+        vcrs_end_column = "end_mutation_position_genome"
     elif input_type == "transcriptome":
         fasta_entry_column = "seq_ID"
-        mcrs_start_column = "start_position_for_which_read_contains_mutation_cdna"
-        mcrs_end_column = "end_mutation_position_cdna"
+        vcrs_start_column = "start_position_for_which_read_contains_mutation_cdna"
+        vcrs_end_column = "end_mutation_position_cdna"
     else:
         raise ValueError(f"Invalid input_type: {input_type}")
 
@@ -253,8 +252,8 @@ def build_random_genome_read_df(
 
             ranges = list(
                 zip(
-                    filtered_mutation_metadata_df[mcrs_start_column],
-                    filtered_mutation_metadata_df[mcrs_end_column],
+                    filtered_mutation_metadata_df[vcrs_start_column],
+                    filtered_mutation_metadata_df[vcrs_end_column],
                 )
             )  # if a mutation spans from positions 950-955 and read length=150, then a random sequence between 801-955 will contain the mutation, and thus should be the range of exclusion here
 

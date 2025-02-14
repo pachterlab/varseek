@@ -11,6 +11,7 @@ from varseek.utils.logger_utils import get_printlog, is_program_installed
 
 tqdm.pandas()
 
+
 def concatenate_fastqs(*input_files, out_dir=".", delete_original_files=False, suffix="concatenatedPairs"):
     """
     Concatenate a variable number of FASTQ files (gzipped or not) into a single output file.
@@ -46,7 +47,6 @@ def concatenate_fastqs(*input_files, out_dir=".", delete_original_files=False, s
     return output_file
 
 
-
 def split_qualities_based_on_sequence(nucleotide_sequence, quality_score_sequence):
     # Step 1: Split the original sequence by the delimiter and get the fragments
     fragments = nucleotide_sequence.split("N")
@@ -58,7 +58,7 @@ def split_qualities_based_on_sequence(nucleotide_sequence, quality_score_sequenc
     split_quality_score_sequence = []
     start = 0
     for length in lengths:
-        split_quality_score_sequence.append(quality_score_sequence[start:(start + length)])
+        split_quality_score_sequence.append(quality_score_sequence[start : (start + length)])
         start += length + 1
 
     return split_quality_score_sequence
@@ -347,16 +347,12 @@ def trim_edges_off_reads_fastq_list(rnaseq_fastq_files, parity, minimum_base_qua
     if parity == "single":
         for i in range(len(rnaseq_fastq_files)):
             printlog(f"Trimming {rnaseq_fastq_files[i]}")
-            rnaseq_fastq_file, _ = trim_edges_and_adaptors_off_fastq_reads(
-                filename=rnaseq_fastq_files[i], filename_r2=None, cut_mean_quality=minimum_base_quality_trim_reads, cut_window_size=cut_window_size, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, n_base_limit=n_base_limit, length_required=length_required, fastp=fastp, seqtk=seqtk, out_dir=out_dir, threads=threads, suffix=suffix
-            )
+            rnaseq_fastq_file, _ = trim_edges_and_adaptors_off_fastq_reads(filename=rnaseq_fastq_files[i], filename_r2=None, cut_mean_quality=minimum_base_quality_trim_reads, cut_window_size=cut_window_size, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, n_base_limit=n_base_limit, length_required=length_required, fastp=fastp, seqtk=seqtk, out_dir=out_dir, threads=threads, suffix=suffix)
             rnaseq_fastq_files_quality_controlled.append(rnaseq_fastq_file)
     elif parity == "paired":
         for i in range(0, len(rnaseq_fastq_files), 2):
             printlog(f"Trimming {rnaseq_fastq_files[i]} and {rnaseq_fastq_files[i + 1]}")
-            rnaseq_fastq_file, rnaseq_fastq_file_2 = trim_edges_and_adaptors_off_fastq_reads(
-                filename=rnaseq_fastq_files[i], filename_r2=rnaseq_fastq_files[i + 1], cut_mean_quality=minimum_base_quality_trim_reads, cut_window_size=cut_window_size, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, n_base_limit=n_base_limit, length_required=length_required, fastp=fastp, seqtk=seqtk, out_dir=out_dir, threads=threads, suffix=suffix
-            )
+            rnaseq_fastq_file, rnaseq_fastq_file_2 = trim_edges_and_adaptors_off_fastq_reads(filename=rnaseq_fastq_files[i], filename_r2=rnaseq_fastq_files[i + 1], cut_mean_quality=minimum_base_quality_trim_reads, cut_window_size=cut_window_size, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, n_base_limit=n_base_limit, length_required=length_required, fastp=fastp, seqtk=seqtk, out_dir=out_dir, threads=threads, suffix=suffix)
             rnaseq_fastq_files_quality_controlled.extend([rnaseq_fastq_file, rnaseq_fastq_file_2])
 
     return rnaseq_fastq_files_quality_controlled
