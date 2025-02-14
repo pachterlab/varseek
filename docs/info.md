@@ -5,7 +5,7 @@ Input table
 | input_dir                                                              | directory         | True                    | out                                                           | ...                             |
 | vcrs_fasta                                                           | .fa                  | False                  | vcrs_fasta_out                                       | ...                             |
 | id_to_header_csv                                                | .csv                | False                  | id_to_header_csv_out                            | ...                             |
-| variants_updated_csv                                      | .csv                | False                  | mutations_updated_csv_out                   | ...                             |
+| variants_updated_csv                                      | .csv                | False                  | variants_updated_csv_out                   | ...                             |
 | gtf                                                                        | .csv                | False                  | gtf                                                            | ...                             |
 | dlist_reference_genome_fasta                            | .csv                | False                  | N/A                                                          | ...                             |
 | dlist_reference_cdna_fasta                                 | .csv                | False                  | N/A                                                          | ...                             |

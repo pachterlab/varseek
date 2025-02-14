@@ -101,7 +101,7 @@ for tool in tools_to_benchmark:
 
 #* Make synthetic reads corresponding to the largest value in number_of_reads_list - if desired, I can replace this with real data
 cosmic_mutations = pd.read_csv(cosmic_mutations_path)
-number_of_mutations_to_sample = cosmic_mutations // 200
+number_of_variants_to_sample = cosmic_mutations // 200
 number_of_reads_max = max(number_of_reads_list) * 10**6  # convert to millions
 fastq_output_path_max_reads = os.path.join(tmp_dir, f"reads_{number_of_reads_max}_fastq.fastq")
 
@@ -109,10 +109,10 @@ print(f"Building synthetic reads for {number_of_reads_max} reads")
 _ = vk.sim(
     mutations = cosmic_mutations,
     reads_fastq_out = fastq_output_path_max_reads,
-    number_of_mutations_to_sample=number_of_mutations_to_sample,
+    number_of_variants_to_sample=number_of_variants_to_sample,
     strand=strand,
-    number_of_reads_per_mutation_m=100,
-    number_of_reads_per_mutation_w=100,
+    number_of_reads_per_variant_alt=100,
+    number_of_reads_per_variant_ref=100,
     read_length=read_length,
     seed=random_seed,
     add_noise_sequencing_error=add_noise_sequencing_error,
@@ -121,7 +121,7 @@ _ = vk.sim(
     error_distribution=error_distribution,
     max_errors=max_errors,
     with_replacement=False,
-    gzip_output_fastq=False,
+    gzip_reads_fastq_out=False,
     sequences=reference_cdna_path,
     seq_id_column=seq_id_column,
     var_column=var_column,

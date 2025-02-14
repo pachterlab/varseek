@@ -16,13 +16,13 @@ from varseek.utils import (
 
 @pytest.fixture
 def temporary_output_files():
-    with tempfile.NamedTemporaryFile(suffix=".csv") as mutations_updated_csv_out, \
+    with tempfile.NamedTemporaryFile(suffix=".csv") as variants_updated_csv_out, \
         tempfile.NamedTemporaryFile(suffix=".csv") as reads_csv_out, \
         tempfile.NamedTemporaryFile(suffix=".fq") as reads_fastq_out:
         
         # Dictionary of temporary paths
         temp_files = {
-            "mutations_updated_csv_out": mutations_updated_csv_out.name,
+            "variants_updated_csv_out": variants_updated_csv_out.name,
             "reads_csv_out": reads_csv_out.name,
             "reads_fastq_out": reads_fastq_out.name
         }
@@ -33,21 +33,21 @@ def test_basic_sim(toy_mutation_metadata_df_with_read_parents_path, temporary_ou
     filters = []
 
     strand = "f"
-    number_of_mutations_to_sample = 5
+    number_of_variants_to_sample = 5
     seed = 42
     read_length = 150
     add_noise = False
     error_rate = 0.01
     max_errors = 0
 
-    mutations_updated_csv_out, reads_csv_out, reads_fastq_out = temporary_output_files["mutations_updated_csv_out"], temporary_output_files["reads_csv_out"], temporary_output_files["reads_fastq_out"]
+    variants_updated_csv_out, reads_csv_out, reads_fastq_out = temporary_output_files["variants_updated_csv_out"], temporary_output_files["reads_csv_out"], temporary_output_files["reads_fastq_out"]
 
     simulated_df_dict_from_test = vk.sim(
         mutations = toy_mutation_metadata_df_with_read_parents_path,
         reads_fastq_out = reads_fastq_out,
-        number_of_mutations_to_sample=number_of_mutations_to_sample,
+        number_of_variants_to_sample=number_of_variants_to_sample,
         strand=strand,
-        number_of_reads_per_mutation_m="all",
+        number_of_reads_per_variant_alt="all",
         read_length=read_length,
         seed=seed,
         add_noise=add_noise,
@@ -61,7 +61,7 @@ def test_basic_sim(toy_mutation_metadata_df_with_read_parents_path, temporary_ou
         vk_build_out_dir=None,
         filters=filters,
         reads_csv_out=reads_csv_out,
-        mutations_updated_csv_out=mutations_updated_csv_out,
+        variants_updated_csv_out=variants_updated_csv_out,
     )
 
     read_df_from_test, mutation_metadata_df_from_test = simulated_df_dict_from_test["read_df"], simulated_df_dict_from_test["mutations"]

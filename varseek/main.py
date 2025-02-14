@@ -1115,28 +1115,28 @@ def main():  # noqa: C901
         help=extract_help_from_doc(sim, "mutations"),
     )
     parser_sim.add_argument(
-        "--number_of_mutations_to_sample",
+        "--number_of_variants_to_sample",
         default=1500,
         type=int,
         required=False,
-        help=extract_help_from_doc(sim, "number_of_mutations_to_sample"),
+        help=extract_help_from_doc(sim, "number_of_variants_to_sample"),
     )
     parser_sim.add_argument(
-        "--number_of_reads_per_mutation_m",
+        "--number_of_reads_per_variant_alt",
         default="all",
         required=False,
-        help=extract_help_from_doc(sim, "number_of_reads_per_mutation_m"),
+        help=extract_help_from_doc(sim, "number_of_reads_per_variant_alt"),
     )
     parser_sim.add_argument(
-        "--number_of_reads_per_mutation_w",
+        "--number_of_reads_per_variant_ref",
         default="all",
         required=False,
-        help=extract_help_from_doc(sim, "number_of_reads_per_mutation_w"),
+        help=extract_help_from_doc(sim, "number_of_reads_per_variant_ref"),
     )
     parser_sim.add_argument(
-        "--sample_m_and_w_from_same_locations",
+        "--sample_ref_and_alt_reads_from_same_locations",
         action="store_true",
-        help=extract_help_from_doc(sim, "sample_m_and_w_from_same_locations"),
+        help=extract_help_from_doc(sim, "sample_ref_and_alt_reads_from_same_locations"),
     )
     parser_sim.add_argument(
         "--with_replacement",
@@ -1192,28 +1192,28 @@ def main():  # noqa: C901
         help=extract_help_from_doc(sim, "max_errors"),
     )
     parser_sim.add_argument(
-        "--mutant_sequence_read_parent_column",
+        "--variant_sequence_read_parent_column",
         required=False,
         default="mutant_sequence_read_parent",
-        help=extract_help_from_doc(sim, "mutant_sequence_read_parent_column"),
+        help=extract_help_from_doc(sim, "variant_sequence_read_parent_column"),
     )
     parser_sim.add_argument(
-        "--wt_sequence_read_parent_column",
+        "--ref_sequence_read_parent_column",
         required=False,
         default="wt_sequence_read_parent",
-        help=extract_help_from_doc(sim, "wt_sequence_read_parent_column"),
+        help=extract_help_from_doc(sim, "ref_sequence_read_parent_column"),
     )
     parser_sim.add_argument(
-        "--mutant_sequence_read_parent_rc_column",
+        "--variant_sequence_read_parent_rc_column",
         required=False,
         default="mutant_sequence_read_parent_rc",
-        help=extract_help_from_doc(sim, "mutant_sequence_read_parent_rc_column"),
+        help=extract_help_from_doc(sim, "variant_sequence_read_parent_rc_column"),
     )
     parser_sim.add_argument(
-        "--wt_sequence_read_parent_rc_column",
+        "--ref_sequence_read_parent_rc_column",
         required=False,
         default="wt_sequence_read_parent_rc",
-        help=extract_help_from_doc(sim, "wt_sequence_read_parent_rc_column"),
+        help=extract_help_from_doc(sim, "ref_sequence_read_parent_rc_column"),
     )
     parser_sim.add_argument(
         "--reads_fastq_parent",
@@ -1238,9 +1238,9 @@ def main():  # noqa: C901
         help=extract_help_from_doc(sim, "reads_fastq_out"),
     )
     parser_sim.add_argument(
-        "--mutations_updated_csv_out",
+        "--variants_updated_csv_out",
         required=False,
-        help=extract_help_from_doc(sim, "mutations_updated_csv_out"),
+        help=extract_help_from_doc(sim, "variants_updated_csv_out"),
     )
     parser_sim.add_argument(
         "--reads_csv_out",
@@ -1248,14 +1248,14 @@ def main():  # noqa: C901
         help=extract_help_from_doc(sim, "reads_csv_out"),
     )
     parser_sim.add_argument(
-        "--disable_save_mutations_updated_csv",
+        "--disable_save_variants_updated_csv",
         action="store_true",
-        help=extract_help_from_doc(sim, "save_mutations_updated_csv", disable=True),
+        help=extract_help_from_doc(sim, "save_variants_updated_csv", disable=True),
     )
     parser_sim.add_argument(
-        "--disable_save_read_csv",
+        "--disable_save_reads_csv",
         action="store_true",
-        help=extract_help_from_doc(sim, "save_read_csv", disable=True),
+        help=extract_help_from_doc(sim, "save_reads_csv", disable=True),
     )
     parser_sim.add_argument(
         "--vk_build_out_dir",
@@ -1308,9 +1308,9 @@ def main():  # noqa: C901
         help=extract_help_from_doc(sim, "seq_id_column_cdna"),
     )
     parser_sim.add_argument(
-        "--mut_column_cdna",
+        "--var_column_cdna",
         required=False,
-        help=extract_help_from_doc(sim, "mut_column_cdna"),
+        help=extract_help_from_doc(sim, "var_column_cdna"),
     )
     parser_sim.add_argument(
         "--sequences_genome",
@@ -1323,9 +1323,9 @@ def main():  # noqa: C901
         help=extract_help_from_doc(sim, "seq_id_column_genome"),
     )
     parser_sim.add_argument(
-        "--mut_column_genome",
+        "--var_column_genome",
         required=False,
-        help=extract_help_from_doc(sim, "mut_column_genome"),
+        help=extract_help_from_doc(sim, "var_column_genome"),
     )
     parser_sim.add_argument(
         "--seed",
@@ -1333,9 +1333,9 @@ def main():  # noqa: C901
         help=extract_help_from_doc(sim, "seed"),
     )
     parser_sim.add_argument(
-        "--gzip_output_fastq",
+        "--gzip_reads_fastq_out",
         action="store_true",
-        help=extract_help_from_doc(sim, "gzip_output_fastq"),
+        help=extract_help_from_doc(sim, "gzip_reads_fastq_out"),
     )
     parser_sim.add_argument(
         "--dry_run",
@@ -1796,18 +1796,6 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "variants_updated_csv"),
     )
     parser_clean.add_argument(
-        "--vcrs_id_column",
-        required=False,
-        help=extract_help_from_doc(clean, "vcrs_id_column"),
-    )
-    parser_clean.add_argument(
-        "--mutations_updated_csv_columns",
-        nargs="+",
-        type=str,
-        required=False,
-        help=extract_help_from_doc(clean, "mutations_updated_csv_columns"),
-    )
-    parser_clean.add_argument(
         "--adata_reference_genome",
         required=False,
         help=extract_help_from_doc(clean, "adata_reference_genome"),
@@ -1821,6 +1809,28 @@ def main():  # noqa: C901
         "--kb_count_reference_genome_dir",
         required=False,
         help=extract_help_from_doc(clean, "kb_count_reference_genome_dir"),
+    )
+    parser_clean.add_argument(
+        "--variants_updated_csv_columns_to_merge",
+        nargs="*",
+        type=str,
+        required=False,
+        help=extract_help_from_doc(clean, "variants_updated_csv_columns_to_merge"),
+    )
+    parser_clean.add_argument(
+        "--vcrs_id_column",
+        required=False,
+        help=extract_help_from_doc(clean, "vcrs_id_column"),
+    )
+    parser_clean.add_argument(
+        "--seq_id_column",
+        required=False,
+        help=extract_help_from_doc(clean, "seq_id_column"),
+    )
+    parser_clean.add_argument(
+        "--gene_id_column",
+        required=False,
+        help=extract_help_from_doc(clean, "gene_id_column"),
     )
     parser_clean.add_argument(
         "--out",
@@ -2522,10 +2532,10 @@ def main():  # noqa: C901
 
         simulated_df_dict = sim(
             mutations=args.mutations,
-            number_of_mutations_to_sample=args.number_of_mutations_to_sample,
-            number_of_reads_per_mutation_m=args.number_of_reads_per_mutation_m,
-            number_of_reads_per_mutation_w=args.number_of_reads_per_mutation_w,
-            sample_m_and_w_from_same_locations=args.sample_m_and_w_from_same_locations,
+            number_of_variants_to_sample=args.number_of_variants_to_sample,
+            number_of_reads_per_variant_alt=args.number_of_reads_per_variant_alt,
+            number_of_reads_per_variant_ref=args.number_of_reads_per_variant_ref,
+            sample_ref_and_alt_reads_from_same_locations=args.sample_ref_and_alt_reads_from_same_locations,
             with_replacement=args.with_replacement,
             strand=args.strand,
             read_length=args.read_length,
@@ -2535,18 +2545,18 @@ def main():  # noqa: C901
             error_rate=args.error_rate,
             error_distribution=args.error_distribution,
             max_errors=args.max_errors,
-            mutant_sequence_read_parent_column=args.mutant_sequence_read_parent_column,
-            wt_sequence_read_parent_column=args.wt_sequence_read_parent_column,
-            mutant_sequence_read_parent_rc_column=args.mutant_sequence_read_parent_rc_column,
-            wt_sequence_read_parent_rc_column=args.wt_sequence_read_parent_rc_column,
+            variant_sequence_read_parent_column=args.variant_sequence_read_parent_column,
+            ref_sequence_read_parent_column=args.ref_sequence_read_parent_column,
+            variant_sequence_read_parent_rc_column=args.variant_sequence_read_parent_rc_column,
+            ref_sequence_read_parent_rc_column=args.ref_sequence_read_parent_rc_column,
             reads_fastq_parent=args.reads_fastq_parent,
             reads_csv_parent=args.reads_csv_parent,
             out=args.out,
             reads_fastq_out=args.reads_fastq_out,
-            mutations_updated_csv_out=args.mutations_updated_csv_out,
+            variants_updated_csv_out=args.variants_updated_csv_out,
             reads_csv_out=args.reads_csv_out,
-            save_mutations_updated_csv=args.disable_save_mutations_updated_csv,
-            save_read_csv=args.disable_save_read_csv,
+            save_variants_updated_csv=args.disable_save_variants_updated_csv,
+            save_reads_csv=args.disable_save_reads_csv,
             vk_build_out_dir=args.vk_build_out_dir,
             sequences=args.sequences,
             seq_id_column=args.seq_id_column,
@@ -2555,12 +2565,12 @@ def main():  # noqa: C901
             w=args.w,
             sequences_cdna=args.sequences_cdna,
             seq_id_column_cdna=args.seq_id_column_cdna,
-            mut_column_cdna=args.mut_column_cdna,
+            var_column_cdna=args.var_column_cdna,
             sequences_genome=args.sequences_genome,
             seq_id_column_genome=args.seq_id_column_genome,
-            mut_column_genome=args.mut_column_genome,
+            var_column_genome=args.var_column_genome,
             seed=args.seed,
-            gzip_output_fastq=args.gzip_output_fastq,
+            gzip_reads_fastq_out=args.gzip_reads_fastq_out,
             dry_run=args.dry_run,
             verbose=args.quiet,
             **kwargs
@@ -2649,11 +2659,13 @@ def main():  # noqa: C901
             dlist_fasta=args.dlist_fasta,
             variants_updated_csv=args.variants_updated_csv,
             vcrs_header_column=args.vcrs_header_column,
-            vcrs_id_column=args.vcrs_id_column,
-            mutations_updated_csv_columns=args.mutations_updated_csv_columns,
             adata_reference_genome=args.adata_reference_genome,
             kb_count_vcrs_dir=args.kb_count_vcrs_dir,
             kb_count_reference_genome_dir=args.kb_count_reference_genome_dir,
+            variants_updated_csv_columns_to_merge=args.variants_updated_csv_columns_to_merge,
+            vcrs_id_column=args.vcrs_id_column,
+            seq_id_column=args.seq_id_column,
+            gene_id_column=args.gene_id_column,
             out=args.out,
             adata_vcrs_clean_out=args.adata_vcrs_clean_out,
             adata_reference_genome_clean_out=args.adata_reference_genome_clean_out,

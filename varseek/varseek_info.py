@@ -303,7 +303,7 @@ def info(
     - dlist_reference_ensembl_release    (int) Ensembl release number for the d-list reference genome and transcriptome if files are not provided by `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, and `dlist_reference_gtf`. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome', 'pseudoaligned_to_reference', 'pseudoaligned_to_reference_despite_not_truly_aligning'. Only used if `dlist_reference_source`, `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, `dlist_reference_gtf` is grch37 or grch38. Default: 111. (will automatically download the Ensembl reference genome files to `reference_out_dir`)
 
     # Optional input file paths: (only needed if changing/customizing file names or locations):
-    - vcrs_fasta                         (str) Path to the VCRS fasta file generated from varseek build. Corresponds to `mcrs_fasta_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir`).
+    - vcrs_fasta                         (str) Path to the VCRS fasta file generated from varseek build. Corresponds to `vcrs_fasta_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir`).
     - variants_updated_csv              (str) Path to the updated dataframe containing the VCRS headers and sequences. Corresponds to `variants_updated_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).
     - id_to_header_csv                   (str) Path to the csv file containing the mapping of IDs to headers generated from varseek build corresponding to vcrs_fasta. Corresponds to `id_to_header_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).
     - gtf                                (str) Path to the GTF file containing the gene annotations for the reference genome. Corresponds to `gtf` in the varseek build function. Must align to genome coordinates used in the annotation of variants. Only used by the following columns: 'distance_to_nearest_splice_junction'. Default: None.
@@ -707,9 +707,9 @@ def info(
                     mcrs_source=mcrs_source,
                     columns_to_explode=columns_to_explode,
                     seq_id_column_cdna=seq_id_cdna_column,
-                    mut_column_cdna=variant_cdna_column,
+                    var_column_cdna=variant_cdna_column,
                     seq_id_column_genome=seq_id_genome_column,
-                    mut_column_genome=variant_genome_column,
+                    var_column_genome=variant_genome_column,
                 )
             except Exception as e:
                 logger.error(f"Error comparing cDNA and genome: {e}")

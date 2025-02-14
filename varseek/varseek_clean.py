@@ -39,20 +39,20 @@ def make_vcf():
     pass
 
 
-def prepare_set(mcrs_id_set_to_exclusively_keep):
-    if mcrs_id_set_to_exclusively_keep is None:
+def prepare_set(vcrs_id_set_to_exclusively_keep):
+    if vcrs_id_set_to_exclusively_keep is None:
         return None  # Keep None as None
 
-    elif isinstance(mcrs_id_set_to_exclusively_keep, (list, tuple)):
-        return set(mcrs_id_set_to_exclusively_keep)  # Convert list/tuple to set
+    elif isinstance(vcrs_id_set_to_exclusively_keep, (list, tuple)):
+        return set(vcrs_id_set_to_exclusively_keep)  # Convert list/tuple to set
 
-    elif isinstance(mcrs_id_set_to_exclusively_keep, str) and os.path.isfile(mcrs_id_set_to_exclusively_keep) and mcrs_id_set_to_exclusively_keep.endswith(".txt"):
+    elif isinstance(vcrs_id_set_to_exclusively_keep, str) and os.path.isfile(vcrs_id_set_to_exclusively_keep) and vcrs_id_set_to_exclusively_keep.endswith(".txt"):
         # Load lines from text file, stripping whitespace
-        with open(mcrs_id_set_to_exclusively_keep, "r", encoding="utf-8") as f:
+        with open(vcrs_id_set_to_exclusively_keep, "r", encoding="utf-8") as f:
             return set(line.strip() for line in f if line.strip())  # Ignore empty lines
 
-    elif isinstance(mcrs_id_set_to_exclusively_keep, set):
-        return mcrs_id_set_to_exclusively_keep  # Already a set, return as is
+    elif isinstance(vcrs_id_set_to_exclusively_keep, set):
+        return vcrs_id_set_to_exclusively_keep  # Already a set, return as is
 
     else:
         raise ValueError("Invalid input: must be None, a list, tuple, set, or a path to a text file")
@@ -98,7 +98,7 @@ def validate_input_clean(params_dict):
             raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
 
     # sets
-    for param_name in ["mcrs_id_set_to_exclusively_keep", "mcrs_id_set_to_exclude", "transcript_set_to_exclusively_keep", "transcript_set_to_exclude", "gene_set_to_exclusively_keep", "gene_set_to_exclude"]:
+    for param_name in ["vcrs_id_set_to_exclusively_keep", "vcrs_id_set_to_exclude", "transcript_set_to_exclusively_keep", "transcript_set_to_exclude", "gene_set_to_exclusively_keep", "gene_set_to_exclude"]:
         param_value = params_dict.get(param_name, None)
         if param_value is not None and not isinstance(param_value, (set, list, tuple) and not (isinstance(param_value, str) and param_value.endswith(".txt") and os.path.isfile(param_value))):  # checks if it is (1) None, (2) a set/list/tuple, or (3) a string path to a txt file that exists
             raise ValueError(f"{param_name} must be a set. Got {param_name} of type {type(param_value)}.")
@@ -169,8 +169,8 @@ def clean(
     remove_doublets=False,
     cpm_normalization=False,
     sum_rows=False,
-    mcrs_id_set_to_exclusively_keep=None,
-    mcrs_id_set_to_exclude=None,
+    vcrs_id_set_to_exclusively_keep=None,
+    vcrs_id_set_to_exclude=None,
     transcript_set_to_exclusively_keep=None,
     transcript_set_to_exclude=None,
     gene_set_to_exclusively_keep=None,
@@ -188,8 +188,13 @@ def clean(
     vcrs_t2g=None,
     vcrs_fasta=None,
     dlist_fasta=None,
+    variants_updated_csv=None,
     kb_count_vcrs_dir=None,
     kb_count_reference_genome_dir=None,
+    variants_updated_csv_columns_to_merge=None,
+    vcrs_id_column="vcrs_id",
+    seq_id_column="seq_ID",
+    gene_id_column="gene_id",
     out=".",  # output paths
     adata_vcrs_clean_out=None,
     adata_reference_genome_clean_out=None,
@@ -226,8 +231,8 @@ def clean(
     - remove_doublets                       (bool): Part of the QC performed on the **gene** count matrix with which to adjust the **variant** count matrix. Whether to remove doublets. Default: False.
     - cpm_normalization                     (bool): Part of the QC performed on the **gene** count matrix with which to adjust the **variant** count matrix. Whether to run cpm normalization. Default: False.
     - sum_rows                              (bool): Whether to sum across barcodes (rows) in the VCRS count matrix. Default: False.
-    - mcrs_id_set_to_exclusively_keep       (str or Set(str) or None): If a set, will keep only the VCRSs in this set. If a list/tuple, will convert to a set and then keep only the VCRSs in this set. If a string, will load the text file and keep only the VCRSs in this set. Default: None.
-    - mcrs_id_set_to_exclude                (str or Set(str) or None): If a set, will exclude the VCRSs in this set. If a list/tuple, will convert to a set and then exclude the VCRSs in this set. If a string, will load the text file and exclude the VCRSs in this set. Default: None.
+    - vcrs_id_set_to_exclusively_keep       (str or Set(str) or None): If a set, will keep only the VCRSs in this set. If a list/tuple, will convert to a set and then keep only the VCRSs in this set. If a string, will load the text file and keep only the VCRSs in this set. Default: None.
+    - vcrs_id_set_to_exclude                (str or Set(str) or None): If a set, will exclude the VCRSs in this set. If a list/tuple, will convert to a set and then exclude the VCRSs in this set. If a string, will load the text file and exclude the VCRSs in this set. Default: None.
     - transcript_set_to_exclusively_keep    (str or Set(str) or None): If a set, will keep only the transcripts in this set. If a list/tuple, will convert to a set and then keep only the transcripts in this set. If a string, will load the text file and keep only the transcripts in this set. Default: None.
     - transcript_set_to_exclude             (str or Set(str) or None): If a set, will exclude the transcripts in this set. If a list/tuple, will convert to a set and then exclude the transcripts in this set. If a string, will load the text file and exclude the transcripts in this set. Default: None.
     - gene_set_to_exclusively_keep          (str or Set(str) or None): If a set, will keep only the genes in this set. If a list/tuple, will convert to a set and then keep only the genes in this set. If a string, will load the text file and keep only the genes in this set. Default: None.
@@ -247,8 +252,15 @@ def clean(
     - vcrs_t2g                              (str): Path to the VCRS t2g file. Default: None.
     - vcrs_fasta                            (str): Path to the VCRS fasta file. Default: None.
     - dlist_fasta                           (str): Path to the dlist fasta file. Default: None.
+    - variants_updated_csv                  (str): Path to the variants updated csv file generated by vk build, info, or filter (i.e., something where each row corresponds to a VCRS). Default: None.
     - kb_count_vcrs_dir                     (str): Path to the kb count output directory for the VCRS reference. Default: None.
     - kb_count_reference_genome_dir         (str): Path to the kb count output directory for the reference genome. Default: None.
+
+    # Optional column names variants_updated_csv
+    - variants_updated_csv_columns_to_merge (str or set): Columns in the variants_updated_csv to merge with the adata var. Default: None.
+    - vcrs_id_column                        (str): Column name in the adata var that contains the VCRS ID. Default: "vcrs_id".
+    - seq_id_column                         (str): Column name in the adata var that contains the transcript ID. Default: "seq_ID".
+    - gene_id_column                        (str): Column name in the adata var that contains the gene ID. Default: "gene_id".
 
     # Output paths:
     - out                                   (str): Output directory. Default: ".".
@@ -267,8 +279,6 @@ def clean(
 
     # Hidden arguments
     - id_to_header_csv                      (str): Path to the VCRS id to header csv file. Default: None.
-    - variants_updated_csv                 (str): Path to the mutations updated csv file. Default: None.
-    - vcrs_id_column                        (str): Column name in the mutations updated csv file. Default: "vcrs_id".
     """
     # * 1. Start timer
     start_time = time.perf_counter()
@@ -299,11 +309,9 @@ def clean(
         adata_reference_genome = os.path.join(kb_count_reference_genome_dir, "counts_unfiltered", "adata.h5ad")
 
     id_to_header_csv = kwargs.get("id_to_header_csv", None)
-    variants_updated_csv = kwargs.get("variants_updated_csv", None)
-    vcrs_id_column = kwargs.get("vcrs_id_column", "vcrs_id")
 
     if vk_ref_dir:  # make sure all of the defaults below match vk info/filter
-        vcrs_index = os.path.join(vk_ref_dir, "mcrs_index.idx") if not vcrs_index else vcrs_index
+        vcrs_index = os.path.join(vk_ref_dir, "vcrs_index.idx") if not vcrs_index else vcrs_index
         if not vcrs_t2g:
             vcrs_t2g = os.path.join(vk_ref_dir, "vcrs_t2g_filtered.txt") if os.path.isfile(os.path.join(vk_ref_dir, "vcrs_t2g_filtered.txt")) else os.path.join(vk_ref_dir, "vcrs_t2g.txt")
         if not vcrs_fasta:
@@ -368,8 +376,8 @@ def clean(
         if version.parse(kallisto_version_installed) < kallisto_version_required:
             raise ValueError(f"Please install kallisto version {kallisto_version_required} or higher.")
 
-    mcrs_id_set_to_exclusively_keep = prepare_set(mcrs_id_set_to_exclusively_keep)
-    mcrs_id_set_to_exclude = prepare_set(mcrs_id_set_to_exclude)
+    vcrs_id_set_to_exclusively_keep = prepare_set(vcrs_id_set_to_exclusively_keep)
+    vcrs_id_set_to_exclude = prepare_set(vcrs_id_set_to_exclude)
     transcript_set_to_exclusively_keep = prepare_set(transcript_set_to_exclusively_keep)
     transcript_set_to_exclude = prepare_set(transcript_set_to_exclude)
     gene_set_to_exclusively_keep = prepare_set(gene_set_to_exclusively_keep)
@@ -380,8 +388,27 @@ def clean(
     if isinstance(adata, str) and os.path.exists(adata) and adata.endswith(".h5ad"):
         adata = sc.read_h5ad(adata)
 
-    adata.var["mcrs_id"] = adata.var.index
+    adata.var[vcrs_id_column] = adata.var.index
     original_var_names = adata.var_names.copy()
+
+    variants_updated_csv_columns_to_merge = kwargs.get("variants_updated_csv_columns_to_merge", None)
+    for id_column, corresponding_argument in [(seq_id_column, transcript_set_to_exclusively_keep), (seq_id_column, transcript_set_to_exclude), (gene_id_column, gene_set_to_exclusively_keep), (gene_id_column, gene_set_to_exclude)]:
+        if corresponding_argument is not None:
+            if variants_updated_csv_columns_to_merge is None:
+                variants_updated_csv_columns_to_merge = {id_column}
+            elif variants_updated_csv_columns_to_merge is not None and id_column not in variants_updated_csv_columns_to_merge:
+                variants_updated_csv_columns_to_merge.add(id_column)
+            else:
+                pass  # variants_updated_csv_columns_to_merge is a set and id_column is already in it
+
+    if variants_updated_csv_columns_to_merge is not None and not os.path.isfile(variants_updated_csv):
+        raise ValueError(f"variants_updated_csv_columns_to_merge is not None, but variants_updated_csv does not exist.")
+
+    if os.path.isfile(variants_updated_csv) and variants_updated_csv_columns_to_merge is not None:
+        if vcrs_id_column not in variants_updated_csv_columns_to_merge:
+            variants_updated_csv_columns_to_merge.add(vcrs_id_column)
+        variants_updated_df = pd.read_csv(variants_updated_csv, index_col=0, usecols=list(variants_updated_csv_columns_to_merge))
+        adata.var = adata.var.merge(variants_updated_df, on=vcrs_id_column, how="left")
 
     if adata_reference_genome:
         if isinstance(adata_reference_genome, str) and os.path.exists(adata_reference_genome) and adata_reference_genome.endswith(".h5ad"):
@@ -555,20 +582,20 @@ def clean(
         adata = adata[:, nonzero_gene_mask]
 
     # include or exclude certain genes
-    if mcrs_id_set_to_exclusively_keep:
+    if vcrs_id_set_to_exclusively_keep:
         adata = remove_adata_columns(
             adata,
-            values_of_interest=mcrs_id_set_to_exclusively_keep,
+            values_of_interest=vcrs_id_set_to_exclusively_keep,
             operation="keep",
-            var_column_name="mcrs_id",
+            var_column_name=vcrs_id_column,
         )
 
-    if mcrs_id_set_to_exclude:
+    if vcrs_id_set_to_exclude:
         adata = remove_adata_columns(
             adata,
-            values_of_interest=mcrs_id_set_to_exclude,
+            values_of_interest=vcrs_id_set_to_exclude,
             operation="exclude",
-            var_column_name="mcrs_id",
+            var_column_name=vcrs_id_column,
         )
 
     if transcript_set_to_exclusively_keep:
@@ -576,7 +603,7 @@ def clean(
             adata,
             values_of_interest=transcript_set_to_exclusively_keep,
             operation="keep",
-            var_column_name="seq_ID",
+            var_column_name=seq_id_column,
         )
 
     if transcript_set_to_exclude:
@@ -584,7 +611,7 @@ def clean(
             adata,
             values_of_interest=transcript_set_to_exclude,
             operation="exclude",
-            var_column_name="seq_ID",
+            var_column_name=seq_id_column,
         )
 
     if gene_set_to_exclusively_keep:
@@ -592,7 +619,7 @@ def clean(
             adata,
             values_of_interest=gene_set_to_exclusively_keep,
             operation="keep",
-            var_column_name="gene_name",
+            var_column_name=gene_id_column,
         )
 
     if gene_set_to_exclude:
@@ -600,10 +627,10 @@ def clean(
             adata,
             values_of_interest=gene_set_to_exclude,
             operation="exclude",
-            var_column_name="gene_name",
+            var_column_name=gene_id_column,
         )
 
-    adata.var["mcrs_count"] = adata.X.sum(axis=0).A1 if hasattr(adata.X, "A1") else np.asarray(adata.X.sum(axis=0)).flatten()
+    adata.var["vcrs_count"] = adata.X.sum(axis=0).A1 if hasattr(adata.X, "A1") else np.asarray(adata.X.sum(axis=0)).flatten()
 
     if save_vcf:
         make_vcf(vcf_out)  # TODO: write this

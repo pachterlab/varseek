@@ -64,7 +64,7 @@ def validate_input_sim(params_dict):
     for param_name, min_value, optional_value in [
         ("w", 1, False),
         ("k", 1, False),
-        ("number_of_mutations_to_sample", 1, False),
+        ("number_of_variants_to_sample", 1, False),
         ("insertion_size_limit", 1, False),
         ("seed", 0, True),
     ]:
@@ -72,20 +72,20 @@ def validate_input_sim(params_dict):
         if not is_valid_int(param_value, ">=", min_value, optional=optional_value):
             raise ValueError(f"{param_name} must be an integer >= {min_value}. Got {params_dict.get(param_name)}.")
         
-    number_of_reads_per_mutation_m = params_dict['number_of_reads_per_mutation_m']
-    if not (is_valid_int(number_of_reads_per_mutation_m, ">=", 0) or number_of_reads_per_mutation_m == "all"):
-        raise ValueError(f"number_of_reads_per_mutation_m must be an integer >= 0 or 'all'. Got {number_of_reads_per_mutation_m}.")
+    number_of_reads_per_variant_alt = params_dict['number_of_reads_per_variant_alt']
+    if not (is_valid_int(number_of_reads_per_variant_alt, ">=", 0) or number_of_reads_per_variant_alt == "all"):
+        raise ValueError(f"number_of_reads_per_variant_alt must be an integer >= 0 or 'all'. Got {number_of_reads_per_variant_alt}.")
     
-    number_of_reads_per_mutation_w = params_dict['number_of_reads_per_mutation_w']
-    if not (is_valid_int(number_of_reads_per_mutation_w, ">=", 0) or number_of_reads_per_mutation_w == "all"):
-        raise ValueError(f"number_of_reads_per_mutation_w must be an integer >= 0 or 'all'. Got {number_of_reads_per_mutation_w}.")
+    number_of_reads_per_variant_ref = params_dict['number_of_reads_per_variant_ref']
+    if not (is_valid_int(number_of_reads_per_variant_ref, ">=", 0) or number_of_reads_per_variant_ref == "all"):
+        raise ValueError(f"number_of_reads_per_variant_ref must be an integer >= 0 or 'all'. Got {number_of_reads_per_variant_ref}.")
     
-    if number_of_reads_per_mutation_m == 0 and number_of_reads_per_mutation_w == 0:
-        raise ValueError("number_of_reads_per_mutation_m and number_of_reads_per_mutation_w cannot both be 0.")
+    if number_of_reads_per_variant_alt == 0 and number_of_reads_per_variant_ref == 0:
+        raise ValueError("number_of_reads_per_variant_alt and number_of_reads_per_variant_ref cannot both be 0.")
 
-    if params_dict['sample_m_and_w_from_same_locations'] is True:
-        if number_of_reads_per_mutation_m != number_of_reads_per_mutation_w:
-            raise ValueError("When sample_m_and_w_from_same_locations is True, number_of_reads_per_mutation_m must be equal to number_of_reads_per_mutation_w")
+    if params_dict['sample_ref_and_alt_reads_from_same_locations'] is True:
+        if number_of_reads_per_variant_alt != number_of_reads_per_variant_ref:
+            raise ValueError("When sample_ref_and_alt_reads_from_same_locations is True, number_of_reads_per_variant_alt must be equal to number_of_reads_per_variant_ref")
         
     if params_dict["strand"] not in ["f", "r", "both", "random", None]:
         raise ValueError("strand must be 'f', 'r', 'both', 'random', or None.")
@@ -107,11 +107,11 @@ def validate_input_sim(params_dict):
     for param_name, file_type in {
         "reads_fastq_parent": "fastq",
         "reads_csv_parent": "csv",
-        "mutations_updated_csv_out": "csv",
+        "variants_updated_csv_out": "csv",
         "reads_fastq_out": "fastq",
         "reads_csv_out": "csv",
-        "wt_mcrs_fasta_out": "fasta",
-        "wt_mcrs_t2g_out": "t2g",
+        "wt_vcrs_fasta_out": "fasta",
+        "wt_vcrs_t2g_out": "t2g",
         "removed_variants_text_out": "txt",
         "gtf": "gtf"
     }:
@@ -121,13 +121,13 @@ def validate_input_sim(params_dict):
         
     # Boolean
     for param_name in [
-        "sample_m_and_w_from_same_locations",
+        "sample_ref_and_alt_reads_from_same_locations",
         "with_replacement",
         "add_noise_sequencing_error",
         "add_noise_base_quality",
-        "save_read_csv",
-        "save_mutations_updated_csv",
-        "gzip_output_fastq",
+        "save_reads_csv",
+        "save_variants_updated_csv",
+        "gzip_reads_fastq_out",
         "dry_run",
         "verbose",
     ]:
@@ -137,10 +137,10 @@ def validate_input_sim(params_dict):
 
 def sim(
     mutations,
-    number_of_mutations_to_sample=1500,
-    number_of_reads_per_mutation_m="all",
-    number_of_reads_per_mutation_w="all",
-    sample_m_and_w_from_same_locations=False,
+    number_of_variants_to_sample=1500,
+    number_of_reads_per_variant_alt="all",
+    number_of_reads_per_variant_ref="all",
+    sample_ref_and_alt_reads_from_same_locations=False,
     with_replacement=False,
     strand=None,
     read_length=150,
@@ -150,18 +150,18 @@ def sim(
     error_rate=0.0001,
     error_distribution=(0.85, 0.1, 0.05),  # sub, del, ins
     max_errors=float("inf"),
-    mutant_sequence_read_parent_column="mutant_sequence_read_parent",
-    wt_sequence_read_parent_column="wt_sequence_read_parent",
-    mutant_sequence_read_parent_rc_column="mutant_sequence_read_parent_rc",
-    wt_sequence_read_parent_rc_column="wt_sequence_read_parent_rc",
+    variant_sequence_read_parent_column="mutant_sequence_read_parent",
+    ref_sequence_read_parent_column="wt_sequence_read_parent",
+    variant_sequence_read_parent_rc_column="mutant_sequence_read_parent_rc",
+    ref_sequence_read_parent_rc_column="wt_sequence_read_parent_rc",
     reads_fastq_parent=None,
     reads_csv_parent=None,
     out=".",
     reads_fastq_out=None,
-    mutations_updated_csv_out=None,
+    variants_updated_csv_out=None,
     reads_csv_out=None,
-    save_mutations_updated_csv=True,
-    save_read_csv=True,
+    save_variants_updated_csv=True,
+    save_reads_csv=True,
     vk_build_out_dir=".",
     sequences=None,
     seq_id_column="seq_ID",
@@ -170,12 +170,12 @@ def sim(
     w=54,
     sequences_cdna=None,
     seq_id_column_cdna=None,  # "seq_ID",
-    mut_column_cdna=None,  # "mutation",
+    var_column_cdna=None,  # "mutation",
     sequences_genome=None,
     seq_id_column_genome=None,  # "chromosome",
-    mut_column_genome=None,  # "mutation_genome",
+    var_column_genome=None,  # "mutation_genome",
     seed=None,
-    gzip_output_fastq=False,
+    gzip_reads_fastq_out=False,
     dry_run=False,
     verbose=True,
     **kwargs,
@@ -185,19 +185,19 @@ def sim(
 
     # Required input arguments:
     - mutations                         (str or pd.DataFrame) Path to the csv file or a dataframe object containing mutation information. 
-        Valid input files include the mutations_updated_csv_out file from vk build (save_mutations_updated_csv=True) with merge_identical=False, or the variants_updated_exploded_vk_info_csv_out output of vk info (save_variants_updated_exploded_vk_info_csv=True).
+        Valid input files include the variants_updated_csv_out file from vk build (save_variants_updated_csv=True) with merge_identical=False, or the variants_updated_exploded_vk_info_csv_out output of vk info (save_variants_updated_exploded_vk_info_csv=True).
         Expects the following columns:
             header: mutation header/ID
-            mutant_sequence_read_parent_column: the parent mutation-containing sequence from which to draw the read - should correspond to roughly twice the read length (so that the mutation can occur in any position in the read) - required if and only if number_of_reads_per_mutation_m > 0
-            wt_sequence_read_parent_column: the parent non-mutation containing sequence from which to draw the read - should correspond to roughly twice the read length (so that the position where the mutation normally appears can occur in any position in the read) - required if and only if number_of_reads_per_mutation_w > 0
-            mutant_sequence_read_parent_rc_column: the reverse complement of the parent mutation-containing sequence from which to draw the read - optional (generated if not present)
-            wt_sequence_read_parent_rc_column: the reverse complement of the parent non-mutation containing sequence from which to draw the read - optional (generated if not present)
+            variant_sequence_read_parent_column: the parent mutation-containing sequence from which to draw the read - should correspond to roughly twice the read length (so that the mutation can occur in any position in the read) - required if and only if number_of_reads_per_variant_alt > 0
+            ref_sequence_read_parent_column: the parent non-mutation containing sequence from which to draw the read - should correspond to roughly twice the read length (so that the position where the mutation normally appears can occur in any position in the read) - required if and only if number_of_reads_per_variant_ref > 0
+            variant_sequence_read_parent_rc_column: the reverse complement of the parent mutation-containing sequence from which to draw the read - optional (generated if not present)
+            ref_sequence_read_parent_rc_column: the reverse complement of the parent non-mutation containing sequence from which to draw the read - optional (generated if not present)
     
     # Optional input arguments:
-    - number_of_mutations_to_sample     (int) Number of mutations to sample from `mutations`. Default: 1500
-    - number_of_reads_per_mutation_m    (int or str) Number of mutation-containing reads to simulate per mutation. Either accepts an integer greater than 0 or "all" to simulate all possible reads per mutation. Default: "all"
-    - number_of_reads_per_mutation_w    (int or str) Number of non-mutation-containing reads to simulate per mutation. Either accepts an integer greater than 0 or "all" to simulate all possible reads per mutation. Default: "all"
-    - sample_m_and_w_from_same_locations (bool) Whether to sample mutation-containing and non-mutation-containing reads from the same locations. Requires number_of_reads_per_mutation_m and number_of_reads_per_mutation_w to be the same. Default: False
+    - number_of_variants_to_sample     (int) Number of mutations to sample from `mutations`. Default: 1500
+    - number_of_reads_per_variant_alt    (int or str) Number of mutation-containing reads to simulate per mutation. Either accepts an integer greater than 0 or "all" to simulate all possible reads per mutation. Default: "all"
+    - number_of_reads_per_variant_ref    (int or str) Number of non-mutation-containing reads to simulate per mutation. Either accepts an integer greater than 0 or "all" to simulate all possible reads per mutation. Default: "all"
+    - sample_ref_and_alt_reads_from_same_locations (bool) Whether to sample mutation-containing and non-mutation-containing reads from the same locations. Requires number_of_reads_per_variant_alt and number_of_reads_per_variant_ref to be the same. Default: False
     - with_replacement                  (bool) Whether to sample with replacement. Default: False
     - strand                            (str) Strand to simulate reads from. Possible values: 'f' (forward strand), 'r' (reverse complement strand), 'both' (both strands equally), 'random' (select a strand at random for each read), or None (select a strand at random for all reads derived from each mutation). Default: None
     - read_length                       (int) Length of the reads to simulate. Default: 150
@@ -207,18 +207,18 @@ def sim(
     - error_rate                        (float) Error rate for sequencing errors. Only applies if add_noise_sequencing_error=True. Default: 0.0001
     - error_distribution                (tuple) Distribution of errors. Default: (0.85, 0.1, 0.05) (sub, del, ins)
     - max_errors                        (int or float) Maximum number of errors to introduce. Default: float("inf") (no cap)
-    - mutant_sequence_read_parent_column (str) Name of the column containing the parent mutation-containing sequence from which to draw the read. Default: "mutant_sequence_read_parent"
-    - wt_sequence_read_parent_column    (str) Name of the column containing the parent non-mutation containing sequence from which to draw the read. Default: "wt_sequence_read_parent"
-    - mutant_sequence_read_parent_rc_column (str) Name of the column containing the reverse complement of the parent mutation-containing sequence from which to draw the read. Default: "mutant_sequence_read_parent_rc"
-    - wt_sequence_read_parent_rc_column (str) Name of the column containing the reverse complement of the parent non-mutation containing sequence from which to draw the read. Default: "wt_sequence_read_parent_rc"
+    - variant_sequence_read_parent_column (str) Name of the column containing the parent mutation-containing sequence from which to draw the read. Default: "mutant_sequence_read_parent"
+    - ref_sequence_read_parent_column    (str) Name of the column containing the parent non-mutation containing sequence from which to draw the read. Default: "wt_sequence_read_parent"
+    - variant_sequence_read_parent_rc_column (str) Name of the column containing the reverse complement of the parent mutation-containing sequence from which to draw the read. Default: "mutant_sequence_read_parent_rc"
+    - ref_sequence_read_parent_rc_column (str) Name of the column containing the reverse complement of the parent non-mutation containing sequence from which to draw the read. Default: "wt_sequence_read_parent_rc"
     - reads_fastq_parent                (str) Path to the parent fastq on which the output will be concatenated. Good when chaining multiple runs. Default: None
     - reads_csv_parent                  (str) Path to the parent csv on which the output will be concatenated. Good when chaining multiple runs. Default: None
     - out                               (str) Path to the output directory. Default: "."
     - reads_fastq_out                   (str) Path to the output fastq file containing the simulated reads. Default: `out`/synthetic_reads.fq
-    - mutations_updated_csv_out         (str) Path to the output csv file containing the updated mutation metadata dataframe (one row per mutation). Default: `out`/mutations_updated_synthetic_reads.csv
+    - variants_updated_csv_out         (str) Path to the output csv file containing the updated mutation metadata dataframe (one row per mutation). Default: `out`/mutations_updated_synthetic_reads.csv
     - reads_csv_out                     (str) Path to the output csv file containing the simulated reads (one row per read). Default: `out`/synthetic_reads_df.csv
-    - save_mutations_updated_csv        (bool) Whether to save the updated mutation metadata dataframe to a csv file. Default: True
-    - save_read_csv                     (bool) Whether to save the simulated reads to a csv file. Default: True
+    - save_variants_updated_csv        (bool) Whether to save the updated mutation metadata dataframe to a csv file. Default: True
+    - save_reads_csv                     (bool) Whether to save the simulated reads to a csv file. Default: True
     - vk_build_out_dir                  (str) Only applies if mutations does not exist or have the expected columns. Path to the output directory for the vk_build files. Default: "."
     - sequences                         (str) Only applies if mutations does not exist or have the expected columns. Path to the fasta file containing the sequences. Default: None
     - seq_id_column                     (str) Only applies if mutations does not exist or have the expected columns. Name of the column containing the sequence IDs. Default: "seq_ID"
@@ -227,12 +227,12 @@ def sim(
     - w                                 (int) Only applies if mutations does not exist or have the expected columns. Length of the k-mer to use for filtering. Default: 54
     - sequences_cdna                    (str) Only applies if mutations does not exist or have the expected columns. Path to the fasta file containing the cDNA sequences. Default: None
     - seq_id_column_cdna                (str) Only applies if mutations does not exist or have the expected columns. Name of the column containing the sequence IDs for cDNA sequences. Default: "seq_ID"
-    - mut_column_cdna                   (str) Only applies if mutations does not exist or have the expected columns. Name of the column containing the mutations for cDNA sequences. Default: "mutation"
+    - var_column_cdna                   (str) Only applies if mutations does not exist or have the expected columns. Name of the column containing the mutations for cDNA sequences. Default: "mutation"
     - sequences_genome                  (str) Only applies if mutations does not exist or have the expected columns. Path to the fasta file containing the genome sequences. Default: None
     - seq_id_column_genome              (str) Only applies if mutations does not exist or have the expected columns. Name of the column containing the sequence IDs for genome sequences. Default: "chromosome"
-    - mut_column_genome                 (str) Only applies if mutations does not exist or have the expected columns. Name of the column containing the mutations for genome sequences. Default: "mutation_genome"
+    - var_column_genome                 (str) Only applies if mutations does not exist or have the expected columns. Name of the column containing the mutations for genome sequences. Default: "mutation_genome"
     - seed                              (int) Seed for random number generation. Default: None
-    - gzip_output_fastq                 (bool) Whether to gzip the output fastq file. Default: False
+    - gzip_reads_fastq_out                 (bool) Whether to gzip the output fastq file. Default: False
     - dry_run                           (bool) Whether to run in dry-run mode. Default: False
     - verbose                           (bool) Whether to print progress messages. Default: True
 
@@ -246,9 +246,9 @@ def sim(
     params_dict = make_function_parameter_to_value_dict(1)
     validate_input_sim(params_dict)
     
-    if number_of_reads_per_mutation_m == 0:
+    if number_of_reads_per_variant_alt == 0:
         sample_type = "w"
-    elif number_of_reads_per_mutation_w == 0:
+    elif number_of_reads_per_variant_ref == 0:
         sample_type = "m"
     else:
         sample_type = "all"
@@ -271,9 +271,9 @@ def sim(
     #* 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
     if not reads_fastq_out:
         reads_fastq_out = os.path.join(out, "synthetic_reads.fq")
-    if save_mutations_updated_csv and not mutations_updated_csv_out:
-        mutations_updated_csv_out = os.path.join(out, "mutations_updated_synthetic_reads.csv")
-    if save_read_csv and not reads_csv_out:
+    if save_variants_updated_csv and not variants_updated_csv_out:
+        variants_updated_csv_out = os.path.join(out, "mutations_updated_synthetic_reads.csv")
+    if save_reads_csv and not reads_csv_out:
         reads_csv_out = os.path.join(out, "synthetic_reads_df.csv")
 
 
@@ -283,7 +283,7 @@ def sim(
     if isinstance(mutations, str) and os.path.exists(mutations):
         mutations = pd.read_csv(mutations)
 
-    if (isinstance(mutations, str) and not os.path.exists(mutations)) or (mutant_sequence_read_parent_column not in mutations.columns and sample_type != "w") or (wt_sequence_read_parent_column not in mutations.columns and sample_type != "m"):
+    if (isinstance(mutations, str) and not os.path.exists(mutations)) or (variant_sequence_read_parent_column not in mutations.columns and sample_type != "w") or (ref_sequence_read_parent_column not in mutations.columns and sample_type != "m"):
         print("cannot find mutant sequence read parent")
         update_df_out = f"{vk_build_out_dir}/sim_data_df.csv"
 
@@ -314,7 +314,7 @@ def sim(
                     save_variants_updated_csv=True,
                     variants_updated_csv_out=update_df_out_cdna,
                     seq_id_column=seq_id_column_cdna,
-                    var_column=mut_column_cdna,
+                    var_column=var_column_cdna,
                     **kwargs
                 )
 
@@ -337,7 +337,7 @@ def sim(
                     save_variants_updated_csv=True,
                     variants_updated_csv_out=update_df_out_genome,
                     seq_id_column=seq_id_column_genome,
-                    var_column=mut_column_genome,
+                    var_column=var_column_genome,
                     **kwargs
                 )
 
@@ -378,28 +378,28 @@ def sim(
 
         sim_data_df.rename(
             columns={
-                "variant_sequence": mutant_sequence_read_parent_column,
-                "wt_sequence": wt_sequence_read_parent_column,
+                "variant_sequence": variant_sequence_read_parent_column,
+                "wt_sequence": ref_sequence_read_parent_column,
             },
             inplace=True,
         )
 
-        sim_data_df[mutant_sequence_read_parent_rc_column] = sim_data_df[mutant_sequence_read_parent_column].apply(reverse_complement)
-        sim_data_df["mutant_sequence_read_parent_length"] = sim_data_df[mutant_sequence_read_parent_column].str.len()
+        sim_data_df[variant_sequence_read_parent_rc_column] = sim_data_df[variant_sequence_read_parent_column].apply(reverse_complement)
+        sim_data_df["mutant_sequence_read_parent_length"] = sim_data_df[variant_sequence_read_parent_column].str.len()
 
-        sim_data_df[wt_sequence_read_parent_rc_column] = sim_data_df[wt_sequence_read_parent_column].apply(reverse_complement)
-        sim_data_df["wt_sequence_read_parent_length"] = sim_data_df[wt_sequence_read_parent_column].str.len()
+        sim_data_df[ref_sequence_read_parent_rc_column] = sim_data_df[ref_sequence_read_parent_column].apply(reverse_complement)
+        sim_data_df["wt_sequence_read_parent_length"] = sim_data_df[ref_sequence_read_parent_column].str.len()
 
         mutations = pd.merge(
             mutations,
             sim_data_df[
                 [
                     "header",
-                    mutant_sequence_read_parent_column,
-                    mutant_sequence_read_parent_rc_column,
+                    variant_sequence_read_parent_column,
+                    variant_sequence_read_parent_rc_column,
                     "mutant_sequence_read_parent_length",
-                    wt_sequence_read_parent_column,
-                    wt_sequence_read_parent_rc_column,
+                    ref_sequence_read_parent_column,
+                    ref_sequence_read_parent_rc_column,
                     "wt_sequence_read_parent_length",
                 ]
             ],
@@ -408,17 +408,17 @@ def sim(
             suffixes=("", "_read_parent"),
         )
     else:
-        if mutant_sequence_read_parent_rc_column not in mutations.columns and sample_type != "w":
-            mutations[mutant_sequence_read_parent_rc_column] = mutations[mutant_sequence_read_parent_column].apply(reverse_complement)
+        if variant_sequence_read_parent_rc_column not in mutations.columns and sample_type != "w":
+            mutations[variant_sequence_read_parent_rc_column] = mutations[variant_sequence_read_parent_column].apply(reverse_complement)
         if "mutant_sequence_read_parent_length" not in mutations.columns and sample_type != "w":
-            mutations["mutant_sequence_read_parent_length"] = mutations[mutant_sequence_read_parent_column].str.len()
+            mutations["mutant_sequence_read_parent_length"] = mutations[variant_sequence_read_parent_column].str.len()
 
-        if wt_sequence_read_parent_rc_column not in mutations.columns and sample_type != "m":
-            mutations[wt_sequence_read_parent_rc_column] = mutations[wt_sequence_read_parent_column].apply(reverse_complement)
+        if ref_sequence_read_parent_rc_column not in mutations.columns and sample_type != "m":
+            mutations[ref_sequence_read_parent_rc_column] = mutations[ref_sequence_read_parent_column].apply(reverse_complement)
         if "wt_sequence_read_parent_length" not in mutations.columns and sample_type != "m":
-            mutations["wt_sequence_read_parent_length"] = mutations[wt_sequence_read_parent_column].str.len()
+            mutations["wt_sequence_read_parent_length"] = mutations[ref_sequence_read_parent_column].str.len()
 
-    filters.extend([f"{mutant_sequence_read_parent_column}:is_not_null", f"{wt_sequence_read_parent_column}:is_not_null"])
+    filters.extend([f"{variant_sequence_read_parent_column}:is_not_null", f"{ref_sequence_read_parent_column}:is_not_null"])
     filters = list(set(filters))
 
     if filters:
@@ -458,14 +458,14 @@ def sim(
             mutations[column] = default_value
 
     len_filtered_df = len(filtered_df)
-    if number_of_mutations_to_sample == "all" or number_of_mutations_to_sample > len_filtered_df:
-        if number_of_mutations_to_sample != "all":
-            logger.info(f"number_of_mutations_to_sample is greater than the number of mutations in the filtered dataframe ({len_filtered_df}). Setting number_of_mutations_to_sample to {len_filtered_df}.")
+    if number_of_variants_to_sample == "all" or number_of_variants_to_sample > len_filtered_df:
+        if number_of_variants_to_sample != "all":
+            logger.info(f"number_of_variants_to_sample is greater than the number of mutations in the filtered dataframe ({len_filtered_df}). Setting number_of_variants_to_sample to {len_filtered_df}.")
         sampled_reference_df = filtered_df
     else:
-        # Randomly select number_of_mutations_to_sample rows
-        number_of_mutations_to_sample = min(number_of_mutations_to_sample, len_filtered_df)
-        sampled_reference_df = filtered_df.sample(n=number_of_mutations_to_sample, random_state=None)
+        # Randomly select number_of_variants_to_sample rows
+        number_of_variants_to_sample = min(number_of_variants_to_sample, len_filtered_df)
+        sampled_reference_df = filtered_df.sample(n=number_of_variants_to_sample, random_state=None)
 
     if sampled_reference_df.empty:
         print("No mutations to sample")
@@ -524,55 +524,55 @@ def sim(
             vcrs_id = getattr(row, "vcrs_id", None)
             vcrs_header = getattr(row, "vcrs_header", None)
             vcrs_mutation_type = getattr(row, "vcrs_mutation_type", None)
-            mutant_sequence = getattr(row, mutant_sequence_read_parent_column)
-            mutant_sequence_rc = getattr(row, mutant_sequence_read_parent_rc_column)
+            mutant_sequence = getattr(row, variant_sequence_read_parent_column)
+            mutant_sequence_rc = getattr(row, variant_sequence_read_parent_rc_column)
             mutant_sequence_length = row.mutant_sequence_read_parent_length
-            wt_sequence = getattr(row, wt_sequence_read_parent_column)
-            wt_sequence_rc = getattr(row, wt_sequence_read_parent_rc_column)
+            wt_sequence = getattr(row, ref_sequence_read_parent_column)
+            wt_sequence_rc = getattr(row, ref_sequence_read_parent_rc_column)
             wt_sequence_length = row.wt_sequence_read_parent_length
 
             valid_starting_index_max_mutant = int(mutant_sequence_length - read_length + 1)
             valid_starting_index_max_wt = int(wt_sequence_length - read_length + 1)
 
-            if not sample_m_and_w_from_same_locations:
-                if number_of_reads_per_mutation_m == "all":
+            if not sample_ref_and_alt_reads_from_same_locations:
+                if number_of_reads_per_variant_alt == "all":
                     read_start_indices_mutant = list(range(valid_starting_index_max_mutant))
                     number_of_reads_mutant = len(read_start_indices_mutant)
                 else:
-                    number_of_reads_per_mutation_m = int(number_of_reads_per_mutation_m)
-                    number_of_reads_mutant = number_of_reads_per_mutation_m
+                    number_of_reads_per_variant_alt = int(number_of_reads_per_variant_alt)
+                    number_of_reads_mutant = number_of_reads_per_variant_alt
 
-                    if number_of_reads_per_mutation_m > valid_starting_index_max_mutant:
+                    if number_of_reads_per_variant_alt > valid_starting_index_max_mutant:
                         logger.info("Setting with_replacement = True for this round")
                         with_replacement = True
                     
                     if with_replacement:
-                        read_start_indices_mutant = random.choices(range(valid_starting_index_max_mutant), k=number_of_reads_per_mutation_m)
+                        read_start_indices_mutant = random.choices(range(valid_starting_index_max_mutant), k=number_of_reads_per_variant_alt)
                     else:
-                        read_start_indices_mutant = random.sample(range(valid_starting_index_max_mutant), number_of_reads_per_mutation_m)
+                        read_start_indices_mutant = random.sample(range(valid_starting_index_max_mutant), number_of_reads_per_variant_alt)
 
                     with_replacement = with_replacement_original
 
                 # repeat but for wt
-                if number_of_reads_per_mutation_w == "all":
+                if number_of_reads_per_variant_ref == "all":
                     read_start_indices_wt = list(range(valid_starting_index_max_wt))
                     number_of_reads_wt = len(read_start_indices_wt)
                 else:
-                    number_of_reads_per_mutation_w = int(number_of_reads_per_mutation_w)
-                    number_of_reads_wt = number_of_reads_per_mutation_w
+                    number_of_reads_per_variant_ref = int(number_of_reads_per_variant_ref)
+                    number_of_reads_wt = number_of_reads_per_variant_ref
 
-                    if number_of_reads_per_mutation_w > valid_starting_index_max_wt:
+                    if number_of_reads_per_variant_ref > valid_starting_index_max_wt:
                         logger.info("Setting with_replacement = True for this round")
                         with_replacement = True
 
                     if with_replacement:
-                        read_start_indices_wt = random.choices(range(valid_starting_index_max_wt), k=number_of_reads_per_mutation_w)
+                        read_start_indices_wt = random.choices(range(valid_starting_index_max_wt), k=number_of_reads_per_variant_ref)
                     else:
-                        read_start_indices_wt = random.sample(range(valid_starting_index_max_wt), number_of_reads_per_mutation_w)
+                        read_start_indices_wt = random.sample(range(valid_starting_index_max_wt), number_of_reads_per_variant_ref)
 
                     with_replacement = with_replacement_original
             else:
-                if number_of_reads_per_mutation_m == "all" and number_of_reads_per_mutation_w == "all":  # I asserted earlier that these must be equal in this condition
+                if number_of_reads_per_variant_alt == "all" and number_of_reads_per_variant_ref == "all":  # I asserted earlier that these must be equal in this condition
                     read_start_indices_mutant = list(range(valid_starting_index_max_mutant))
                     read_start_indices_wt = list(range(valid_starting_index_max_wt))
 
@@ -580,7 +580,7 @@ def sim(
                     number_of_reads_wt = len(read_start_indices_wt)
                 else:
                     valid_starting_index_max = min(valid_starting_index_max_mutant, valid_starting_index_max_wt)
-                    number_of_reads_per_mutation = int(number_of_reads_per_mutation_m)  # which I asserted to be the same as number_of_reads_per_mutation_w
+                    number_of_reads_per_mutation = int(number_of_reads_per_variant_alt)  # which I asserted to be the same as number_of_reads_per_variant_ref
 
                     if number_of_reads_per_mutation > valid_starting_index_max:
                         logger.info("Setting with_replacement = True for this round")
@@ -605,7 +605,7 @@ def sim(
                     number_of_reads_mutant = number_of_reads_per_mutation
                     number_of_reads_wt = number_of_reads_per_mutation
 
-            if sample_m_and_w_from_same_locations and strand=="random":
+            if sample_ref_and_alt_reads_from_same_locations and strand=="random":
                 assign_strands_seed = random.randint(1, 100)  # makes sure that the same seed is used for both mutant and wt reads
             else:
                 assign_strands_seed = None
@@ -655,7 +655,7 @@ def sim(
                         "vcrs_mutation_type": vcrs_mutation_type,
                         "mutant_read": True,
                         "wt_read": False,
-                        "region_included_in_mcrs_reference": True,
+                        "region_included_in_vcrs_reference": True,
                         "noise_added": bool(noise_str),
                     }
                     mutant_list_of_dicts.append(mutant_dict)
@@ -699,7 +699,7 @@ def sim(
                         "vcrs_mutation_type": vcrs_mutation_type,
                         "mutant_read": False,
                         "wt_read": True,
-                        "region_included_in_mcrs_reference": True,
+                        "region_included_in_vcrs_reference": True,
                         "noise_added": bool(noise_str),
                     }
                     wt_list_of_dicts.append(wt_dict)
@@ -726,7 +726,7 @@ def sim(
     elif wt_list_of_dicts:
         read_df = pd.DataFrame(wt_list_of_dicts)
 
-    fasta_to_fastq(fasta_output_path_temp, reads_fastq_out, add_noise=add_noise_base_quality, gzip_output=gzip_output_fastq)
+    fasta_to_fastq(fasta_output_path_temp, reads_fastq_out, add_noise=add_noise_base_quality, gzip_output=gzip_reads_fastq_out)
 
     # Read the contents of the files first
     if reads_fastq_parent:
@@ -769,8 +769,8 @@ def sim(
     if reads_csv_out is not None:
         read_df.to_csv(reads_csv_out, index=False)
 
-    if mutations_updated_csv_out is not None:
-        mutations.to_csv(mutations_updated_csv_out, index=False)
+    if variants_updated_csv_out is not None:
+        mutations.to_csv(variants_updated_csv_out, index=False)
 
     report_time_elapsed(start_time, logger=logger, verbose=verbose, function_name="sim")
 

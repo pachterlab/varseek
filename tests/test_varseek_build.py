@@ -534,7 +534,7 @@ def test_semicolon_merging(long_sequence):
 #         optimize_flanking_regions = True,
 #         variants="c.35G>A",
 #         translate = True,
-#         save_mutations_updated_csv = True,
+#         save_variants_updated_csv = True,
 #         store_full_sequences=True,
 #         save_files=False,
 #         return_variant_output=True

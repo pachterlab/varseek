@@ -674,9 +674,9 @@ def compare_cdna_and_genome(
         mcrs_source="cdna",
         columns_to_explode=None,
         seq_id_column_cdna="seq_ID",
-        mut_column_cdna="mutation_cdna",
+        var_column_cdna="mutation_cdna",
         seq_id_column_genome="chromosome",
-        mut_column_genome="mutation_genome",
+        var_column_genome="mutation_genome",
         delete_temp_dir=True
     ):
     from varseek.varseek_build import build
@@ -704,10 +704,10 @@ def compare_cdna_and_genome(
             merge_identical=False,
             cosmic_email=os.getenv("COSMIC_EMAIL"),
             cosmic_password=os.getenv("COSMIC_PASSWORD"),
-            save_mutations_updated_csv=True,
+            save_variants_updated_csv=True,
             save_variants_updated_csv=varseek_build_cdna_out_df,
             seq_id_column=seq_id_column_cdna,
-            var_column=mut_column_cdna,
+            var_column=var_column_cdna,
         )
 
     cdna_updated_df = pd.read_csv(
@@ -741,7 +741,7 @@ def compare_cdna_and_genome(
             save_variants_updated_csv=True,
             variants_updated_csv_out=varseek_build_genome_out_df,
             seq_id_column=seq_id_column_genome,
-            var_column=mut_column_genome,
+            var_column=var_column_genome,
         )
 
     genome_updated_df = pd.read_csv(

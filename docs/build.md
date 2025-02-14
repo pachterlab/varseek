@@ -16,7 +16,7 @@ Output table
 | reference_out_dir                                                | directory         | N/A                                                        | <out>                                                                   | ...                          |
 | vcrs_fasta_out                                                    | .fa                  | N/A                                                        | <out>/vcrs.fa                                                      | ...                          |
 | id_to_header_csv_out                                         | .csv                | N/A                                                        | <out>/id_to_header_mapping.csv                      | ...                          |
-| mutations_updated_csv_out                               | .csv                 | save_mutations_updated_csv=True     | <out>/variants_updated.csv                       | ...                          |
+| variants_updated_csv_out                               | .csv                 | save_variants_updated_csv=True     | <out>/variants_updated.csv                       | ...                          |
 | vcrs_t2g_out                                                      | .txt                  | N/A                                                        | <out>/vcrs_t2g.txt                                              | ...                          |
 | wt_vcrs_fasta_out                                              | .txt                  | save_wt_vcrs_fasta_and_t2g=True     | <out>/wt_vcrs.fa                                                | ...                          |
 | wt_vcrs_t2g_out                                                 | .txt                  | save_wt_vcrs_fasta_and_t2g=True     | <out>/wt_vcrs_t2g.txt                                        | ...                          |
@@ -78,13 +78,13 @@ To see the supported combinations of mutations and sequences, either
 
 
 **Optional input-related arguments**  
-`-mc` `--var_column`  
+`-vc` `--var_column`  
 Name of the column containing the mutations to be performed in `mutations`. Default: 'mutation'.  
 
 `-sic` `--seq_id_column`  
 Name of the column containing the IDs of the sequences to be mutated in `mutations`. Default: 'seq_ID'.
 
-`-mic` `--mut_id_column`  
+`-vic` `--var_id_column`  
 Name of the column containing the IDs of each mutation in `mutations`. Optional. Default: use <seq_ID>_<mutation> for each row.
 
 `-gtf` `--gtf`  
@@ -131,10 +131,10 @@ Whether to merge identical mutant sequences in the output (identical sequences w
 Whether to consider the forward and reverse-complement mutant sequences as distinct if merging identical sequences. Only effective when merge_identical is also True. Default: False (ie do not consider forward and reverse-complement sequences to be equivalent)
 
 `-koh` `--keep_original_headers`
-Whether to keep the original sequence headers in the output fasta file, or to replace them with unique IDs of the form 'vcrs_<int>. If False, then an additional file at the path <id_to_header_csv_out> will be formed that maps sequence IDs from the fasta file to the <mut_id_column>. Default: False.
+Whether to keep the original sequence headers in the output fasta file, or to replace them with unique IDs of the form 'vcrs_<int>. If False, then an additional file at the path <id_to_header_csv_out> will be formed that maps sequence IDs from the fasta file to the <var_id_column>. Default: False.
 
 **Optional arguments to generate additional output**   
-`-smuc` `--save_mutations_updated_csv`   
+`-smuc` `--save_variants_updated_csv`   
 Whether to update the input `mutations` DataFrame to include additional columns with the mutation type, wildtype nucleotide sequence, and mutant nucleotide sequence (only valid if `mutations` is a csv or tsv file). Default: False
 
 `--save_wt_vcrs_fasta_and_t2g`
