@@ -14,12 +14,12 @@ Output table
 |----------------------------------------------------------------|--------------------|-----------------------------------------------------|----------------------------------------------------------------|-------------------------|
 | out                                                                       | directory         | N/A                                                        | <input_dir>                                                           | ...                          |
 | reference_out_dir                                                | directory         | N/A                                                        | <out>                                                                   | ...                          |
-| mcrs_fasta_out                                                    | .fa                  | N/A                                                        | <out>/mcrs.fa                                                      | ...                          |
+| mcrs_fasta_out                                                    | .fa                  | N/A                                                        | <out>/vcrs.fa                                                      | ...                          |
 | id_to_header_csv_out                                         | .csv                | N/A                                                        | <out>/id_to_header_mapping.csv                      | ...                          |
-| mutations_updated_csv_out                               | .csv                 | save_mutations_updated_csv=True     | <out>/mutation_metadata_df.csv                       | ...                          |
-| mcrs_t2g_out                                                      | .txt                  | N/A                                                        | <out>/mcrs_t2g.txt                                              | ...                          |
-| wt_mcrs_fasta_out                                              | .txt                  | save_wt_mcrs_fasta_and_t2g=True     | <out>/wt_mcrs.fa                                                | ...                          |
-| wt_mcrs_t2g_out                                                 | .txt                  | save_wt_mcrs_fasta_and_t2g=True     | <out>/wt_mcrs_t2g.txt                                        | ...                          |
+| mutations_updated_csv_out                               | .csv                 | save_mutations_updated_csv=True     | <out>/variants_updated.csv                       | ...                          |
+| mcrs_t2g_out                                                      | .txt                  | N/A                                                        | <out>/vcrs_t2g.txt                                              | ...                          |
+| wt_mcrs_fasta_out                                              | .txt                  | save_wt_mcrs_fasta_and_t2g=True     | <out>/wt_vcrs.fa                                                | ...                          |
+| wt_mcrs_t2g_out                                                 | .txt                  | save_wt_mcrs_fasta_and_t2g=True     | <out>/wt_vcrs_t2g.txt                                        | ...                          |
 | removed_variants_text_out                                 | .txt                  | save_removed_variants_text=True      | <out>/removed_variants.txt                                | ...                          |
 | filtering_report_text_out                                       | .txt                  | save_filtering_report_text=True           | <out>/filtering_report.txt                                      | ...                          |
 
@@ -47,9 +47,9 @@ sequences can be a string indicating the source upon which to apply the mutation
 See below for supported databases and sequences options.
 To see the supported combinations of mutations and sequences, either
 1) run `vk build --help` from the command line, or
-2) run varseek.varseek_build.print_valid_values_for_mutations_and_sequences_in_varseek_build() in python
+2) run varseek.varseek_build.print_valid_values_for_variants_and_sequences_in_varseek_build() in python
 
-`-m` `--mutations`  
+`-v` `--variants`  
 Path to csv or tsv file (str) (e.g., 'mutations.csv'), or DataFrame (DataFrame object),
 containing information about the mutations in the following format:
 
@@ -74,11 +74,11 @@ Alternatively, 'mutations' can be a string specifying a supported database, whic
 both the mutation database and corresponding reference sequence (if the 'sequences' is not a path).
 To see the supported combinations of mutations and sequences, either
 1) run `vk build --help` from the command line, or
-2) run varseek.varseek_build.print_valid_values_for_mutations_and_sequences_in_varseek_build() in python
+2) run varseek.varseek_build.print_valid_values_for_variants_and_sequences_in_varseek_build() in python
 
 
 **Optional input-related arguments**  
-`-mc` `--mut_column`  
+`-mc` `--var_column`  
 Name of the column containing the mutations to be performed in `mutations`. Default: 'mutation'.  
 
 `-sic` `--seq_id_column`  
@@ -214,7 +214,7 @@ varseek.build(["ATCGCTAAGCT", "TAGCTA"], "c.1_3inv", k=3)
 
 **Add mutations to an entire genome with extended output**  
 Main input:   
-- mutation information as a `mutations` CSV (by having `seq_id_column` contain chromosome information, and `mut_column` contain mutation information with respect to genome coordinates)  
+- mutation information as a `mutations` CSV (by having `seq_id_column` contain chromosome information, and `var_column` contain mutation information with respect to genome coordinates)  
 - the genome as the `sequences` file  
 
 Since we are passing the path to a gtf file to the `gtf` argument, transcript boundaries will be respected (the genome will be split into transcripts). `gtf_transcript_id_column` specifies the name of the column in `mutations` containing the transcript IDs corresponding to the transcript IDs in the `gtf` file.  
@@ -249,7 +249,7 @@ varseek.build(
   out="mut_fasta.fa",
   w=4,
   seq_id_column="Chromosome",
-  mut_column="Mutation",
+  var_column="Mutation",
   gtf="genome_annotation.gtf",
   gtf_transcript_id_column="Ensembl_Transcript_ID",
   optimize_flanking_regions=True,
@@ -281,7 +281,7 @@ TTAGAACTT
 &rarr; Saves 'mutations_updated.csv' file containing: 
 ```
 
-| Chromosome | Mutation          | Ensembl_Transcript_ID  | mutation_type | wt_sequence | mutant_sequence | wt_sequence_full  | mutant_sequence_full | wt_sequence_aa_full | mutant_sequence_aa_full |
+| Chromosome | Mutation          | Ensembl_Transcript_ID  | variant_type  | wt_sequence | variant_sequence| wt_sequence_full  | variant_sequence_full| wt_sequence_aa_full | variant_sequence_aa_full |
 |------------|-------------------|------------------------|---------------|-------------|-----------------|-------------------|----------------------|---------------------|-------------------------|
 | 1          | g.224411A>C       | ENSMUST00000193812     | Substitution  | TGCTATGCT   | TGCTCTGCT       | ...TGCTATGCT...   | ...TGCTCTGCT...      | ...CYA...           | ...CSA...               |
 | 8          | g.25111del        | ENST00000174411        | Deletion      | GAGTCCGAT   | GAGTCGAT        | ...GAGTCCGAT...   | ...GAGTCGAT...       | ...ESD...           | ...ES...                |

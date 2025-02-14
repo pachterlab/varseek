@@ -94,9 +94,9 @@ def test_no_filters_mcrs_fa(toy_mutation_metadata_df_path, dlist_file_small_path
 
     mutation_metadata_df_prefiltering = pd.read_csv(toy_mutation_metadata_df_path)
 
-    # mutation_metadata_df_prefiltering['mcrs_id'] = mutation_metadata_df_prefiltering['mcrs_id'].astype(str)
+    # mutation_metadata_df_prefiltering['vcrs_id'] = mutation_metadata_df_prefiltering['vcrs_id'].astype(str)
 
-    mcrs_fasta_header_to_sequence_dict_expected = mutation_metadata_df_prefiltering.set_index('mcrs_id')['mcrs_sequence'].to_dict()
+    mcrs_fasta_header_to_sequence_dict_expected = mutation_metadata_df_prefiltering.set_index('vcrs_id')['vcrs_sequence'].to_dict()
 
     assert dict(mcrs_fasta_header_to_sequence_dict_from_test) == dict(mcrs_fasta_header_to_sequence_dict_expected)
 
@@ -233,7 +233,7 @@ def test_single_filter_min_mcrs_fa(toy_mutation_metadata_df_path, dlist_file_sma
     mutation_metadata_df_prefiltering = pd.read_csv(toy_mutation_metadata_df_path)
     mutation_metadata_df_filtered = mutation_metadata_df_prefiltering.iloc[3:].reset_index(drop=True)
 
-    mcrs_fasta_header_to_sequence_dict_expected = mutation_metadata_df_filtered.set_index('mcrs_id')['mcrs_sequence'].to_dict()
+    mcrs_fasta_header_to_sequence_dict_expected = mutation_metadata_df_filtered.set_index('vcrs_id')['vcrs_sequence'].to_dict()
 
     assert dict(mcrs_fasta_header_to_sequence_dict_from_test) == dict(mcrs_fasta_header_to_sequence_dict_expected)
 
@@ -263,11 +263,11 @@ def test_single_filter_min_dlist_fa(toy_mutation_metadata_df_path, dlist_file_sm
     mutation_metadata_df_prefiltering = pd.read_csv(toy_mutation_metadata_df_path)
     mutation_metadata_df_filtered = mutation_metadata_df_prefiltering.iloc[3:].reset_index(drop=True)
 
-    filtered_df_mcrs_ids = set(mutation_metadata_df_filtered["mcrs_id"])
+    filtered_df_vcrs_ids = set(mutation_metadata_df_filtered["vcrs_id"])
 
     with tempfile.NamedTemporaryFile(suffix=".fasta", delete=True) as temp_output_file:
         output_dlist_fasta_real = temp_output_file.name
-        filter_fasta(dlist_file_small_path, output_dlist_fasta_real, filtered_df_mcrs_ids)
+        filter_fasta(dlist_file_small_path, output_dlist_fasta_real, filtered_df_vcrs_ids)
         dlist_fasta_header_to_sequence_dict_expected = create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(output_dlist_fasta_real)
 
     assert dict(dlist_fasta_header_to_sequence_dict_from_test) == dict(dlist_fasta_header_to_sequence_dict_expected)
@@ -299,10 +299,10 @@ def test_single_filter_min_id_to_header_mapping_csv(toy_mutation_metadata_df_pat
     mutation_metadata_df_prefiltering = pd.read_csv(toy_mutation_metadata_df_path)
     mutation_metadata_df_filtered = mutation_metadata_df_prefiltering.iloc[3:].reset_index(drop=True)
 
-    filtered_df_mcrs_ids = set(mutation_metadata_df_filtered["mcrs_id"])
+    filtered_df_vcrs_ids = set(mutation_metadata_df_filtered["vcrs_id"])
 
     id_to_header_dict_from_expected = make_mapping_dict(toy_id_to_header_mapping_csv_path, dict_key="id")
-    id_to_header_dict_from_expected = {k: v for k, v in id_to_header_dict_from_expected.items() if k in filtered_df_mcrs_ids}
+    id_to_header_dict_from_expected = {k: v for k, v in id_to_header_dict_from_expected.items() if k in filtered_df_vcrs_ids}
 
     dict(id_to_header_dict_from_test) == dict(id_to_header_dict_from_expected)
 
@@ -335,9 +335,9 @@ def test_single_filter_min_id_to_header_mapping_t2g(toy_mutation_metadata_df_pat
     mutation_metadata_df_prefiltering = pd.read_csv(toy_mutation_metadata_df_path)
     mutation_metadata_df_filtered = mutation_metadata_df_prefiltering.iloc[3:].reset_index(drop=True)
 
-    filtered_df_mcrs_ids = set(mutation_metadata_df_filtered["mcrs_id"])
+    filtered_df_vcrs_ids = set(mutation_metadata_df_filtered["vcrs_id"])
 
-    t2g_from_expected = {k: v for k, v in t2g_from_expected.items() if k in filtered_df_mcrs_ids}
+    t2g_from_expected = {k: v for k, v in t2g_from_expected.items() if k in filtered_df_vcrs_ids}
 
     dict(t2g_from_test) == dict(t2g_from_expected)
 
@@ -416,8 +416,8 @@ def test_multi_filter_between_equal_metadata_df(toy_mutation_metadata_df_path, d
 
 
 def test_multi_filter_contains_istrue_isfalse_metadata_df(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_mcrs_fa_path, temporary_output_files):
-    mcrs_id_set = {"seq1204954474446204", "seq1693806423259989", "seq1784404960707341", "seq2241452516841814", "seq9627237534759445"} # elements 0, 2, 4, 6, 8
-    filters = [f'mcrs_id:is_in={mcrs_id_set}', 'bool_col1:is_true', 'bool_col2:is_false']
+    vcrs_id_set = {"seq1204954474446204", "seq1693806423259989", "seq1784404960707341", "seq2241452516841814", "seq9627237534759445"} # elements 0, 2, 4, 6, 8
+    filters = [f'vcrs_id:is_in={vcrs_id_set}', 'bool_col1:is_true', 'bool_col2:is_false']
     
     output_metadata_df, output_mcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_mcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
 
@@ -451,7 +451,7 @@ def test_multi_filter_contains_istrue_isfalse_metadata_df(toy_mutation_metadata_
     output_metadata_df_expected = output_metadata_df_expected[
         (output_metadata_df_expected["bool_col1"] == True) &          # bool_col1 is True
         (output_metadata_df_expected["bool_col2"] == False) &         # bool_col2 is False
-        (output_metadata_df_expected["mcrs_id"].isin(mcrs_id_set))    # mcrs_id in specified set
+        (output_metadata_df_expected["vcrs_id"].isin(vcrs_id_set))    # vcrs_id in specified set
     ].reset_index(drop=True)
 
     pd.testing.assert_frame_equal(output_metadata_df_from_test, output_metadata_df_expected)

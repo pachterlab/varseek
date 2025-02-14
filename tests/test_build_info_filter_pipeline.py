@@ -26,7 +26,7 @@ cosmic_csv_path_starting = os.path.join(ground_truth_folder, "CancerMutationCens
 
 
 sample_size=2000
-columns_to_drop_info_filter = None  # ["nearby_mutations", "number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference", "number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference", "overlapping_kmers", "mcrs_items_with_overlapping_kmers_in_mcrs_reference", "kmer_overlap_in_mcrs_reference"]
+columns_to_drop_info_filter = None  # ["nearby_variants", "number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference", "number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference", "overlapping_kmers", "mcrs_items_with_overlapping_kmers_in_mcrs_reference", "kmer_overlap_in_mcrs_reference"]
 make_new_gt = False
 
 
@@ -124,7 +124,7 @@ def cosmic_csv_path(cds_and_cdna_files, tmp_path):
 
 
         mutations = pd.read_csv(cosmic_csv_with_cdna_path)
-        mutations = add_mutation_type(mutations, mut_column = "mutation_genome")
+        mutations = add_mutation_type(mutations, var_column = "mutation_genome")
 
         mutation_types = ["substitution", "deletion", "insertion", "delins", "duplication", "inversion"]
 
@@ -163,6 +163,7 @@ def test_file_processing(cosmic_csv_path, cds_and_cdna_files, genome_and_gtf_fil
 
     w = 54
     k = 55
+    var_column = "mutation_cdna"
     max_ambiguous_vk = 0
     strandedness = False
     fasta_filters = [
@@ -186,9 +187,10 @@ def test_file_processing(cosmic_csv_path, cds_and_cdna_files, genome_and_gtf_fil
     
         vk.build(
             sequences=cdna_file,
-            mutations=cosmic_csv_path,
+            variants=cosmic_csv_path,
             out=out_dir_notebook,
             reference_out_dir=None,
+            var_column=var_column,
             w=w,
             remove_seqs_with_wt_kmers=True,
             optimize_flanking_regions=True,
@@ -198,27 +200,27 @@ def test_file_processing(cosmic_csv_path, cds_and_cdna_files, genome_and_gtf_fil
             vcrs_strandedness=strandedness,
             cosmic_email = os.getenv('COSMIC_EMAIL'),
             cosmic_password = os.getenv('COSMIC_PASSWORD'),
-            save_mutations_updated_csv=True
+            save_variants_updated_csv=True
         )
 
-        vk_build_mcrs_fa_path = os.path.join(out_dir_notebook, "mcrs.fa")
+        vk_build_vcrs_fa_path = os.path.join(out_dir_notebook, "vcrs.fa")
         update_df_out = os.path.join(out_dir_notebook, "CancerMutationCensus_AllData_v100_GRCh37_mutation_workflow_with_cdna_subsampled_pytest_updated.csv")
         id_to_header_csv=os.path.join(out_dir_notebook, "id_to_header_mapping.csv")
-        t2g_path = os.path.join(out_dir_notebook, "mcrs_t2g.txt")
+        t2g_path = os.path.join(out_dir_notebook, "vcrs_t2g.txt")
 
-        vk_build_mcrs_fa_path_ground_truth = f"{ground_truth_folder}/mcrs.fa"
+        vk_build_vcrs_fa_path_ground_truth = f"{ground_truth_folder}/vcrs.fa"
         update_df_out_ground_truth = f"{ground_truth_folder}/CancerMutationCensus_AllData_v100_GRCh37_mutation_workflow_with_cdna_subsampled_pytest_updated.csv"
         id_to_header_csv_ground_truth = f"{ground_truth_folder}/id_to_header_mapping.csv"
-        t2g_path_ground_truth = f"{ground_truth_folder}/mcrs_t2g.txt"
+        t2g_path_ground_truth = f"{ground_truth_folder}/vcrs_t2g.txt"
 
         if make_new_gt:
-            shutil.copy(vk_build_mcrs_fa_path, vk_build_mcrs_fa_path_ground_truth)
+            shutil.copy(vk_build_vcrs_fa_path, vk_build_vcrs_fa_path_ground_truth)
             shutil.copy(update_df_out, update_df_out_ground_truth)
             shutil.copy(id_to_header_csv, id_to_header_csv_ground_truth)
             shutil.copy(t2g_path, t2g_path_ground_truth)
 
         
-        compare_two_fastas_without_regard_for_order_of_entries(vk_build_mcrs_fa_path, vk_build_mcrs_fa_path_ground_truth)
+        compare_two_fastas_without_regard_for_order_of_entries(vk_build_vcrs_fa_path, vk_build_vcrs_fa_path_ground_truth)
 
         compare_two_id_to_header_mappings(id_to_header_csv, id_to_header_csv_ground_truth)
 
@@ -229,20 +231,20 @@ def test_file_processing(cosmic_csv_path, cds_and_cdna_files, genome_and_gtf_fil
         vk.info(
             input_dir=out_dir_notebook,
             columns_to_include="all",
-            mcrs_id_column="mcrs_id",
-            mcrs_sequence_column="mutant_sequence",
-            mcrs_source_column="mcrs_source",  # if input df has concatenated cdna and header MCRS's, then I want to know whether it came from cdna or genome
+            vcrs_id_column="vcrs_id",
+            vcrs_sequence_column="variant_sequence",
+            vcrs_source_column="vcrs_source",  # if input df has concatenated cdna and header MCRS's, then I want to know whether it came from cdna or genome
             seqid_cdna_column="seq_ID",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome  # TODO: implement these 4 column name arguments
             seqid_genome_column="chromosome",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome
-            mutation_cdna_column="mutation",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome
-            mutation_genome_column="mutation_genome",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome
+            variant_cdna_column="mutation_cdna",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome
+            variant_genome_column="mutation_genome",  # if input df has concatenated cdna and header MCRS's, then I want a way of mapping from cdna to genome
             gtf=gtf_path,  # for distance to nearest splice junction
             mutation_metadata_df_out_path=None,
             out=out_dir_notebook,
             reference_out=reference_folder_parent,
             w=w,
             vcrs_strandedness=strandedness,
-            max_ambiguous_mcrs=max_ambiguous_vk,
+            max_ambiguous_vcrs=max_ambiguous_vk,
             max_ambiguous_reference=max_ambiguous_vk,
             near_splice_junction_threshold=10,
             threads=8,
@@ -262,7 +264,7 @@ def test_file_processing(cosmic_csv_path, cds_and_cdna_files, genome_and_gtf_fil
         id_to_header_csv_vk_filter = os.path.join(out_dir_notebook, "id_to_header_mapping_filtered.csv")
 
         dlist_fasta_ground_truth = f"{ground_truth_folder}/dlist.fa"
-        mutation_metadata_df_out_path_ground_truth = f"{ground_truth_folder}/mutation_metadata_df.csv"
+        mutation_metadata_df_out_path_ground_truth = f"{ground_truth_folder}/variants_updated.csv"
         mutation_metadata_df_out_exploded_path_ground_truth = f"{ground_truth_folder}/mutation_metadata_df_exploded.csv"
         mcrs_fasta_vk_filter_ground_truth = f"{ground_truth_folder}/mcrs_filtered.fa"
         output_metadata_df_vk_filter_ground_truth = f"{ground_truth_folder}/mutation_metadata_df_filtered.csv"

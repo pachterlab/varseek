@@ -2,8 +2,8 @@ Input table
 | Parameter                                                           | File type         | Required?           | Corresponding parameter from vk build/info        | Description             |
 |----------------------------------------------------------------|--------------------|------------------------|-----------------------------------------------------------------|---------------------------|
 | input_dir                                                              | directory         | True                    | N/A                                                                        | ...                            |
-| mutations_updated_vk_info_csv                         | .csv                | False                  | mutations_updated_vk_info_csv_out                   | ...                             |
-| mutations_updated_exploded_vk_info_csv        | .csv                | False                  | mutations_updated_exploded_vk_info_csv_out   | ...                             |
+| mutations_updated_vk_info_csv                         | .csv                | False                  | variants_updated_vk_info_csv_out                   | ...                             |
+| mutations_updated_exploded_vk_info_csv        | .csv                | False                  | variants_updated_exploded_vk_info_csv_out   | ...                             |
 | id_to_header_csv                                                | .csv                | False                  | id_to_header_csv_out                                          | ...                             |
 | dlist_fasta                                                            | .fa                  | False                  | dlist_combined_fasta_out (or any other dlist)       | ...                             |
 

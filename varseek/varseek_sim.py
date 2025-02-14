@@ -1,32 +1,31 @@
 """varseek sim and specific helper functions."""
 import os
 import random
+import time
 
 import numpy as np
-import time
 import pandas as pd
 from tqdm import tqdm
 
 import varseek
-
-from .utils import (
-    fasta_to_fastq,
-    introduce_sequencing_errors,
-    merge_synthetic_read_info_into_mutations_metadata_df,
-    set_up_logger,
-    reverse_complement,
-    splitext_custom,
-    report_time_elapsed,
-    make_function_parameter_to_value_dict,
-    print_varseek_dry_run,
-    save_params_to_config_file,
-    save_run_info,
-    is_valid_int,
-    check_file_path_is_string_with_valid_extension
-)
+from varseek.varseek_build import accepted_build_file_types
 
 from .constants import supported_databases_and_corresponding_reference_sequence_type
-from varseek.varseek_build import accepted_build_file_types
+from .utils import (
+    check_file_path_is_string_with_valid_extension,
+    fasta_to_fastq,
+    introduce_sequencing_errors,
+    is_valid_int,
+    make_function_parameter_to_value_dict,
+    merge_synthetic_read_info_into_mutations_metadata_df,
+    print_varseek_dry_run,
+    report_time_elapsed,
+    reverse_complement,
+    save_params_to_config_file,
+    save_run_info,
+    set_up_logger,
+    splitext_custom,
+)
 
 tqdm.pandas()
 logger = set_up_logger()
@@ -166,7 +165,7 @@ def sim(
     vk_build_out_dir=".",
     sequences=None,
     seq_id_column="seq_ID",
-    mut_column="mutation",
+    var_column="mutation",
     k=59,
     w=54,
     sequences_cdna=None,
@@ -186,7 +185,7 @@ def sim(
 
     # Required input arguments:
     - mutations                         (str or pd.DataFrame) Path to the csv file or a dataframe object containing mutation information. 
-        Valid input files include the mutations_updated_csv_out file from vk build (save_mutations_updated_csv=True) with merge_identical=False, or the mutations_updated_exploded_vk_info_csv_out output of vk info (save_mutations_updated_exploded_vk_info_csv=True).
+        Valid input files include the mutations_updated_csv_out file from vk build (save_mutations_updated_csv=True) with merge_identical=False, or the variants_updated_exploded_vk_info_csv_out output of vk info (save_variants_updated_exploded_vk_info_csv=True).
         Expects the following columns:
             header: mutation header/ID
             mutant_sequence_read_parent_column: the parent mutation-containing sequence from which to draw the read - should correspond to roughly twice the read length (so that the mutation can occur in any position in the read) - required if and only if number_of_reads_per_mutation_m > 0
@@ -223,7 +222,7 @@ def sim(
     - vk_build_out_dir                  (str) Only applies if mutations does not exist or have the expected columns. Path to the output directory for the vk_build files. Default: "."
     - sequences                         (str) Only applies if mutations does not exist or have the expected columns. Path to the fasta file containing the sequences. Default: None
     - seq_id_column                     (str) Only applies if mutations does not exist or have the expected columns. Name of the column containing the sequence IDs. Default: "seq_ID"
-    - mut_column                        (str) Only applies if mutations does not exist or have the expected columns. Name of the column containing the mutations. Default: "mutation"
+    - var_column                        (str) Only applies if mutations does not exist or have the expected columns. Name of the column containing the mutations. Default: "mutation"
     - k                                 (int) Only applies if mutations does not exist or have the expected columns. Length of the k-mer to use for filtering. Default: 59
     - w                                 (int) Only applies if mutations does not exist or have the expected columns. Length of the k-mer to use for filtering. Default: 54
     - sequences_cdna                    (str) Only applies if mutations does not exist or have the expected columns. Path to the fasta file containing the cDNA sequences. Default: None
@@ -300,7 +299,7 @@ def sim(
             if not os.path.exists(update_df_out_cdna):
                 varseek.build(
                     sequences=sequences_cdna,
-                    mutations=mutations,
+                    variants=mutations,
                     out=vk_build_out_dir,
                     w=read_w,
                     k=k,
@@ -312,10 +311,10 @@ def sim(
                     min_seq_len=read_length,
                     cosmic_email=os.getenv("COSMIC_EMAIL"),
                     cosmic_password=os.getenv("COSMIC_PASSWORD"),
-                    save_mutations_updated_csv=True,
-                    mutations_updated_csv_out=update_df_out_cdna,
+                    save_variants_updated_csv=True,
+                    variants_updated_csv_out=update_df_out_cdna,
                     seq_id_column=seq_id_column_cdna,
-                    mut_column=mut_column_cdna,
+                    var_column=mut_column_cdna,
                     **kwargs
                 )
 
@@ -323,7 +322,7 @@ def sim(
             if not os.path.exists(update_df_out_genome):
                 varseek.build(
                     sequences=sequences_genome,
-                    mutations=mutations,
+                    variants=mutations,
                     out=vk_build_out_dir,
                     w=read_w,
                     k=k,
@@ -335,10 +334,10 @@ def sim(
                     min_seq_len=read_length,
                     cosmic_email=os.getenv("COSMIC_EMAIL"),
                     cosmic_password=os.getenv("COSMIC_PASSWORD"),
-                    save_mutations_updated_csv=True,
-                    mutations_updated_csv_out=update_df_out_genome,
+                    save_variants_updated_csv=True,
+                    variants_updated_csv_out=update_df_out_genome,
                     seq_id_column=seq_id_column_genome,
-                    mut_column=mut_column_genome,
+                    var_column=mut_column_genome,
                     **kwargs
                 )
 
@@ -356,7 +355,7 @@ def sim(
                 print("running varseek build")
                 varseek.build(
                     sequences=sequences,
-                    mutations=mutations,
+                    variants=mutations,
                     out=vk_build_out_dir,
                     w=read_w,
                     k=k,
@@ -368,10 +367,10 @@ def sim(
                     min_seq_len=read_length,
                     cosmic_email=os.getenv("COSMIC_EMAIL"),
                     cosmic_password=os.getenv("COSMIC_PASSWORD"),
-                    save_mutations_updated_csv=True,
-                    mutations_updated_csv_out=update_df_out,
+                    save_variants_updated_csv=True,
+                    variants_updated_csv_out=update_df_out,
                     seq_id_column=seq_id_column,  # uncomment for genome support
-                    mut_column=mut_column,
+                    var_column=var_column,
                     **kwargs
                 )
 
@@ -379,7 +378,7 @@ def sim(
 
         sim_data_df.rename(
             columns={
-                "mutant_sequence": mutant_sequence_read_parent_column,
+                "variant_sequence": mutant_sequence_read_parent_column,
                 "wt_sequence": wt_sequence_read_parent_column,
             },
             inplace=True,
@@ -522,9 +521,9 @@ def sim(
         for row in sampled_reference_df.itertuples(index=False):
             # try:
             header = row.header
-            mcrs_id = getattr(row, "mcrs_id", None)
-            mcrs_header = getattr(row, "mcrs_header", None)
-            mcrs_mutation_type = getattr(row, "mcrs_mutation_type", None)
+            vcrs_id = getattr(row, "vcrs_id", None)
+            vcrs_header = getattr(row, "vcrs_header", None)
+            vcrs_mutation_type = getattr(row, "vcrs_mutation_type", None)
             mutant_sequence = getattr(row, mutant_sequence_read_parent_column)
             mutant_sequence_rc = getattr(row, mutant_sequence_read_parent_rc_column)
             mutant_sequence_length = row.mutant_sequence_read_parent_length
@@ -641,7 +640,7 @@ def sim(
                             noise_str = "n"
                             noisy_read_indices_mutant.append(i)
 
-                    read_id = f"{mcrs_id}_{i}{selected_strand}M{noise_str}_row{total_fragments}"
+                    read_id = f"{vcrs_id}_{i}{selected_strand}M{noise_str}_row{total_fragments}"
                     read_header = f"{header}_{i}{selected_strand}M{noise_str}_row{total_fragments}"
                     fa_file.write(f">{read_id}\n{sequence_chunk}\n")
                     mutant_dict = {
@@ -651,9 +650,9 @@ def sim(
                         "read_index": i,
                         "read_strand": selected_strand,
                         "reference_header": header,
-                        "mcrs_id": mcrs_id,
-                        "mcrs_header": mcrs_header,
-                        "mcrs_mutation_type": mcrs_mutation_type,
+                        "vcrs_id": vcrs_id,
+                        "vcrs_header": vcrs_header,
+                        "vcrs_mutation_type": vcrs_mutation_type,
                         "mutant_read": True,
                         "wt_read": False,
                         "region_included_in_mcrs_reference": True,
@@ -685,7 +684,7 @@ def sim(
                             noise_str = "n"
                             noisy_read_indices_wt.append(i)
 
-                    read_id = f"{mcrs_id}_{i}{selected_strand}W{noise_str}_row{total_fragments}"
+                    read_id = f"{vcrs_id}_{i}{selected_strand}W{noise_str}_row{total_fragments}"
                     read_header = f"{header}_{i}{selected_strand}W{noise_str}_row{total_fragments}"
                     fa_file.write(f">{read_id}\n{sequence_chunk}\n")
                     wt_dict = {
@@ -695,9 +694,9 @@ def sim(
                         "read_index": i,
                         "read_strand": selected_strand,
                         "reference_header": header,
-                        "mcrs_id": mcrs_id,
-                        "mcrs_header": mcrs_header,
-                        "mcrs_mutation_type": mcrs_mutation_type,
+                        "vcrs_id": vcrs_id,
+                        "vcrs_header": vcrs_header,
+                        "vcrs_mutation_type": vcrs_mutation_type,
                         "mutant_read": False,
                         "wt_read": True,
                         "region_included_in_mcrs_reference": True,

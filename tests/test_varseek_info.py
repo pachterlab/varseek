@@ -54,12 +54,12 @@ def temporary_output_files():
 def test_add_mutation_information(toy_mutation_metadata_df_exploded):
     expected_df = toy_mutation_metadata_df_exploded
 
-    column_to_drop_list = ["header", "header_list", "order", "order_list"]
+    column_to_drop_list = ["vcrs_header", "header_list", "order", "order_list"]
     for column in column_to_drop_list:
         if column in toy_mutation_metadata_df_exploded.columns:
             toy_mutation_metadata_df_exploded.drop(column, axis=1, inplace=True)
 
-    mutation_metadata_df = toy_mutation_metadata_df_exploded[["mutation", "seq_ID", "mcrs_id", "mcrs_header", "mcrs_sequence"]].copy()
+    mutation_metadata_df = toy_mutation_metadata_df_exploded[["mutation", "seq_ID", "mcrs_id", "mcrs_header", "vcrs_sequence"]].copy()
     output_df = add_mutation_information(mutation_metadata_df, mutation_column="mutation", mcrs_source="cdna")
     output_df = output_df[expected_df.columns]
 
@@ -70,7 +70,7 @@ def test_collapse(toy_mutation_metadata_df_exploded, toy_mutation_metadata_df_co
     expected_df = toy_mutation_metadata_df_collapsed
 
     mutation_metadata_df_exploded = toy_mutation_metadata_df_exploded
-    columns_to_explode = [col for col in mutation_metadata_df_exploded.columns if col not in ['mcrs_id', 'mcrs_header', 'mcrs_sequence']]
+    columns_to_explode = [col for col in mutation_metadata_df_exploded.columns if col not in ['mcrs_id', 'mcrs_header', 'vcrs_sequence']]
     output_df, _ = collapse_df(mutation_metadata_df_exploded, columns_to_explode = columns_to_explode, columns_to_explode_extend_values = None)
     output_df = output_df[expected_df.columns]
 
@@ -82,7 +82,7 @@ def test_explode(toy_mutation_metadata_df_exploded, toy_mutation_metadata_df_col
     expected_df = toy_mutation_metadata_df_exploded
 
     mutation_metadata_df_collapsed = toy_mutation_metadata_df_collapsed
-    columns_to_explode = [col for col in mutation_metadata_df_collapsed.columns if col not in ['mcrs_id', 'mcrs_header', 'mcrs_sequence']]
+    columns_to_explode = [col for col in mutation_metadata_df_collapsed.columns if col not in ['mcrs_id', 'mcrs_header', 'vcrs_sequence']]
     output_df = explode_df(mutation_metadata_df_collapsed, columns_to_explode = columns_to_explode)
     output_df = output_df[expected_df.columns]
 
@@ -162,13 +162,13 @@ def test_calculate_nearby_mutations(mock_helpers_visualization):
         "seq_ID": ["ENST0001", "ENST0001", "ENST0001", "ENST0001"],
         "start_mutation_position": [100, 101, 112, 123],
         "end_mutation_position": [105, 101, 112, 123],
-        "header": ["ENST0001:c.101_105del", "ENST0001:c.101C>A", "ENST0001:c.112G>C", "ENST0001:c.123A>G"]
+        "vcrs_header": ["ENST0001:c.101_105del", "ENST0001:c.101C>A", "ENST0001:c.112G>C", "ENST0001:c.123A>G"]
     }
     mutation_metadata_df_exploded = pd.DataFrame(data)
     
     # Run the function with the mock data
     output_df, columns_to_explode = calculate_nearby_mutations(
-        mcrs_source_column="seq_ID",
+        vcrs_source_column="seq_ID",
         k=10,
         output_plot_folder="mock_folder",
         mcrs_source="not_combined",
@@ -177,33 +177,33 @@ def test_calculate_nearby_mutations(mock_helpers_visualization):
     )
 
     # Check that the expected columns are in the output
-    assert "nearby_mutations" in output_df.columns
-    assert "nearby_mutations_count" in output_df.columns
-    assert "has_a_nearby_mutation" in output_df.columns
+    assert "nearby_variants" in output_df.columns
+    assert "nearby_variants_count" in output_df.columns
+    assert "has_a_nearby_variant" in output_df.columns
 
-    # Verify contents of 'nearby_mutations_count' and 'has_a_nearby_mutation'
+    # Verify contents of 'nearby_variants_count' and 'has_a_nearby_variant'
     expected_nearby_mutations = [['ENST0001:c.101C>A', "ENST0001:c.112G>C"], ["ENST0001:c.101_105del"], ['ENST0001:c.101_105del'], []]
     expected_nearby_mutations = [sorted(sublist) for sublist in expected_nearby_mutations]
     expected_nearby_mutations_count = [2, 1, 1, 0]
     expected_has_a_nearby_mutation = [True, True, True, False]
 
-    # sort output_df["nearby_mutations"]
-    output_df["nearby_mutations"] = output_df["nearby_mutations"].apply(lambda x: sorted(x))
+    # sort output_df["nearby_variants"]
+    output_df["nearby_variants"] = output_df["nearby_variants"].apply(lambda x: sorted(x))
     pd.testing.assert_series_equal(
-        output_df["nearby_mutations"],
-        pd.Series(expected_nearby_mutations, name="nearby_mutations"),
+        output_df["nearby_variants"],
+        pd.Series(expected_nearby_mutations, name="nearby_variants"),
         check_dtype=False
     )
     
     pd.testing.assert_series_equal(
-        output_df["nearby_mutations_count"],
-        pd.Series(expected_nearby_mutations_count, name="nearby_mutations_count"),
+        output_df["nearby_variants_count"],
+        pd.Series(expected_nearby_mutations_count, name="nearby_variants_count"),
         check_dtype=False
     )
 
     pd.testing.assert_series_equal(
-        output_df["has_a_nearby_mutation"],
-        pd.Series(expected_has_a_nearby_mutation, name="has_a_nearby_mutation"),
+        output_df["has_a_nearby_variant"],
+        pd.Series(expected_has_a_nearby_mutation, name="has_a_nearby_variant"),
         check_dtype=False
     )
 
@@ -217,12 +217,12 @@ def test_longest_homopolymer_in_series():
         np.nan,          # NaN sequence, should return NaN for both outputs
         "CCCAAAAATTT",   # Multiple homopolymers, longest is AAAAA
         "TTTCCCGGG"      # Multiple equal-length homopolymers
-    ], name="mcrs_sequence")
+    ], name="vcrs_sequence")
 
     # Apply the function and unpack results into two new columns
-    sequences_df = pd.DataFrame({"mcrs_sequence": sequences})
+    sequences_df = pd.DataFrame({"vcrs_sequence": sequences})
     sequences_df["longest_homopolymer_length"], sequences_df["longest_homopolymer"] = zip(
-        *sequences_df["mcrs_sequence"].apply(lambda x: longest_homopolymer(x) if pd.notna(x) else (np.nan, np.nan))
+        *sequences_df["vcrs_sequence"].apply(lambda x: longest_homopolymer(x) if pd.notna(x) else (np.nan, np.nan))
     )
 
     # Expected results
@@ -254,12 +254,12 @@ def test_triplet_stats_in_series():
         "ATCGATCG",      # 4 distinct triplets, 6 total triplets, complexity = 0.67
         np.nan,          # NaN sequence, should return NaN for all outputs
         "ATATAT",        # 2 distinct triplets (ATA, TAT), 4 total triplets, complexity = 0.5
-    ], name="mcrs_sequence")
+    ], name="vcrs_sequence")
 
     # Apply the function and unpack results into three new columns
-    sequences_df = pd.DataFrame({"mcrs_sequence": sequences})
+    sequences_df = pd.DataFrame({"vcrs_sequence": sequences})
     sequences_df["num_distinct_triplets"], sequences_df["num_total_triplets"], sequences_df["triplet_complexity"] = zip(
-        *sequences_df["mcrs_sequence"].apply(lambda x: triplet_stats(x) if pd.notna(x) else (np.nan, np.nan, np.nan))
+        *sequences_df["vcrs_sequence"].apply(lambda x: triplet_stats(x) if pd.notna(x) else (np.nan, np.nan, np.nan))
     )
 
     # Expected results
@@ -297,7 +297,7 @@ def test_count_kmer_overlaps(mock_helpers):
         fasta_file.seek(0)
 
         # Run the function with the temporary FASTA file (strandedness=False)
-        df = count_kmer_overlaps_new(fasta_file.name, k=4, strandedness=True, mcrs_id_column="mcrs_id")
+        df = count_kmer_overlaps_new(fasta_file.name, k=4, strandedness=True, vcrs_id_column="mcrs_id")
 
         # Expected results
         expected_data = {
@@ -332,7 +332,7 @@ def test_add_mcrs_mutation_type(mock_helpers):
     mutation_metadata_df = pd.DataFrame(data)
 
     # Run the function
-    result_df = add_mcrs_mutation_type(mutation_metadata_df, mut_column="mcrs_header")
+    result_df = add_mcrs_mutation_type(mutation_metadata_df, var_column="mcrs_header")
 
     # Expected results
     expected_mutation_type = ["insertion", "substitution", "mixed", "delins", "duplication", "substitution", np.nan]

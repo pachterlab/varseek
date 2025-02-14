@@ -19,6 +19,7 @@ from .utils import (
     save_params_to_config_file,
     save_run_info,
     set_up_logger,
+    make_mapping_dict
 )
 
 logger = set_up_logger()
@@ -188,7 +189,7 @@ def convert_txt_to_list(txt_path):
         return [line.strip() for line in f if line.strip()]
 
 
-def filter_id_to_header_csv(id_to_header_csv, id_to_header_csv_filtered, filtered_df_mcrs_ids):
+def filter_id_to_header_csv(id_to_header_csv, id_to_header_csv_filtered, filtered_df_vcrs_ids):
     with open(id_to_header_csv, mode="r", encoding="utf-8") as infile, open(id_to_header_csv_filtered, mode="w", encoding="utf-8", newline="") as outfile:
         reader = csv.reader(infile)
         writer = csv.writer(outfile)
@@ -196,18 +197,18 @@ def filter_id_to_header_csv(id_to_header_csv, id_to_header_csv_filtered, filtere
         # Loop through each row in the input file
         for row in reader:
             key = row[0]  # Assuming the first column is the key
-            # Write row to output file if key is in filtered_df_mcrs_ids
-            if key in filtered_df_mcrs_ids:
+            # Write row to output file if key is in filtered_df_vcrs_ids
+            if key in filtered_df_vcrs_ids:
                 writer.writerow(row)
 
 
-def make_filtering_report(mutation_metadata_df, verbose=False, filtering_report_text_out=None, prior_filtering_report_dict=None):
-    if "semicolon_count" not in mutation_metadata_df.columns:
-        mutation_metadata_df["semicolon_count"] = mutation_metadata_df["mcrs_header"].str.count(";")
+def make_filtering_report(mutation_metadata_df, vcrs_header_column="vcrs_header", verbose=False, filtering_report_text_out=None, prior_filtering_report_dict=None):
+    if "semicolon_count" not in mutation_metadata_df.columns:  # already checked 'and vcrs_header_column in mutation_metadata_df.columns' before
+        mutation_metadata_df["semicolon_count"] = mutation_metadata_df[vcrs_header_column].str.count(";")
 
     # number of VCRSs
     number_of_vcrss = len(mutation_metadata_df)
-
+    
     # number of unique mutations
     number_of_unique_mutations = (mutation_metadata_df["semicolon_count"] == 0).sum()
 
@@ -308,6 +309,9 @@ def filter(
     mutations_updated_exploded_vk_info_csv=None,  # input exploded mutation metadata df
     id_to_header_csv=None,  # input id to header csv
     dlist_fasta=None,  # input dlist
+    vcrs_id_column="vcrs_id",
+    vcrs_header_column="vcrs_header",
+    vcrs_sequence_column="vcrs_sequence",
     out=None,  # output directory
     mutations_updated_filtered_csv_out=None,  # output metadata df
     mutations_updated_exploded_filtered_csv_out=None,  # output exploded mutation metadata df
@@ -336,8 +340,12 @@ def filter(
     # Optional input arguments:
     - mutations_updated_vk_info_csv                (str) Path to the updated dataframe containing the MCRS headers and sequences. Corresponds to `mutations_updated_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).
     - mutations_updated_exploded_vk_info_csv       (str) Path to the updated exploded dataframe containing the MCRS headers and sequences. Corresponds to `mutations_updated_exploded_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).
-    - id_to_header_csv                             (str) Path to the csv file containing the mapping of IDs to headers generated from varseek build corresponding to mcrs_fasta. Corresponds to `id_to_header_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).
+    - id_to_header_csv                             (str) Path to the csv file containing the mapping of IDs to headers generated from varseek build corresponding to vcrs_fasta. Corresponds to `id_to_header_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).
     - dlist_fasta                                  (str) Path to the dlist fasta file. Default: None (will find it in `input_dir` if it exists).
+
+    # Optional headers generated from earlier steps:
+    vcrs_id_column                                 (str) Column name in the mutation metadata dataframe containing the VCRS IDs. Generated in varseek build. Default: "vcrs_id".
+    vcrs_header_column                             (str) Column name in the mutation metadata dataframe containing the VCRS headers. Generated in varseek info. Default: "vcrs_header".
 
     # Optional output file paths: (only needed if changing/customizing file names or locations):
     - mutations_updated_filtered_csv_out           (str) Path to the filtered mutation metadata dataframe. Default: None (will be saved in `out`).
@@ -420,9 +428,9 @@ def filter(
 
     # define input file names if not provided
     if not mutations_updated_vk_info_csv:
-        mutations_updated_vk_info_csv = os.path.join(input_dir, "mutation_metadata_df_updated_vk_info.csv")
+        mutations_updated_vk_info_csv = os.path.join(input_dir, "variants_updated_vk_info.csv")
     if not mutations_updated_exploded_vk_info_csv:
-        mutations_updated_exploded_vk_info_csv = os.path.join(input_dir, "mutation_metadata_df_updated_vk_info_exploded.csv")
+        mutations_updated_exploded_vk_info_csv = os.path.join(input_dir, "variants_updated_exploded_vk_info.csv")
     if not dlist_fasta:
         dlist_fasta = os.path.join(input_dir, "dlist.fa")
     if not id_to_header_csv:
@@ -485,8 +493,18 @@ def filter(
     else:
         mutation_metadata_df = mutations_updated_vk_info_csv
 
-    if "semicolon_count" not in mutation_metadata_df.columns:  # adding for reporting purposes
-        mutation_metadata_df["semicolon_count"] = mutation_metadata_df["mcrs_header"].str.count(";")
+    if vcrs_header_column not in mutation_metadata_df.columns:
+        if (id_to_header_csv and os.path.isfile(id_to_header_csv)):
+            id_to_header_dict = make_mapping_dict(id_to_header_csv, dict_key="id")
+
+            if id_to_header_dict is not None:
+                mutation_metadata_df[vcrs_header_column] = mutation_metadata_df[vcrs_id_column].map(id_to_header_dict)
+        else:
+            logger.warning(f"ID to header csv file not found at {id_to_header_csv}. Assuming vcrs_id_column={vcrs_id_column} is the desired vcrs_header_column.")
+            mutation_metadata_df[vcrs_header_column] = mutation_metadata_df[vcrs_id_column]
+
+    if "semicolon_count" not in mutation_metadata_df.columns and vcrs_header_column in mutation_metadata_df.columns:  # adding for reporting purposes
+        mutation_metadata_df["semicolon_count"] = mutation_metadata_df[vcrs_header_column].str.count(";")
 
     filtering_report_text_out = os.path.join(out, "filtering_report.txt")
     filtered_df = apply_filters(mutation_metadata_df, filters, verbose=verbose, filtering_report_text_out=filtering_report_text_out)
@@ -500,12 +518,12 @@ def filter(
 
     # make mcrs_filtered_fasta_out
     if use_IDs:
-        output_fasta_header_column = "mcrs_id"
+        output_fasta_header_column = vcrs_id_column
     else:
-        output_fasta_header_column = "mcrs_header"
+        output_fasta_header_column = vcrs_header_column
     filtered_df[output_fasta_header_column] = filtered_df[output_fasta_header_column].astype(str)
 
-    filtered_df["fasta_format"] = ">" + filtered_df[output_fasta_header_column] + "\n" + filtered_df["mcrs_sequence"] + "\n"
+    filtered_df["fasta_format"] = ">" + filtered_df[output_fasta_header_column] + "\n" + filtered_df[vcrs_sequence_column] + "\n"
 
     if save_mcrs_filtered_fasta_and_t2g:
         with open(mcrs_filtered_fasta_out, "w", encoding="utf-8") as fasta_file:
@@ -540,14 +558,14 @@ def filter(
 
     filtered_df.reset_index(drop=True, inplace=True)
 
-    filtered_df_mcrs_ids = set(filtered_df["mcrs_id"])  # no need to use output_fasta_header_column here because output_fasta_header_column is only necessary when saving the fasta files (this is using the IDs just to check for membership, not to save to a file any differently)
+    filtered_df_vcrs_ids = set(filtered_df[vcrs_id_column])  # no need to use output_fasta_header_column here because output_fasta_header_column is only necessary when saving the fasta files (this is using the IDs just to check for membership, not to save to a file any differently)
 
     # make mutations_updated_exploded_filtered_csv_out iff mutations_updated_exploded_vk_info_csv exists
     if save_mutations_updated_filtered_csvs and mutations_updated_exploded_vk_info_csv and os.path.isfile(mutations_updated_exploded_vk_info_csv):
         mutation_metadata_df_exploded = pd.read_csv(mutations_updated_exploded_vk_info_csv)
 
         # Filter mutation_metadata_df_exploded based on these unique values
-        filtered_mutation_metadata_df_exploded = mutation_metadata_df_exploded[mutation_metadata_df_exploded["mcrs_id"].isin(filtered_df_mcrs_ids)]
+        filtered_mutation_metadata_df_exploded = mutation_metadata_df_exploded[mutation_metadata_df_exploded[vcrs_id_column].isin(filtered_df_vcrs_ids)]
 
         filtered_mutation_metadata_df_exploded.to_csv(mutations_updated_exploded_filtered_csv_out, index=False)
 
@@ -556,18 +574,18 @@ def filter(
 
     # make dlist_filtered_fasta_out iff dlist_fasta exists
     if dlist_fasta and os.path.isfile(dlist_fasta):
-        filter_fasta(dlist_fasta, dlist_filtered_fasta_out, filtered_df_mcrs_ids)
+        filter_fasta(dlist_fasta, dlist_filtered_fasta_out, filtered_df_vcrs_ids)
         # TODO: when use_IDs=False (which is the default), convert the IDs to headers (in a copied file is fine) - will take some parsing because the dlist headers also have the k-mer position of the original VCRS, so I probably want to remove these or otherwise deal with these to ensure seamless swapping
 
     if filter_all_dlists:
         if dlist_genome_fasta and os.path.isfile(dlist_genome_fasta):
-            filter_fasta(dlist_genome_fasta, dlist_genome_filtered_fasta_out, filtered_df_mcrs_ids)  # TODO: same as above (when use_IDs=False...)
+            filter_fasta(dlist_genome_fasta, dlist_genome_filtered_fasta_out, filtered_df_vcrs_ids)  # TODO: same as above (when use_IDs=False...)
         if dlist_cdna_fasta and os.path.isfile(dlist_cdna_fasta):
-            filter_fasta(dlist_cdna_fasta, dlist_cdna_filtered_fasta_out, filtered_df_mcrs_ids)  # TODO: same as above (when use_IDs=False...)
+            filter_fasta(dlist_cdna_fasta, dlist_cdna_filtered_fasta_out, filtered_df_vcrs_ids)  # TODO: same as above (when use_IDs=False...)
 
     # make id_to_header_filtered_csv_out iff id_to_header_csv exists
     if id_to_header_csv and os.path.isfile(id_to_header_csv):
-        filter_id_to_header_csv(id_to_header_csv, id_to_header_filtered_csv_out, filtered_df_mcrs_ids)
+        filter_id_to_header_csv(id_to_header_csv, id_to_header_filtered_csv_out, filtered_df_vcrs_ids)
 
     if verbose:
         logger.info(f"Output fasta file with filtered mutations: {mcrs_filtered_fasta_out}")

@@ -3,10 +3,10 @@ import base64
 import getpass
 import inspect
 import json
-import shutil
 import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -822,3 +822,19 @@ def check_that_two_directories_in_params_dict_are_the_same_if_both_provided_othe
     elif params_dict.get(dir1) is None and params_dict.get(dir2) is not None:
         params_dict[dir1] = params_dict.get(dir2)
     return params_dict
+
+
+def get_printlog(verbose=True, logger=None):
+    """
+    if verbose=False --> print/log nothing
+    if verbose=True and logger --> logger.info
+    if verbose=True and not logger --> print
+    """
+    return (lambda *args, **kwargs: None) if not verbose else (print if logger is None else logger.info)
+
+def splitext_custom(file_path):
+    if not isinstance(file_path, pathlib.PosixPath):
+        file_path = pathlib.Path(file_path)
+    base = str(file_path).replace("".join(file_path.suffixes), "")
+    ext = "".join(file_path.suffixes)
+    return base, ext

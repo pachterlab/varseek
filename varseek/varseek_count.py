@@ -7,6 +7,7 @@ import time
 import varseek as vk
 from varseek.utils import (
     check_file_path_is_string_with_valid_extension,
+    check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal,
     is_valid_int,
     load_in_fastqs,
     make_function_parameter_to_value_dict,
@@ -15,7 +16,6 @@ from varseek.utils import (
     save_run_info,
     set_up_logger,
     sort_fastq_files_for_kb_count,
-    check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal
 )
 from varseek.varseek_clean import needs_for_normal_genome_matrix
 
@@ -345,7 +345,7 @@ def count(
     # vk fastqpp
     if not disable_fastqpp:
         logger.info("Running vk fastqpp")
-        fastqpp_dict = vk.fastqpp(**params_dict) if not params_dict.get("dry_run", False) else vk.build(**params_dict_vk_fastqpp)  # best of both worlds - will only pass in defined arguments if dry run is True (which is good so that I don't show each function with a bunch of args it never uses), but will pass in all arguments if dry run is False (which is good if I run vk ref with a new parameter that I have not included in docstrings yet, as I only get usable kwargs list from docstrings)
+        fastqpp_dict = vk.fastqpp(**params_dict) if not params_dict.get("dry_run", False) else vk.fastqpp(**params_dict_vk_fastqpp)  # best of both worlds - will only pass in defined arguments if dry run is True (which is good so that I don't show each function with a bunch of args it never uses), but will pass in all arguments if dry run is False (which is good if I run vk ref with a new parameter that I have not included in docstrings yet, as I only get usable kwargs list from docstrings)
         fastqs_vcrs = fastqpp_dict["final"]
         fastqs_reference_genome = fastqpp_dict["quality_controlled"] if "quality_controlled" in fastqpp_dict else fastqs
     else:

@@ -42,6 +42,9 @@ def validate_input_summarize(params_dict):
 
     if not isinstance(params_dict["out"], str):
         raise ValueError("out must be a string.")
+    
+    if not isinstance(params_dict["vcrs_id"], str):
+        raise ValueError("vcrs_id must be a string.")
 
     for param_name in ["dry_run", "overwrite", "verbose"]:
         if not isinstance(params_dict.get(param_name), bool):
@@ -52,6 +55,7 @@ def summarize(
     adata,
     top_values=10,
     technology=None,
+    vcrs_id_column="vcrs_id",
     out=".",
     dry_run=False,
     overwrite=False,
@@ -67,6 +71,7 @@ def summarize(
     # Optional input arguments:
     - top_values                        (int) Number of top values to report. Default: 10
     - technology                        (str) Technology used to generate the data. To see list of spported technologies, run `kb --list`. For the purposes of this function, the only distinction that matters is bulk vs. non-bulk. Default: None
+    - vcrs_id_column                    (str) Column name in adata.var that contains the vcrs_id. Default: "vcrs_id"
     - out                               (str) Output directory. Default: "."
     - dry_run                           (bool) If True, print the commands that would be run without actually running them. Default: False
     - overwrite                         (bool) Whether to overwrite existing files. Default: False
@@ -125,65 +130,65 @@ def summarize(
     else:
         raise ValueError("adata must be a string (file path) or an AnnData object.")
 
-    if "mcrs_id" not in adata.var.columns:
-        adata.var["mcrs_id"] = adata.var_names
+    if vcrs_id_column not in adata.var.columns:
+        adata.var[vcrs_id_column] = adata.var_names
 
     adata.var_names = adata.var["mcrs_header"]
 
     if "mcrs_count" not in adata.var.columns:
         adata.var["mcrs_count"] = adata.X.sum(axis=0).A1 if hasattr(adata.X, "A1") else adata.X.sum(axis=0).flatten()
 
-    # 1. Number of Mutations with Count > 0 in any Sample/Cell, and for bulk in particular, for each sample; then list the mutations
+    # 1. Number of Variants with Count > 0 in any Sample/Cell, and for bulk in particular, for each sample; then list the variants
     with open(stats_file, "w", encoding="utf-8") as f:
-        mutations_with_any_count = (adata.X > 0).sum(axis=0)
-        mutations_count_any_row = (mutations_with_any_count > 0).sum()
-        line = f"Total mutations with count > 0 for any sample/cell: {mutations_count_any_row}"
+        variants_with_any_count = (adata.X > 0).sum(axis=0)
+        variants_count_any_row = (variants_with_any_count > 0).sum()
+        line = f"Total variants with count > 0 for any sample/cell: {variants_count_any_row}"
         f.write(line)
         if technology.lower() == "bulk":
             for sample in adata.obs_names:
-                count_nonzero_mutations = (adata[sample, :].X > 0).sum()
-                line = f"Sample {sample} has {count_nonzero_mutations} mutations with count > 0."
+                count_nonzero_variants = (adata[sample, :].X > 0).sum()
+                line = f"Sample {sample} has {count_nonzero_variants} variants with count > 0."
                 f.write(line)
 
-    mutations_with_nonzero_counts = adata.var_names[mutations_with_any_count > 0]
-    with open(f"{specific_stats_folder}/mutations_with_any_count.txt", "w", encoding="utf-8") as f:
-        for mutation in mutations_with_nonzero_counts:
-            f.write(f"{mutation}\n")
+    variants_with_nonzero_counts = adata.var_names[variants_with_any_count > 0]
+    with open(f"{specific_stats_folder}/variants_with_any_count.txt", "w", encoding="utf-8") as f:
+        for variant in variants_with_nonzero_counts:
+            f.write(f"{variant}\n")
 
-    # 2. Mutations Present Across the Most Samples
-    adata.var["number_of_samples_in_which_the_mutation_is_detected"] = (adata.X > 0).sum(axis=0).A1 if hasattr(adata.X, "A1") else (adata.X > 0).sum(axis=0)
+    # 2. Variants Present Across the Most Samples
+    adata.var["number_of_samples_in_which_the_variant_is_detected"] = (adata.X > 0).sum(axis=0).A1 if hasattr(adata.X, "A1") else (adata.X > 0).sum(axis=0)
     # Sort by number of samples and break ties with mcrs_count
-    most_common_mutations = adata.var.sort_values(
-        by=["number_of_samples_in_which_the_mutation_is_detected", "mcrs_count"],
+    most_common_variants = adata.var.sort_values(
+        by=["number_of_samples_in_which_the_variant_is_detected", "mcrs_count"],
         ascending=False,
     )
-    mutation_names = most_common_mutations.index.tolist()
-    mutation_names_top_n = mutation_names[:top_values]
+    variant_names = most_common_variants.index.tolist()
+    variant_names_top_n = variant_names[:top_values]
     with open(stats_file, "a", encoding="utf-8") as f:
-        f.write(f"Mutations present across the most samples: {', '.join(mutation_names_top_n)}")
-    with open(f"{specific_stats_folder}/mutations_present_across_the_most_samples.txt", "w", encoding="utf-8") as f:
-        f.write("Mutation\tNumber_of_Samples\tTotal_Counts\n")
+        f.write(f"Variants present across the most samples: {', '.join(variant_names_top_n)}")
+    with open(f"{specific_stats_folder}/variants_present_across_the_most_samples.txt", "w", encoding="utf-8") as f:
+        f.write("Variant\tNumber_of_Samples\tTotal_Counts\n")
 
-        # Write each mutation's details
-        for mutation in most_common_mutations.index:
-            number_of_samples = adata.var.loc[mutation, "number_of_samples_in_which_the_mutation_is_detected"]
-            total_counts = adata.var.loc[mutation, "mcrs_count"]
-            f.write(f"{mutation}\t{number_of_samples}\t{total_counts}\n")
+        # Write each variant's details
+        for variant in most_common_variants.index:
+            number_of_samples = adata.var.loc[variant, "number_of_samples_in_which_the_variant_is_detected"]
+            total_counts = adata.var.loc[variant, "mcrs_count"]
+            f.write(f"{variant}\t{number_of_samples}\t{total_counts}\n")
 
-    # 3. Top 10 Mutations with Highest mcrs_count Across All Samples
-    top_mutations_mcrs_count = adata.var.sort_values(by="mcrs_count", ascending=False)
-    mutation_names = top_mutations_mcrs_count.index.tolist()
-    mutation_names_top_n = mutation_names[:top_values]
+    # 3. Top 10 Variants with Highest mcrs_count Across All Samples
+    top_variants_mcrs_count = adata.var.sort_values(by="mcrs_count", ascending=False)
+    variant_names = top_variants_mcrs_count.index.tolist()
+    variant_names_top_n = variant_names[:top_values]
     with open(stats_file, "a", encoding="utf-8") as f:
-        f.write(f"Mutations with highest counts across all samples: {', '.join(mutation_names_top_n)}")
-    with open(f"{specific_stats_folder}/mutations_highest_mcrs_count.txt", "w", encoding="utf-8") as f:
-        f.write("Mutation\tNumber_of_Samples\tTotal_Counts\n")
+        f.write(f"Variants with highest counts across all samples: {', '.join(variant_names_top_n)}")
+    with open(f"{specific_stats_folder}/variants_highest_mcrs_count.txt", "w", encoding="utf-8") as f:
+        f.write("Variant\tNumber_of_Samples\tTotal_Counts\n")
 
-        # Write each mutation's details
-        for mutation in top_mutations_mcrs_count.index:
-            number_of_samples = adata.var.loc[mutation, "number_of_samples_in_which_the_mutation_is_detected"]
-            total_counts = adata.var.loc[mutation, "mcrs_count"]
-            f.write(f"{mutation}\t{number_of_samples}\t{total_counts}\n")
+        # Write each variant's details
+        for variant in top_variants_mcrs_count.index:
+            number_of_samples = adata.var.loc[variant, "number_of_samples_in_which_the_variant_is_detected"]
+            total_counts = adata.var.loc[variant, "mcrs_count"]
+            f.write(f"{variant}\t{number_of_samples}\t{total_counts}\n")
 
     # --------------------------------------------------------------------------------------------------------
     # 4. Number of Genes with Count > 0 in any Sample/Cell, and for bulk in particular, for each sample; then list the genes
@@ -211,11 +216,11 @@ def summarize(
             f.write(f"{gene}\n")
 
     # 5. Genes Present Across the Most Samples
-    # Calculate the number of samples where each gene has at least one mutation with count > 0
+    # Calculate the number of samples where each gene has at least one variant with count > 0
     adata.var["detected"] = (adata.X > 0).astype(int)  # Binary matrix indicating presence per sample
-    gene_sample_count = adata.var.groupby("gene_name")["detected"].sum()  # Sum across mutations per gene
+    gene_sample_count = adata.var.groupby("gene_name")["detected"].sum()  # Sum across variants per gene
 
-    # Add the total mcrs_count per gene (summing across all mutations for that gene)
+    # Add the total mcrs_count per gene (summing across all variants for that gene)
     gene_mcrs_count = adata.var.groupby("gene_name")["mcrs_count"].sum()
 
     # Combine both into a DataFrame for sorting
@@ -259,8 +264,8 @@ def summarize(
     report_time_elapsed(start_time, logger=logger, verbose=verbose, function_name="summarize")
 
     # TODO: things to add
-    # differentially expressed mutations/mutated genes
+    # differentially expressed variants/mutated genes
     # VAF - learn how transipedia calculated VAF from RNA data and incorporate this here
-    # have a list of genes of interest as optional input, and if provided then output a csv with which of these mutations were found and a list of additional interesting info for each gene (including the number of cells in which this mutation was found in bulk - VAF (variant allele frequency))
+    # have a list of genes of interest as optional input, and if provided then output a csv with which of these variants were found and a list of additional interesting info for each gene (including the number of cells in which this variant was found in bulk - VAF (variant allele frequency))
     # bulk: log1p, pca - sc.pp.log1p(adata), sc.tl.pca(adata)
     # plot line plots/heatmaps from notebook 3

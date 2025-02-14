@@ -1,15 +1,14 @@
 """varseek visualization utilities."""
 import os
 
-from rich.console import Console
-from rich.table import Table
-
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib.patches import Rectangle
 from matplotlib.ticker import MaxNLocator, MultipleLocator
 from matplotlib_venn import venn2
+from rich.console import Console
+from rich.table import Table
 from scipy import stats
 
 console = Console()

@@ -117,7 +117,7 @@ codon_to_amino_acid = {
 
 # a dictionary that maps from dict[mutations][sequences] to a dict of files {"index": index_url, "t2g": t2g_url}
 
-default_filename_dict = {"index": "mcrs_index.idx", "t2g": "mcrs_t2g.txt"}
+default_filename_dict = {"index": "vcrs_index.idx", "t2g": "vcrs_t2g.txt"}
 
 # * add more keys here as needed (e.g., k, w, d-list, dlist_reference_source, etc)
 # * if I add modes to varseek ref, then have it be dict[mutations][sequences][mode]

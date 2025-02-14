@@ -30,10 +30,7 @@ from varseek.utils import (
     write_vcfs_for_rows,
 )
 
-from .constants import (
-    non_single_cell_technologies,
-    technology_valid_values,
-)
+from .constants import non_single_cell_technologies, technology_valid_values
 
 logger = set_up_logger()
 
@@ -134,7 +131,7 @@ def validate_input_clean(params_dict):
         "config": ["json", "yaml"],
         "vcrs_index": "index",
         "vcrs_t2g": "t2g",
-        "mcrs_fasta": "fasta",
+        "vcrs_fasta": "fasta",
         "dlist_fasta": "fasta",
         "adata_reference_genome": "adata",
         "adata_vcrs_clean_out": "adata",
@@ -189,7 +186,7 @@ def clean(
     vk_ref_dir=None,
     vcrs_index=None,
     vcrs_t2g=None,
-    mcrs_fasta=None,
+    vcrs_fasta=None,
     dlist_fasta=None,
     kb_count_vcrs_dir=None,
     kb_count_reference_genome_dir=None,
@@ -248,7 +245,7 @@ def clean(
     - vk_ref_dir                            (str): Directory containing the VCRS reference files. Same as `out` as specified in vk ref. Default: None.
     - vcrs_index                            (str): Path to the VCRS index file. Default: None.
     - vcrs_t2g                              (str): Path to the VCRS t2g file. Default: None.
-    - mcrs_fasta                            (str): Path to the VCRS fasta file. Default: None.
+    - vcrs_fasta                            (str): Path to the VCRS fasta file. Default: None.
     - dlist_fasta                           (str): Path to the dlist fasta file. Default: None.
     - kb_count_vcrs_dir                     (str): Path to the kb count output directory for the VCRS reference. Default: None.
     - kb_count_reference_genome_dir         (str): Path to the kb count output directory for the reference genome. Default: None.
@@ -270,8 +267,8 @@ def clean(
 
     # Hidden arguments
     - id_to_header_csv                      (str): Path to the VCRS id to header csv file. Default: None.
-    - mutations_updated_csv                 (str): Path to the mutations updated csv file. Default: None.
-    - mcrs_id_column                        (str): Column name in the mutations updated csv file. Default: "mcrs_id".
+    - variants_updated_csv                 (str): Path to the mutations updated csv file. Default: None.
+    - vcrs_id_column                        (str): Column name in the mutations updated csv file. Default: "vcrs_id".
     """
     # * 1. Start timer
     start_time = time.perf_counter()
@@ -302,19 +299,19 @@ def clean(
         adata_reference_genome = os.path.join(kb_count_reference_genome_dir, "counts_unfiltered", "adata.h5ad")
 
     id_to_header_csv = kwargs.get("id_to_header_csv", None)
-    mutations_updated_csv = kwargs.get("mutations_updated_csv", None)
-    mcrs_id_column = kwargs.get("mcrs_id_column", "mcrs_id")
+    variants_updated_csv = kwargs.get("variants_updated_csv", None)
+    vcrs_id_column = kwargs.get("vcrs_id_column", "vcrs_id")
 
     if vk_ref_dir:  # make sure all of the defaults below match vk info/filter
         vcrs_index = os.path.join(vk_ref_dir, "mcrs_index.idx") if not vcrs_index else vcrs_index
         if not vcrs_t2g:
-            vcrs_t2g = os.path.join(vk_ref_dir, "mcrs_t2g_filtered.txt") if os.path.isfile(os.path.join(vk_ref_dir, "mcrs_t2g_filtered.txt")) else os.path.join(vk_ref_dir, "mcrs_t2g.txt")
-        if not mcrs_fasta:
-            mcrs_fasta = os.path.join(vk_ref_dir, "mcrs_filtered.fa") if os.path.isfile(os.path.join(vk_ref_dir, "mcrs_filtered.fa")) else os.path.join(vk_ref_dir, "mcrs.fa")
+            vcrs_t2g = os.path.join(vk_ref_dir, "mcrs_t2g_filtered.txt") if os.path.isfile(os.path.join(vk_ref_dir, "mcrs_t2g_filtered.txt")) else os.path.join(vk_ref_dir, "vcrs_t2g.txt")
+        if not vcrs_fasta:
+            vcrs_fasta = os.path.join(vk_ref_dir, "mcrs_filtered.fa") if os.path.isfile(os.path.join(vk_ref_dir, "mcrs_filtered.fa")) else os.path.join(vk_ref_dir, "vcrs.fa")
         if not id_to_header_csv:
             id_to_header_csv = os.path.join(vk_ref_dir, "id_to_header_mapping_filtered.csv") if os.path.isfile(os.path.join(vk_ref_dir, "id_to_header_mapping_filtered.csv")) else os.path.join(vk_ref_dir, "id_to_header_mapping.csv")
-        if not mutations_updated_csv:
-            mutations_updated_csv = os.path.join(vk_ref_dir, "mutation_metadata_df_filtered.csv") if os.path.isfile(os.path.join(vk_ref_dir, "mutation_metadata_df_filtered.csv")) else os.path.join(vk_ref_dir, "mutation_metadata_df.csv")
+        if not variants_updated_csv:
+            variants_updated_csv = os.path.join(vk_ref_dir, "mutation_metadata_df_filtered.csv") if os.path.isfile(os.path.join(vk_ref_dir, "mutation_metadata_df_filtered.csv")) else os.path.join(vk_ref_dir, "variants_updated.csv")
         if not dlist_fasta:
             dlist_fasta = os.path.join(vk_ref_dir, "dlist_filtered.fa") if os.path.isfile(os.path.join(vk_ref_dir, "dlist_filtered.fa")) else os.path.join(vk_ref_dir, "dlist.fa")
 
@@ -390,10 +387,9 @@ def clean(
         if isinstance(adata_reference_genome, str) and os.path.exists(adata_reference_genome) and adata_reference_genome.endswith(".h5ad"):
             adata_reference_genome = sc.read_h5ad(adata_reference_genome)
 
-    if id_to_header_csv:
-        if isinstance(id_to_header_csv, str) and os.path.exists(id_to_header_csv):
-            id_to_header_df = pd.read_csv(id_to_header_csv, index_col=0)
-            adata.var = adata.var.merge(id_to_header_df, on=mcrs_id_column, how="left")
+    if id_to_header_csv and isinstance(id_to_header_csv, str) and os.path.exists(id_to_header_csv):
+        id_to_header_df = pd.read_csv(id_to_header_csv, index_col=0)
+        adata.var = adata.var.merge(id_to_header_df, on=vcrs_id_column, how="left")
 
     adata.var_names = original_var_names
 
@@ -418,7 +414,7 @@ def clean(
         # TODO: test this; also add union
         adata = increment_adata_based_on_dlist_fns(
             adata=adata,
-            mcrs_fasta=mcrs_fasta,
+            vcrs_fasta=vcrs_fasta,
             dlist_fasta=dlist_fasta,
             kb_count_out=kb_count_vcrs_dir,
             index=vcrs_index,

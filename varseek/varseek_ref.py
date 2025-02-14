@@ -3,6 +3,7 @@ import inspect
 import os
 import subprocess
 import time
+
 import requests
 
 import varseek as vk
@@ -10,6 +11,7 @@ from varseek.utils import (
     authenticate_cosmic_credentials,
     authenticate_cosmic_credentials_via_server,
     check_file_path_is_string_with_valid_extension,
+    check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal,
     download_varseek_files,
     encode_cosmic_credentials,
     get_python_or_cli_function_call,
@@ -19,7 +21,6 @@ from varseek.utils import (
     save_params_to_config_file,
     save_run_info,
     set_up_logger,
-    check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal
 )
 
 from .constants import prebuilt_vk_ref_files
@@ -36,7 +37,7 @@ mode_parameters = {
 }
 
 varseek_ref_unallowable_arguments = {
-    "varseek_build": {"return_mutation_output"},
+    "varseek_build": {"return_variant_output"},
     "varseek_info": set(),
     "varseek_filter": set(),
     "kb_ref": set(),
@@ -76,7 +77,7 @@ def validate_input_ref(params_dict):
     if mode is not None and mode not in mode_parameters:
         raise ValueError(f"mode must be one of {mode_parameters.keys()}")
 
-    # sequences, mutations, out handled by vk build
+    # sequences, variants, out handled by vk build
 
     check_file_path_is_string_with_valid_extension(index_out, "index_out", "index")
     check_file_path_is_string_with_valid_extension(config, "config", ["json", "yaml"])
@@ -88,13 +89,13 @@ def validate_input_ref(params_dict):
         if not isinstance(params_dict.get(param_name), bool):
             raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
 
-    mutations = params_dict["mutations"]
+    variants = params_dict["variants"]
     sequences = params_dict["sequences"]
     # more on download
-    if mutations not in prebuilt_vk_ref_files:
-        raise ValueError(f"When downloading prebuilt reference, `mutations` must be one of {prebuilt_vk_ref_files.keys()}. mutation={mutations} not recognized.")
-    if sequences not in prebuilt_vk_ref_files[mutations]:
-        raise ValueError(f"When downloading prebuilt reference, `sequences` must be one of {prebuilt_vk_ref_files[mutations].keys()}. sequences={sequences} not recognized.")
+    if variants not in prebuilt_vk_ref_files:
+        raise ValueError(f"When downloading prebuilt reference, `variants` must be one of {prebuilt_vk_ref_files.keys()}. variants={variants} not recognized.")
+    if sequences not in prebuilt_vk_ref_files[variants]:
+        raise ValueError(f"When downloading prebuilt reference, `sequences` must be one of {prebuilt_vk_ref_files[variants].keys()}. sequences={sequences} not recognized.")
 
     # kb ref stuff
     for argument_type, argument_set in varseek_ref_only_allowable_kb_ref_arguments.items():
@@ -112,25 +113,25 @@ def validate_input_ref(params_dict):
                     pass
 
 
-# a list of dictionaries with keys "mutations", "sequences", and "description"
+# a list of dictionaries with keys "variants", "sequences", and "description"
 downloadable_references = [
-    {"mutations": "cosmic_cmc", "sequences": "cdna", "description": "COSMIC Cancer Mutation Census version 100 - Ensembl GRCh37 release 93 cDNA reference annotations. All default arguments of varseek ref (k=59, w=54, filters, no d-list, etc.). Header format (showing the column(s) from the original database used): 'seq_ID':'mutation'"},
-    {"mutations": "cosmic_cmc", "sequences": "genome", "description": "COSMIC Cancer Mutation Census version 100 - Ensembl GRCh37 release 93 genome reference annotations. All default arguments of varseek ref (k=59, w=54, filters, no d-list, etc.). Header format (showing the column(s) from the original database used): 'chromosome':'mutation_genome'"},
+    {"variants": "cosmic_cmc", "sequences": "cdna", "description": "COSMIC Cancer Mutation Census version 100 - Ensembl GRCh37 release 93 cDNA reference annotations. All default arguments of varseek ref (k=59, w=54, filters, no d-list, etc.). Header format (showing the column(s) from the original database used): 'seq_ID':'mutation_cdna'"},
+    {"variants": "cosmic_cmc", "sequences": "genome", "description": "COSMIC Cancer Mutation Census version 100 - Ensembl GRCh37 release 93 genome reference annotations. All default arguments of varseek ref (k=59, w=54, filters, no d-list, etc.). Header format (showing the column(s) from the original database used): 'chromosome':'mutation_genome'"},
 ]
 
 
 # don't worry if it says an argument is unused - they will all get put in params_dict
 def ref(
     sequences,
-    mutations,
+    variants,
     w=54,
     k=59,
     filters=(
-        "dlist_substring:equal=none",  # filter out mutations which are a substring of the reference genome
-        "pseudoaligned_to_human_reference_despite_not_truly_aligning:is_not_true",  # filter out mutations which pseudoaligned to human genome despite not truly aligning
-        "dlist:equal=none",  # *** erase eventually when I want to d-list  # filter out mutations which are capable of being d-listed (given that I filter out the substrings above)
-        "longest_homopolymer_length:bottom_percent=99.99",  # filters out MCRSs with repeating single nucleotide - 99.99 keeps the bottom 99.99% (fraction 0.9999) ie filters out the top 0.01%
-        "triplet_complexity:top_percent=99.9",  # filters out MCRSs with repeating triplets - 99.9 keeps the top 99.9% (fraction 0.999) ie filters out the bottom 0.1%
+        "dlist_substring:equal=none",  # filter out variants that are a substring of the reference genome
+        "pseudoaligned_to_human_reference_despite_not_truly_aligning:is_not_true",  # filter out variants that pseudoaligned to human genome despite not truly aligning
+        "dlist:equal=none",  # *** erase eventually when I want to d-list  # filter out variants that are capable of being d-listed (given that I filter out the substrings above)
+        "longest_homopolymer_length:bottom_percent=99.99",  # filters out VCRSs with repeating single nucleotide - 99.99 keeps the bottom 99.99% (fraction 0.9999) ie filters out the top 0.01%
+        "triplet_complexity:top_percent=99.9",  # filters out VCRSs with repeating triplets - 99.9 keeps the top 99.9% (fraction 0.999) ie filters out the bottom 0.1%
     ),
     mode=None,
     dlist=None,
@@ -153,9 +154,9 @@ def ref(
     Create a reference index and t2g file for variant screening with varseek count. Wraps around varseek build, varseek info, varseek filter, and kb ref.
 
     # Required input argument:
-    - sequences     (str) Path to the fasta file containing the sequences to have the mutations added, e.g., 'seqs.fa'.
+    - sequences     (str) Path to the fasta file containing the sequences to have the variants added, e.g., 'seqs.fa'.
                     Sequence identifiers following the '>' character must correspond to the identifiers
-                    in the seq_ID column of 'mutations'.
+                    in the seq_ID column of 'variants'.
 
                     Example:
                     >seq1 (or ENSG00000106443)
@@ -170,43 +171,43 @@ def ref(
                     - Version numbers of Ensembl IDs will be ignored.
                     NOTE: When 'sequences' input is a genome, also see 'gtf' argument below.
 
-                    Alternatively, if 'mutations' is a string specifying a supported database,
-                    sequences can be a string indicating the source upon which to apply the mutations.
+                    Alternatively, if 'variants' is a string specifying a supported database,
+                    sequences can be a string indicating the source upon which to apply the variants.
                     See below for supported databases and sequences options.
-                    To see the supported combinations of mutations and sequences, either
+                    To see the supported combinations of variants and sequences, either
                     1) run `vk build --list_supported_databases` from the command line, or
                     2) run varseek.build(list_supported_databases=True) in python
 
-    - mutations     (str or DataFrame object) Path to csv or tsv file (str) (e.g., 'mutations.csv'), or DataFrame (DataFrame object),
-                    containing information about the mutations in the following format:
+    - variants     (str or list[str] or DataFrame object) Path to csv or tsv file (str) (e.g., 'variants.csv'), or DataFrame (DataFrame object),
+                    containing information about the variants in the following format:
 
-                    | mutation         | mut_ID | seq_ID |
-                    | c.2C>T           | mut1   | seq1   | -> Apply mutation 1 to sequence 1
-                    | c.9_13inv        | mut2   | seq2   | -> Apply mutation 2 to sequence 2
-                    | c.9_13inv        | mut2   | seq3   | -> Apply mutation 2 to sequence 3
-                    | c.9_13delinsAAT  | mut3   | seq3   | -> Apply mutation 3 to sequence 3
-                    | ...              | ...    | ...    |
+                    | var_column         | var_id_column | seq_id_column |
+                    | c.2C>T             | var1          | seq1          | -> Apply varation 1 to sequence 1
+                    | c.9_13inv          | var2          | seq2          | -> Apply varation 2 to sequence 2
+                    | c.9_13inv          | var2          | seq3          | -> Apply varation 2 to sequence 3
+                    | c.9_13delinsAAT    | var3          | seq3          | -> Apply varation 3 to sequence 3
+                    | ...                | ...           | ...           |
 
-                    'mutation' = Column containing the mutations to be performed written in standard mutation annotation (see below)
-                    'seq_ID' = Column containing the identifiers of the sequences to be mutated (must correspond to the string following
+                    'var_column' = Column containing the variants to be performed written in standard mutation/variant annotation (see below)
+                    'seq_id_column' = Column containing the identifiers of the sequences to be mutated (must correspond to the string following
                     the > character in the 'sequences' fasta file; do NOT include spaces or dots)
-                    'mut_ID' = Column containing an identifier for each mutation (optional).
+                    'var_id_column' = Column containing an identifier for each variant (optional).
 
-                    Alternatively: Input mutation(s) as a string or list, e.g., 'c.2C>T' or ['c.2C>T', 'c.1A>C'].
-                    If a list is provided, the number of mutations must equal the number of input sequences.
+                    Alternatively: Input variant(s) as a string or list, e.g., 'c.2C>T' or ['c.2C>T', 'c.1A>C'].
+                    If a list is provided, the number of variants must equal the number of input sequences.
 
-                    For more information on the standard mutation annotation, see https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1867422/.
+                    For more information on the standard mutation/variant annotation, see https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1867422/.
 
-                    Alternatively, 'mutations' can be a string specifying a supported database, which will automatically download
-                    both the mutation database and corresponding reference sequence (if the 'sequences' is not a path).
-                    To see the supported combinations of mutations and sequences, either
+                    Alternatively, 'variants' can be a string specifying a supported database, which will automatically download
+                    both the variant database and corresponding reference sequence (if the 'sequences' is not a path).
+                    To see the supported combinations of variants and sequences, either
                     1) run `vk build --list_supported_databases` from the command line, or
                     2) run varseek.build(list_supported_databases=True) in python
 
     # Additional parameters
     - w             (int) Length of sequence windows flanking the variant. Default: 30. If w > total length of the sequence, the entire sequence will be kept.
     - k             (int) The length of each k-mer in the kallisto reference index construction. Accordingly corresponds to the length of the k-mers to be considered in vk build's remove_seqs_with_wt_kmers, and the default minimum value for vk build's minimum sequence length (which can be changed with 'min_seq_len'). Must be greater than the value passed in for w. Default: 59.
-    - filters       (str or list[str]) List of filters to apply to the mutations. See varseek filter documentation for more information.
+    - filters       (str or list[str]) List of filters to apply to the variants. See varseek filter documentation for more information.
     - mode          (str) Mode to use for kb ref. Currently not implemented. Default: None.
     - dlist         (str) Specifies whether ones wants to d-list against the genome, transcriptome, or both. Possible values are "genome", "transcriptome", "genome_and_transcriptome", or None. Default: None.
     - dlist_reference_source (str) Specifies whether to use the T2T, grch37, or grch38 reference genome during alignment of VCRS k-mers to the reference genome/transcriptome and any possible d-list construction. However, no d-list is used during the creation of the VCRS reference index unless `dlist` is not None. Default: "T2T".
@@ -215,8 +216,8 @@ def ref(
     # Optional output file paths: (only needed if changing/customizing file names or locations):
     - out           (str) Output directory. Default: ".".
     - reference_out_dir  (str) Path to the directory where the reference files will be saved. Default: `out`/reference.
-    - index_out (str) Path to output mcrs index file. Default: `out`/mcrs_index.idx.
-    - t2g_out (str) Path to output mcrs t2g file to be used in alignment. Default: `out`/mcrs_t2g.txt.
+    - index_out (str) Path to output VCRS index file. Default: `out`/vcrs_index.idx.
+    - t2g_out (str) Path to output VCRS t2g file to be used in alignment. Default: `out`/vcrs_t2g.txt.
 
     # General arguments:
     - download      (bool) If True, download prebuilt reference files. Default: False.
@@ -233,14 +234,17 @@ def ref(
     # * 0. Informational arguments that exit early
     if list_downloadable_references:  # for vk ref
         for downloadable_reference in downloadable_references:
-            print(f"mutations: {downloadable_reference['mutations']}, sequences: {downloadable_reference['sequences']}, description: {downloadable_reference['description']}")
+            print(f"variants: {downloadable_reference['variants']}, sequences: {downloadable_reference['sequences']}, description: {downloadable_reference['description']}")
         return None
 
     if kwargs.get("list_supported_databases"):  # from vk build
-        vk.varseek_build.print_valid_values_for_mutations_and_sequences_in_varseek_build()
+        vk.varseek_build.print_valid_values_for_variants_and_sequences_in_varseek_build()
         return None
     if kwargs.get("list_columns"):  # from vk info
         vk.varseek_info.print_list_columns()
+        return None
+    if kwargs.get("list_d_list_values"):  # from vk info
+        print(f"Available values for `dlist_reference_source`: {vk.varseek_info.supported_dlist_reference_values}")
         return None
     if kwargs.get("list_filter_rules"):  # from vk filter
         vk.varseek_filter.print_list_filter_rules()
@@ -306,38 +310,38 @@ def ref(
 
     # define some more file paths
     if not index_out:
-        index_out = os.path.join(out, "mcrs_index.idx")
+        index_out = os.path.join(out, "vcrs_index.idx")
     os.makedirs(os.path.dirname(index_out), exist_ok=True)
 
-    mcrs_fasta_out = params_dict.get("mcrs_fasta_out", os.path.join(out, "mcrs.fa"))  # make sure this matches vk build
-    mcrs_filtered_fasta_out = params_dict.get("mcrs_filtered_fasta_out", os.path.join(out, "mcrs_filtered.fa"))  # make sure this matches vk filter
-    mcrs_t2g_out = params_dict.get("mcrs_t2g_out", os.path.join(out, "mcrs_t2g.txt"))  # make sure this matches vk build
-    mcrs_t2g_filtered_out = params_dict.get("mcrs_t2g_filtered_out", os.path.join(out, "mcrs_t2g_filtered.txt"))  # make sure this matches vk filter
+    vcrs_fasta_out = params_dict.get("vcrs_fasta_out", os.path.join(out, "vcrs.fa"))  # make sure this matches vk build
+    vcrs_filtered_fasta_out = params_dict.get("vcrs_filtered_fasta_out", os.path.join(out, "vcrs_filtered.fa"))  # make sure this matches vk filter
+    vcrs_t2g_out = params_dict.get("vcrs_t2g_out", os.path.join(out, "vcrs_t2g.txt"))  # make sure this matches vk build
+    vcrs_t2g_filtered_out = params_dict.get("vcrs_t2g_filtered_out", os.path.join(out, "vcrs_t2g_filtered.txt"))  # make sure this matches vk filter
     dlist_genome_fasta_out = params_dict.get("dlist_genome_fasta_out", os.path.join(out, "dlist_genome.fa"))  # make sure this matches vk info
     dlist_cdna_fasta_out = params_dict.get("dlist_cdna_fasta_out", os.path.join(out, "dlist_cdna.fa"))  # make sure this matches vk info
     dlist_combined_fasta_out = params_dict.get("dlist_combined_fasta_out", os.path.join(out, "dlist.fa"))  # make sure this matches vk info
 
-    for file in [index_out]:  # purposely exluding mcrs_fasta_out, mcrs_filtered_fasta_out, mcrs_t2g_out, mcrs_t2g_filtered_out because - let's say someone runs vk ref and they get an error write in the kb ref step because of a bad argument that doesn't affect the prior steps - it would be nice for someone to be able to rerun the command with the changed argument without having to rerun vk build, info, filter from scratch when overwrite=False - and if they do want to rerun those steps, they can just delete the files or set overwrite=True
+    for file in [index_out]:  # purposely exluding vcrs_fasta_out, vcrs_filtered_fasta_out, vcrs_t2g_out, vcrs_t2g_filtered_out because - let's say someone runs vk ref and they get an error write in the kb ref step because of a bad argument that doesn't affect the prior steps - it would be nice for someone to be able to rerun the command with the changed argument without having to rerun vk build, info, filter from scratch when overwrite=False - and if they do want to rerun those steps, they can just delete the files or set overwrite=True
         if os.path.isfile(file) and not overwrite:
             raise FileExistsError(f"Output file {file} already exists. Please delete it or specify a different output directory or set overwrite=True.")
 
-    mutations_updated_vk_info_csv_out = params_dict.get("mutations_updated_vk_info_csv_out", None)
-    if not mutations_updated_vk_info_csv_out:
-        mutations_updated_vk_info_csv_out = os.path.join(out, "mutation_metadata_df_updated_vk_info.csv")
+    variants_updated_vk_info_csv_out = params_dict.get("variants_updated_vk_info_csv_out", None)
+    if not variants_updated_vk_info_csv_out:
+        variants_updated_vk_info_csv_out = os.path.join(out, "variants_updated_vk_info.csv")  # make sure this matches vk info
 
-    file_signifying_successful_vk_build_completion = mcrs_fasta_out
-    file_signifying_successful_vk_info_completion = mutations_updated_vk_info_csv_out
-    files_signifying_successful_vk_filter_completion = (mcrs_filtered_fasta_out, mcrs_t2g_filtered_out)
+    file_signifying_successful_vk_build_completion = vcrs_fasta_out
+    file_signifying_successful_vk_info_completion = variants_updated_vk_info_csv_out
+    files_signifying_successful_vk_filter_completion = (vcrs_filtered_fasta_out, vcrs_t2g_filtered_out)
     file_signifying_successful_kb_ref_completion = index_out
 
     overwrite_original = params_dict.get("overwrite_original", False)
 
     params_dict = check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "out", "input_dir")  # check that, if out and input_dir are both provided, they are the same directory; otherwise, if only one is provided, then make them equal to each other
-    params_dict = check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "mcrs_fasta_out", "mcrs_fasta")  # build --> info
+    params_dict = check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "vcrs_fasta_out", "vcrs_fasta")  # build --> info
     params_dict = check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "id_to_header_csv_out", "id_to_header_csv")  # build --> info/filter
-    params_dict = check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "mutations_updated_csv_out", "mutations_updated_csv")  # build --> info
-    params_dict = check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "mutations_updated_vk_info_csv_out", "mutations_updated_vk_info_csv")  # info --> filter
-    params_dict = check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "mutations_updated_exploded_vk_info_csv_out", "mutations_updated_exploded_vk_info_csv")  # info --> filter
+    params_dict = check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "variants_updated_csv_out", "variants_updated_csv")  # build --> info
+    params_dict = check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "variants_updated_vk_info_csv_out", "variants_updated_vk_info_csv")  # info --> filter
+    params_dict = check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "variants_updated_exploded_vk_info_csv_out", "variants_updated_exploded_vk_info_csv")  # info --> filter
     # dlist handled below - see the comment "set d-list argument"
 
     # * 6.5 Just to make the unused parameter coloration go away in VSCode
@@ -373,28 +377,28 @@ def ref(
     skip_info = minimum_info_columns and skip_filter  # skip vk info if no filtering will be performed and one specifies minimum info columns
 
     if skip_filter:
-        mcrs_fasta_for_index = mcrs_fasta_out
+        vcrs_fasta_for_index = vcrs_fasta_out
         if t2g_out:
-            params_dict["mcrs_t2g_out"] = t2g_out  # pass this custom path into vk build
-            mcrs_t2g_out = t2g_out  # pass this custom path into the output dict of vk ref
-        mcrs_t2g_for_alignment = mcrs_t2g_out
+            params_dict["vcrs_t2g_out"] = t2g_out  # pass this custom path into vk build
+            vcrs_t2g_out = t2g_out  # pass this custom path into the output dict of vk ref
+        vcrs_t2g_for_alignment = vcrs_t2g_out
         if params_dict.get("use_IDs") is None:  # if someone has a strong preference, then who am I to tell them otherwise - but otherwise, I will want to override the default to False for vk build
             params_dict["use_IDs"] = False
     else:
-        mcrs_fasta_for_index = mcrs_filtered_fasta_out
+        vcrs_fasta_for_index = vcrs_filtered_fasta_out
         if t2g_out:
-            params_dict["mcrs_t2g_filtered_out"] = t2g_out
-            mcrs_t2g_filtered_out = t2g_out
-        mcrs_t2g_for_alignment = mcrs_t2g_filtered_out
+            params_dict["vcrs_t2g_filtered_out"] = t2g_out
+            vcrs_t2g_filtered_out = t2g_out
+        vcrs_t2g_for_alignment = vcrs_t2g_filtered_out
         # don't touch use_IDs - if not provided, then will resort to defaults (True for vk build, False for vk filter); if provided, then will be passed into vk build and vk filter
 
     # download if download argument is True
     if download:
-        # $ I opt to keep it like this rather than converting the keys of prebuilt_vk_ref_files to a tuple of many arguments for user simplicity - simply document the uploaded references, but no need to differentiate - but if I do end up having multiple reference documents with the same values for mutations and sequences, then switch over to this approach where the dict keys are tuples
-        file_dict = prebuilt_vk_ref_files.get(mutations, {}).get(sequences, {})  # when I add mode: file_dict = prebuilt_vk_ref_files.get(mutations, {}).get(sequences, {}).get(mode, {})
+        # $ I opt to keep it like this rather than converting the keys of prebuilt_vk_ref_files to a tuple of many arguments for user simplicity - simply document the uploaded references, but no need to differentiate - but if I do end up having multiple reference documents with the same values for variants and sequences, then switch over to this approach where the dict keys are tuples
+        file_dict = prebuilt_vk_ref_files.get(variants, {}).get(sequences, {})  # when I add mode: file_dict = prebuilt_vk_ref_files.get(variants, {}).get(sequences, {}).get(mode, {})
         if file_dict:
             if file_dict['index'] == "COSMIC":
-                response = requests.post(COSMIC_CREDENTIAL_VALIDATION_URL, json={"email": cosmic_email, "password": cosmic_password, "mutations": mutations, "sequences": sequences})
+                response = requests.post(COSMIC_CREDENTIAL_VALIDATION_URL, json={"email": cosmic_email, "password": cosmic_password, "variants": variants, "sequences": sequences})
                 if response.status_code == 200:
                     file_dict = response.json()  # Converts JSON to dict
                     file_dict = file_dict.get("download_links")
@@ -402,7 +406,7 @@ def ref(
                     logger.warning("According to COSMIC regulations, please do not share any data that utilizes the COSMIC database. See more here: https://cancer.sanger.ac.uk/cosmic/help/terms")
                 else:
                     raise ValueError(f"Failed to verify COSMIC credentials. Status code: {response.status_code}")
-            logger.info(f"Downloading reference files with mutations={mutations}, sequences={sequences}")
+            logger.info(f"Downloading reference files with variants={variants}, sequences={sequences}")
             vk_ref_output_dict = download_varseek_files(file_dict, out=out)  # TODO: replace with DOI download (will need to replace prebuilt_vk_ref_files urls with DOIs) - ensure if this is allowed with COSMIC
             if index_out and vk_ref_output_dict["index"] != index_out:
                 os.rename(vk_ref_output_dict["index"], index_out)
@@ -413,7 +417,7 @@ def ref(
 
             return vk_ref_output_dict
         else:
-            raise ValueError(f"No prebuilt files found for the given arguments:\nmutations: {mutations}\nsequences: {sequences}")  # \nmode: {mode}"
+            raise ValueError(f"No prebuilt files found for the given arguments:\nvariants: {variants}\nsequences: {sequences}")  # \nmode: {mode}"
 
     # set d-list argument
     if dlist == "genome":
@@ -513,12 +517,12 @@ def ref(
                 else:  # multiple_arguments or something else
                     pass
 
-    kb_ref_command.append(mcrs_fasta_for_index)
+    kb_ref_command.append(vcrs_fasta_for_index)
 
     if dry_run:
         print(kb_ref_command)
         index_out = None
-        mcrs_t2g_for_alignment = None
+        vcrs_t2g_for_alignment = None
     else:
         if not os.path.exists(file_signifying_successful_kb_ref_completion) or overwrite:
             logger.info(f"Running kb ref with command: {' '.join(kb_ref_command)}")
@@ -527,14 +531,14 @@ def ref(
             logger.warning(f"Skipping kb ref because {file_signifying_successful_kb_ref_completion} already exists and overwrite=False")
 
 
-    #!!! erase if removing wt mcrs feature
-    wt_mcrs_fasta_out = params_dict.get("mcrs_fasta_out", os.path.join(out, "wt_mcrs.fa"))  # make sure this matches vk build
-    wt_mcrs_filtered_fasta_out = params_dict.get("mcrs_filtered_fasta_out", os.path.join(out, "wt_mcrs_filtered.fa"))  # make sure this matches vk filter
-    mcrs_wt_fasta_for_index = wt_mcrs_fasta_out if skip_filter else wt_mcrs_filtered_fasta_out
-    wt_mcrs_index_out = params_dict.get("wt_mcrs_index_out", os.path.join(out, "wt_mcrs_index.idx"))
-    file_signifying_successful_wt_mcrs_kb_ref_completion = wt_mcrs_index_out
+    #!!! erase if removing wt vcrs feature
+    wt_vcrs_fasta_out = params_dict.get("vcrs_fasta_out", os.path.join(out, "wt_vcrs.fa"))  # make sure this matches vk build
+    wt_vcrs_filtered_fasta_out = params_dict.get("vcrs_filtered_fasta_out", os.path.join(out, "wt_vcrs_filtered.fa"))  # make sure this matches vk filter
+    vcrs_wt_fasta_for_index = wt_vcrs_fasta_out if skip_filter else wt_vcrs_filtered_fasta_out
+    wt_vcrs_index_out = params_dict.get("wt_vcrs_index_out", os.path.join(out, "wt_vcrs_index.idx"))
+    file_signifying_successful_wt_vcrs_kb_ref_completion = wt_vcrs_index_out
     
-    kb_ref_wt_mcrs_command = [
+    kb_ref_wt_vcrs_command = [
         "kb",
         "ref",
         "--workflow",
@@ -542,29 +546,29 @@ def ref(
         "-t",
         str(threads),
         "-i",
-        wt_mcrs_index_out,
+        wt_vcrs_index_out,
         "--d-list",
         "None",
         "-k",
         str(k),
         "--overwrite",
-        True,  # set to True here regardless of the overwrite argument because I would only even enter this block if kb count was only partially run (as seen by the lack of existing of file_signifying_successful_wt_mcrs_kb_ref_completion), in which case I should overwrite anyways
-        mcrs_wt_fasta_for_index
+        True,  # set to True here regardless of the overwrite argument because I would only even enter this block if kb count was only partially run (as seen by the lack of existing of file_signifying_successful_wt_vcrs_kb_ref_completion), in which case I should overwrite anyways
+        vcrs_wt_fasta_for_index
     ]
 
     if dry_run:
-        print(kb_ref_wt_mcrs_command)
+        print(kb_ref_wt_vcrs_command)
     else:
-        if not os.path.exists(file_signifying_successful_wt_mcrs_kb_ref_completion) or overwrite:
-            logger.info(f"Running kb ref for wt mcrs index with command: {' '.join(kb_ref_wt_mcrs_command)}")
-            subprocess.run(kb_ref_wt_mcrs_command, check=True)
+        if not os.path.exists(file_signifying_successful_wt_vcrs_kb_ref_completion) or overwrite:
+            logger.info(f"Running kb ref for wt vcrs index with command: {' '.join(kb_ref_wt_vcrs_command)}")
+            subprocess.run(kb_ref_wt_vcrs_command, check=True)
         else:
-            logger.warning(f"Skipping kb ref for wt mcrs because {file_signifying_successful_wt_mcrs_kb_ref_completion} already exists and overwrite=False")
-    #!!! erase if removing wt mcrs feature
+            logger.warning(f"Skipping kb ref for wt vcrs because {file_signifying_successful_wt_vcrs_kb_ref_completion} already exists and overwrite=False")
+    #!!! erase if removing wt vcrs feature
 
     vk_ref_output_dict = {}
     vk_ref_output_dict["index"] = index_out
-    vk_ref_output_dict["t2g"] = mcrs_t2g_for_alignment
+    vk_ref_output_dict["t2g"] = vcrs_t2g_for_alignment
 
     # Report time
     report_time_elapsed(start_time, logger=logger, verbose=verbose, function_name="ref")

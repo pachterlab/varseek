@@ -7,6 +7,7 @@ from .utils import (
     check_file_path_is_string_with_valid_extension,
     concatenate_fastqs,
     get_printlog,
+    is_program_installed,
     is_valid_int,
     load_in_fastqs,
     make_function_parameter_to_value_dict,
@@ -20,7 +21,6 @@ from .utils import (
     sort_fastq_files_for_kb_count,
     split_reads_by_N_list,
     trim_edges_off_reads_fastq_list,
-    is_program_installed
 )
 
 logger = set_up_logger()

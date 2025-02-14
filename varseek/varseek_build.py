@@ -12,9 +12,9 @@ from tqdm import tqdm
 
 from .constants import (
     complement,
+    fasta_extensions,
     mutation_pattern,
     supported_databases_and_corresponding_reference_sequence_type,
-    fasta_extensions
 )
 from .utils import (
     add_mutation_type,
@@ -28,16 +28,14 @@ from .utils import (
     make_function_parameter_to_value_dict,
     print_varseek_dry_run,
     report_time_elapsed,
+    reverse_complement,
     save_params_to_config_file,
     save_run_info,
     set_up_logger,
     translate_sequence,
     vcf_to_dataframe,
     wt_fragment_and_mutant_fragment_share_kmer,
-    reverse_complement
 )
-
-# from gget.utils import read_fasta
 
 tqdm.pandas()
 logger = set_up_logger()
@@ -52,20 +50,20 @@ cosmic_incorrect_wt_base = 0
 mut_idx_outside_seq = 0
 
 
-def print_valid_values_for_mutations_and_sequences_in_varseek_build():
+def print_valid_values_for_variants_and_sequences_in_varseek_build():
     mydict = supported_databases_and_corresponding_reference_sequence_type
 
     # mydict.keys() has mutations, and mydict[mutation]["sequence_download_commands"].keys() has sequences
-    message = "vk build internally supported values for 'mutations' and 'sequences' are as follows:\n"
+    message = "vk build internally supported values for 'variants' and 'sequences' are as follows:\n"
     for mutation, mutation_data in mydict.items():
         sequences = list(mutation_data["sequence_download_commands"].keys())
-        message += f"'mutations': {mutation}\n"
+        message += f"'variants': {mutation}\n"
         message += f"  'sequences': {', '.join(sequences)}\n"
     print(message)
 
 
 def merge_gtf_transcript_locations_into_cosmic_csv(mutations, gtf_path, gtf_transcript_id_column, output_mutations_path=None):
-    mutations = mutations.copy()
+    # mutations = mutations.copy()  # commented out to save time, but be careful not to make unwanted changes to the original df (in general, if I set df = myfunc(df), then I likely welcome any modifications to df within the function; if not, be especially careful)
 
     gtf_df = pd.read_csv(
         gtf_path,
@@ -120,7 +118,12 @@ def merge_gtf_transcript_locations_into_cosmic_csv(mutations, gtf_path, gtf_tran
 
 
 def drop_duplication_mutations(input_mutations, output, mutation_column="mutation_genome"):
-    df = pd.read_csv(input_mutations)
+    if isinstance(input_mutations, str):
+        df = pd.read_csv(input_mutations)
+    elif isinstance(input_mutations, pd.DataFrame):
+        df = input_mutations
+    else:
+        raise ValueError("input_mutations must be a string or a DataFrame.")
 
     # count number of duplications
     num_dup = df[mutation_column].str.contains("dup", na=False).sum()
@@ -130,11 +133,18 @@ def drop_duplication_mutations(input_mutations, output, mutation_column="mutatio
 
     df_no_dup_mutations.to_csv(output, index=False)
 
+    return df_no_dup_mutations
 
-def improve_genome_strand_information(cosmic_reference_file_mutation_csv, mutation_genome_column_name="mutation_genome"):
-    df = pd.read_csv(cosmic_reference_file_mutation_csv)
 
-    df["strand"] = df["strand"].replace(".", "+")
+def improve_genome_strand_information(cosmic_reference_file_mutation_csv, mutation_genome_column_name="mutation_genome", output_mutations_path=None):
+    if isinstance(cosmic_reference_file_mutation_csv, str):
+        df = pd.read_csv(cosmic_reference_file_mutation_csv)
+    elif isinstance(cosmic_reference_file_mutation_csv, pd.DataFrame):
+        df = cosmic_reference_file_mutation_csv
+    else:
+        raise ValueError("cosmic_reference_file_mutation_csv must be a string or a DataFrame.")
+
+    df["strand_modified"] = df["strand"].replace(".", "+")
 
     genome_nucleotide_position_pattern = r"g\.(\d+)(?:_(\d+))?[A-Za-z]*"
 
@@ -143,33 +153,33 @@ def improve_genome_strand_information(cosmic_reference_file_mutation_csv, mutati
     df["GENOME_START"] = extracted_numbers[0]
     df["GENOME_STOP"] = extracted_numbers[1]
 
-    def complement_substitution(actual_mutation):
-        return "".join(complement.get(nucleotide, "N") for nucleotide in actual_mutation[:])
+    def complement_substitution(actual_variant):
+        return "".join(complement.get(nucleotide, "N") for nucleotide in actual_variant[:])
 
-    def reverse_complement_insertion(actual_mutation):
-        return "".join(complement.get(nucleotide, "N") for nucleotide in actual_mutation[::-1])
+    def reverse_complement_insertion(actual_variant):
+        return "".join(complement.get(nucleotide, "N") for nucleotide in actual_variant[::-1])
 
-    df[["nucleotide_positions", "actual_mutation"]] = df["mutation"].str.extract(mutation_pattern)
+    df[["nucleotide_positions", "actual_variant"]] = df["mutation"].str.extract(mutation_pattern)
 
-    minus_sub_mask = (df["strand"] == "-") & (df["actual_mutation"].str.contains(">"))
-    ins_delins_mask = (df["strand"] == "-") & (df["actual_mutation"].str.contains("ins"))
+    minus_sub_mask = (df["strand_modified"] == "-") & (df["actual_variant"].str.contains(">"))
+    ins_delins_mask = (df["strand_modified"] == "-") & (df["actual_variant"].str.contains("ins"))
 
-    df["actual_mutation_rc"] = df["actual_mutation"]
+    df["actual_variant_rc"] = df["actual_variant"]
 
-    df.loc[minus_sub_mask, "actual_mutation_rc"] = df.loc[minus_sub_mask, "actual_mutation"].apply(complement_substitution)
+    df.loc[minus_sub_mask, "actual_variant_rc"] = df.loc[minus_sub_mask, "actual_variant"].apply(complement_substitution)
 
-    df.loc[ins_delins_mask, ["mutation_type", "mut_nucleotides"]] = df.loc[ins_delins_mask, "actual_mutation"].str.extract(r"(delins|ins)([A-Z]+)").values
+    df.loc[ins_delins_mask, ["variant_type", "mut_nucleotides"]] = df.loc[ins_delins_mask, "actual_variant"].str.extract(r"(delins|ins)([A-Z]+)").values
 
     df.loc[ins_delins_mask, "mut_nucleotides_rc"] = df.loc[ins_delins_mask, "mut_nucleotides"].apply(reverse_complement_insertion)
 
-    df.loc[ins_delins_mask, "actual_mutation_rc"] = df.loc[ins_delins_mask, "mutation_type"] + df.loc[ins_delins_mask, "mut_nucleotides_rc"]
+    df.loc[ins_delins_mask, "actual_variant_rc"] = df.loc[ins_delins_mask, "variant_type"] + df.loc[ins_delins_mask, "mut_nucleotides_rc"]
 
-    df["actual_mutation_final"] = np.where(df["strand"] == "+", df["actual_mutation"], df["actual_mutation_rc"])
+    df["actual_variant_final"] = np.where(df["strand_modified"] == "+", df["actual_variant"], df["actual_variant_rc"])
 
     df["mutation_genome"] = np.where(
         df["GENOME_START"] != df["GENOME_STOP"],
-        "g." + df["GENOME_START"].astype(str) + "_" + df["GENOME_STOP"].astype(str) + df["actual_mutation_final"],
-        "g." + df["GENOME_START"].astype(str) + df["actual_mutation_final"],
+        "g." + df["GENOME_START"].astype(str) + "_" + df["GENOME_STOP"].astype(str) + df["actual_variant_final"],
+        "g." + df["GENOME_START"].astype(str) + df["actual_variant_final"],
     )
 
     df.drop(
@@ -177,17 +187,21 @@ def improve_genome_strand_information(cosmic_reference_file_mutation_csv, mutati
             "GENOME_START",
             "GENOME_STOP",
             "nucleotide_positions",
-            "actual_mutation",
-            "actual_mutation_rc",
-            "mutation_type",
+            "actual_variant",
+            "actual_variant_rc",
+            "variant_type",
             "mut_nucleotides",
             "mut_nucleotides_rc",
-            "actual_mutation_final",
+            "actual_variant_final",
+            "strand_modified"
         ],
         inplace=True,
-    )
+    )  # drop all columns except mutation_genome (and the original ones)
 
-    df.to_csv(cosmic_reference_file_mutation_csv, index=False)
+    if output_mutations_path:
+        df.to_csv(output_mutations_path, index=False)
+
+    return df
 
 
 def get_sequence_length(seq_id, seq_dict):
@@ -209,9 +223,9 @@ def remove_gt_after_semicolon(line):
 
 
 def extract_sequence(row, seq_dict, seq_id_column="seq_ID"):
-    if pd.isna(row["start_mutation_position"]) or pd.isna(row["end_mutation_position"]):
+    if pd.isna(row["start_variant_position"]) or pd.isna(row["end_variant_position"]):
         return None
-    seq = seq_dict[row[seq_id_column]][int(row["start_mutation_position"]) : int(row["end_mutation_position"]) + 1]
+    seq = seq_dict[row[seq_id_column]][int(row["start_variant_position"]) : int(row["end_variant_position"]) + 1]
     return seq
 
 
@@ -266,12 +280,12 @@ def end_mut_nucleotides_with_left_flank(mut_nucleotides, left_flank_region):
 
 
 def calculate_beginning_mutation_overlap_with_right_flank(row):
-    if row["mutation_type"] == "deletion":
+    if row["variant_type"] == "deletion":
         sequence_to_check = row["wt_nucleotides_ensembl"]
     else:
         sequence_to_check = row["mut_nucleotides"]
 
-    if row["mutation_type"] == "delins" or row["mutation_type"] == "inversion":
+    if row["variant_type"] == "delins" or row["variant_type"] == "inversion":
         original_sequence = row["wt_nucleotides_ensembl"] + row["right_flank_region"]
     else:
         original_sequence = row["right_flank_region"]
@@ -280,12 +294,12 @@ def calculate_beginning_mutation_overlap_with_right_flank(row):
 
 
 def calculate_end_mutation_overlap_with_left_flank(row):
-    if row["mutation_type"] == "deletion":
+    if row["variant_type"] == "deletion":
         sequence_to_check = row["wt_nucleotides_ensembl"]
     else:
         sequence_to_check = row["mut_nucleotides"]
 
-    if row["mutation_type"] == "delins" or row["mutation_type"] == "inversion":
+    if row["variant_type"] == "delins" or row["variant_type"] == "inversion":
         original_sequence = row["left_flank_region"] + row["wt_nucleotides_ensembl"]
     else:
         original_sequence = row["left_flank_region"]
@@ -297,10 +311,10 @@ def validate_input_build(params_dict):
     # Required parameters
     # sequences
     sequences = params_dict.get("sequences")
-    mutations = params_dict.get("mutations")
+    mutations = params_dict.get("variants")  # apologies for the naming confusion
 
     if not isinstance(sequences, (list, str)):
-        raise ValueError(f"sequences must be a nucleotide string, a list of nucleotide strings, a path to a reference genome, or a string specifying a reference genome supported by varseek. Got {type(sequences)}\nTo see a list of supported mutation databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
+        raise ValueError(f"sequences must be a nucleotide string, a list of nucleotide strings, a path to a reference genome, or a string specifying a reference genome supported by varseek. Got {type(sequences)}\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
     if isinstance(sequences, list) and not all(isinstance(seq, str) for seq in sequences):
         raise ValueError("All elements in sequences must be nucleotide strings.")
     if isinstance(sequences, str):
@@ -310,22 +324,22 @@ def validate_input_build(params_dict):
             pass
         if os.path.isfile(sequences) and sequences.endswith(fasta_extensions):  # a path to a reference genome with a valid extension
             pass
-        raise ValueError(f"sequences must be a nucleotide string, a list of nucleotide strings, a path to a reference genome, or a string specifying a reference genome supported by varseek. Got {type(sequences)}.\nTo see a list of supported mutation databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
+        raise ValueError(f"sequences must be a nucleotide string, a list of nucleotide strings, a path to a reference genome, or a string specifying a reference genome supported by varseek. Got {type(sequences)}.\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
 
     # mutations
     if not isinstance(mutations, (list, str)):
-        raise ValueError(f"mutations must be a string, a list of strings, a path to a mutation database, or a string specifying a mutation database supported by varseek. Got {type(mutations)}\nTo see a list of supported reference genomes, please use the 'list_supported_databases' flag/argument.")
+        raise ValueError(f"variants must be a string, a list of strings, a path to a variant database, or a string specifying a variant database supported by varseek. Got {type(mutations)}\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
     if isinstance(mutations, list) and not all((isinstance(mut, str) and mut.startswith(("c.", "g."))) for mut in mutations):
-        raise ValueError("All elements in mutations must be strings that start with 'c.' or 'g.'.")
+        raise ValueError("All elements in variants must be strings that start with 'c.' or 'g.'.")
     if isinstance(mutations, str):
         if mutations.startswith("c.") or mutations.startswith("g."):  # a single mutation
             pass
         elif mutations in supported_databases_and_corresponding_reference_sequence_type:  # a supported mutation database
             if sequences not in supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_download_commands"]:
-                raise ValueError(f"sequences {sequences} not internally supported.\nTo see a list of supported mutation databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
+                raise ValueError(f"sequences {sequences} not internally supported.\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
         elif os.path.isfile(mutations) and mutations.endswith(accepted_build_file_types):  # a path to a mutation database with a valid extension
             pass
-        raise ValueError(f"mutations must be a string, a list of strings, a path to a mutation database, or a string specifying a mutation database supported by varseek. Got {type(mutations)}.\nTo see a list of supported mutation databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
+        raise ValueError(f"variants must be a string, a list of strings, a path to a variant database, or a string specifying a variant database supported by varseek. Got {type(mutations)}.\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
 
     # Directories
     if not isinstance(params_dict.get("out", None), str):
@@ -336,18 +350,18 @@ def validate_input_build(params_dict):
     # file paths
     for param_name, file_type in {
         "gtf": "gtf",
-        "mcrs_fasta_out": "fasta",
-        "mutations_updated_csv_out": "csv",
+        "vcrs_fasta_out": "fasta",
+        "variants_updated_csv_out": "csv",
         "id_to_header_csv_out": "csv",
-        "mcrs_t2g_out": "t2g",
-        "wt_mcrs_fasta_out": "fasta",
-        "wt_mcrs_t2g_out": "t2g",
+        "vcrs_t2g_out": "t2g",
+        "wt_vcrs_fasta_out": "fasta",
+        "wt_vcrs_t2g_out": "t2g",
         "removed_variants_text_out": "txt",
     }:
         check_file_path_is_string_with_valid_extension(params_dict.get(param_name), param_name, file_type)
 
     # column names
-    for column in ["mut_column", "seq_id_column", "mut_id_column", "gtf_transcript_id_column"]:
+    for column in ["var_column", "seq_id_column", "var_id_column", "gtf_transcript_id_column"]:
         if not isinstance(params_dict.get(column), str):
             raise ValueError(f"Invalid column name for {column}: {params_dict.get(column)}")
 
@@ -381,11 +395,11 @@ def validate_input_build(params_dict):
         "merge_identical",
         "vcrs_strandedness",
         "use_IDs",
-        "save_wt_mcrs_fasta_and_t2g",
-        "save_mutations_updated_csv",
+        "save_wt_vcrs_fasta_and_t2g",
+        "save_variants_updated_csv",
         "store_full_sequences",
         "translate",
-        "return_mutation_output",
+        "return_variant_output",
         "save_files",
         "verbose",
         "save_removed_variants_text",
@@ -407,30 +421,30 @@ def validate_input_build(params_dict):
 accepted_build_file_types = {".csv", ".tsv", ".vcf"}
 def build(
     sequences,
-    mutations,
+    variants,
     w=54,
     k=59,
     max_ambiguous=0,
-    mut_column="mutation",
+    var_column="mutation",
     seq_id_column="seq_ID",
-    mut_id_column=None,
+    var_id_column=None,
     gtf=None,
     gtf_transcript_id_column=None,
     transcript_boundaries=False,
     identify_all_spliced_from_genome=False,
     out=".",
     reference_out_dir=None,
-    mcrs_fasta_out=None,
-    mutations_updated_csv_out=None,
+    vcrs_fasta_out=None,
+    variants_updated_csv_out=None,
     id_to_header_csv_out=None,
-    mcrs_t2g_out=None,
-    wt_mcrs_fasta_out=None,
-    wt_mcrs_t2g_out=None,
+    vcrs_t2g_out=None,
+    wt_vcrs_fasta_out=None,
+    wt_vcrs_t2g_out=None,
     removed_variants_text_out=None,
     filtering_report_text_out=None,
-    return_mutation_output=False,
-    save_mutations_updated_csv=False,
-    save_wt_mcrs_fasta_and_t2g=False,
+    return_variant_output=False,
+    save_variants_updated_csv=False,
+    save_wt_vcrs_fasta_and_t2g=False,
     save_removed_variants_text=True,
     save_filtering_report_text=True,
     store_full_sequences=False,
@@ -444,14 +458,14 @@ def build(
     **kwargs,
 ):
     """
-    Takes in nucleotide sequences and variants (in standard mutation annotation - see below)
+    Takes in nucleotide sequences and variants (in standard mutation/variant annotation - see below)
     and returns sequences containing the variants and the surrounding local context, dubbed variant-containing reference sequences (VCRSs),
     compatible with k-mer-based methods (i.e., kallisto | bustools) for variant detection.
 
     # Required input argument:
-    - sequences     (str) Path to the fasta file containing the sequences to have the mutations added, e.g., 'seqs.fa'.
+    - sequences     (str) Path to the fasta file containing the sequences to have the variants added, e.g., 'seqs.fa'.
                     Sequence identifiers following the '>' character must correspond to the identifiers
-                    in the seq_ID column of 'mutations'.
+                    in the seq_ID column of 'variants'.
 
                     Example:
                     >seq1 (or ENSG00000106443)
@@ -466,36 +480,36 @@ def build(
                     - Version numbers of Ensembl IDs will be ignored.
                     NOTE: When 'sequences' input is a genome, also see 'gtf' argument below.
 
-                    Alternatively, if 'mutations' is a string specifying a supported database,
-                    sequences can be a string indicating the source upon which to apply the mutations.
+                    Alternatively, if 'variants' is a string specifying a supported database,
+                    sequences can be a string indicating the source upon which to apply the variants.
                     See below for supported databases and sequences options.
-                    To see the supported combinations of mutations and sequences, either
+                    To see the supported combinations of variants and sequences, either
                     1) run `vk build --list_supported_databases` from the command line, or
                     2) run varseek.build(list_supported_databases=True) in python
 
-    - mutations     (str or list[str] or DataFrame object) Path to csv or tsv file (str) (e.g., 'mutations.csv'), or DataFrame (DataFrame object),
-                    containing information about the mutations in the following format:
+    - variants     (str or list[str] or DataFrame object) Path to csv or tsv file (str) (e.g., 'variants.csv'), or DataFrame (DataFrame object),
+                    containing information about the variants in the following format:
 
-                    | mutation         | mut_ID | seq_ID |
-                    | c.2C>T           | mut1   | seq1   | -> Apply mutation 1 to sequence 1
-                    | c.9_13inv        | mut2   | seq2   | -> Apply mutation 2 to sequence 2
-                    | c.9_13inv        | mut2   | seq3   | -> Apply mutation 2 to sequence 3
-                    | c.9_13delinsAAT  | mut3   | seq3   | -> Apply mutation 3 to sequence 3
-                    | ...              | ...    | ...    |
+                    | var_column         | var_id_column | seq_id_column |
+                    | c.2C>T             | var1          | seq1          | -> Apply varation 1 to sequence 1
+                    | c.9_13inv          | var2          | seq2          | -> Apply varation 2 to sequence 2
+                    | c.9_13inv          | var2          | seq3          | -> Apply varation 2 to sequence 3
+                    | c.9_13delinsAAT    | var3          | seq3          | -> Apply varation 3 to sequence 3
+                    | ...                | ...           | ...           |
 
-                    'mutation' = Column containing the mutations to be performed written in standard mutation annotation (see below)
-                    'seq_ID' = Column containing the identifiers of the sequences to be mutated (must correspond to the string following
+                    'var_column' = Column containing the variants to be performed written in standard mutation/variant annotation (see below)
+                    'seq_id_column' = Column containing the identifiers of the sequences to be mutated (must correspond to the string following
                     the > character in the 'sequences' fasta file; do NOT include spaces or dots)
-                    'mut_ID' = Column containing an identifier for each mutation (optional).
+                    'var_id_column' = Column containing an identifier for each variant (optional).
 
-                    Alternatively: Input mutation(s) as a string or list, e.g., 'c.2C>T' or ['c.2C>T', 'c.1A>C'].
-                    If a list is provided, the number of mutations must equal the number of input sequences.
+                    Alternatively: Input variant(s) as a string or list, e.g., 'c.2C>T' or ['c.2C>T', 'c.1A>C'].
+                    If a list is provided, the number of variants must equal the number of input sequences.
 
-                    For more information on the standard mutation annotation, see https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1867422/.
+                    For more information on the standard mutation/variant annotation, see https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1867422/.
 
-                    Alternatively, 'mutations' can be a string specifying a supported database, which will automatically download
-                    both the mutation database and corresponding reference sequence (if the 'sequences' is not a path).
-                    To see the supported combinations of mutations and sequences, either
+                    Alternatively, 'variants' can be a string specifying a supported database, which will automatically download
+                    both the variant database and corresponding reference sequence (if the 'sequences' is not a path).
+                    To see the supported combinations of variants and sequences, either
                     1) run `vk build --list_supported_databases` from the command line, or
                     2) run varseek.build(list_supported_databases=True) in python
 
@@ -508,49 +522,49 @@ def build(
     - max_ambiguous                      (int) Maximum number of 'N' (or 'n') characters allowed in a VCRS. None means no 'N' filter will be applied. Default: 0.
 
     # Additional input files and associated parameters
-    - mut_column                         (str) Name of the column containing the variants to be introduced in 'mutations'. Default: 'mutation'.
-    - seq_id_column                      (str) Name of the column containing the IDs of the sequences to be mutated in 'mutations'. Default: 'seq_ID'.
-    - mut_id_column                      (str) Name of the column containing the IDs of each variant in 'mutations'. Optional. Default: use <seq_ID>_<mutation> for each row.
+    - var_column                         (str) Name of the column containing the variants to be introduced in 'variants'. Default: 'mutation'.
+    - seq_id_column                      (str) Name of the column containing the IDs of the sequences to be mutated in 'variants'. Default: 'seq_ID'.
+    - var_id_column                      (str) Name of the column containing the IDs of each variant in 'variants'. Optional. Default: use <seq_id_column>_<var_column> for each row.
     - gtf                                (str) Path to .gtf file. Only used in conjunction with the arguments `transcript_boundaries` and `identify_all_spliced_from_genome`. Default: None
-    - gtf_transcript_id_column           (str) Column name in the input 'mutations' file containing the transcript ID.
+    - gtf_transcript_id_column           (str) Column name in the input 'variants' file containing the transcript ID.
                                          In this case, column seq_id_column should contain the chromosome number.
                                          Required when 'gtf' is provided. Default: None
-    - transcript_boundaries              (True/False) Whether to use the transcript boundaries in the input 'gtf' file to define the boundaries of the VCRSs. Only used when the `sequences` and `mutations` information is in terms of the genome, and when `gtf` is specified. Default: False.
+    - transcript_boundaries              (True/False) Whether to use the transcript boundaries in the input 'gtf' file to define the boundaries of the VCRSs. Only used when the `sequences` and `variants` information is in terms of the genome, and when `gtf` is specified. Default: False.
     - identify_all_spliced_from_genome   (True/False) Whether to identify all spliced VCRSs from the genome. Default: False.
 
     # Output paths and associated parameters
     - out                                (str) Path to default output directory to containing created files. Any individual output file path can be overriden if the specific file path is provided
                                          as an argument. Default: "." (current directory).
-    - reference_out_dir                  (str) Path to reference file directory to be downloaded if 'mutations' is a supported database and the file corresponding to 'sequences' does not exist.
+    - reference_out_dir                  (str) Path to reference file directory to be downloaded if 'variants' is a supported database and the file corresponding to 'sequences' does not exist.
                                          Default: <out>/reference.
-    - mcrs_fasta_out                     (str) Path to output fasta file containing the VCRSs.
+    - vcrs_fasta_out                     (str) Path to output fasta file containing the VCRSs.
                                          If use_IDs=False, then the fasta headers will be the values in the column 'mut_ID' (semicolon-jooined if merge_identical=True).
-                                         Otherwise, if use_IDs=True (default), then the fasta headers will be of the form 'vcrs_<int>' where <int> is a unique integer. Default: "<out>/mcrs.fa"
-    - mutations_updated_csv_out          (str) Path to output csv file containing the updated DataFrame. Only valid if save_mutations_updated_csv=True. Default: "<out>/mutation_metadata_df.csv"
+                                         Otherwise, if use_IDs=True (default), then the fasta headers will be of the form 'vcrs_<int>' where <int> is a unique integer. Default: "<out>/vcrs.fa"
+    - variants_updated_csv_out          (str) Path to output csv file containing the updated DataFrame. Only valid if save_variants_updated_csv=True. Default: "<out>/variants_updated.csv"
     - id_to_header_csv_out               (str) File name of csv file containing the mapping of unique IDs to the original sequence headers if use_IDs=True. Default: "<out>/id_to_header_mapping.csv"
-    - mcrs_t2g_out                       (str) Path to output t2g file containing the transcript-to-gene mapping for the MCRSs. Used in kallisto | bustools workflow. Default: "<out>/mcrs_t2g.txt"
-    - wt_mcrs_fasta_out                  (str) Path to output fasta file containing the wildtype sequence counterparts of the mutation-containing reference sequences (MCRSs). Default: "<out>/wt_mcrs.fa"
-    - wt_mcrs_t2g_out                    (str) Path to output t2g file containing the transcript-to-gene mapping for the wildtype MCRSs. Default: "<out>/wt_mcrs_t2g.txt"
+    - vcrs_t2g_out                       (str) Path to output t2g file containing the transcript-to-gene mapping for the VCRSs. Used in kallisto | bustools workflow. Default: "<out>/vcrs_t2g.txt"
+    - wt_vcrs_fasta_out                  (str) Path to output fasta file containing the wildtype sequence counterparts of the variant-containing reference sequences (VCRSs). Default: "<out>/wt_vcrs.fa"
+    - wt_vcrs_t2g_out                    (str) Path to output t2g file containing the transcript-to-gene mapping for the wildtype VCRSs. Default: "<out>/wt_vcrs_t2g.txt"
     - removed_variants_text_out          (str) Path to output text file containing the removed variants. Default: "<out>/removed_variants.txt"
     - filtering_report_text_out          (str) Path to output text file containing the filtering report. Default: "<out>/filtering_report.txt"
 
     # Returning and saving of optional output
-    - return_mutation_output             (True/False) Whether to return the mutation output saved in the fasta file. Default: False.
-    - save_mutations_updated_csv         (True/False) Whether to update the input 'mutations' DataFrame to include additional columns with the mutation type,
-                                         wildtype nucleotide sequence, and mutant nucleotide sequence (only valid if 'mutations' is a csv or tsv file). Default: False
-    - save_wt_mcrs_fasta_and_t2g         (True/False) Whether to create a fasta file containing the wildtype sequence counterparts of the mutation-containing reference sequences (MCRSs)
+    - return_variant_output             (True/False) Whether to return the variant output saved in the fasta file. Default: False.
+    - save_variants_updated_csv         (True/False) Whether to update the input 'variants' DataFrame to include additional columns with the variant type,
+                                         wildtype nucleotide sequence, and mutant nucleotide sequence (only valid if 'variants' is a csv or tsv file). Default: False
+    - save_wt_vcrs_fasta_and_t2g         (True/False) Whether to create a fasta file containing the wildtype sequence counterparts of the variant-containing reference sequences (VCRSs)
                                          and the corresponding t2g. Default: False.
     - save_removed_variants_text         (True/False) Whether to save a text file containing the removed variants. Default: True.
     - save_filtering_report_text         (True/False) Whether to save a text file containing the filtering report. Default: True.
-    - store_full_sequences               (True/False) Whether to also include the complete wildtype and mutant sequences in the updated 'mutations' DataFrame (not just the sub-sequence with
-                                         w-length flanks). Only valid if save_mutations_updated_csv=True. Default: False
-    - translate                          (True/False) Add additional columns to the 'mutations' DataFrame containing the wildtype and mutant amino acid sequences.
+    - store_full_sequences               (True/False) Whether to also include the complete wildtype and mutant sequences in the updated 'variants' DataFrame (not just the sub-sequence with
+                                         w-length flanks). Only valid if save_variants_updated_csv=True. Default: False
+    - translate                          (True/False) Add additional columns to the 'variants' DataFrame containing the wildtype and mutant amino acid sequences.
                                          Only valid if store_full_sequences=True. Default: False
     - translate_start                    (int | str | None) The position in the input nucleotide sequence to start translating. If a string is provided, it should correspond
-                                         to a column name in 'mutations' containing the open reading frame start positions for each sequence/mutation.
+                                         to a column name in 'variants' containing the open reading frame start positions for each sequence/variant.
                                          Only valid if translate=True. Default: None (translate from the beginning of the sequence)
     - translate_end                      (int | str | None) The position in the input nucleotide sequence to end translating. If a string is provided, it should correspond
-                                         to a column name in 'mutations' containing the open reading frame end positions for each sequence/mutation.
+                                         to a column name in 'variants' containing the open reading frame end positions for each sequence/variant.
                                          Only valid if translate=True. Default: None (translate from to the end of the sequence)
 
     # General arguments:
@@ -576,7 +590,7 @@ def build(
                                          headers for all identical sequences with semicolons). Default: True
     - vcrs_strandedness                  (True/False) Whether to consider the forward and reverse-complement mutant sequences as distinct if merging identical sequences. Only effective when merge_identical is also True. Default: False (ie consider forward and reverse-complement sequences to be equivalent).
     - use_IDs                            (True/False) Whether to keep the original sequence headers in the output fasta file, or to replace them with unique IDs of the form 'vcrs_<int>.
-                                         If False, then an additional file at the path <id_to_header_csv_out> will be formed that maps sequence IDs from the fasta file to the <mut_id_column>. Default: True.
+                                         If False, then an additional file at the path <id_to_header_csv_out> will be formed that maps sequence IDs from the fasta file to the <var_id_column>. Default: True.
 
     # # specific databases
     - cosmic_release                     (str) COSMIC release version to download. Default: "100".
@@ -595,7 +609,7 @@ def build(
 
     # * 0. Informational arguments that exit early
     if list_supported_databases:
-        print_valid_values_for_mutations_and_sequences_in_varseek_build()
+        print_valid_values_for_variants_and_sequences_in_varseek_build()
         return None
 
     # * 1. Start timer
@@ -627,25 +641,25 @@ def build(
     os.makedirs(out, exist_ok=True)
     os.makedirs(reference_out_dir, exist_ok=True)
 
-    if not mcrs_fasta_out:
-        mcrs_fasta_out = os.path.join(out, "mcrs.fa")
-    if not mutations_updated_csv_out:
-        mutations_updated_csv_out = os.path.join(out, "mutation_metadata_df.csv")
+    if not vcrs_fasta_out:
+        vcrs_fasta_out = os.path.join(out, "vcrs.fa")
+    if not variants_updated_csv_out:
+        variants_updated_csv_out = os.path.join(out, "variants_updated.csv")
     if not id_to_header_csv_out:
         id_to_header_csv_out = os.path.join(out, "id_to_header_mapping.csv")
-    if not mcrs_t2g_out:
-        mcrs_t2g_out = os.path.join(out, "mcrs_t2g.txt")
-    if not wt_mcrs_fasta_out:
-        wt_mcrs_fasta_out = os.path.join(out, "wt_mcrs.fa")
-    if not wt_mcrs_t2g_out:
-        wt_mcrs_t2g_out = os.path.join(out, "wt_mcrs_t2g.txt")
+    if not vcrs_t2g_out:
+        vcrs_t2g_out = os.path.join(out, "vcrs_t2g.txt")
+    if not wt_vcrs_fasta_out:
+        wt_vcrs_fasta_out = os.path.join(out, "wt_vcrs.fa")
+    if not wt_vcrs_t2g_out:
+        wt_vcrs_t2g_out = os.path.join(out, "wt_vcrs_t2g.txt")
     if not removed_variants_text_out:
         removed_variants_text_out = os.path.join(out, "removed_variants.txt")
     if not filtering_report_text_out:
         filtering_report_text_out = os.path.join(out, "filtering_report.txt")
 
     # make sure directories of all output files exist
-    output_files = [mcrs_fasta_out, mutations_updated_csv_out, id_to_header_csv_out, mcrs_t2g_out, wt_mcrs_fasta_out, wt_mcrs_t2g_out, removed_variants_text_out, filtering_report_text_out]
+    output_files = [vcrs_fasta_out, variants_updated_csv_out, id_to_header_csv_out, vcrs_t2g_out, wt_vcrs_fasta_out, wt_vcrs_t2g_out, removed_variants_text_out, filtering_report_text_out]
     for output_file in output_files:
         if os.path.isfile(output_file) and not overwrite:
             raise ValueError(f"Output file '{output_file}' already exists. Set 'overwrite=True' to overwrite it.")
@@ -667,12 +681,8 @@ def build(
     vcrs_strandedness = kwargs.get("vcrs_strandedness", False)
     use_IDs = kwargs.get("use_IDs", True)
 
-    # # rather than rename mutations to variants throughout the code, simply do the reassignment here
-    # if isinstance(variants, pd.DataFrame):
-    #     mutations = variants.copy()
-    #     del variants
-    # else:
-    #     mutations = variants
+    mutations = variants
+    del variants
 
     # * 8. Start the actual function
     if not k:
@@ -683,14 +693,14 @@ def build(
     columns_to_keep = [
         "header",
         seq_id_column,
-        mut_column,
-        "mutation_type",
+        var_column,
+        "variant_type",
         "wt_sequence",
-        "mutant_sequence",
+        "variant_sequence",
         "nucleotide_positions",
-        "start_mutation_position",
-        "end_mutation_position",
-        "actual_mutation",
+        "start_variant_position",
+        "end_variant_position",
+        "actual_variant",
     ]
 
     if isinstance(mutations, str):
@@ -797,16 +807,20 @@ def build(
             - A single sequence to be mutated passed as a string (e.g. 'AGCTAGCT')
             """
         )
-
-    mutations_path = None
+    
+    if os.path.isfile(mutations):
+        mutations_path = mutations  # will account for mutations in supported_databases_and_corresponding_reference_sequence_type once the file is defined in the conditional
+    else:
+        mutations_path = None
 
     if isinstance(mutations, str) and mutations in supported_databases_and_corresponding_reference_sequence_type:
         # TODO: expand beyond COSMIC
         if "cosmic" in mutations:
             reference_out_cosmic = f"{reference_out_dir}/cosmic"
             mutations = f"{reference_out_cosmic}/CancerMutationCensus_AllData_Tsv_v{cosmic_release}_GRCh{grch}/CancerMutationCensus_AllData_v{cosmic_release}_GRCh{grch}_mutation_workflow.csv"
+            mutations_path = mutations
 
-            if not os.path.isfile(mutations):  # DO NOT specify column names in gget mutate - I instead code them in later
+            if not os.path.isfile(mutations):  # DO NOT specify column names in gget cosmic - I instead code them in later
                 gget.cosmic(
                     None,
                     grch_version=grch,
@@ -820,11 +834,14 @@ def build(
                     password=cosmic_password,
                 )
 
+                mutations = pd.read_csv(mutations_path)
+
                 if gtf is not None:
                     mutations = merge_gtf_transcript_locations_into_cosmic_csv(
                         mutations,
                         gtf,
                         gtf_transcript_id_column=gtf_transcript_id_column,
+                        output_mutations_path=mutations_path
                     )
                     columns_to_keep.extend(
                         [
@@ -834,61 +851,60 @@ def build(
                         ]
                     )
 
-                if "CancerMutationCensus" in mutations or mutations == "cosmic_cmc":
-                    logger.info("COSMIC CMC genome strand information is not fully accurate. Improving with gtf information.")
-                    improve_genome_strand_information(mutations, mutation_genome_column_name="mutation_genome")
+                    if "CancerMutationCensus" in mutations or mutations == "cosmic_cmc":
+                        logger.info("COSMIC CMC genome strand information is not fully accurate. Improving with gtf information.")
+                        mutations = improve_genome_strand_information(mutations, mutation_genome_column_name="mutation_genome", output_mutations_path=mutations_path)
+            else:
+                mutations = pd.read_csv(mutations_path)
 
             if "cdna" in sequences:  # covers whether sequences == "cdna" or sequences == "PATH/TO/Homo_sapiens.GRCh37.cdna.all.fa"
-                mutations_with_cdna = mutations.replace(".csv", "_with_cdna.csv")
-                if not os.path.isfile(mutations_with_cdna):
-                    convert_mutation_cds_locations_to_cdna(
-                        input_csv_path=mutations,
-                        output_csv_path=mutations_with_cdna,
-                        cds_fasta_path=cds_file,
-                        cdna_fasta_path=cdna_file,
-                    )
+                logger.info("Adding in cdna information into COSMIC. Note that the 'mutation_cdna' column will refer to cDNA mutation notation, and the 'mutation' column will refer to CDS mutation notation.")
+                mutations = convert_mutation_cds_locations_to_cdna(
+                    input_csv_path=mutations,
+                    output_csv_path=mutations_path,
+                    cds_fasta_path=cds_file,
+                    cdna_fasta_path=cdna_file,
+                )
 
-                mutations = mutations_with_cdna
                 seq_id_column = "seq_ID"
-                mut_column = "mutation"
+                var_column = "mutation_cdna"
 
             elif sequences == "genome" or "primary_assembly" in sequences:  # covers whether sequences == "genome" or sequences == "PATH/TO/Homo_sapiens.GRCh37.dna.primary_assembly.fa"
-                mutations_no_duplications = mutations.replace(".csv", "_no_duplications.csv")
-                if not os.path.isfile(mutations_no_duplications):
+                mutations_path_no_duplications = mutations_path.replace(".csv", "_no_duplications.csv")
+                if not os.path.isfile(mutations_path_no_duplications):
                     logger.info("COSMIC genome location is not accurate for duplications. Dropping duplications in a copy of the csv file.")
-                    drop_duplication_mutations(mutations, mutations_no_duplications)  # COSMIC incorrectly records genome positions of duplications
+                    mutations = drop_duplication_mutations(mutations, mutations_path_no_duplications)  # COSMIC incorrectly records genome positions of duplications
+                else:
+                    mutations = pd.read_csv(mutations_path_no_duplications)
 
-                mutations = mutations_no_duplications
                 seq_id_column = "chromosome"
-                mut_column = "mutation_genome"
+                var_column = "mutation_genome"
             
             elif "cds" in sequences:  # covers whether sequences == "cds" or sequences == "PATH/TO/Homo_sapiens.GRCh37.cds.all.fa"
                 seq_id_column = "seq_ID"
-                mut_column = "mutation_cds" if "mutation_cds" in mutations.columns else "mutation"  # checks if CDS mutation column was renamed by convert_mutation_cds_locations_to_cdna
+                var_column = "mutation"  # if "mutation_cds" not in mutations.columns else "mutation_cds"  # checks if CDS mutation column was renamed by convert_mutation_cds_locations_to_cdna
             
-            # mut_id_column = "mutation_id"
+            var_id_column = "mutation_id" if var_id_column is not None else None  # use the id column if the user wanted to; otherwise keep as default
 
     original_mutations_type = "string"
 
     # Read in 'mutations' if passed as filepath to comma-separated csv
     if isinstance(mutations, str) and mutations.endswith(".csv"):
-        mutations_path = mutations
         mutations = pd.read_csv(mutations)
         for col in mutations.columns:
             if col not in columns_to_keep:
                 columns_to_keep.append(col)  # append "mutation_aa", "gene_name", "mutation_id"
 
     elif isinstance(mutations, str) and mutations.endswith(".tsv"):
-        mutations_path = mutations
         mutations = pd.read_csv(mutations, sep="\t")
         for col in mutations.columns:
             if col not in columns_to_keep:
                 columns_to_keep.append(col)  # append "mutation_aa", "gene_name", "mutation_id"
 
     elif isinstance(mutations, str) and (mutations.endswith(".vcf") or mutations.endswith(".vcf.gz")):
-        mutations = vcf_to_dataframe(mutations, additional_columns=save_mutations_updated_csv, explode_alt=True, filter_empty_alt=True)  # only load in additional columns if I plan to later save this updated csv
-        mutations.rename(columns={"CHROM": seq_id_column, "ID": mut_id_column}, inplace=True)
-        mutations[mut_column] = mutations.apply(generate_mutation_notation_from_vcf_columns, axis=1)  #!! untested
+        mutations = vcf_to_dataframe(mutations, additional_columns=save_variants_updated_csv, explode_alt=True, filter_empty_alt=True)  # only load in additional columns if I plan to later save this updated csv
+        mutations.rename(columns={"CHROM": seq_id_column, "ID": var_id_column}, inplace=True)
+        mutations[var_column] = mutations.apply(generate_mutation_notation_from_vcf_columns, axis=1)  #!! untested
 
     # Handle mutations passed as a list
     elif isinstance(mutations, list):
@@ -898,24 +914,23 @@ def build(
                 raise ValueError("If a list is passed, the number of mutations must equal the number of input sequences.")
 
             temp = pd.DataFrame()
-            temp[mut_column] = mutations
-            temp[mut_id_column] = [f"mut{i+1}" for i in range(len(mutations))]
+            temp[var_column] = mutations
+            temp[var_id_column] = [f"var{i+1}" for i in range(len(mutations))]
             temp[seq_id_column] = [f"seq{i+1}" for i in range(len(mutations))]
             mutations = temp
         else:
             temp = pd.DataFrame()
-            temp[mut_column] = [mutations[0]] * len(seqs)
-            temp[mut_id_column] = [f"mut{i+1}" for i in range(len(seqs))]
+            temp[var_column] = [mutations[0]] * len(seqs)
+            temp[var_id_column] = [f"var{i+1}" for i in range(len(seqs))]
             temp[seq_id_column] = [f"seq{i+1}" for i in range(len(seqs))]
             mutations = temp
 
     # Handle single mutation passed as a string
     elif isinstance(mutations, str) and mutations not in supported_databases_and_corresponding_reference_sequence_type:
         # This will work for one mutation for one sequence as well as one mutation for multiple sequences
-        mutations_path = mutations
         temp = pd.DataFrame()
-        temp[mut_column] = [mutations[0]] * len(seqs)
-        temp[mut_id_column] = [f"mut{i+1}" for i in range(len(seqs))]
+        temp[var_column] = [mutations[0]] * len(seqs)
+        temp[var_id_column] = [f"var{i+1}" for i in range(len(seqs))]
         temp[seq_id_column] = [f"seq{i+1}" for i in range(len(seqs))]
         mutations = temp
 
@@ -951,19 +966,19 @@ def build(
         seq_dict[title.split(" ")[0].split(".")[0]] = seq
 
     if non_nuc_seqs > 0:
-        logger.warning("Non-nucleotide characters detected in %s input sequences. vk build is only optimized for mutating nucleotide sequences. Inversion mutations might not be performed correctly.", non_nuc_seqs)
+        logger.warning("Non-nucleotide characters detected in %s input sequences. vk build is only optimized for mutating nucleotide sequences.", non_nuc_seqs)
 
     # remove duplicate entries from the mutations dataframe, keeping the ones with the most information
-    duplicate_count = mutations.duplicated(subset=[seq_id_column, mut_column], keep=False).sum() // 2
+    duplicate_count = mutations.duplicated(subset=[seq_id_column, var_column], keep=False).sum() // 2
     mutations["non_na_count"] = mutations.notna().sum(axis=1)
     mutations = mutations.sort_values(by="non_na_count", ascending=False)
-    mutations = mutations.drop_duplicates(subset=[seq_id_column, mut_column], keep="first")
+    mutations = mutations.drop_duplicates(subset=[seq_id_column, var_column], keep="first")
     mutations = mutations.drop(columns=["non_na_count"])
 
     number_of_missing_seq_ids = mutations[seq_id_column].isna().sum()
 
     if number_of_missing_seq_ids > 0:
-        logger.warning("%s rows in 'mutations' are missing sequence IDs. These rows will be dropped from the analysis.", number_of_missing_seq_ids)
+        logger.warning("%s rows in 'variants' are missing sequence IDs. These rows will be dropped from the analysis.", number_of_missing_seq_ids)
 
         # Drop rows with missing sequence IDs
         mutations = mutations.dropna(subset=[seq_id_column])
@@ -971,7 +986,7 @@ def build(
     # ensure seq_ID column is string type, and chromosome numbers don't have decimals
     mutations[seq_id_column] = mutations[seq_id_column].apply(convert_chromosome_value_to_int_when_possible)
 
-    mutations = add_mutation_type(mutations, mut_column)
+    mutations = add_mutation_type(mutations, var_column)
 
     # Link sequences to their mutations using the sequence identifiers
     if store_full_sequences:
@@ -999,7 +1014,7 @@ def build(
         )
 
     # Drop inputs for sequences that were not found
-    mutations = mutations.dropna(subset=[seq_id_column, mut_column])
+    mutations = mutations.dropna(subset=[seq_id_column, var_column])
     if len(mutations) < 1:
         raise ValueError(
             """
@@ -1010,16 +1025,16 @@ def build(
 
     total_mutations = mutations.shape[0]
 
-    mutations["mutant_sequence"] = ""
+    mutations["variant_sequence"] = ""
 
-    if mut_id_column is not None:
-        mutations["header"] = ">" + mutations[mut_id_column]
+    if var_id_column is not None:
+        mutations["header"] = ">" + mutations[var_id_column]
         if verbose:
-            logger.info("Using the %s column as the mutation header column.", mut_id_column)
+            logger.info("Using var_id_column '%s' as the variant header column.", var_id_column)
     else:
-        mutations["header"] = ">" + mutations[seq_id_column] + ":" + mutations[mut_column]
+        mutations["header"] = ">" + mutations[seq_id_column] + ":" + mutations[var_column]
         if verbose:
-            logger.info("Using the colon-joined %s columns as the mutation header column.", f"{seq_id_column}:{mut_column}")
+            logger.info("Using the seq_id_column:var_column '%s' columns as the variant header column.", f"{seq_id_column}:{var_column}")
 
     # make a set of all initial mutation IDs
     mutations["header_temp"] = mutations["header"].str[1:]
@@ -1027,81 +1042,81 @@ def build(
     mutations.drop(columns=["header_temp"], inplace=True)
 
     # Calculate number of bad mutations
-    uncertain_mutations = mutations[mut_column].str.contains(r"\?").sum()
+    uncertain_mutations = mutations[var_column].str.contains(r"\?").sum()
 
-    ambiguous_position_mutations = mutations[mut_column].str.contains(r"\(|\)").sum()
+    ambiguous_position_mutations = mutations[var_column].str.contains(r"\(|\)").sum()
 
-    intronic_mutations = mutations[mut_column].str.contains(r"\+|\-").sum()
+    intronic_mutations = mutations[var_column].str.contains(r"\+|\-").sum()
 
-    posttranslational_region_mutations = mutations[mut_column].str.contains(r"\*").sum()
+    posttranslational_region_mutations = mutations[var_column].str.contains(r"\*").sum()
 
     # Filter out bad mutations
     combined_pattern = re.compile(r"(\?|\(|\)|\+|\-|\*)")
-    mask = mutations[mut_column].str.contains(combined_pattern)
+    mask = mutations[var_column].str.contains(combined_pattern)
     mutations = mutations[~mask]
 
     # Extract nucleotide positions and mutation info from Mutation CDS
-    mutations[["nucleotide_positions", "actual_mutation"]] = mutations[mut_column].str.extract(mutation_pattern)
+    mutations[["nucleotide_positions", "actual_variant"]] = mutations[var_column].str.extract(mutation_pattern)
 
     # Filter out mutations that did not match the re
     unknown_mutations = mutations["nucleotide_positions"].isna().sum()
-    mutations = mutations.dropna(subset=["nucleotide_positions", "actual_mutation"])
+    mutations = mutations.dropna(subset=["nucleotide_positions", "actual_variant"])
 
     if mutations.empty:
-        logger.warning("No valid mutations found in the input.")
+        logger.warning("No valid variants found in the input.")
         return []
 
     # Split nucleotide positions into start and end positions
     split_positions = mutations["nucleotide_positions"].str.split("_", expand=True)
 
-    mutations["start_mutation_position"] = split_positions[0]
+    mutations["start_variant_position"] = split_positions[0]
     if split_positions.shape[1] > 1:
-        mutations["end_mutation_position"] = split_positions[1].fillna(split_positions[0])
+        mutations["end_variant_position"] = split_positions[1].fillna(split_positions[0])
     else:
-        mutations["end_mutation_position"] = mutations["start_mutation_position"]
+        mutations["end_variant_position"] = mutations["start_variant_position"]
 
-    mutations.loc[mutations["end_mutation_position"].isna(), "end_mutation_position"] = mutations["start_mutation_position"]
+    mutations.loc[mutations["end_variant_position"].isna(), "end_variant_position"] = mutations["start_variant_position"]
 
-    mutations[["start_mutation_position", "end_mutation_position"]] = mutations[["start_mutation_position", "end_mutation_position"]].astype(int)
+    mutations[["start_variant_position", "end_variant_position"]] = mutations[["start_variant_position", "end_variant_position"]].astype(int)
 
     # Adjust positions to 0-based indexing
-    mutations["start_mutation_position"] -= 1
-    mutations["end_mutation_position"] -= 1  # don't forget to increment by 1 later
+    mutations["start_variant_position"] -= 1
+    mutations["end_variant_position"] -= 1  # don't forget to increment by 1 later
 
     # Calculate sequence length
     mutations["sequence_length"] = mutations[seq_id_column].apply(lambda x: get_sequence_length(x, seq_dict))
 
     # Filter out mutations with positions outside the sequence
-    index_error_mask = (mutations["start_mutation_position"] > mutations["sequence_length"]) | (mutations["end_mutation_position"] > mutations["sequence_length"])
+    index_error_mask = (mutations["start_variant_position"] > mutations["sequence_length"]) | (mutations["end_variant_position"] > mutations["sequence_length"])
 
     mut_idx_outside_seq = index_error_mask.sum()
 
     mutations = mutations[~index_error_mask]
 
     if mutations.empty:
-        logger.warning("No valid mutations found in the input.")
+        logger.warning("No valid variants found in the input.")
         return []
 
     # Create masks for each type of mutation
     mutations["wt_nucleotides_ensembl"] = None
-    substitution_mask = mutations["mutation_type"] == "substitution"
-    deletion_mask = mutations["mutation_type"] == "deletion"
-    delins_mask = mutations["mutation_type"] == "delins"
-    insertion_mask = mutations["mutation_type"] == "insertion"
-    duplication_mask = mutations["mutation_type"] == "duplication"
-    inversion_mask = mutations["mutation_type"] == "inversion"
+    substitution_mask = mutations["variant_type"] == "substitution"
+    deletion_mask = mutations["variant_type"] == "deletion"
+    delins_mask = mutations["variant_type"] == "delins"
+    insertion_mask = mutations["variant_type"] == "insertion"
+    duplication_mask = mutations["variant_type"] == "duplication"
+    inversion_mask = mutations["variant_type"] == "inversion"
 
     if remove_seqs_with_wt_kmers:
-        long_duplications = ((duplication_mask) & ((mutations["end_mutation_position"] - mutations["start_mutation_position"]) >= w)).sum()
-        logger.info(f"Removing %d duplications > w", long_duplications)
-        mutations = mutations[~((duplication_mask) & ((mutations["end_mutation_position"] - mutations["start_mutation_position"]) >= w))]
+        long_duplications = ((duplication_mask) & ((mutations["end_variant_position"] - mutations["start_variant_position"]) >= w)).sum()
+        logger.info("Removing %d duplications > w", long_duplications)
+        mutations = mutations[~((duplication_mask) & ((mutations["end_variant_position"] - mutations["start_variant_position"]) >= w))]
 
     # Create a mask for all non-substitution mutations
     non_substitution_mask = deletion_mask | delins_mask | insertion_mask | duplication_mask | inversion_mask
     insertion_and_delins_and_dup_and_inversion_mask = insertion_mask | delins_mask | duplication_mask | inversion_mask
 
     # Extract the WT nucleotides for the substitution rows from reference fasta (i.e., Ensembl)
-    start_positions = mutations.loc[substitution_mask, "start_mutation_position"].values
+    start_positions = mutations.loc[substitution_mask, "start_variant_position"].values
 
     # Get the nucleotides at the start positions
     wt_nucleotides_substitution = np.array([get_nucleotide_at_position(seq_id, pos, seq_dict) for seq_id, pos in zip(mutations.loc[substitution_mask, seq_id_column], start_positions)])
@@ -1110,7 +1125,7 @@ def build(
 
     # Extract the WT nucleotides for the substitution rows from the Mutation CDS (i.e., COSMIC)
     mutations["wt_nucleotides_cosmic"] = None
-    mutations.loc[substitution_mask, "wt_nucleotides_cosmic"] = mutations["actual_mutation"].str[0]
+    mutations.loc[substitution_mask, "wt_nucleotides_cosmic"] = mutations["actual_variant"].str[0]
 
     congruent_wt_bases_mask = (mutations["wt_nucleotides_cosmic"] == mutations["wt_nucleotides_ensembl"]) | mutations[["wt_nucleotides_cosmic", "wt_nucleotides_ensembl"]].isna().any(axis=1)
 
@@ -1119,22 +1134,22 @@ def build(
     mutations = mutations[congruent_wt_bases_mask]
 
     if mutations.empty:
-        logger.warning("No valid mutations found in the input.")
+        logger.warning("No valid variants found in the input.")
         return []
 
     # Adjust the start and end positions for insertions
-    mutations.loc[insertion_mask, "start_mutation_position"] += 1  # in other cases, we want left flank to exclude the start of mutation site; but with insertion, the start of mutation site as it is denoted still belongs in the flank region
-    mutations.loc[insertion_mask, "end_mutation_position"] -= 1  # in this notation, the end position is one before the start position
+    mutations.loc[insertion_mask, "start_variant_position"] += 1  # in other cases, we want left flank to exclude the start of mutation site; but with insertion, the start of mutation site as it is denoted still belongs in the flank region
+    mutations.loc[insertion_mask, "end_variant_position"] -= 1  # in this notation, the end position is one before the start position
 
     # Extract the WT nucleotides for the non-substitution rows from the Mutation CDS (i.e., COSMIC)
     mutations.loc[non_substitution_mask, "wt_nucleotides_ensembl"] = mutations.loc[non_substitution_mask].apply(lambda row: extract_sequence(row, seq_dict, seq_id_column), axis=1)
 
     # Apply mutations to the sequences
     mutations["mut_nucleotides"] = None
-    mutations.loc[substitution_mask, "mut_nucleotides"] = mutations.loc[substitution_mask, "actual_mutation"].str[-1]
+    mutations.loc[substitution_mask, "mut_nucleotides"] = mutations.loc[substitution_mask, "actual_variant"].str[-1]
     mutations.loc[deletion_mask, "mut_nucleotides"] = ""
-    mutations.loc[delins_mask, "mut_nucleotides"] = mutations.loc[delins_mask, "actual_mutation"].str.extract(r"delins([A-Z]+)")[0]
-    mutations.loc[insertion_mask, "mut_nucleotides"] = mutations.loc[insertion_mask, "actual_mutation"].str.extract(r"ins([A-Z]+)")[0]
+    mutations.loc[delins_mask, "mut_nucleotides"] = mutations.loc[delins_mask, "actual_variant"].str.extract(r"delins([A-Z]+)")[0]
+    mutations.loc[insertion_mask, "mut_nucleotides"] = mutations.loc[insertion_mask, "actual_variant"].str.extract(r"ins([A-Z]+)")[0]
     mutations.loc[duplication_mask, "mut_nucleotides"] = mutations.loc[duplication_mask].apply(lambda row: row["wt_nucleotides_ensembl"], axis=1)
     if inversion_mask.any():
         mutations.loc[inversion_mask, "mut_nucleotides"] = mutations.loc[inversion_mask].apply(
@@ -1143,24 +1158,24 @@ def build(
         )
 
     # Adjust the nucleotide positions of duplication mutations to mimic that of insertions (since duplications are essentially just insertions)
-    mutations.loc[duplication_mask, "start_mutation_position"] = mutations.loc[duplication_mask, "end_mutation_position"] + 1  # in the case of duplication, the "mutant" site is still in the left flank as well
+    mutations.loc[duplication_mask, "start_variant_position"] = mutations.loc[duplication_mask, "end_variant_position"] + 1  # in the case of duplication, the "mutant" site is still in the left flank as well
 
     mutations.loc[duplication_mask, "wt_nucleotides_ensembl"] = ""
 
     # Calculate the kmer bounds
-    mutations["start_kmer_position_min"] = mutations["start_mutation_position"] - w
+    mutations["start_kmer_position_min"] = mutations["start_variant_position"] - w
     mutations["start_kmer_position"] = mutations["start_kmer_position_min"].combine(0, max)
 
-    mutations["end_kmer_position_max"] = mutations["end_mutation_position"] + w
+    mutations["end_kmer_position_max"] = mutations["end_variant_position"] + w
     mutations["end_kmer_position"] = mutations[["end_kmer_position_max", "sequence_length"]].min(axis=1)  # don't forget to increment by 1 later on
 
     if gtf is not None and transcript_boundaries:
         if "start_transcript_position" not in mutations.columns and "end_transcript_position" not in mutations.columns:  # * currently hard-coded column names, but optionally can be changed to arguments later
-            mutations = merge_gtf_transcript_locations_into_cosmic_csv(mutations, gtf, gtf_transcript_id_column=gtf_transcript_id_column)
+            mutations = merge_gtf_transcript_locations_into_cosmic_csv(mutations, gtf, gtf_transcript_id_column=gtf_transcript_id_column, output_mutations_path=mutations_path)
 
             columns_to_keep.extend(["start_transcript_position", "end_transcript_position", "strand"])
         else:
-            logger.warning("Transcript positions already present in the input mutations file. Skipping GTF file merging.")
+            logger.warning("Transcript positions already present in the input variants file. Skipping GTF file merging.")
 
         # adjust start_transcript_position to be 0-index
         mutations["start_transcript_position"] -= 1
@@ -1170,13 +1185,13 @@ def build(
 
     mut_apply = (lambda *args, **kwargs: mutations.progress_apply(*args, **kwargs)) if verbose else mutations.apply
 
-    if save_mutations_updated_csv and store_full_sequences:
+    if save_variants_updated_csv and store_full_sequences:
         # Extract flank sequences
         if verbose:
             tqdm.pandas(desc="Extracting full left flank sequences")
 
         mutations["left_flank_region_full"] = mut_apply(
-            lambda row: seq_dict[row[seq_id_column]][0 : row["start_mutation_position"]],
+            lambda row: seq_dict[row[seq_id_column]][0 : row["start_variant_position"]],
             axis=1,
         )  # ? vectorize
 
@@ -1184,23 +1199,23 @@ def build(
             tqdm.pandas(desc="Extracting full right flank sequences")
 
         mutations["right_flank_region_full"] = mut_apply(
-            lambda row: seq_dict[row[seq_id_column]][row["end_mutation_position"] + 1 : row["sequence_length"]],
+            lambda row: seq_dict[row[seq_id_column]][row["end_variant_position"] + 1 : row["sequence_length"]],
             axis=1,
         )  # ? vectorize
 
     if verbose:
-        tqdm.pandas(desc="Extracting MCRS left flank sequences")
+        tqdm.pandas(desc="Extracting VCRS left flank sequences")
 
     mutations["left_flank_region"] = mut_apply(
-        lambda row: seq_dict[row[seq_id_column]][row["start_kmer_position"] : row["start_mutation_position"]],
+        lambda row: seq_dict[row[seq_id_column]][row["start_kmer_position"] : row["start_variant_position"]],
         axis=1,
     )  # ? vectorize
 
     if verbose:
-        tqdm.pandas(desc="Extracting MCRS right flank sequences")
+        tqdm.pandas(desc="Extracting VCRS right flank sequences")
 
     mutations["right_flank_region"] = mut_apply(
-        lambda row: seq_dict[row[seq_id_column]][row["end_mutation_position"] + 1 : row["end_kmer_position"] + 1],
+        lambda row: seq_dict[row[seq_id_column]][row["end_variant_position"] + 1 : row["end_kmer_position"] + 1],
         axis=1,
     )  # ? vectorize
 
@@ -1284,11 +1299,11 @@ def build(
 
     # Create mutant substitution w-mer sequences
     if substitution_mask.any():
-        mutations.loc[substitution_mask, "mutant_sequence"] = mutations.loc[substitution_mask, "left_flank_region"] + mutations.loc[substitution_mask, "mut_nucleotides"] + mutations.loc[substitution_mask, "right_flank_region"]
+        mutations.loc[substitution_mask, "variant_sequence"] = mutations.loc[substitution_mask, "left_flank_region"] + mutations.loc[substitution_mask, "mut_nucleotides"] + mutations.loc[substitution_mask, "right_flank_region"]
 
     # Create mutant non-substitution w-mer sequences
     if non_substitution_mask.any():
-        mutations.loc[non_substitution_mask, "mutant_sequence"] = mutations.loc[non_substitution_mask].apply(
+        mutations.loc[non_substitution_mask, "variant_sequence"] = mutations.loc[non_substitution_mask].apply(
             lambda row: row["left_flank_region"][row["updated_left_flank_start"] :] + row["mut_nucleotides"] + row["right_flank_region"][: len(row["right_flank_region"]) - row["updated_right_flank_end"]],
             axis=1,
         )
@@ -1299,7 +1314,7 @@ def build(
 
         mutations["wt_fragment_and_mutant_fragment_share_kmer"] = mut_apply(
             lambda row: wt_fragment_and_mutant_fragment_share_kmer(
-                mutated_fragment=row["mutant_sequence"],
+                mutated_fragment=row["variant_sequence"],
                 wildtype_fragment=row["wt_sequence"],
                 k=k,
             ),
@@ -1310,31 +1325,31 @@ def build(
 
         mutations = mutations[~mutations["wt_fragment_and_mutant_fragment_share_kmer"]]
 
-    if save_mutations_updated_csv and store_full_sequences:
-        columns_to_keep.extend(["wt_sequence_full", "mutant_sequence_full"])
+    if save_variants_updated_csv and store_full_sequences:
+        columns_to_keep.extend(["wt_sequence_full", "variant_sequence_full"])
 
         # Create full sequences (substitution and non-substitution)
-        mutations["mutant_sequence_full"] = mutations["left_flank_region_full"] + mutations["mut_nucleotides"] + mutations["right_flank_region_full"]
+        mutations["variant_sequence_full"] = mutations["left_flank_region_full"] + mutations["mut_nucleotides"] + mutations["right_flank_region_full"]
 
     if min_seq_len:
         # Calculate k-mer lengths (where k=w) and report the distribution
-        mutations["mutant_sequence_kmer_length"] = mutations["mutant_sequence"].apply(lambda x: len(x) if pd.notna(x) else 0)
+        mutations["variant_sequence_kmer_length"] = mutations["variant_sequence"].apply(lambda x: len(x) if pd.notna(x) else 0)
 
-        rows_less_than_minimum = (mutations["mutant_sequence_kmer_length"] < min_seq_len).sum()
+        rows_less_than_minimum = (mutations["variant_sequence_kmer_length"] < min_seq_len).sum()
 
-        mutations = mutations[mutations["mutant_sequence_kmer_length"] >= min_seq_len]
+        mutations = mutations[mutations["variant_sequence_kmer_length"] >= min_seq_len]
 
         if verbose:
-            logger.info("Removed %d mutant kmers with length less than %d...", rows_less_than_minimum, min_seq_len)
+            logger.info("Removed %d variant kmers with length less than %d...", rows_less_than_minimum, min_seq_len)
 
     if max_ambiguous is not None:
         # Get number of 'N' or 'n' occuring in the sequence
-        mutations["num_N"] = mutations["mutant_sequence"].str.lower().str.count("n")
+        mutations["num_N"] = mutations["variant_sequence"].str.lower().str.count("n")
         num_rows_with_N = (mutations["num_N"] > max_ambiguous).sum()
         mutations = mutations[mutations["num_N"] <= max_ambiguous]
 
         if verbose:
-            logger.info("Removed %d mutant kmers containing more than %d 'N's...", num_rows_with_N, max_ambiguous)
+            logger.info("Removed %d variant kmers containing more than %d 'N's...", num_rows_with_N, max_ambiguous)
 
         # Drop the 'num_N' column after filtering
         mutations = mutations.drop(columns=["num_N"])
@@ -1343,42 +1358,42 @@ def build(
     good_mutations = mutations.shape[0]
 
     report = f"""
-        {good_mutations} mutations correctly recorded ({good_mutations/total_mutations*100:.2f}%)
+        {good_mutations} variants correctly recorded ({good_mutations/total_mutations*100:.2f}%)
         {duplicate_count} duplicate entries found ({duplicate_count/total_mutations*100:.2f}%)
-        {intronic_mutations} intronic mutations found ({intronic_mutations/total_mutations*100:.2f}%)
-        {posttranslational_region_mutations} posttranslational region mutations found ({posttranslational_region_mutations/total_mutations*100:.2f}%)
-        {unknown_mutations} unknown mutations found ({unknown_mutations/total_mutations*100:.2f}%)
-        {uncertain_mutations} mutations with uncertain mutation found ({uncertain_mutations/total_mutations*100:.2f}%)
-        {ambiguous_position_mutations} mutations with ambiguous position found ({ambiguous_position_mutations/total_mutations*100:.2f}%)
-        {cosmic_incorrect_wt_base} mutations with incorrect wildtype base found ({cosmic_incorrect_wt_base/total_mutations*100:.2f}%)
-        {mut_idx_outside_seq} mutations with indices outside of the sequence length found ({mut_idx_outside_seq/total_mutations*100:.2f}%)
+        {intronic_mutations} intronic variants found ({intronic_mutations/total_mutations*100:.2f}%)
+        {posttranslational_region_mutations} posttranslational region variants found ({posttranslational_region_mutations/total_mutations*100:.2f}%)
+        {unknown_mutations} unknown variants found ({unknown_mutations/total_mutations*100:.2f}%)
+        {uncertain_mutations} variants with uncertain mutation found ({uncertain_mutations/total_mutations*100:.2f}%)
+        {ambiguous_position_mutations} variants with ambiguous position found ({ambiguous_position_mutations/total_mutations*100:.2f}%)
+        {cosmic_incorrect_wt_base} variants with incorrect wildtype base found ({cosmic_incorrect_wt_base/total_mutations*100:.2f}%)
+        {mut_idx_outside_seq} variants with indices outside of the sequence length found ({mut_idx_outside_seq/total_mutations*100:.2f}%)
         """
 
     if remove_seqs_with_wt_kmers:
         report += f"""{long_duplications} duplications longer than w found ({long_duplications/total_mutations*100:.2f}%)
-        {mutations_overlapping_with_wt} mutations with overlapping kmers found ({mutations_overlapping_with_wt/total_mutations*100:.2f}%)
+        {mutations_overlapping_with_wt} variants with overlapping kmers found ({mutations_overlapping_with_wt/total_mutations*100:.2f}%)
         """
 
     if min_seq_len:
-        report += f"""{rows_less_than_minimum} mutations with fragment length < w found ({rows_less_than_minimum/total_mutations*100:.2f}%)
+        report += f"""{rows_less_than_minimum} variants with fragment length < w found ({rows_less_than_minimum/total_mutations*100:.2f}%)
         """
 
     if max_ambiguous is not None:
-        report += f"""{num_rows_with_N} mutations with Ns found ({num_rows_with_N/total_mutations*100:.2f}%)
+        report += f"""{num_rows_with_N} variants with Ns found ({num_rows_with_N/total_mutations*100:.2f}%)
         """
 
     if good_mutations != total_mutations:
         logger.warning(report)
     else:
-        logger.info("All mutations correctly recorded")
+        logger.info("All variants correctly recorded")
 
     # Save the report string to the specified path
     if save_filtering_report_text:
         with open(filtering_report_text_out, "w", encoding="utf-8") as file:
             file.write(report)
 
-    if translate and save_mutations_updated_csv and store_full_sequences:
-        columns_to_keep.extend(["wt_sequence_aa_full", "mutant_sequence_aa_full"])
+    if translate and save_variants_updated_csv and store_full_sequences:
+        columns_to_keep.extend(["wt_sequence_aa_full", "variant_sequence_aa_full"])
 
         if not mutations_path:
             if not isinstance(translate_start, int) and not isinstance(translate_end, int):
@@ -1399,12 +1414,12 @@ def build(
             if verbose:
                 tqdm.pandas(desc="Translating mutant amino acid sequences")
 
-                mutations["mutant_sequence_aa_full"] = mutations["mutant_sequence_full"].progress_apply(lambda x: translate_sequence(x, start=translate_start, end=translate_end))
+                mutations["variant_sequence_aa_full"] = mutations["variant_sequence_full"].progress_apply(lambda x: translate_sequence(x, start=translate_start, end=translate_end))
 
             else:
-                mutations["mutant_sequence_aa_full"] = mutations["mutant_sequence_full"].apply(lambda x: translate_sequence(x, start=translate_start, end=translate_end))
+                mutations["variant_sequence_aa_full"] = mutations["variant_sequence_full"].apply(lambda x: translate_sequence(x, start=translate_start, end=translate_end))
 
-            print(f"Translated mutated sequences: {mutations['wt_sequence_aa_full']}")
+            logger.info(f"Translated variant sequences: {mutations['wt_sequence_aa_full']}")
         else:
             if not translate_start:
                 translate_start = "translate_start"
@@ -1429,9 +1444,9 @@ def build(
             if verbose:
                 tqdm.pandas(desc="Translating mutant amino acid sequences")
 
-            mutations["mutant_sequence_aa_full"] = mut_apply(
+            mutations["variant_sequence_aa_full"] = mut_apply(
                 lambda row: translate_sequence(
-                    row["mutant_sequence_full"],
+                    row["variant_sequence_full"],
                     row[translate_start],
                     row[translate_end],
                 ),
@@ -1453,71 +1468,71 @@ def build(
             for mutation in removed_mutation_set:
                 file.write(f"{mutation}\n")
 
-    if save_mutations_updated_csv:
-        # recalculate start_mutation_position and end_mutation_position due to messing with it above
+    if save_variants_updated_csv:
+        # recalculate start_variant_position and end_variant_position due to messing with it above
         mutations.drop(
-            columns=["start_mutation_position", "end_mutation_position"],
+            columns=["start_variant_position", "end_variant_position"],
             inplace=True,
             errors="ignore",
         )
-        mutations["start_mutation_position"] = split_positions[0]
+        mutations["start_variant_position"] = split_positions[0]
         if split_positions.shape[1] > 1:
-            mutations["end_mutation_position"] = split_positions[1].fillna(split_positions[0])
+            mutations["end_variant_position"] = split_positions[1].fillna(split_positions[0])
         else:
-            mutations["end_mutation_position"] = mutations["start_mutation_position"]
+            mutations["end_variant_position"] = mutations["start_variant_position"]
 
-        mutations[["start_mutation_position", "end_mutation_position"]] = mutations[["start_mutation_position", "end_mutation_position"]].astype(int)
+        mutations[["start_variant_position", "end_variant_position"]] = mutations[["start_variant_position", "end_variant_position"]].astype(int)
 
     if merge_identical:
-        logger.info("Merging identical mutated sequences")
+        logger.info("Merging rows of identical VCRSs")
 
         # total mutations
         number_of_mutations_total = len(mutations)
 
         if merge_identical_rc:
-            mutations["mutant_sequence_rc"] = mutations["mutant_sequence"].apply(reverse_complement)
+            mutations["variant_sequence_rc"] = mutations["variant_sequence"].apply(reverse_complement)
 
-            # Create a column that stores a sorted tuple of (mutant_sequence, mutant_sequence_rc)
-            mutations["mutant_sequence_and_rc_tuple"] = mutations.apply(
-                lambda row: tuple(sorted([row["mutant_sequence"], row["mutant_sequence_rc"]])),
+            # Create a column that stores a sorted tuple of (variant_sequence, variant_sequence_rc)
+            mutations["variant_sequence_and_rc_tuple"] = mutations.apply(
+                lambda row: tuple(sorted([row["variant_sequence"], row["variant_sequence_rc"]])),
                 axis=1,
             )
 
-            # mutations = mutations.drop(columns=['mutant_sequence_rc'])
+            # mutations = mutations.drop(columns=['variant_sequence_rc'])
 
-            group_key = "mutant_sequence_and_rc_tuple"
+            group_key = "variant_sequence_and_rc_tuple"
             columns_not_to_semicolon_join = [
-                "mutant_sequence",
-                "mutant_sequence_rc",
-                "mutant_sequence_and_rc_tuple",
+                "variant_sequence",
+                "variant_sequence_rc",
+                "variant_sequence_and_rc_tuple",
             ]
             agg_columns = mutations.columns
 
         else:
-            group_key = "mutant_sequence"
+            group_key = "variant_sequence"
             columns_not_to_semicolon_join = []
-            agg_columns = [col for col in mutations.columns if col != "mutant_sequence"]
+            agg_columns = [col for col in mutations.columns if col != "variant_sequence"]
 
-        if save_mutations_updated_csv:
-            logger.warning("Merging identical mutated sequences can take a while if save_mutations_updated_csv=True since it will concatenate all MCRSs too)")
+        if save_variants_updated_csv:
+            logger.warning("Merging rows of identical VCRS can take a while if save_variants_updated_csv=True since it will concatenate all VCRSs too)")
             mutations = (
                 mutations.groupby(group_key, sort=False).agg({col: ("first" if col in columns_not_to_semicolon_join else (";".join if col == "header" else lambda x: list(x.fillna(np.nan)))) for col in agg_columns}).reset_index(drop=merge_identical_rc)
-            )  # lambda x: list(x) will make simple list, but lengths will be inconsistent with NaN values  # concatenate values with semicolons: lambda x: `";".join(x.astype(str))`   # drop if merging by mutant_sequence_and_rc_tuple, but not if merging by mutant_sequence
+            )  # lambda x: list(x) will make simple list, but lengths will be inconsistent with NaN values  # concatenate values with semicolons: lambda x: `";".join(x.astype(str))`   # drop if merging by variant_sequence_and_rc_tuple, but not if merging by variant_sequence
 
         else:
             mutations_temp = mutations.groupby(group_key, sort=False, group_keys=False)["header"].apply(";".join).reset_index()
 
             if merge_identical_rc:
-                mutations_temp = mutations_temp.merge(mutations[["mutant_sequence", group_key]], on=group_key, how="left")
+                mutations_temp = mutations_temp.merge(mutations[["variant_sequence", group_key]], on=group_key, how="left")
                 mutations_temp = mutations_temp.drop_duplicates(subset="header")
                 mutations_temp.drop(columns=[group_key], inplace=True)
 
             mutations = mutations_temp
 
-        if "mutant_sequence_and_rc_tuple" in mutations.columns:
-            mutations = mutations.drop(columns=["mutant_sequence_and_rc_tuple"])
+        if "variant_sequence_and_rc_tuple" in mutations.columns:
+            mutations = mutations.drop(columns=["variant_sequence_and_rc_tuple"])
 
-        # apply remove_gt_after_semicolon to mutant_sequence
+        # apply remove_gt_after_semicolon to variant_sequence
         mutations["header"] = mutations["header"].apply(remove_gt_after_semicolon)
 
         # Calculate the number of semicolons in each entry
@@ -1557,69 +1572,69 @@ def build(
 
         if verbose:
             logger.info(merging_report)
-            logger.info("Merged headers were combined and separated using a semicolon (;). Occurences of identical mutated sequences may be reduced by increasing w.")
+            logger.info("Merged headers were combined and separated using a semicolon (;). Occurences of identical VCRSs may be reduced by increasing w.")
 
-    empty_kmer_count = (mutations["mutant_sequence"] == "").sum()
+    empty_kmer_count = (mutations["variant_sequence"] == "").sum()
 
     if empty_kmer_count > 0 and verbose:
-        logger.warning(f"{empty_kmer_count} mutated sequences were empty and were not included in the output.")
+        logger.warning(f"{empty_kmer_count} VCRSs were empty and were not included in the output.")
 
-    mutations = mutations[mutations["mutant_sequence"] != ""]
+    mutations = mutations[mutations["variant_sequence"] != ""]
 
     mutations["header"] = mutations["header"].str[1:]  # remove the > character
 
-    if use_IDs:  # or (mut_id_column in mutations.columns and not merge_identical):
-        mutations["mcrs_id"] = generate_unique_ids(len(mutations))
+    if use_IDs:  # or (var_id_column in mutations.columns and not merge_identical):
+        mutations["vcrs_id"] = generate_unique_ids(len(mutations))
         if save_files:
-            mutations[["mcrs_id", "header"]].to_csv(id_to_header_csv_out, index=False)  # make the mapping csv
+            mutations[["vcrs_id", "header"]].to_csv(id_to_header_csv_out, index=False)  # make the mapping csv
     else:
-        mutations["mcrs_id"] = mutations["header"]
+        mutations["vcrs_id"] = mutations["header"]
 
-    if save_mutations_updated_csv:  # use mutations_updated_csv_out if present,
-        logger.info("Saving dataframe with updated mutation info...")
-        logger.warning("File size can be very large if the number of mutations is large.")
-        mutations.to_csv(mutations_updated_csv_out, index=False)
-        print(f"Updated mutation info has been saved to {mutations_updated_csv_out}")
+    if save_variants_updated_csv:  # use variants_updated_csv_out if present,
+        logger.info("Saving dataframe with updated variant info...")
+        logger.warning("File size can be very large if the number of variants is large.")
+        mutations.to_csv(variants_updated_csv_out, index=False)
+        print(f"Updated variant info has been saved to {variants_updated_csv_out}")
 
     if len(mutations) > 0:
-        mutations["fasta_format"] = ">" + mutations["mcrs_id"] + "\n" + mutations["mutant_sequence"] + "\n"
+        mutations["fasta_format"] = ">" + mutations["vcrs_id"] + "\n" + mutations["variant_sequence"] + "\n"
 
-        if save_wt_mcrs_fasta_and_t2g:
-            if not save_mutations_updated_csv:
-                raise ValueError("save_mutations_updated_csv must be True to create wt_mcrs_fasta_and_t2g")
+        if save_wt_vcrs_fasta_and_t2g:
+            if not save_variants_updated_csv:
+                raise ValueError("save_variants_updated_csv must be True to create wt_vcrs_fasta_and_t2g")
 
-            mutations_with_exactly_1_wt_sequence_per_row = mutations[["mcrs_id", "wt_sequence"]].copy()
+            mutations_with_exactly_1_wt_sequence_per_row = mutations[["vcrs_id", "wt_sequence"]].copy()
 
-            if merge_identical:  # remove the rows with multiple WT counterparts for 1 MCRS, and convert the list of strings to string
+            if merge_identical:  # remove the rows with multiple WT counterparts for 1 VCRS, and convert the list of strings to string
                 # Step 1: Filter rows where the length of the set of the list in `wt_sequence` is 1
                 mutations_with_exactly_1_wt_sequence_per_row = mutations_with_exactly_1_wt_sequence_per_row[mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"].apply(lambda x: len(set(x)) == 1)]
 
                 # Step 2: Convert the list to a string
                 mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"] = mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"].apply(lambda x: x[0])
 
-            mutations_with_exactly_1_wt_sequence_per_row["fasta_format_wt"] = ">" + mutations_with_exactly_1_wt_sequence_per_row["mcrs_id"] + "\n" + mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"] + "\n"
+            mutations_with_exactly_1_wt_sequence_per_row["fasta_format_wt"] = ">" + mutations_with_exactly_1_wt_sequence_per_row["vcrs_id"] + "\n" + mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"] + "\n"
 
     # Save mutated sequences in new fasta file
     if save_files:
-        with open(mcrs_fasta_out, "w", encoding="utf-8") as fasta_file:
+        with open(vcrs_fasta_out, "w", encoding="utf-8") as fasta_file:
             fasta_file.write("".join(mutations["fasta_format"].values))
 
-        create_mutant_t2g(mcrs_fasta_out, mcrs_t2g_out)
+        create_mutant_t2g(vcrs_fasta_out, vcrs_t2g_out)
 
     if verbose:
-        logger.info("FASTA file containing mutated sequences created at %s.", mcrs_fasta_out)
-        logger.info("t2g file containing mutated sequences created at %s.", mcrs_t2g_out)
+        logger.info("FASTA file containing VCRSs created at %s.", vcrs_fasta_out)
+        logger.info("t2g file containing VCRSs created at %s.", vcrs_t2g_out)
 
-    if save_wt_mcrs_fasta_and_t2g:
-        with open(wt_mcrs_fasta_out, "w", encoding="utf-8") as fasta_file:
+    if save_wt_vcrs_fasta_and_t2g:
+        with open(wt_vcrs_fasta_out, "w", encoding="utf-8") as fasta_file:
             fasta_file.write("".join(mutations_with_exactly_1_wt_sequence_per_row["fasta_format_wt"].values))
-        create_mutant_t2g(wt_mcrs_fasta_out, wt_mcrs_t2g_out)  # separate t2g is needed because it may have a subset of the rows of mutant (because it doesn't contain any MCRSs with merged mutations and 2+ originating WT sequences)
+        create_mutant_t2g(wt_vcrs_fasta_out, wt_vcrs_t2g_out)  # separate t2g is needed because it may have a subset of the rows of mutant (because it doesn't contain any VCRSs with merged mutations and 2+ originating WT sequences)
 
     # When stream_output is True, return list of mutated seqs
-    if return_mutation_output:
+    if return_variant_output:
         if original_mutations_type == "list":
             all_mut_seqs = []
-            all_mut_seqs.extend(mutations["mutant_sequence"].values)
+            all_mut_seqs.extend(mutations["variant_sequence"].values)
 
             # Remove empty strings from final list of mutated sequences
             # (these are introduced when unknown mutations are encountered)

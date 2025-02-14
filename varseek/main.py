@@ -287,12 +287,12 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "sequences"),
     )
     parser_build.add_argument(
-        "-m",
-        "--mutations",
+        "-v",
+        "--variants",
         type=strpath_or_str_or_list_or_df,
         nargs="+",
         required=True,
-        help=extract_help_from_doc(build, "mutations"),
+        help=extract_help_from_doc(build, "variants"),
     )
     parser_build.add_argument(
         "-w",
@@ -319,12 +319,12 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "max_ambiguous"),
     )
     parser_build.add_argument(
-        "-mc",
-        "--mut_column",
+        "-vc",
+        "--var_column",
         default="mutation",
         type=str,
         required=False,
-        help=extract_help_from_doc(build, "mut_column"),
+        help=extract_help_from_doc(build, "var_column"),
     )
     parser_build.add_argument(
         "-sic",
@@ -335,11 +335,11 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "seq_id_column"),
     )
     parser_build.add_argument(
-        "-mic",
-        "--mut_id_column",
+        "-vic",
+        "--var_id_column",
         default=None,
         required=False,
-        help=extract_help_from_doc(build, "mut_id_column"),
+        help=extract_help_from_doc(build, "var_id_column"),
     )
     parser_build.add_argument(
         "-gtf",
@@ -384,17 +384,17 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "reference_out_dir"),
     )
     parser_build.add_argument(
-        "-mfo",
-        "--mcrs_fasta_out",
+        "-vfo",
+        "--vcrs_fasta_out",
         default=None,
         required=False,
-        help=extract_help_from_doc(build, "mcrs_fasta_out"),
+        help=extract_help_from_doc(build, "vcrs_fasta_out"),
     )
     parser_build.add_argument(
-        "--mutations_updated_csv_out",
+        "--variants_updated_csv_out",
         default=None,
         required=False,
-        help=extract_help_from_doc(build, "mutations_updated_csv_out"),
+        help=extract_help_from_doc(build, "variants_updated_csv_out"),
     )
     parser_build.add_argument(
         "--id_to_header_csv_out",
@@ -403,22 +403,22 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "id_to_header_csv_out"),
     )
     parser_build.add_argument(
-        "--mcrs_t2g_out",
+        "--vcrs_t2g_out",
         default=None,
         required=False,
-        help=extract_help_from_doc(build, "mcrs_t2g_out"),
+        help=extract_help_from_doc(build, "vcrs_t2g_out"),
     )
     parser_build.add_argument(
-        "--wt_mcrs_fasta_out",
+        "--wt_vcrs_fasta_out",
         default=None,
         required=False,
-        help=extract_help_from_doc(build, "wt_mcrs_fasta_out"),
+        help=extract_help_from_doc(build, "wt_vcrs_fasta_out"),
     )
     parser_build.add_argument(
-        "--wt_mcrs_t2g_out",
+        "--wt_vcrs_t2g_out",
         default=None,
         required=False,
-        help=extract_help_from_doc(build, "wt_mcrs_t2g_out"),
+        help=extract_help_from_doc(build, "wt_vcrs_t2g_out"),
     )
     parser_build.add_argument(
         "--removed_variants_text_out",
@@ -433,25 +433,24 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "filtering_report_text_out"),
     )
     parser_build.add_argument(
-        "-rmo",
-        "--return_mutation_output",
+        "-rvo",
+        "--return_variant_output",
         action="store_true",
         required=False,
-        help=extract_help_from_doc(build, "return_mutation_output"),
+        help=extract_help_from_doc(build, "return_variant_output"),
     )
     parser_build.add_argument(
-        "-smuc",
-        "--save_mutations_updated_csv",
+        "-svuc",
+        "--save_variants_updated_csv",
         action="store_true",
         required=False,
-        help=extract_help_from_doc(build, "save_mutations_updated_csv"),
+        help=extract_help_from_doc(build, "save_variants_updated_csv"),
     )
     parser_build.add_argument(
-        "-swmfat",
-        "--save_wt_mcrs_fasta_and_t2g",
+        "--save_wt_vcrs_fasta_and_t2g",
         action="store_true",
         required=False,
-        help=extract_help_from_doc(build, "save_wt_mcrs_fasta_and_t2g"),
+        help=extract_help_from_doc(build, "save_wt_vcrs_fasta_and_t2g"),
     )
     parser_build.add_argument(
         "-dsrvt",
@@ -634,7 +633,7 @@ def main():  # noqa: C901
         type=strpath_or_list_like_of_strings,
         nargs="+",
         required=False,
-        default=("number_of_mutations_in_this_gene_total", "number_of_alignments_to_normal_human_reference", "pseudoaligned_to_human_reference_despite_not_truly_aligning", "longest_homopolymer_length", "triplet_complexity"),
+        default=("number_of_variants_in_this_gene_total", "number_of_alignments_to_normal_human_reference", "pseudoaligned_to_human_reference_despite_not_truly_aligning", "longest_homopolymer_length", "triplet_complexity"),
         help=extract_help_from_doc(info, "columns_to_include"),
     )
     parser_info.add_argument(
@@ -646,11 +645,11 @@ def main():  # noqa: C901
         help=extract_help_from_doc(info, "k"),
     )
     parser_info.add_argument(
-        "--max_ambiguous_mcrs",
+        "--max_ambiguous_vcrs",
         type=int,
         required=False,
         default=0,
-        help=extract_help_from_doc(info, "max_ambiguous_mcrs"),
+        help=extract_help_from_doc(info, "max_ambiguous_vcrs"),
     )
     parser_info.add_argument(
         "--max_ambiguous_reference",
@@ -660,14 +659,14 @@ def main():  # noqa: C901
         help=extract_help_from_doc(info, "max_ambiguous_reference"),
     )
     parser_info.add_argument(
-        "--mcrs_fasta",
+        "--vcrs_fasta",
         required=False,
-        help=extract_help_from_doc(info, "mcrs_fasta"),
+        help=extract_help_from_doc(info, "vcrs_fasta"),
     )
     parser_info.add_argument(
-        "--mutations_updated_csv",
+        "--variants_updated_csv",
         required=False,
-        help=extract_help_from_doc(info, "mutations_updated_csv"),
+        help=extract_help_from_doc(info, "variants_updated_csv"),
     )
     parser_info.add_argument(
         "--id_to_header_csv",
@@ -710,32 +709,32 @@ def main():  # noqa: C901
         help=extract_help_from_doc(info, "dlist_reference_ensembl_release"),
     )
     parser_info.add_argument(
-        "--mcrs_id_column",
+        "--vcrs_id_column",
         type=str,
         required=False,
         default="mcrs_id",
-        help=extract_help_from_doc(info, "mcrs_id_column"),
+        help=extract_help_from_doc(info, "vcrs_id_column"),
     )
     parser_info.add_argument(
-        "--mcrs_sequence_column",
+        "--vcrs_sequence_column",
         type=str,
         required=False,
         default="mutant_sequence",
-        help=extract_help_from_doc(info, "mcrs_sequence_column"),
+        help=extract_help_from_doc(info, "vcrs_sequence_column"),
     )
     parser_info.add_argument(
-        "--mcrs_source_column",
+        "--vcrs_source_column",
         type=str,
         required=False,
         default="mcrs_source",
-        help=extract_help_from_doc(info, "mcrs_source_column"),
+        help=extract_help_from_doc(info, "vcrs_source_column"),
     )
     parser_info.add_argument(
-        "--mut_column",
+        "--var_column",
         type=str,
         required=False,
         default="mutation",
-        help=extract_help_from_doc(info, "mut_column"),
+        help=extract_help_from_doc(info, "var_column"),
     )
     parser_info.add_argument(
         "--seq_id_column",
@@ -745,11 +744,11 @@ def main():  # noqa: C901
         help=extract_help_from_doc(info, "seq_id_column"),
     )
     parser_info.add_argument(
-        "--mutation_cdna_column",
+        "--variant_cdna_column",
         type=str,
         required=False,
         default="mutation",
-        help=extract_help_from_doc(info, "mutation_cdna_column"),
+        help=extract_help_from_doc(info, "variant_cdna_column"),
     )
     parser_info.add_argument(
         "--seq_id_cdna_column",
@@ -759,11 +758,11 @@ def main():  # noqa: C901
         help=extract_help_from_doc(info, "seq_id_cdna_column"),
     )
     parser_info.add_argument(
-        "--mutation_genome_column",
+        "--variant_genome_column",
         type=str,
         required=False,
         default="mutation_genome",
-        help=extract_help_from_doc(info, "mutation_genome_column"),
+        help=extract_help_from_doc(info, "variant_genome_column"),
     )
     parser_info.add_argument(
         "--seq_id_genome_column",
@@ -785,14 +784,14 @@ def main():  # noqa: C901
         help=extract_help_from_doc(info, "reference_out_dir"),
     )
     parser_info.add_argument(
-        "--mutations_updated_vk_info_csv_out",
+        "--variants_updated_vk_info_csv_out",
         required=False,
-        help=extract_help_from_doc(info, "mutations_updated_vk_info_csv_out"),
+        help=extract_help_from_doc(info, "variants_updated_vk_info_csv_out"),
     )
     parser_info.add_argument(
-        "--mutations_updated_exploded_vk_info_csv_out",
+        "--variants_updated_exploded_vk_info_csv_out",
         required=False,
-        help=extract_help_from_doc(info, "mutations_updated_exploded_vk_info_csv_out"),
+        help=extract_help_from_doc(info, "variants_updated_exploded_vk_info_csv_out"),
     )
     parser_info.add_argument(
         "--dlist_genome_fasta_out",
@@ -810,10 +809,10 @@ def main():  # noqa: C901
         help=extract_help_from_doc(info, "dlist_combined_fasta_out"),
     )
     parser_info.add_argument(
-        "--save_mutations_updated_exploded_vk_info_csv",
+        "--save_variants_updated_exploded_vk_info_csv",
         action="store_true",
         required=False,
-        help=extract_help_from_doc(info, "save_mutations_updated_exploded_vk_info_csv"),
+        help=extract_help_from_doc(info, "save_variants_updated_exploded_vk_info_csv"),
     )
     parser_info.add_argument(
         "--make_pyfastx_summary_file",
@@ -952,6 +951,21 @@ def main():  # noqa: C901
         "--dlist_fasta",
         required=False,
         help=extract_help_from_doc(filter, "dlist_fasta"),
+    )
+    parser_filter.add_argument(
+        "--vcrs_id_column",
+        required=False,
+        help=extract_help_from_doc(filter, "vcrs_id_column"),
+    )
+    parser_filter.add_argument(
+        "--vcrs_header_column",
+        required=False,
+        help=extract_help_from_doc(filter, "vcrs_header_column"),
+    )
+    parser_filter.add_argument(
+        "--vcrs_sequence_column",
+        required=False,
+        help=extract_help_from_doc(filter, "vcrs_sequence_column"),
     )
     parser_filter.add_argument(
         "-o",
@@ -1263,11 +1277,11 @@ def main():  # noqa: C901
         help=extract_help_from_doc(sim, "seq_id_column"),
     )
     parser_sim.add_argument(
-        "--mut_column",
+        "--var_column",
         required=False,
         type=str,
         default="mutation",
-        help=extract_help_from_doc(sim, "mut_column"),
+        help=extract_help_from_doc(sim, "var_column"),
     )
     parser_sim.add_argument(
         "--k",
@@ -1762,9 +1776,9 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "vcrs_t2g"),
     )
     parser_clean.add_argument(
-        "--mcrs_fasta",
+        "--vcrs_fasta",
         required=False,
-        help=extract_help_from_doc(clean, "mcrs_fasta"),
+        help=extract_help_from_doc(clean, "vcrs_fasta"),
     )
     parser_clean.add_argument(
         "--id_to_header_csv",
@@ -1777,14 +1791,14 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "dlist_fasta"),
     )
     parser_clean.add_argument(
-        "--mutations_updated_csv",
+        "--variants_updated_csv",
         required=False,
-        help=extract_help_from_doc(clean, "mutations_updated_csv"),
+        help=extract_help_from_doc(clean, "variants_updated_csv"),
     )
     parser_clean.add_argument(
-        "--mcrs_id_column",
+        "--vcrs_id_column",
         required=False,
-        help=extract_help_from_doc(clean, "mcrs_id_column"),
+        help=extract_help_from_doc(clean, "vcrs_id_column"),
     )
     parser_clean.add_argument(
         "--mutations_updated_csv_columns",
@@ -1899,6 +1913,12 @@ def main():  # noqa: C901
         "--technology",
         required=False,
         help=extract_help_from_doc(summarize, "technology"),
+    )
+    parser_summarize.add_argument(
+        "--vcrs_id_column",
+        required=False,
+        default="vcrs_id",
+        help=extract_help_from_doc(summarize, "vcrs_id_column"),
     )
     parser_summarize.add_argument(
         "-o",
@@ -2342,30 +2362,30 @@ def main():  # noqa: C901
         # Run build_desc function (automatically saves output)
         build_results = build(
             sequences=seqs,
-            mutations=muts,
+            variants=muts,
             w=args.w,
             k=args.k,
             max_ambiguous=args.max_ambiguous,
-            mut_column=args.mut_column,
+            var_column=args.var_column,
             seq_id_column=args.seq_id_column,
-            mut_id_column=args.mut_id_column,
+            var_id_column=args.var_id_column,
             gtf=args.gtf,
             gtf_transcript_id_column=args.gtf_transcript_id_column,
             transcript_boundaries=args.transcript_boundaries,
             identify_all_spliced_from_genome=args.identify_all_spliced_from_genome,
             out=args.out,
             reference_out_dir=args.reference_out_dir,
-            mcrs_fasta_out=args.mcrs_fasta_out,
-            mutations_updated_csv_out=args.mutations_updated_csv_out,
+            vcrs_fasta_out=args.vcrs_fasta_out,
+            variants_updated_csv_out=args.variants_updated_csv_out,
             id_to_header_csv_out=args.id_to_header_csv_out,
-            mcrs_t2g_out=args.mcrs_t2g_out,
-            wt_mcrs_fasta_out=args.wt_mcrs_fasta_out,
-            wt_mcrs_t2g_out=args.wt_mcrs_t2g_out,
+            vcrs_t2g_out=args.vcrs_t2g_out,
+            wt_vcrs_fasta_out=args.wt_vcrs_fasta_out,
+            wt_vcrs_t2g_out=args.wt_vcrs_t2g_out,
             removed_variants_text_out=args.removed_variants_text_out,
             filtering_report_text_out=args.filtering_report_text_out,
-            return_mutation_output=args.return_mutation_output,
-            save_mutations_updated_csv=args.save_mutations_updated_csv,
-            save_wt_mcrs_fasta_and_t2g=args.save_wt_mcrs_fasta_and_t2g,
+            return_variant_output=args.return_variant_output,
+            save_variants_updated_csv=args.save_variants_updated_csv,
+            save_wt_vcrs_fasta_and_t2g=args.save_wt_vcrs_fasta_and_t2g,
             store_full_sequences=args.store_full_sequences,
             translate=args.translate,
             translate_start=args.translate_start,
@@ -2401,10 +2421,10 @@ def main():  # noqa: C901
             input_dir=args.input_dir,
             columns_to_include=args.columns_to_include,
             k=args.k,
-            max_ambiguous_mcrs=args.max_ambiguous_mcrs,
+            max_ambiguous_vcrs=args.max_ambiguous_vcrs,
             max_ambiguous_reference=args.max_ambiguous_reference,
-            mcrs_fasta=args.mcrs_fasta,
-            mutations_updated_csv=args.mutations_updated_csv,
+            vcrs_fasta=args.vcrs_fasta,
+            variants_updated_csv=args.variants_updated_csv,
             id_to_header_csv=args.id_to_header_csv,
             gtf=args.gtf,
             dlist_reference_source=args.dlist_reference_source,
@@ -2412,23 +2432,23 @@ def main():  # noqa: C901
             dlist_reference_cdna_fasta=args.dlist_reference_cdna_fasta,
             dlist_reference_gtf=args.dlist_reference_gtf,
             dlist_reference_ensembl_release=args.dlist_reference_ensembl_release,
-            mcrs_id_column=args.mcrs_id_column,
-            mcrs_sequence_column=args.mcrs_sequence_column,
-            mcrs_source_column=args.mcrs_source_column,
-            mut_column=args.mut_column,
+            vcrs_id_column=args.vcrs_id_column,
+            vcrs_sequence_column=args.vcrs_sequence_column,
+            vcrs_source_column=args.vcrs_source_column,
+            var_column=args.var_column,
             seq_id_column=args.seq_id_column,
-            mutation_cdna_column=args.mutation_cdna_column,
+            variant_cdna_column=args.variant_cdna_column,
             seq_id_cdna_column=args.seq_id_cdna_column,
-            mutation_genome_column=args.mutation_genome_column,
+            variant_genome_column=args.variant_genome_column,
             seq_id_genome_column=args.seq_id_genome_column,
             out=args.out,
             reference_out_dir=args.reference_out_dir,
-            mutations_updated_vk_info_csv_out=args.mutations_updated_vk_info_csv_out,
-            mutations_updated_exploded_vk_info_csv_out=args.mutations_updated_exploded_vk_info_csv_out,
+            variants_updated_vk_info_csv_out=args.variants_updated_vk_info_csv_out,
+            variants_updated_exploded_vk_info_csv_out=args.variants_updated_exploded_vk_info_csv_out,
             dlist_genome_fasta_out=args.dlist_genome_fasta_out,
             dlist_cdna_fasta_out=args.dlist_cdna_fasta_out,
             dlist_combined_fasta_out=args.dlist_combined_fasta_out,
-            save_mutations_updated_exploded_vk_info_csv=args.save_mutations_updated_exploded_vk_info_csv,
+            save_variants_updated_exploded_vk_info_csv=args.save_variants_updated_exploded_vk_info_csv,
             make_pyfastx_summary_file=args.make_pyfastx_summary_file,
             make_kat_histogram=args.make_kat_histogram,
             dry_run=args.dry_run,
@@ -2459,6 +2479,9 @@ def main():  # noqa: C901
             mutations_updated_exploded_vk_info_csv=args.mutations_updated_exploded_vk_info_csv,
             id_to_header_csv=args.id_to_header_csv,
             dlist_fasta=args.dlist_fasta,
+            vcrs_id_column=args.vcrs_id_column,
+            vcrs_header_column=args.vcrs_header_column,
+            vcrs_sequence_column=args.vcrs_sequence_column,
             out=args.out,
             mutations_updated_filtered_csv_out=args.mutations_updated_filtered_csv_out,
             mutations_updated_exploded_filtered_csv_out=args.mutations_updated_exploded_filtered_csv_out,
@@ -2521,7 +2544,7 @@ def main():  # noqa: C901
             vk_build_out_dir=args.vk_build_out_dir,
             sequences=args.sequences,
             seq_id_column=args.seq_id_column,
-            mut_column=args.mut_column,
+            var_column=args.var_column,
             k=args.k,
             w=args.w,
             sequences_cdna=args.sequences_cdna,
@@ -2615,11 +2638,11 @@ def main():  # noqa: C901
             vk_ref_dir=args.vk_ref_dir,
             vcrs_index=args.vcrs_index,
             vcrs_t2g=args.vcrs_t2g,
-            mcrs_fasta=args.mcrs_fasta,
+            vcrs_fasta=args.vcrs_fasta,
             id_to_header_csv=args.id_to_header_csv,
             dlist_fasta=args.dlist_fasta,
-            mutations_updated_csv=args.mutations_updated_csv,
-            mcrs_id_column=args.mcrs_id_column,
+            variants_updated_csv=args.variants_updated_csv,
+            vcrs_id_column=args.vcrs_id_column,
             mutations_updated_csv_columns=args.mutations_updated_csv_columns,
             adata_reference_genome=args.adata_reference_genome,
             kb_count_vcrs_dir=args.kb_count_vcrs_dir,
@@ -2646,6 +2669,7 @@ def main():  # noqa: C901
             top_values=args.top_values,
             technology=args.technology,
             out=args.out,
+            vcrs_id_column=args.vcrs_id_column,
             dry_run=args.dry_run,
             overwrite=args.overwrite,
             verbose=args.quiet,

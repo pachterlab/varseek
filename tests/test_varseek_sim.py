@@ -56,7 +56,7 @@ def test_basic_sim(toy_mutation_metadata_df_with_read_parents_path, temporary_ou
         with_replacement=False,
         sequences=None,
         seq_id_column="seq_ID",
-        mut_column="mutation",
+        var_column="mutation",
         reference_out_dir=None,
         vk_build_out_dir=None,
         filters=filters,
@@ -80,11 +80,11 @@ def test_basic_sim(toy_mutation_metadata_df_with_read_parents_path, temporary_ou
         if matching_row.empty:
             raise ValueError(f"No match found for mcrs_id: {mcrs_id}")
 
-        # Extract the mcrs_sequence
-        mcrs_sequence = matching_row.iloc[0]['mutant_sequence_read_parent']
+        # Extract the vcrs_sequence
+        vcrs_sequence = matching_row.iloc[0]['mutant_sequence_read_parent']
         
-        # Extract the slice from mcrs_sequence
-        mcrs_sequence_slice = mcrs_sequence[read_index : read_index + read_length]
+        # Extract the slice from vcrs_sequence
+        mcrs_sequence_slice = vcrs_sequence[read_index : read_index + read_length]
 
         # Assert that the extracted slice is equal to read_sequence
         assert mcrs_sequence_slice == read_sequence, (

@@ -31,7 +31,7 @@ error_rate=0.0001  # only if add_noise_sequencing_error=True
 error_distribution=(0.85, 0.1, 0.05)  # sub, del, ins  # only if add_noise_sequencing_error=True
 max_errors=float("inf")  # only if add_noise_sequencing_error=True
 seq_id_column="seq_ID"
-mut_column="mutation"
+var_column="mutation_cdna"
 threads = 4
 random_seed=42
 
@@ -124,7 +124,7 @@ _ = vk.sim(
     gzip_output_fastq=False,
     sequences=reference_cdna_path,
     seq_id_column=seq_id_column,
-    mut_column=mut_column,
+    var_column=var_column,
     reference_out_dir=reference_out_dir,
     vk_build_out_dir=out_dir_vk_build,
     k=k,

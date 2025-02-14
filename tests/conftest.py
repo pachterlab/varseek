@@ -55,8 +55,8 @@ def compare_two_id_to_header_mappings(id_to_header_csv, id_to_header_csv_ground_
 
 
 @pytest.fixture
-def mcrs_id_and_header_and_sequence_standard_lists():
-    mcrs_id_list = [
+def vcrs_id_and_header_and_sequence_standard_lists():
+    vcrs_id_list = [
         "seq1204954474446204",
         "seq4723197439168244",
         "seq1693806423259989",
@@ -111,11 +111,11 @@ def mcrs_id_and_header_and_sequence_standard_lists():
         "9:g.907144G>T;9:g.907144G>T;9:g.907144G>T;9:g.907144G>T;9:g.907144G>T"
     ]
 
-    assert len(mcrs_id_list) == len(mcrs_header_list) and len(mcrs_id_list) == len(mcrs_sequence_list) and len(mcrs_id_list) == len(mcrs_genome_header_list), "Not all list lengths are equal"
+    assert len(vcrs_id_list) == len(mcrs_header_list) and len(vcrs_id_list) == len(mcrs_sequence_list) and len(vcrs_id_list) == len(mcrs_genome_header_list), "Not all list lengths are equal"
 
 
     return {
-        'mcrs_id_list': mcrs_id_list, 
+        'vcrs_id_list': vcrs_id_list, 
         'mcrs_header_list': mcrs_header_list, 
         'mcrs_sequence_list': mcrs_sequence_list, 
         'mcrs_genome_header_list': mcrs_genome_header_list
@@ -141,22 +141,22 @@ def extract_seq_ids_and_mutations(mcrs_header_list):
 
 
 @pytest.fixture
-def toy_mutation_metadata_df_path(mcrs_id_and_header_and_sequence_standard_lists):
+def toy_mutation_metadata_df_path(vcrs_id_and_header_and_sequence_standard_lists):
     # Create a temporary CSV file
     temp_csv_file = tempfile.NamedTemporaryFile(delete=False, suffix='.csv')
     
     # Data to write to CSV
-    mcrs_id_list = mcrs_id_and_header_and_sequence_standard_lists['mcrs_id_list']
-    mcrs_header_list = mcrs_id_and_header_and_sequence_standard_lists['mcrs_header_list']
-    mcrs_sequence_list = mcrs_id_and_header_and_sequence_standard_lists['mcrs_sequence_list']
-    mcrs_genome_header_list = mcrs_id_and_header_and_sequence_standard_lists['mcrs_genome_header_list']
+    vcrs_id_list = vcrs_id_and_header_and_sequence_standard_lists['vcrs_id_list']
+    mcrs_header_list = vcrs_id_and_header_and_sequence_standard_lists['mcrs_header_list']
+    mcrs_sequence_list = vcrs_id_and_header_and_sequence_standard_lists['mcrs_sequence_list']
+    mcrs_genome_header_list = vcrs_id_and_header_and_sequence_standard_lists['mcrs_genome_header_list']
     seq_id_list, mutation_list = extract_seq_ids_and_mutations(mcrs_header_list)
     chromosome_list, mutation_genome_list = extract_seq_ids_and_mutations(mcrs_genome_header_list)
     
     data = {
-        'mcrs_id': mcrs_id_list,
+        'vcrs_id': vcrs_id_list,
         'mcrs_header': mcrs_header_list,
-        'mcrs_sequence': mcrs_sequence_list,
+        'vcrs_sequence': mcrs_sequence_list,
         'seq_ID': seq_id_list,
         'mutation': mutation_list,
         'chromosome': chromosome_list,
@@ -166,8 +166,8 @@ def toy_mutation_metadata_df_path(mcrs_id_and_header_and_sequence_standard_lists
     df = pd.DataFrame(data)
 
     df = vk.varseek_info.add_mutation_information(df, mutation_column = "mutation", mcrs_source = None)
-    df = vk.varseek_build.add_mutation_type(df, mut_column = "mutation")
-    df["mutant_sequence_rc"] = df["mcrs_sequence"].apply(reverse_complement)
+    df = vk.varseek_build.add_mutation_type(df, var_column = "mutation")
+    df["variant_sequence_rc"] = df["vcrs_sequence"].apply(reverse_complement)
 
     df.to_csv(temp_csv_file.name, index=False)
     
@@ -186,10 +186,10 @@ def toy_mutation_metadata_df_with_read_parents_path(toy_mutation_metadata_df_pat
     random.seed(42)
     padding_left = ''.join(random.choices(nucleotides, k=95))  # for w=54 above and read_length=150
     padding_right = ''.join(random.choices(nucleotides, k=95))
-    df['mutant_sequence_read_parent'] = padding_left + df['mcrs_sequence'] + padding_right
+    df['mutant_sequence_read_parent'] = padding_left + df['vcrs_sequence'] + padding_right
     df['wt_sequence_read_parent'] = df['mutant_sequence_read_parent']   # TODO: this means that testing only supports mutant sequences for now
 
-    df['header'] = df['mcrs_id']
+    df['header'] = df['vcrs_id']
     df['mcrs_mutation_type'] = 'unknown'
     df["mutant_sequence_read_parent_rc"] = df["mutant_sequence_read_parent"].apply(reverse_complement)
     df["mutant_sequence_read_parent_length"] = df["mutant_sequence_read_parent"].apply(len)
@@ -204,16 +204,16 @@ def toy_mutation_metadata_df_with_read_parents_path(toy_mutation_metadata_df_pat
 
 
 @pytest.fixture
-def toy_mcrs_fa_path(mcrs_id_and_header_and_sequence_standard_lists):
+def toy_mcrs_fa_path(vcrs_id_and_header_and_sequence_standard_lists):
     # Create a temporary FASTA file
     temp_fasta_file = tempfile.NamedTemporaryFile(delete=False, suffix='.fasta')
 
-    mcrs_id_list = mcrs_id_and_header_and_sequence_standard_lists['mcrs_id_list']
-    mcrs_sequence_list = mcrs_id_and_header_and_sequence_standard_lists['mcrs_sequence_list']
+    vcrs_id_list = vcrs_id_and_header_and_sequence_standard_lists['vcrs_id_list']
+    mcrs_sequence_list = vcrs_id_and_header_and_sequence_standard_lists['mcrs_sequence_list']
 
     with open(temp_fasta_file.name, 'w', encoding="utf-8") as fasta_file:
-        for i in range(len(mcrs_id_list)):
-            fasta_file.write(f">{mcrs_id_list[i]}\n")
+        for i in range(len(vcrs_id_list)):
+            fasta_file.write(f">{vcrs_id_list[i]}\n")
             fasta_file.write(f"{mcrs_sequence_list[i]}\n")
         
     yield temp_fasta_file.name
@@ -223,19 +223,19 @@ def toy_mcrs_fa_path(mcrs_id_and_header_and_sequence_standard_lists):
 
 
 @pytest.fixture
-def dlist_file_small_path(mcrs_id_and_header_and_sequence_standard_lists):
+def dlist_file_small_path(vcrs_id_and_header_and_sequence_standard_lists):
 
     temp_dlist_fasta_file = tempfile.NamedTemporaryFile(delete=False, suffix='.fasta')
     
-    mcrs_id_list = mcrs_id_and_header_and_sequence_standard_lists['mcrs_id_list']
-    mcrs_sequence_list = mcrs_id_and_header_and_sequence_standard_lists['mcrs_sequence_list']
+    vcrs_id_list = vcrs_id_and_header_and_sequence_standard_lists['vcrs_id_list']
+    mcrs_sequence_list = vcrs_id_and_header_and_sequence_standard_lists['mcrs_sequence_list']
 
     # w=54/k=55, dfk_length = k + 2 = 57   -   dlist_left_flank + (mcrs_dlist_end - mcrs_dlist_start) + dlist_right_flank = 169
     dlist_information = [
-        {"mcrs_id": mcrs_id_list[2], "mcrs_sequence": mcrs_sequence_list[2], "dlist_left_flank": "A"*50, "dlist_right_flank": "T"*60, "mcrs_dlist_start": 0, "mcrs_dlist_end": 59},
-        {"mcrs_id": mcrs_id_list[5], "mcrs_sequence": mcrs_sequence_list[5], "dlist_left_flank": "A"*0, "dlist_right_flank": "T"*0, "mcrs_dlist_start": 0, "mcrs_dlist_end": "end"},  # substring
-        {"mcrs_id": mcrs_id_list[8], "mcrs_sequence": mcrs_sequence_list[8], "dlist_left_flank": "A"*0, "dlist_right_flank": "T"*0, "mcrs_dlist_start": 44, "mcrs_dlist_end": "end"},
-        {"mcrs_id": mcrs_id_list[9], "mcrs_sequence": mcrs_sequence_list[9], "dlist_left_flank": "A"*57, "dlist_right_flank": "T"*57, "mcrs_dlist_start": 12, "mcrs_dlist_end": 67}
+        {"vcrs_id": vcrs_id_list[2], "vcrs_sequence": mcrs_sequence_list[2], "dlist_left_flank": "A"*50, "dlist_right_flank": "T"*60, "mcrs_dlist_start": 0, "mcrs_dlist_end": 59},
+        {"vcrs_id": vcrs_id_list[5], "vcrs_sequence": mcrs_sequence_list[5], "dlist_left_flank": "A"*0, "dlist_right_flank": "T"*0, "mcrs_dlist_start": 0, "mcrs_dlist_end": "end"},  # substring
+        {"vcrs_id": vcrs_id_list[8], "vcrs_sequence": mcrs_sequence_list[8], "dlist_left_flank": "A"*0, "dlist_right_flank": "T"*0, "mcrs_dlist_start": 44, "mcrs_dlist_end": "end"},
+        {"vcrs_id": vcrs_id_list[9], "vcrs_sequence": mcrs_sequence_list[9], "dlist_left_flank": "A"*57, "dlist_right_flank": "T"*57, "mcrs_dlist_start": 12, "mcrs_dlist_end": 67}
     ]
 
     k = 55
@@ -244,12 +244,12 @@ def dlist_file_small_path(mcrs_id_and_header_and_sequence_standard_lists):
     with open(temp_dlist_fasta_file.name, 'a', encoding="utf-8") as fasta_file:
         for dlist_entry in dlist_information:
             if dlist_entry["mcrs_dlist_end"] == "end":
-                dlist_entry["mcrs_dlist_end"] = len(dlist_entry['mcrs_sequence'][dlist_entry["mcrs_dlist_start"]:])
+                dlist_entry["mcrs_dlist_end"] = len(dlist_entry['vcrs_sequence'][dlist_entry["mcrs_dlist_start"]:])
                 dlist_entry_is_end = True
             else:
                 dlist_entry_is_end = False
                 
-            mcrs_sequence_fragment_in_dlist = dlist_entry['mcrs_sequence'][dlist_entry["mcrs_dlist_start"]:dlist_entry["mcrs_dlist_end"]]
+            mcrs_sequence_fragment_in_dlist = dlist_entry['vcrs_sequence'][dlist_entry["mcrs_dlist_start"]:dlist_entry["mcrs_dlist_end"]]
             
             if dlist_entry_is_end:
                 dfk_combined_length = intended_dlist_entry_length - len(mcrs_sequence_fragment_in_dlist)
@@ -262,7 +262,7 @@ def dlist_file_small_path(mcrs_id_and_header_and_sequence_standard_lists):
             
             assert len(dlist_sequence) == intended_dlist_entry_length, f"The length of the dlist sequence is not the intended {intended_dlist_entry_length}, but is instead {len(dlist_sequence)}"
 
-            fasta_file.write(f">{dlist_entry['mcrs_id']}_{dlist_entry['mcrs_dlist_start']}\n")
+            fasta_file.write(f">{dlist_entry['vcrs_id']}_{dlist_entry['mcrs_dlist_start']}\n")
             fasta_file.write(f"{dlist_sequence}\n")
 
     yield temp_dlist_fasta_file.name
@@ -272,16 +272,16 @@ def dlist_file_small_path(mcrs_id_and_header_and_sequence_standard_lists):
 
 
 @pytest.fixture
-def toy_id_to_header_mapping_csv_path(mcrs_id_and_header_and_sequence_standard_lists):
-    mcrs_id_list = mcrs_id_and_header_and_sequence_standard_lists['mcrs_id_list']
-    mcrs_header_list = mcrs_id_and_header_and_sequence_standard_lists['mcrs_header_list']
+def toy_id_to_header_mapping_csv_path(vcrs_id_and_header_and_sequence_standard_lists):
+    vcrs_id_list = vcrs_id_and_header_and_sequence_standard_lists['vcrs_id_list']
+    mcrs_header_list = vcrs_id_and_header_and_sequence_standard_lists['mcrs_header_list']
 
     temp_id_to_header_mapping_csv = tempfile.NamedTemporaryFile(delete=False, suffix='.csv')
 
     # write csv
     with open(temp_id_to_header_mapping_csv.name, 'w', encoding="utf-8") as id_to_header_mapping_out:
-        for i in range(len(mcrs_id_list)):
-            id_to_header_mapping_out.write(f"{mcrs_id_list[i]},{mcrs_header_list[i]}\n")
+        for i in range(len(vcrs_id_list)):
+            id_to_header_mapping_out.write(f"{vcrs_id_list[i]},{mcrs_header_list[i]}\n")
 
     yield temp_id_to_header_mapping_csv.name
 
@@ -314,9 +314,9 @@ def toy_mutation_metadata_df_exploded():
         "start_mutation_position_cdna": [101, 1211, 256, 256, 401, 501, 301, 301, 599, 101, 108],
         "end_mutation_position_cdna": [101, 1212, 256, 260, 403, 501, 303, 301, 602, 101, 108],
         "seq_ID": ["ENST1", "ENST2", "ENST3", "ENST4", "ENST5", "ENST6", "ENST7", "ENST8", "ENST9", "ENST1", "ENST11"],
-        "mcrs_id": ["seq_1", "seq_2", "seq_3", "seq_4", "seq_5", "seq_6", "seq_7", "seq_8", "seq_9", "seq_1", "seq_1"],
+        "vcrs_id": ["seq_1", "seq_2", "seq_3", "seq_4", "seq_5", "seq_6", "seq_7", "seq_8", "seq_9", "seq_1", "seq_1"],
         "mcrs_header": ["ENST1:c.101A>G;ENST1:c.101A>G;ENST11:c.108A>G", "ENST2:c.1211_1212insAAG", "ENST3:c.256del", "ENST4:c.256_260del", "ENST5:c.401_403delinsG", "ENST6:c.501delinsGA", "ENST7:c.301_303dup", "ENST8:c.301dup", "ENST9:c.599_602inv", "ENST1:c.101A>G;ENST1:c.101A>G;ENST11:c.108A>G", "ENST1:c.101A>G;ENST1:c.101A>G;ENST11:c.108A>G"],
-        "mcrs_sequence": ["ATGCAAGGCTA", "TGGTGCATA", "GCTAGCGGCATA", "GACATCATCAG", "TTGACGGTACA", "GTCCCATACCGA", "GGCGTTGCAGCA", "GCCCAATGACAG", "ACATAGACAGGA", "ATGCAAGGCTA", "ATGCAAGGCTA"]
+        "vcrs_sequence": ["ATGCAAGGCTA", "TGGTGCATA", "GCTAGCGGCATA", "GACATCATCAG", "TTGACGGTACA", "GTCCCATACCGA", "GGCGTTGCAGCA", "GCCCAATGACAG", "ACATAGACAGGA", "ATGCAAGGCTA", "ATGCAAGGCTA"]
     }
     mutation_metadata_df = pd.DataFrame(data)
 
@@ -346,9 +346,9 @@ def toy_mutation_metadata_df_collapsed():
         "start_mutation_position_cdna": [[101, 101, 108], [1211], [256], [256], [401], [501], [301], [301], [599]],
         "end_mutation_position_cdna": [[101, 101, 108], [1212], [256], [260], [403], [501], [303], [301], [602]],
         "seq_ID": [["ENST1", "ENST1", "ENST11"], ["ENST2"], ["ENST3"], ["ENST4"], ["ENST5"], ["ENST6"], ["ENST7"], ["ENST8"], ["ENST9"]],
-        "mcrs_id": ["seq_1", "seq_2", "seq_3", "seq_4", "seq_5", "seq_6", "seq_7", "seq_8", "seq_9"],
+        "vcrs_id": ["seq_1", "seq_2", "seq_3", "seq_4", "seq_5", "seq_6", "seq_7", "seq_8", "seq_9"],
         "mcrs_header": ["ENST1:c.101A>G;ENST1:c.101A>G;ENST11:c.108A>G", "ENST2:c.1211_1212insAAG", "ENST3:c.256del", "ENST4:c.256_260del", "ENST5:c.401_403delinsG", "ENST6:c.501delinsGA", "ENST7:c.301_303dup", "ENST8:c.301dup", "ENST9:c.599_602inv"],
-        "mcrs_sequence": ["ATGCAAGGCTA", "TGGTGCATA", "GCTAGCGGCATA", "GACATCATCAG", "TTGACGGTACA", "GTCCCATACCGA", "GGCGTTGCAGCA", "GCCCAATGACAG", "ACATAGACAGGA"]
+        "vcrs_sequence": ["ATGCAAGGCTA", "TGGTGCATA", "GCTAGCGGCATA", "GACATCATCAG", "TTGACGGTACA", "GTCCCATACCGA", "GGCGTTGCAGCA", "GCCCAATGACAG", "ACATAGACAGGA"]
     }
 
     mutation_metadata_df = pd.DataFrame(data)
