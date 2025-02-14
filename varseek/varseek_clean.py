@@ -305,13 +305,13 @@ def clean(
     if vk_ref_dir:  # make sure all of the defaults below match vk info/filter
         vcrs_index = os.path.join(vk_ref_dir, "mcrs_index.idx") if not vcrs_index else vcrs_index
         if not vcrs_t2g:
-            vcrs_t2g = os.path.join(vk_ref_dir, "mcrs_t2g_filtered.txt") if os.path.isfile(os.path.join(vk_ref_dir, "mcrs_t2g_filtered.txt")) else os.path.join(vk_ref_dir, "vcrs_t2g.txt")
+            vcrs_t2g = os.path.join(vk_ref_dir, "vcrs_t2g_filtered.txt") if os.path.isfile(os.path.join(vk_ref_dir, "vcrs_t2g_filtered.txt")) else os.path.join(vk_ref_dir, "vcrs_t2g.txt")
         if not vcrs_fasta:
-            vcrs_fasta = os.path.join(vk_ref_dir, "mcrs_filtered.fa") if os.path.isfile(os.path.join(vk_ref_dir, "mcrs_filtered.fa")) else os.path.join(vk_ref_dir, "vcrs.fa")
+            vcrs_fasta = os.path.join(vk_ref_dir, "vcrs_filtered.fa") if os.path.isfile(os.path.join(vk_ref_dir, "vcrs_filtered.fa")) else os.path.join(vk_ref_dir, "vcrs.fa")
         if not id_to_header_csv:
             id_to_header_csv = os.path.join(vk_ref_dir, "id_to_header_mapping_filtered.csv") if os.path.isfile(os.path.join(vk_ref_dir, "id_to_header_mapping_filtered.csv")) else os.path.join(vk_ref_dir, "id_to_header_mapping.csv")
         if not variants_updated_csv:
-            variants_updated_csv = os.path.join(vk_ref_dir, "mutation_metadata_df_filtered.csv") if os.path.isfile(os.path.join(vk_ref_dir, "mutation_metadata_df_filtered.csv")) else os.path.join(vk_ref_dir, "variants_updated.csv")
+            variants_updated_csv = os.path.join(vk_ref_dir, "variants_updated_filtered.csv") if os.path.isfile(os.path.join(vk_ref_dir, "variants_updated_filtered.csv")) else os.path.join(vk_ref_dir, "variants_updated.csv")
         if not dlist_fasta:
             dlist_fasta = os.path.join(vk_ref_dir, "dlist_filtered.fa") if os.path.isfile(os.path.join(vk_ref_dir, "dlist_filtered.fa")) else os.path.join(vk_ref_dir, "dlist.fa")
 

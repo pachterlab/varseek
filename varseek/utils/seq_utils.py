@@ -11,14 +11,10 @@ from collections import OrderedDict
 from typing import Callable
 
 import anndata as ad
-import networkx as nx
 import numpy as np
 import pandas as pd
 import pyfastx
-import pysam
 import requests
-import scanpy as sc
-import scipy.sparse as sp
 from Bio.Seq import Seq
 from tqdm import tqdm
 
@@ -373,53 +369,53 @@ def contains_kmer_in_mcrs(read_sequence, vcrs_sequence, k):
     return any(read_sequence[i:(i + k)] in vcrs_sequence for i in range(len(read_sequence) - k + 1))
 
 
-def check_for_read_kmer_in_mcrs(read_df, unique_mcrs_df, k, subset=None, strand=None):
+def check_for_read_kmer_in_vcrs(read_df, unique_vcrs_df, k, subset=None, strand=None):
     """
-    Adds a column 'read_contains_kmer_in_mcrs' to read_df_subset indicating whether a k-mer
+    Adds a column 'read_contains_kmer_in_vcrs' to read_df_subset indicating whether a k-mer
     from the read_sequence exists in the corresponding vcrs_sequence.
 
     Parameters:
     - read_df_subset: The subset of the read_df DataFrame (e.g., read_df.loc[read_df['FN']])
-    - unique_mcrs_df: DataFrame containing 'mcrs_header' and 'vcrs_sequence' for lookups
+    - unique_vcrs_df: DataFrame containing 'vcrs_header' and 'vcrs_sequence' for lookups
     - k: The length of the k-mers to check for
 
     Returns:
-    - The original DataFrame with the new 'read_contains_kmer_in_mcrs' column
+    - The original DataFrame with the new 'read_contains_kmer_in_vcrs' column
     """
 
-    # Step 1: Create a dictionary to map 'mcrs_header' to 'vcrs_sequence' for fast lookups
-    mcrs_sequence_dict = unique_mcrs_df.set_index("mcrs_header")["vcrs_sequence"].to_dict() if strand != "r" else {}
-    mcrs_sequence_dict_rc = unique_mcrs_df.set_index("mcrs_header")["mcrs_sequence_rc"].to_dict() if strand != "f" else {}
+    # Step 1: Create a dictionary to map 'vcrs_header' to 'vcrs_sequence' for fast lookups
+    vcrs_sequence_dict = unique_vcrs_df.set_index("vcrs_header")["vcrs_sequence"].to_dict() if strand != "r" else {}
+    vcrs_sequence_dict_rc = unique_vcrs_df.set_index("vcrs_header")["vcrs_sequence_rc"].to_dict() if strand != "f" else {}
 
-    def check_row_for_kmer(row, strand, k, mcrs_sequence_dict, mcrs_sequence_dict_rc):
+    def check_row_for_kmer(row, strand, k, vcrs_sequence_dict, vcrs_sequence_dict_rc):
         read_sequence = row["read_sequence"]
         
-        contains_kmer_in_mcrs_f = False
-        contains_kmer_in_mcrs_r = False
+        contains_kmer_in_vcrs_f = False
+        contains_kmer_in_vcrs_r = False
         
         if strand != "r":
-            vcrs_sequence = mcrs_sequence_dict.get(row["mcrs_header"], "")
-            contains_kmer_in_mcrs_f = contains_kmer_in_mcrs(read_sequence, vcrs_sequence, k)
+            vcrs_sequence = vcrs_sequence_dict.get(row["vcrs_header"], "")
+            contains_kmer_in_vcrs_f = contains_kmer_in_vcrs(read_sequence, vcrs_sequence, k)
             if strand == "f":
-                return contains_kmer_in_mcrs_f
+                return contains_kmer_in_vcrs_f
         
         if strand != "f":
-            mcrs_sequence_rc = mcrs_sequence_dict_rc.get(row["mcrs_header"], "")
-            contains_kmer_in_mcrs_r = contains_kmer_in_mcrs(Seq(read_sequence).reverse_complement(), mcrs_sequence_rc, k)
+            vcrs_sequence_rc = vcrs_sequence_dict_rc.get(row["vcrs_header"], "")
+            contains_kmer_in_vcrs_r = contains_kmer_in_vcrs(Seq(read_sequence).reverse_complement(), vcrs_sequence_rc, k)
             if strand == "r":
-                return contains_kmer_in_mcrs_r
+                return contains_kmer_in_vcrs_r
         
-        return contains_kmer_in_mcrs_f or contains_kmer_in_mcrs_r
+        return contains_kmer_in_vcrs_f or contains_kmer_in_vcrs_r
 
     # Step 4: Initialize the column with NaN in the original read_df subset
-    if "read_contains_kmer_in_mcrs" not in read_df.columns:
-        read_df["read_contains_kmer_in_mcrs"] = np.nan
+    if "read_contains_kmer_in_vcrs" not in read_df.columns:
+        read_df["read_contains_kmer_in_vcrs"] = np.nan
 
-    # Step 5: Apply the function and update the 'read_contains_kmer_in_mcrs' column
+    # Step 5: Apply the function and update the 'read_contains_kmer_in_vcrs' column
     if subset is None:
-        read_df["read_contains_kmer_in_mcrs"] = read_df.apply(lambda row: check_row_for_kmer(row, strand, k, mcrs_sequence_dict, mcrs_sequence_dict_rc), axis=1)
+        read_df["read_contains_kmer_in_vcrs"] = read_df.apply(lambda row: check_row_for_kmer(row, strand, k, vcrs_sequence_dict, vcrs_sequence_dict_rc), axis=1)
     else:
-        read_df.loc[read_df[subset], "read_contains_kmer_in_mcrs"] = read_df.loc[read_df[subset]].apply(lambda row: check_row_for_kmer(row, strand, k, mcrs_sequence_dict, mcrs_sequence_dict_rc), axis=1)
+        read_df.loc[read_df[subset], "read_contains_kmer_in_vcrs"] = read_df.loc[read_df[subset]].apply(lambda row: check_row_for_kmer(row, strand, k, vcrs_sequence_dict, vcrs_sequence_dict_rc), axis=1)
 
     return read_df
 
@@ -698,7 +694,7 @@ def get_mutation_type_series(mutation_series):
 
     return mutation_type_array
 
-def add_mcrs_mutation_type(mutations_df, var_column="mcrs_header"):
+def add_mcrs_mutation_type(mutations_df, var_column="vcrs_header"):
     mutations_df = mutations_df.copy()
 
     # Split the var_column by ';'
@@ -708,29 +704,29 @@ def add_mcrs_mutation_type(mutations_df, var_column="mcrs_header"):
     mutations_exploded = mutations_df.explode("mutation_list")
 
     # Apply the vectorized get_mutation_type_series function
-    mutations_exploded["mcrs_mutation_type"] = get_mutation_type_series(mutations_exploded["mutation_list"])
+    mutations_exploded["vcrs_mutation_type"] = get_mutation_type_series(mutations_exploded["mutation_list"])
 
     # Reset index to keep track of original rows
     mutations_exploded.reset_index(inplace=True)
 
     # Group back to the original DataFrame, joining mutation types with ';'
-    grouped_mutation_types = mutations_exploded.groupby("index")["mcrs_mutation_type"].apply(";".join)
+    grouped_mutation_types = mutations_exploded.groupby("index")["vcrs_mutation_type"].apply(";".join)
 
     # Assign the 'mutation_type' back to mutations_df
-    mutations_df["mcrs_mutation_type"] = grouped_mutation_types
+    mutations_df["vcrs_mutation_type"] = grouped_mutation_types
 
     # Split 'mutation_type' by ';' to analyze unique mutation types
-    mutations_df["mutation_type_split"] = mutations_df["mcrs_mutation_type"].str.split(";")
+    mutations_df["mutation_type_split"] = mutations_df["vcrs_mutation_type"].str.split(";")
 
     # Calculate the number of unique mutation types
     mutations_df["unique_mutation_count"] = mutations_df["mutation_type_split"].map(set).str.len()
 
     # Replace 'mutation_type' with the single unique mutation type if unique_mutation_count == 1
     mask_single = mutations_df["unique_mutation_count"] == 1
-    mutations_df.loc[mask_single, "mcrs_mutation_type"] = mutations_df.loc[mask_single, "mutation_type_split"].str[0]
+    mutations_df.loc[mask_single, "vcrs_mutation_type"] = mutations_df.loc[mask_single, "mutation_type_split"].str[0]
 
     # Replace entries containing ';' with 'mixed'
-    mutations_df.loc[mutations_df["mcrs_mutation_type"].str.contains(";"), "mcrs_mutation_type"] = "mixed"
+    mutations_df.loc[mutations_df["vcrs_mutation_type"].str.contains(";"), "vcrs_mutation_type"] = "mixed"
 
     # Drop helper columns
     mutations_df.drop(
@@ -738,7 +734,7 @@ def add_mcrs_mutation_type(mutations_df, var_column="mcrs_header"):
         inplace=True,
     )
 
-    mutations_df.loc[mutations_df[var_column].isna(), "mcrs_mutation_type"] = np.nan
+    mutations_df.loc[mutations_df[var_column].isna(), "vcrs_mutation_type"] = np.nan
 
     return mutations_df
 
@@ -772,101 +768,6 @@ def add_mutation_type(mutations, var_column):
     mutations.drop(columns=["mutation_type_id"], inplace=True)
 
     return mutations
-
-
-
-def create_mutated_gene_count_matrix_from_mutation_count_matrix(adata, sum_strategy="total_reads", merge_strategy="all", use_binary_matrix=False):
-    """
-    This function takes a mutation count matrix and aggregates the counts for mutations belonging to the same gene. The function assumes that the AnnData object has the following columns in adata.var:
-    - gene_name_set_string: a string containing a semi-colon separated list of gene names for each mutation
-    - vcrs_id: a unique identifier for each mutation
-
-    Parameters
-    ----------
-    adata : AnnData
-
-    merge_strategy : str
-        The strategy to use when merging mutations. The following options are available:
-        - 'all': merge based on all genes matching (i.e., gene_name_set_string)
-        - 'any': merge based on any genes mapping (i.e., any match in gene_name_set)
-    sum_strategy: str
-        The strategy for summing MCRSs - options:
-        - 'total_reads': sum the total reads for each MCRS
-        - 'unique_mutations': sum the number of unique mutations detected for a gene
-    """
-
-    if sum_strategy == "unique_mutations":
-        adata.X = (adata.X > 0).astype(int)  # convert to binary matrix
-        count_column = "mutation_count"
-    else:
-        count_column = "mcrs_count"
-
-    if merge_strategy == "all":
-        gene_column = "gene_name_set_string"
-    elif merge_strategy == "any":  # TODO: untested for merge_strategy == "any"
-        gene_column = "gene_name_set"
-        gene_names = adata.var[gene_column]
-        vcrs_ids = adata.var_names
-        # Create a graph where each node is an vcrs_id
-        graph = nx.Graph()
-        for i, genes in enumerate(gene_names):
-            for j in range(i + 1, len(gene_names)):
-                if set(genes).intersection(gene_names[j]):
-                    graph.add_edge(vcrs_ids[i], vcrs_ids[j])
-
-        # Find connected components (each component is a group of columns to merge)
-        components = list(nx.connected_components(graph))
-
-        # Step 2: Create a mapping for new groups
-        new_var = []
-        group_mapping = {}
-        for group_id, component in enumerate(components):
-            # Combine gene names and vcrs_ids for the group
-            group_genes = sorted(set.union(*(set(gene_names[vcrs_ids.tolist().index(mcrs)]) for mcrs in component)))
-            group_vcrs_ids = sorted(component)
-
-            # Use a representative name for the group
-            group_name = ";".join(group_genes)
-            for mcrs in component:
-                group_mapping[mcrs] = group_name
-
-            # Store new metadata
-            new_var.append({"gene_name_set_string": group_name, "vcrs_id_list": group_vcrs_ids})
-
-    # Step 1: Extract mutation-gene mappings
-    gene_mapping = adata.var[gene_column]  # because I am using gene_name_set_string, this means that any merged mcrs's with different gene names will not be included in merging/summing
-    vcrs_id_mapping = adata.var["vcrs_id"]
-
-    # Step 2: Convert your data to a DataFrame for easier manipulation
-    if sp.issparse(adata.X):
-        data_df = pd.DataFrame.sparse.from_spmatrix(adata.X, index=adata.obs_names, columns=adata.var_names)
-    else:
-        data_df = pd.DataFrame(adata.X, index=adata.obs_names, columns=adata.var_names)
-
-    # Step 3: Add gene mapping to the DataFrame for aggregation
-    if merge_strategy == "all":
-        data_df.columns = gene_mapping.values
-    elif merge_strategy == "any":
-        data_df.columns = [group_mapping[col] for col in data_df.columns]
-
-    vcrs_id_df = pd.Series(vcrs_id_mapping.values, index=adata.var_names).groupby(gene_mapping).agg(list)
-
-    # Step 4: Group by gene and sum across mutations belonging to the same gene
-    data_gene_df = data_df.groupby(axis=1, level=0).sum()
-
-    # Step 5: Convert the result back into an AnnData object
-    adata_gene = sc.AnnData(data_gene_df, obs=adata.obs.copy())
-    adata_gene.var_names = data_gene_df.columns  # Gene names
-
-    adata_gene.var[gene_column] = adata_gene.var_names  # make this a column
-    adata_gene.var["vcrs_id_list"] = vcrs_id_df.loc[data_gene_df.columns].values
-
-    if use_binary_matrix:
-        adata_gene.X = (adata_gene.X > 0).astype(int)
-
-    adata_gene.var[count_column] = adata_gene.X.sum(axis=0).A1 if hasattr(adata_gene.X, "A1") else np.asarray(adata_gene.X.sum(axis=0)).flatten()
-
-    return adata_gene
 
 
 

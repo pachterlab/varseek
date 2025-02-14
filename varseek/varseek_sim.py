@@ -424,10 +424,10 @@ def sim(
     if filters:
         filtered_df = varseek.filter(
             input_dir=".",
-            mutations_updated_vk_info_csv=mutations,
+            variants_updated_vk_info_csv=mutations,
             filters=filters,
-            return_mutations_updated_filtered_csv_df=True,
-            save_mcrs_filtered_fasta_and_t2g=False,
+            return_variants_updated_filtered_csv_df=True,
+            save_vcrs_filtered_fasta_and_t2g=False,
         )  # filter to include only rows not already in mutation and whatever condition I would like
     else:
         filtered_df = mutations

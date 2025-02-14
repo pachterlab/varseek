@@ -14,12 +14,12 @@ Output table
 |----------------------------------------------------------------|--------------------|-----------------------------------------------------|----------------------------------------------------------------|-------------------------|
 | out                                                                       | directory         | N/A                                                        | <input_dir>                                                           | ...                          |
 | reference_out_dir                                                | directory         | N/A                                                        | <out>                                                                   | ...                          |
-| mcrs_fasta_out                                                    | .fa                  | N/A                                                        | <out>/vcrs.fa                                                      | ...                          |
+| vcrs_fasta_out                                                    | .fa                  | N/A                                                        | <out>/vcrs.fa                                                      | ...                          |
 | id_to_header_csv_out                                         | .csv                | N/A                                                        | <out>/id_to_header_mapping.csv                      | ...                          |
 | mutations_updated_csv_out                               | .csv                 | save_mutations_updated_csv=True     | <out>/variants_updated.csv                       | ...                          |
-| mcrs_t2g_out                                                      | .txt                  | N/A                                                        | <out>/vcrs_t2g.txt                                              | ...                          |
-| wt_mcrs_fasta_out                                              | .txt                  | save_wt_mcrs_fasta_and_t2g=True     | <out>/wt_vcrs.fa                                                | ...                          |
-| wt_mcrs_t2g_out                                                 | .txt                  | save_wt_mcrs_fasta_and_t2g=True     | <out>/wt_vcrs_t2g.txt                                        | ...                          |
+| vcrs_t2g_out                                                      | .txt                  | N/A                                                        | <out>/vcrs_t2g.txt                                              | ...                          |
+| wt_vcrs_fasta_out                                              | .txt                  | save_wt_vcrs_fasta_and_t2g=True     | <out>/wt_vcrs.fa                                                | ...                          |
+| wt_vcrs_t2g_out                                                 | .txt                  | save_wt_vcrs_fasta_and_t2g=True     | <out>/wt_vcrs_t2g.txt                                        | ...                          |
 | removed_variants_text_out                                 | .txt                  | save_removed_variants_text=True      | <out>/removed_variants.txt                                | ...                          |
 | filtering_report_text_out                                       | .txt                  | save_filtering_report_text=True           | <out>/filtering_report.txt                                      | ...                          |
 
@@ -137,8 +137,8 @@ Whether to keep the original sequence headers in the output fasta file, or to re
 `-smuc` `--save_mutations_updated_csv`   
 Whether to update the input `mutations` DataFrame to include additional columns with the mutation type, wildtype nucleotide sequence, and mutant nucleotide sequence (only valid if `mutations` is a csv or tsv file). Default: False
 
-`--save_wt_mcrs_fasta_and_t2g`
-Whether to create a fasta file containing the wildtype sequence counterparts of the mutation-containing reference sequences (MCRSs) and the corresponding t2g. Default: False.
+`--save_wt_vcrs_fasta_and_t2g`
+Whether to create a fasta file containing the wildtype sequence counterparts of the mutation-containing reference sequences (vcrss) and the corresponding t2g. Default: False.
 
 **Optional flags to modify additional output**  
 `-sfs` `--store_full_sequences`         

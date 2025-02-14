@@ -59,7 +59,7 @@ def test_add_mutation_information(toy_mutation_metadata_df_exploded):
         if column in toy_mutation_metadata_df_exploded.columns:
             toy_mutation_metadata_df_exploded.drop(column, axis=1, inplace=True)
 
-    mutation_metadata_df = toy_mutation_metadata_df_exploded[["mutation", "seq_ID", "mcrs_id", "mcrs_header", "vcrs_sequence"]].copy()
+    mutation_metadata_df = toy_mutation_metadata_df_exploded[["mutation", "seq_ID", "vcrs_id", "vcrs_header", "vcrs_sequence"]].copy()
     output_df = add_mutation_information(mutation_metadata_df, mutation_column="mutation", mcrs_source="cdna")
     output_df = output_df[expected_df.columns]
 
@@ -70,7 +70,7 @@ def test_collapse(toy_mutation_metadata_df_exploded, toy_mutation_metadata_df_co
     expected_df = toy_mutation_metadata_df_collapsed
 
     mutation_metadata_df_exploded = toy_mutation_metadata_df_exploded
-    columns_to_explode = [col for col in mutation_metadata_df_exploded.columns if col not in ['mcrs_id', 'mcrs_header', 'vcrs_sequence']]
+    columns_to_explode = [col for col in mutation_metadata_df_exploded.columns if col not in ['vcrs_id', 'vcrs_header', 'vcrs_sequence']]
     output_df, _ = collapse_df(mutation_metadata_df_exploded, columns_to_explode = columns_to_explode, columns_to_explode_extend_values = None)
     output_df = output_df[expected_df.columns]
 
@@ -82,15 +82,15 @@ def test_explode(toy_mutation_metadata_df_exploded, toy_mutation_metadata_df_col
     expected_df = toy_mutation_metadata_df_exploded
 
     mutation_metadata_df_collapsed = toy_mutation_metadata_df_collapsed
-    columns_to_explode = [col for col in mutation_metadata_df_collapsed.columns if col not in ['mcrs_id', 'mcrs_header', 'vcrs_sequence']]
+    columns_to_explode = [col for col in mutation_metadata_df_collapsed.columns if col not in ['vcrs_id', 'vcrs_header', 'vcrs_sequence']]
     output_df = explode_df(mutation_metadata_df_collapsed, columns_to_explode = columns_to_explode)
     output_df = output_df[expected_df.columns]
 
-    output_df = output_df.sort_values(by=['mcrs_id']).reset_index(drop=True)
-    expected_df = expected_df.sort_values(by=['mcrs_id']).reset_index(drop=True)
+    output_df = output_df.sort_values(by=['vcrs_id']).reset_index(drop=True)
+    expected_df = expected_df.sort_values(by=['vcrs_id']).reset_index(drop=True)
 
-    output_df[["start_mutation_position", "end_mutation_position", "start_mutation_position_cdna", "end_mutation_position_cdna"]] = output_df[["start_mutation_position", "end_mutation_position", "start_mutation_position_cdna", "end_mutation_position_cdna"]].astype("Int64")
-    expected_df[["start_mutation_position", "end_mutation_position", "start_mutation_position_cdna", "end_mutation_position_cdna"]] = expected_df[["start_mutation_position", "end_mutation_position", "start_mutation_position_cdna", "end_mutation_position_cdna"]].astype("Int64")
+    output_df[["start_variant_position", "end_variant_position", "start_mutation_position_cdna", "end_mutation_position_cdna"]] = output_df[["start_variant_position", "end_variant_position", "start_mutation_position_cdna", "end_mutation_position_cdna"]].astype("Int64")
+    expected_df[["start_variant_position", "end_variant_position", "start_mutation_position_cdna", "end_mutation_position_cdna"]] = expected_df[["start_variant_position", "end_variant_position", "start_mutation_position_cdna", "end_mutation_position_cdna"]].astype("Int64")
 
     # Assert that the output matches the expected DataFrame
     pd.testing.assert_frame_equal(output_df, expected_df)
@@ -160,8 +160,8 @@ def test_calculate_nearby_mutations(mock_helpers_visualization):
     # Create a toy DataFrame
     data = {
         "seq_ID": ["ENST0001", "ENST0001", "ENST0001", "ENST0001"],
-        "start_mutation_position": [100, 101, 112, 123],
-        "end_mutation_position": [105, 101, 112, 123],
+        "start_variant_position": [100, 101, 112, 123],
+        "end_variant_position": [105, 101, 112, 123],
         "vcrs_header": ["ENST0001:c.101_105del", "ENST0001:c.101C>A", "ENST0001:c.112G>C", "ENST0001:c.123A>G"]
     }
     mutation_metadata_df_exploded = pd.DataFrame(data)
@@ -297,15 +297,15 @@ def test_count_kmer_overlaps(mock_helpers):
         fasta_file.seek(0)
 
         # Run the function with the temporary FASTA file (strandedness=False)
-        df = count_kmer_overlaps_new(fasta_file.name, k=4, strandedness=True, vcrs_id_column="mcrs_id")
+        df = count_kmer_overlaps_new(fasta_file.name, k=4, strandedness=True, vcrs_id_column="vcrs_id")
 
         # Expected results
         expected_data = {
-            "mcrs_id": ["seq_0", "seq_1", "seq_2", "seq_3"],
-            "number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference": [2, 3, 2, 0],
-            "number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference": [1, 1, 2, 0],
+            "vcrs_id": ["seq_0", "seq_1", "seq_2", "seq_3"],
+            "number_of_kmers_with_overlap_to_other_VCRSs": [2, 3, 2, 0],
+            "number_of_other_VCRSs_with_overlapping_kmers": [1, 1, 2, 0],
             "overlapping_kmers": [["GATC", "GATC"], ["GCTA", "GCTA", "GCTA"], ["GATC", "GCTA"], []],
-            "mcrs_items_with_overlapping_kmers_in_mcrs_reference": [{"seq_2"}, {"seq_2"}, {"seq_0", "seq_1"}, set()],
+            "VCRSs_with_overlapping_kmers": [{"seq_2"}, {"seq_2"}, {"seq_0", "seq_1"}, set()],
         }
         expected_df = pd.DataFrame(expected_data)
 
@@ -319,7 +319,7 @@ def test_count_kmer_overlaps(mock_helpers):
 def test_add_mcrs_mutation_type(mock_helpers):
     # Create a toy DataFrame
     data = {
-        "mcrs_header": [
+        "vcrs_header": [
             "ENST2:c.1211_1212insAAG",                             # Single insertion mutation
             "ENST1:c.101A>G;ENST1:c.101A>G;ENST11:c.108A>G",       # Mixed mutations with substitution duplicates
             "ENST1:c.101A>G;ENST2:c.1211_1212insAAG",              # Mixed insertion and substitution
@@ -332,25 +332,25 @@ def test_add_mcrs_mutation_type(mock_helpers):
     mutation_metadata_df = pd.DataFrame(data)
 
     # Run the function
-    result_df = add_mcrs_mutation_type(mutation_metadata_df, var_column="mcrs_header")
+    result_df = add_mcrs_mutation_type(mutation_metadata_df, var_column="vcrs_header")
 
     # Expected results
     expected_mutation_type = ["insertion", "substitution", "mixed", "delins", "duplication", "substitution", np.nan]
-    expected_columns = ["mcrs_header", "mcrs_mutation_type"]
+    expected_columns = ["vcrs_header", "vcrs_mutation_type"]
 
     # Assertions
     # Check that the output has the expected columns
     assert all(col in result_df.columns for col in expected_columns)
 
-    # Check the values in the mcrs_mutation_type column
+    # Check the values in the vcrs_mutation_type column
     pd.testing.assert_series_equal(
-        result_df["mcrs_mutation_type"],
-        pd.Series(expected_mutation_type, name="mcrs_mutation_type"),
+        result_df["vcrs_mutation_type"],
+        pd.Series(expected_mutation_type, name="vcrs_mutation_type"),
         check_dtype=False
     )
 
     # Check that NaN values remain NaN
-    assert result_df.loc[result_df["mcrs_header"].isna(), "mcrs_mutation_type"].isna().all()
+    assert result_df.loc[result_df["vcrs_header"].isna(), "vcrs_mutation_type"].isna().all()
 
 
 

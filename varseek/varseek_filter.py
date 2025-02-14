@@ -26,7 +26,7 @@ logger = set_up_logger()
 
 
 def apply_filters(df, filters, verbose=False, filtering_report_text_out=None):
-    logger.info("Initial mutation report")
+    logger.info("Initial variant report")
     filtering_report_dict = make_filtering_report(df, verbose=verbose, filtering_report_text_out=filtering_report_text_out)
     initial_filtering_report_dict = filtering_report_dict.copy()
 
@@ -104,12 +104,12 @@ def apply_filters(df, filters, verbose=False, filtering_report_text_out=None):
         filtering_report_dict = make_filtering_report(df, verbose=verbose, filtering_report_text_out=filtering_report_text_out, prior_filtering_report_dict=filtering_report_dict)
 
     if verbose:
-        number_of_mutations_total_difference = initial_filtering_report_dict["number_of_mutations_total"] - filtering_report_dict["number_of_mutations_total"]
+        number_of_variants_total_difference = initial_filtering_report_dict["number_of_variants_total"] - filtering_report_dict["number_of_variants_total"]
         number_of_vcrss_total_difference = initial_filtering_report_dict["number_of_vcrss_total"] - filtering_report_dict["number_of_vcrss_total"]
-        number_of_unique_mutations_difference = initial_filtering_report_dict["number_of_unique_mutations"] - filtering_report_dict["number_of_unique_mutations"]
-        number_of_merged_mutations_difference = initial_filtering_report_dict["number_of_merged_mutations"] - filtering_report_dict["number_of_merged_mutations"]
+        number_of_unique_variants_difference = initial_filtering_report_dict["number_of_unique_variants"] - filtering_report_dict["number_of_unique_variants"]
+        number_of_merged_variants_difference = initial_filtering_report_dict["number_of_merged_variants"] - filtering_report_dict["number_of_merged_variants"]
 
-        message = f"Total mutations filtered: {number_of_mutations_total_difference}; total VCRSs filtered: {number_of_vcrss_total_difference}; unique mutations filtered: {number_of_unique_mutations_difference}; merged mutations filtered: {number_of_merged_mutations_difference}"
+        message = f"Total variants filtered: {number_of_variants_total_difference}; total VCRSs filtered: {number_of_vcrss_total_difference}; unique variants filtered: {number_of_unique_variants_difference}; merged variants filtered: {number_of_merged_variants_difference}"
         print(message) if not logger else logger.info(message)
 
     return df
@@ -202,30 +202,30 @@ def filter_id_to_header_csv(id_to_header_csv, id_to_header_csv_filtered, filtere
                 writer.writerow(row)
 
 
-def make_filtering_report(mutation_metadata_df, vcrs_header_column="vcrs_header", verbose=False, filtering_report_text_out=None, prior_filtering_report_dict=None):
-    if "semicolon_count" not in mutation_metadata_df.columns:  # already checked 'and vcrs_header_column in mutation_metadata_df.columns' before
-        mutation_metadata_df["semicolon_count"] = mutation_metadata_df[vcrs_header_column].str.count(";")
+def make_filtering_report(variant_metadata_df, vcrs_header_column="vcrs_header", verbose=False, filtering_report_text_out=None, prior_filtering_report_dict=None):
+    if "semicolon_count" not in variant_metadata_df.columns:  # already checked 'and vcrs_header_column in variant_metadata_df.columns' before
+        variant_metadata_df["semicolon_count"] = variant_metadata_df[vcrs_header_column].str.count(";")
 
     # number of VCRSs
-    number_of_vcrss = len(mutation_metadata_df)
+    number_of_vcrss = len(variant_metadata_df)
     
-    # number of unique mutations
-    number_of_unique_mutations = (mutation_metadata_df["semicolon_count"] == 0).sum()
+    # number of unique variants
+    number_of_unique_variants = (variant_metadata_df["semicolon_count"] == 0).sum()
 
-    # number of merged mutations
-    number_of_merged_mutations = (mutation_metadata_df.loc[mutation_metadata_df["semicolon_count"] > 0, "semicolon_count"] + 1).sum()  # equivalent to doing (1) mutation_metadata_df["semicolon_count"] += 1, (2) mutation_metadata_df.loc[mutation_metadata_df["semicolon_count"] == 1, "semicolon_count"] = np.nan, and (3) number_of_merged_mutations = int(mutation_metadata_df["semicolon_count"].sum())
+    # number of merged variants
+    number_of_merged_variants = (variant_metadata_df.loc[variant_metadata_df["semicolon_count"] > 0, "semicolon_count"] + 1).sum()  # equivalent to doing (1) variant_metadata_df["semicolon_count"] += 1, (2) variant_metadata_df.loc[variant_metadata_df["semicolon_count"] == 1, "semicolon_count"] = np.nan, and (3) number_of_merged_variants = int(variant_metadata_df["semicolon_count"].sum())
 
-    # number of total mutations
-    number_of_mutations_total = number_of_unique_mutations + number_of_merged_mutations
+    # number of total variants
+    number_of_variants_total = number_of_unique_variants + number_of_merged_variants
 
     if prior_filtering_report_dict:
-        number_of_mutations_total_difference = prior_filtering_report_dict["number_of_mutations_total"] - number_of_mutations_total
+        number_of_variants_total_difference = prior_filtering_report_dict["number_of_variants_total"] - number_of_variants_total
         number_of_vcrss_difference = prior_filtering_report_dict["number_of_vcrss"] - number_of_vcrss
-        number_of_unique_mutations_difference = prior_filtering_report_dict["number_of_unique_mutations"] - number_of_unique_mutations
-        number_of_merged_mutations_difference = prior_filtering_report_dict["number_of_merged_mutations"] - number_of_merged_mutations
-        filtering_report = f"Number of total mutations: {number_of_mutations_total} ({number_of_mutations_total_difference} filtered); VCRSs: {number_of_vcrss} ({number_of_vcrss_difference} filtered); unique mutations: {number_of_unique_mutations} ({number_of_unique_mutations_difference} filtered); merged mutations: {number_of_merged_mutations} ({number_of_merged_mutations_difference} filtered)\n"
+        number_of_unique_variants_difference = prior_filtering_report_dict["number_of_unique_variants"] - number_of_unique_variants
+        number_of_merged_variants_difference = prior_filtering_report_dict["number_of_merged_variants"] - number_of_merged_variants
+        filtering_report = f"Number of total variants: {number_of_variants_total} ({number_of_variants_total_difference} filtered); VCRSs: {number_of_vcrss} ({number_of_vcrss_difference} filtered); unique variants: {number_of_unique_variants} ({number_of_unique_variants_difference} filtered); merged variants: {number_of_merged_variants} ({number_of_merged_variants_difference} filtered)\n"
     else:
-        filtering_report = f"Number of total mutations: {number_of_mutations_total}; VCRSs: {number_of_vcrss}; unique mutations: {number_of_unique_mutations}; merged mutations: {number_of_merged_mutations}\n"
+        filtering_report = f"Number of total variants: {number_of_variants_total}; VCRSs: {number_of_vcrss}; unique variants: {number_of_unique_variants}; merged variants: {number_of_merged_variants}\n"
 
     if verbose:
         if logger:
@@ -241,7 +241,7 @@ def make_filtering_report(mutation_metadata_df, vcrs_header_column="vcrs_header"
         with open(filtering_report_text_out, filtering_report_write_mode, encoding="utf-8") as file:
             file.write(filtering_report)
 
-    return {"number_of_vcrss": number_of_vcrss, "number_of_unique_mutations": number_of_unique_mutations, "number_of_merged_mutations": number_of_merged_mutations, "number_of_mutations_total": number_of_mutations_total}
+    return {"number_of_vcrss": number_of_vcrss, "number_of_unique_variants": number_of_unique_variants, "number_of_merged_variants": number_of_merged_variants, "number_of_variants_total": number_of_variants_total}
 
 
 def print_list_filter_rules():
@@ -272,23 +272,23 @@ def validate_input_filter(params_dict):
 
     # file paths
     for param_name, file_type in {
-        "mutations_updated_vk_info_csv": "csv",
-        "mutations_updated_exploded_vk_info_csv": "csv",
+        "variants_updated_vk_info_csv": "csv",
+        "variants_updated_exploded_vk_info_csv": "csv",
         "id_to_header_csv": "csv",
         "dlist_fasta": "fasta",
-        "mutations_updated_filtered_csv_out": "csv",
-        "mutations_updated_exploded_filtered_csv_out": "csv",
+        "variants_updated_filtered_csv_out": "csv",
+        "variants_updated_exploded_filtered_csv_out": "csv",
         "id_to_header_filtered_csv_out": "csv",
         "dlist_filtered_fasta_out": "fasta",
-        "mcrs_filtered_fasta_out": "fasta",
-        "mcrs_t2g_filtered_out": "t2g",
-        "wt_mcrs_filtered_fasta_out": "fasta",
-        "wt_mcrs_t2g_filtered_out": "t2g",
+        "vcrs_filtered_fasta_out": "fasta",
+        "vcrs_t2g_filtered_out": "t2g",
+        "wt_vcrs_filtered_fasta_out": "fasta",
+        "wt_vcrs_t2g_filtered_out": "t2g",
     }:
         check_file_path_is_string_with_valid_extension(params_dict.get(param_name), param_name, file_type)
 
     # boolean
-    for param_name in ["save_wt_mcrs_fasta_and_t2g", "save_mutations_updated_filtered_csvs", "return_mutations_updated_filtered_csv_df", "dry_run", "overwrite", "verbose", "list_filter_rules"]:
+    for param_name in ["save_wt_vcrs_fasta_and_t2g", "save_variants_updated_filtered_csvs", "return_variants_updated_filtered_csv_df", "dry_run", "overwrite", "verbose", "list_filter_rules"]:
         param_value = params_dict.get(param_name)
         if not isinstance(param_value, bool):
             raise ValueError(f"{param_name} must be a boolean. Got {param_value} of type {type(param_value)}.")
@@ -305,25 +305,25 @@ filter_rules_that_expect_no_value = {"is_true", "is_false", "is_not_true", "is_n
 def filter(
     input_dir,
     filters,
-    mutations_updated_vk_info_csv=None,  # input mutation metadata df
-    mutations_updated_exploded_vk_info_csv=None,  # input exploded mutation metadata df
+    variants_updated_vk_info_csv=None,  # input variant metadata df
+    variants_updated_exploded_vk_info_csv=None,  # input exploded variant metadata df
     id_to_header_csv=None,  # input id to header csv
     dlist_fasta=None,  # input dlist
     vcrs_id_column="vcrs_id",
     vcrs_header_column="vcrs_header",
     vcrs_sequence_column="vcrs_sequence",
     out=None,  # output directory
-    mutations_updated_filtered_csv_out=None,  # output metadata df
-    mutations_updated_exploded_filtered_csv_out=None,  # output exploded mutation metadata df
+    variants_updated_filtered_csv_out=None,  # output metadata df
+    variants_updated_exploded_filtered_csv_out=None,  # output exploded variant metadata df
     id_to_header_filtered_csv_out=None,  # output id to header csv
     dlist_filtered_fasta_out=None,  # output dlist fasta
-    mcrs_filtered_fasta_out=None,  # output mcrs fasta
-    mcrs_t2g_filtered_out=None,  # output t2g
-    wt_mcrs_filtered_fasta_out=None,  # output wt mcrs fasta
-    wt_mcrs_t2g_filtered_out=None,  # output t2g for wt mcrs fasta
-    save_wt_mcrs_fasta_and_t2g=False,
-    save_mutations_updated_filtered_csvs=False,
-    return_mutations_updated_filtered_csv_df=False,
+    vcrs_filtered_fasta_out=None,  # output vcrs fasta
+    vcrs_t2g_filtered_out=None,  # output t2g
+    wt_vcrs_filtered_fasta_out=None,  # output wt vcrs fasta
+    wt_vcrs_t2g_filtered_out=None,  # output t2g for wt vcrs fasta
+    save_wt_vcrs_fasta_and_t2g=False,
+    save_variants_updated_filtered_csvs=False,
+    return_variants_updated_filtered_csv_df=False,
     dry_run=False,
     list_filter_rules=False,
     overwrite=False,
@@ -331,36 +331,36 @@ def filter(
     **kwargs,
 ):
     """
-    Filter mutations based on the provided filters and save the filtered mutations to a fasta file.
+    Filter variants based on the provided filters and save the filtered variants to a fasta file.
 
     # Required input arguments:
     - input_dir     (str) Path to the directory containing the input files. Corresponds to `out` in the varseek info function.
     - filters       (str or list[str]) String or list of filters to apply. If a string, it should be a path to a txt file containing the filters. If a list, it should be a list of strings in the format COLUMNNAME-RULE=VALUE. See documentation for details, or run vk.filter(list_filter_rules=True).
 
     # Optional input arguments:
-    - mutations_updated_vk_info_csv                (str) Path to the updated dataframe containing the MCRS headers and sequences. Corresponds to `mutations_updated_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).
-    - mutations_updated_exploded_vk_info_csv       (str) Path to the updated exploded dataframe containing the MCRS headers and sequences. Corresponds to `mutations_updated_exploded_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).
+    - variants_updated_vk_info_csv                (str) Path to the updated dataframe containing the VCRS headers and sequences. Corresponds to `variants_updated_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).
+    - variants_updated_exploded_vk_info_csv       (str) Path to the updated exploded dataframe containing the VCRS headers and sequences. Corresponds to `variants_updated_exploded_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).
     - id_to_header_csv                             (str) Path to the csv file containing the mapping of IDs to headers generated from varseek build corresponding to vcrs_fasta. Corresponds to `id_to_header_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).
     - dlist_fasta                                  (str) Path to the dlist fasta file. Default: None (will find it in `input_dir` if it exists).
 
     # Optional headers generated from earlier steps:
-    vcrs_id_column                                 (str) Column name in the mutation metadata dataframe containing the VCRS IDs. Generated in varseek build. Default: "vcrs_id".
-    vcrs_header_column                             (str) Column name in the mutation metadata dataframe containing the VCRS headers. Generated in varseek info. Default: "vcrs_header".
+    vcrs_id_column                                 (str) Column name in the variant metadata dataframe containing the VCRS IDs. Generated in varseek build. Default: "vcrs_id".
+    vcrs_header_column                             (str) Column name in the variant metadata dataframe containing the VCRS headers. Generated in varseek info. Default: "vcrs_header".
 
     # Optional output file paths: (only needed if changing/customizing file names or locations):
-    - mutations_updated_filtered_csv_out           (str) Path to the filtered mutation metadata dataframe. Default: None (will be saved in `out`).
-    - mutations_updated_exploded_filtered_csv_out  (str) Path to the filtered exploded mutation metadata dataframe. Default: None (will be saved in `out`).
+    - variants_updated_filtered_csv_out           (str) Path to the filtered variant metadata dataframe. Default: None (will be saved in `out`).
+    - variants_updated_exploded_filtered_csv_out  (str) Path to the filtered exploded variant metadata dataframe. Default: None (will be saved in `out`).
     - id_to_header_filtered_csv_out                (str) Path to the filtered id to header csv. Default: None (will be saved in `out`).
     - dlist_filtered_fasta_out                     (str) Path to the filtered dlist fasta file. Default: None (will be saved in `out`).
-    - mcrs_filtered_fasta_out                      (str) Path to the filtered mcrs fasta file. Default: None (will be saved in `out`).
-    - mcrs_t2g_filtered_out                        (str) Path to the filtered t2g file. Default: None (will be saved in `out`).
-    - wt_mcrs_filtered_fasta_out                   (str) Path to the filtered wt mcrs fasta file. Default: None (will be saved in `out`).
-    - wt_mcrs_t2g_filtered_out                     (str) Path to the filtered t2g file for wt mcrs fasta. Default: None (will be saved in `out`).
+    - vcrs_filtered_fasta_out                      (str) Path to the filtered vcrs fasta file. Default: None (will be saved in `out`).
+    - vcrs_t2g_filtered_out                        (str) Path to the filtered t2g file. Default: None (will be saved in `out`).
+    - wt_vcrs_filtered_fasta_out                   (str) Path to the filtered wt vcrs fasta file. Default: None (will be saved in `out`).
+    - wt_vcrs_t2g_filtered_out                     (str) Path to the filtered t2g file for wt vcrs fasta. Default: None (will be saved in `out`).
 
     # Returning and saving of optional output
-    - save_wt_mcrs_fasta_and_t2g                   (bool) If True, save the filtered wt mcrs fasta and t2g files. Default: False.
-    - save_mutations_updated_filtered_csvs         (bool) If True, save the filtered mutation metadata dataframe. Default: False.
-    - return_mutations_updated_filtered_csv_df     (bool) If True, return the filtered mutation metadata dataframe. Default: False.
+    - save_wt_vcrs_fasta_and_t2g                   (bool) If True, save the filtered wt vcrs fasta and t2g files. Default: False.
+    - save_variants_updated_filtered_csvs         (bool) If True, save the filtered variant metadata dataframe. Default: False.
+    - return_variants_updated_filtered_csv_df     (bool) If True, return the filtered variant metadata dataframe. Default: False.
 
     # General arguments:
     - dry_run                                      (bool) If True, print the parameters and exit without running the function. Default: False.
@@ -374,7 +374,7 @@ def filter(
     dlist_cdna_fasta (str) Path to the cDNA dlist fasta file. Default: None.
     dlist_genome_filtered_fasta_out (str) Path to the filtered genome dlist fasta file. Default: None.
     dlist_cdna_filtered_fasta_out (str) Path to the filtered cDNA dlist fasta file. Default: None.
-    save_mcrs_filtered_fasta_and_t2g (bool) If True, save the filtered mcrs fasta and t2g files. Default: True.
+    save_vcrs_filtered_fasta_and_t2g (bool) If True, save the filtered vcrs fasta and t2g files. Default: True.
     use_IDs (bool) If True, use IDs instead of headers. Default: False.
     """
     # * 0. Informational arguments that exit early
@@ -410,7 +410,7 @@ def filter(
     dlist_cdna_fasta = kwargs.get("dlist_cdna_fasta", None)
     dlist_genome_filtered_fasta_out = kwargs.get("dlist_genome_filtered_fasta_out", None)
     dlist_cdna_filtered_fasta_out = kwargs.get("dlist_cdna_filtered_fasta_out", None)
-    save_mcrs_filtered_fasta_and_t2g = kwargs.get("save_mcrs_filtered_fasta_and_t2g", True)
+    save_vcrs_filtered_fasta_and_t2g = kwargs.get("save_vcrs_filtered_fasta_and_t2g", True)
     use_IDs = kwargs.get("use_IDs", False)
 
     if filter_all_dlists:
@@ -427,21 +427,21 @@ def filter(
                 os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
     # define input file names if not provided
-    if not mutations_updated_vk_info_csv:
-        mutations_updated_vk_info_csv = os.path.join(input_dir, "variants_updated_vk_info.csv")
-    if not mutations_updated_exploded_vk_info_csv:
-        mutations_updated_exploded_vk_info_csv = os.path.join(input_dir, "variants_updated_exploded_vk_info.csv")
+    if not variants_updated_vk_info_csv:
+        variants_updated_vk_info_csv = os.path.join(input_dir, "variants_updated_vk_info.csv")
+    if not variants_updated_exploded_vk_info_csv:
+        variants_updated_exploded_vk_info_csv = os.path.join(input_dir, "variants_updated_exploded_vk_info.csv")
     if not dlist_fasta:
         dlist_fasta = os.path.join(input_dir, "dlist.fa")
     if not id_to_header_csv:
         id_to_header_csv = os.path.join(input_dir, "id_to_header.csv")
 
     # set input file names to None if they do not exist
-    if not os.path.isfile(mutations_updated_vk_info_csv) and not isinstance(mutations_updated_vk_info_csv, pd.DataFrame):
-        raise FileNotFoundError(f"Mutation metadata file not found at {mutations_updated_vk_info_csv}.")
-    if not os.path.isfile(mutations_updated_exploded_vk_info_csv):
-        logger.warning(f"Exploded mutation metadata file not found at {mutations_updated_exploded_vk_info_csv}. Skipping filtering of exploded mutation metadata.")
-        mutations_updated_exploded_vk_info_csv = None
+    if not os.path.isfile(variants_updated_vk_info_csv) and not isinstance(variants_updated_vk_info_csv, pd.DataFrame):
+        raise FileNotFoundError(f"Variant metadata file not found at {variants_updated_vk_info_csv}.")
+    if not os.path.isfile(variants_updated_exploded_vk_info_csv):
+        logger.warning(f"Exploded variant metadata file not found at {variants_updated_exploded_vk_info_csv}. Skipping filtering of exploded variant metadata.")
+        variants_updated_exploded_vk_info_csv = None
     if not os.path.isfile(dlist_fasta):
         logger.warning(f"d-list file not found at {dlist_fasta}. Skipping filtering of d-list.")
         dlist_fasta = None
@@ -451,25 +451,25 @@ def filter(
 
     # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
     # define output file names if not provided
-    if not mutations_updated_filtered_csv_out:  # mutations_updated_vk_info_csv must exist or else an exception will be raised from earlier
-        mutations_updated_filtered_csv_out = os.path.join(out, "mutation_metadata_df_filtered.csv")
-    if (mutations_updated_exploded_vk_info_csv and os.path.isfile(mutations_updated_exploded_vk_info_csv)) and not mutations_updated_exploded_filtered_csv_out:
-        mutations_updated_exploded_filtered_csv_out = os.path.join(out, "mutation_metadata_df_updated_vk_info_exploded_filtered.csv")
+    if not variants_updated_filtered_csv_out:  # variants_updated_vk_info_csv must exist or else an exception will be raised from earlier
+        variants_updated_filtered_csv_out = os.path.join(out, "variants_updated_filtered.csv")
+    if (variants_updated_exploded_vk_info_csv and os.path.isfile(variants_updated_exploded_vk_info_csv)) and not variants_updated_exploded_filtered_csv_out:
+        variants_updated_exploded_filtered_csv_out = os.path.join(out, "variants_updated_exploded_filtered.csv")
     if (id_to_header_csv and os.path.isfile(id_to_header_csv)) and not id_to_header_filtered_csv_out:
         id_to_header_filtered_csv_out = os.path.join(out, "id_to_header_mapping_filtered.csv")
     if (dlist_fasta and os.path.isfile(dlist_fasta)) and not dlist_filtered_fasta_out:
         dlist_filtered_fasta_out = os.path.join(out, "dlist_filtered.fa")
-    if not mcrs_filtered_fasta_out:  # this file must be created
-        mcrs_filtered_fasta_out = os.path.join(out, "mcrs_filtered.fa")
-    if not mcrs_t2g_filtered_out:  # this file must be created
-        mcrs_t2g_filtered_out = os.path.join(out, "mcrs_t2g_filtered.txt")
-    if not wt_mcrs_filtered_fasta_out:
-        wt_mcrs_filtered_fasta_out = os.path.join(out, "wt_mcrs_filtered.fa")
-    if not wt_mcrs_t2g_filtered_out:
-        wt_mcrs_t2g_filtered_out = os.path.join(out, "wt_mcrs_t2g_filtered.txt")
+    if not vcrs_filtered_fasta_out:  # this file must be created
+        vcrs_filtered_fasta_out = os.path.join(out, "vcrs_filtered.fa")
+    if not vcrs_t2g_filtered_out:  # this file must be created
+        vcrs_t2g_filtered_out = os.path.join(out, "vcrs_t2g_filtered.txt")
+    if not wt_vcrs_filtered_fasta_out:
+        wt_vcrs_filtered_fasta_out = os.path.join(out, "wt_vcrs_filtered.fa")
+    if not wt_vcrs_t2g_filtered_out:
+        wt_vcrs_t2g_filtered_out = os.path.join(out, "wt_vcrs_t2g_filtered.txt")
 
     # make sure directories of all output files exist
-    output_files = [mutations_updated_filtered_csv_out, mutations_updated_exploded_filtered_csv_out, id_to_header_filtered_csv_out, dlist_filtered_fasta_out, mcrs_filtered_fasta_out, mcrs_t2g_filtered_out, wt_mcrs_filtered_fasta_out, wt_mcrs_t2g_filtered_out]
+    output_files = [variants_updated_filtered_csv_out, variants_updated_exploded_filtered_csv_out, id_to_header_filtered_csv_out, dlist_filtered_fasta_out, vcrs_filtered_fasta_out, vcrs_t2g_filtered_out, wt_vcrs_filtered_fasta_out, wt_vcrs_t2g_filtered_out]
     for output_file in output_files:
         if os.path.isfile(output_file) and not overwrite:
             raise ValueError(f"Output file '{output_file}' already exists. Set 'overwrite=True' to overwrite it.")
@@ -488,35 +488,35 @@ def filter(
     else:
         raise ValueError(f"Invalid filters: {filters}")
 
-    if isinstance(mutations_updated_vk_info_csv, str):
-        mutation_metadata_df = pd.read_csv(mutations_updated_vk_info_csv)
+    if isinstance(variants_updated_vk_info_csv, str):
+        variant_metadata_df = pd.read_csv(variants_updated_vk_info_csv)
     else:
-        mutation_metadata_df = mutations_updated_vk_info_csv
+        variant_metadata_df = variants_updated_vk_info_csv
 
-    if vcrs_header_column not in mutation_metadata_df.columns:
+    if vcrs_header_column not in variant_metadata_df.columns:
         if (id_to_header_csv and os.path.isfile(id_to_header_csv)):
             id_to_header_dict = make_mapping_dict(id_to_header_csv, dict_key="id")
 
             if id_to_header_dict is not None:
-                mutation_metadata_df[vcrs_header_column] = mutation_metadata_df[vcrs_id_column].map(id_to_header_dict)
+                variant_metadata_df[vcrs_header_column] = variant_metadata_df[vcrs_id_column].map(id_to_header_dict)
         else:
             logger.warning(f"ID to header csv file not found at {id_to_header_csv}. Assuming vcrs_id_column={vcrs_id_column} is the desired vcrs_header_column.")
-            mutation_metadata_df[vcrs_header_column] = mutation_metadata_df[vcrs_id_column]
+            variant_metadata_df[vcrs_header_column] = variant_metadata_df[vcrs_id_column]
 
-    if "semicolon_count" not in mutation_metadata_df.columns and vcrs_header_column in mutation_metadata_df.columns:  # adding for reporting purposes
-        mutation_metadata_df["semicolon_count"] = mutation_metadata_df[vcrs_header_column].str.count(";")
+    if "semicolon_count" not in variant_metadata_df.columns and vcrs_header_column in variant_metadata_df.columns:  # adding for reporting purposes
+        variant_metadata_df["semicolon_count"] = variant_metadata_df[vcrs_header_column].str.count(";")
 
     filtering_report_text_out = os.path.join(out, "filtering_report.txt")
-    filtered_df = apply_filters(mutation_metadata_df, filters, verbose=verbose, filtering_report_text_out=filtering_report_text_out)
+    filtered_df = apply_filters(variant_metadata_df, filters, verbose=verbose, filtering_report_text_out=filtering_report_text_out)
     filtered_df = filtered_df.copy()  # here to avoid pandas warning about assigning to a slice rather than a copy
 
-    if "semicolon_count" in mutation_metadata_df.columns:
-        mutation_metadata_df = mutation_metadata_df.drop(columns=["semicolon_count"])
+    if "semicolon_count" in variant_metadata_df.columns:
+        variant_metadata_df = variant_metadata_df.drop(columns=["semicolon_count"])
 
-    if save_mutations_updated_filtered_csvs:
-        filtered_df.to_csv(mutations_updated_filtered_csv_out, index=False)
+    if save_variants_updated_filtered_csvs:
+        filtered_df.to_csv(variants_updated_filtered_csv_out, index=False)
 
-    # make mcrs_filtered_fasta_out
+    # make vcrs_filtered_fasta_out
     if use_IDs:
         output_fasta_header_column = vcrs_id_column
     else:
@@ -525,52 +525,52 @@ def filter(
 
     filtered_df["fasta_format"] = ">" + filtered_df[output_fasta_header_column] + "\n" + filtered_df[vcrs_sequence_column] + "\n"
 
-    if save_mcrs_filtered_fasta_and_t2g:
-        with open(mcrs_filtered_fasta_out, "w", encoding="utf-8") as fasta_file:
+    if save_vcrs_filtered_fasta_and_t2g:
+        with open(vcrs_filtered_fasta_out, "w", encoding="utf-8") as fasta_file:
             fasta_file.write("".join(filtered_df["fasta_format"].values))
 
         filtered_df.drop(columns=["fasta_format"], inplace=True)
 
-        # make mcrs_t2g_filtered_out
-        create_mutant_t2g(mcrs_filtered_fasta_out, mcrs_t2g_filtered_out)
+        # make vcrs_t2g_filtered_out
+        create_mutant_t2g(vcrs_filtered_fasta_out, vcrs_t2g_filtered_out)
 
-    # make wt_mcrs_filtered_fasta_out and wt_mcrs_t2g_filtered_out iff save_wt_mcrs_fasta_and_t2g is True
-    if save_wt_mcrs_fasta_and_t2g:
-        mutations_with_exactly_1_wt_sequence_per_row = filtered_df[[output_fasta_header_column, "wt_sequence"]].copy()
+    # make wt_vcrs_filtered_fasta_out and wt_vcrs_t2g_filtered_out iff save_wt_vcrs_fasta_and_t2g is True
+    if save_wt_vcrs_fasta_and_t2g:
+        variants_with_exactly_1_wt_sequence_per_row = filtered_df[[output_fasta_header_column, "wt_sequence"]].copy()
 
-        mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"] = mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"].apply(safe_literal_eval)
+        variants_with_exactly_1_wt_sequence_per_row["wt_sequence"] = variants_with_exactly_1_wt_sequence_per_row["wt_sequence"].apply(safe_literal_eval)
 
-        if isinstance(mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"][0], list):  # remove the rows with multiple WT counterparts for 1 MCRS, and convert the list of strings to string
+        if isinstance(variants_with_exactly_1_wt_sequence_per_row["wt_sequence"][0], list):  # remove the rows with multiple WT counterparts for 1 VCRS, and convert the list of strings to string
             # Step 1: Filter rows where the length of the set of the list in `wt_sequence` is 1
-            mutations_with_exactly_1_wt_sequence_per_row = mutations_with_exactly_1_wt_sequence_per_row[mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"].apply(lambda x: len(set(x)) == 1)]
+            variants_with_exactly_1_wt_sequence_per_row = variants_with_exactly_1_wt_sequence_per_row[variants_with_exactly_1_wt_sequence_per_row["wt_sequence"].apply(lambda x: len(set(x)) == 1)]
 
             # Step 2: Convert the list to a string
-            mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"] = mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"].apply(lambda x: x[0])
+            variants_with_exactly_1_wt_sequence_per_row["wt_sequence"] = variants_with_exactly_1_wt_sequence_per_row["wt_sequence"].apply(lambda x: x[0])
 
-        mutations_with_exactly_1_wt_sequence_per_row["fasta_format_wt"] = ">" + mutations_with_exactly_1_wt_sequence_per_row[output_fasta_header_column] + "\n" + mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"] + "\n"
+        variants_with_exactly_1_wt_sequence_per_row["fasta_format_wt"] = ">" + variants_with_exactly_1_wt_sequence_per_row[output_fasta_header_column] + "\n" + variants_with_exactly_1_wt_sequence_per_row["wt_sequence"] + "\n"
 
-        with open(wt_mcrs_filtered_fasta_out, "w", encoding="utf-8") as fasta_file:
-            fasta_file.write("".join(mutations_with_exactly_1_wt_sequence_per_row["fasta_format_wt"].values))
+        with open(wt_vcrs_filtered_fasta_out, "w", encoding="utf-8") as fasta_file:
+            fasta_file.write("".join(variants_with_exactly_1_wt_sequence_per_row["fasta_format_wt"].values))
 
-        create_mutant_t2g(wt_mcrs_filtered_fasta_out, wt_mcrs_t2g_filtered_out)
+        create_mutant_t2g(wt_vcrs_filtered_fasta_out, wt_vcrs_t2g_filtered_out)
 
-        fasta_summary_stats(mcrs_filtered_fasta_out)
+        fasta_summary_stats(vcrs_filtered_fasta_out)
 
     filtered_df.reset_index(drop=True, inplace=True)
 
     filtered_df_vcrs_ids = set(filtered_df[vcrs_id_column])  # no need to use output_fasta_header_column here because output_fasta_header_column is only necessary when saving the fasta files (this is using the IDs just to check for membership, not to save to a file any differently)
 
-    # make mutations_updated_exploded_filtered_csv_out iff mutations_updated_exploded_vk_info_csv exists
-    if save_mutations_updated_filtered_csvs and mutations_updated_exploded_vk_info_csv and os.path.isfile(mutations_updated_exploded_vk_info_csv):
-        mutation_metadata_df_exploded = pd.read_csv(mutations_updated_exploded_vk_info_csv)
+    # make variants_updated_exploded_filtered_csv_out iff variants_updated_exploded_vk_info_csv exists
+    if save_variants_updated_filtered_csvs and variants_updated_exploded_vk_info_csv and os.path.isfile(variants_updated_exploded_vk_info_csv):
+        variant_metadata_df_exploded = pd.read_csv(variants_updated_exploded_vk_info_csv)
 
-        # Filter mutation_metadata_df_exploded based on these unique values
-        filtered_mutation_metadata_df_exploded = mutation_metadata_df_exploded[mutation_metadata_df_exploded[vcrs_id_column].isin(filtered_df_vcrs_ids)]
+        # Filter variant_metadata_df_exploded based on these unique values
+        filtered_variant_metadata_df_exploded = variant_metadata_df_exploded[variant_metadata_df_exploded[vcrs_id_column].isin(filtered_df_vcrs_ids)]
 
-        filtered_mutation_metadata_df_exploded.to_csv(mutations_updated_exploded_filtered_csv_out, index=False)
+        filtered_variant_metadata_df_exploded.to_csv(variants_updated_exploded_filtered_csv_out, index=False)
 
         # Delete the DataFrame from memory
-        del filtered_mutation_metadata_df_exploded
+        del filtered_variant_metadata_df_exploded
 
     # make dlist_filtered_fasta_out iff dlist_fasta exists
     if dlist_fasta and os.path.isfile(dlist_fasta):
@@ -588,13 +588,13 @@ def filter(
         filter_id_to_header_csv(id_to_header_csv, id_to_header_filtered_csv_out, filtered_df_vcrs_ids)
 
     if verbose:
-        logger.info(f"Output fasta file with filtered mutations: {mcrs_filtered_fasta_out}")
-        logger.info(f"t2g file containing mutated sequences created at {mcrs_t2g_filtered_out}.")
+        logger.info(f"Output fasta file with filtered variants: {vcrs_filtered_fasta_out}")
+        logger.info(f"t2g file containing mutated sequences created at {vcrs_t2g_filtered_out}.")
         if dlist_filtered_fasta_out and os.path.isfile(dlist_filtered_fasta_out):
             logger.info(f"Filtered dlist fasta created at {dlist_filtered_fasta_out}.")
 
     # Report time
     report_time_elapsed(start_time, logger=logger, verbose=verbose, function_name="filter")
 
-    if return_mutations_updated_filtered_csv_df:
+    if return_variants_updated_filtered_csv_df:
         return filtered_df

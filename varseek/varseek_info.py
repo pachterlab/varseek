@@ -83,23 +83,23 @@ def add_some_mutation_information_when_cdna_and_genome_combined(df, columns_to_c
 
 
 def add_mutation_information(mutation_metadata_df, mutation_column="mutation", mcrs_source="cdna"):
-    mutation_metadata_df[["nucleotide_positions", "actual_mutation"]] = mutation_metadata_df[mutation_column].str.extract(mutation_pattern)
+    mutation_metadata_df[["nucleotide_positions", "actual_variant"]] = mutation_metadata_df[mutation_column].str.extract(mutation_pattern)
 
     split_positions = mutation_metadata_df["nucleotide_positions"].str.split("_", expand=True)
-    mutation_metadata_df["start_mutation_position"] = split_positions[0]
+    mutation_metadata_df["start_variant_position"] = split_positions[0]
 
     if split_positions.shape[1] > 1:
-        mutation_metadata_df["end_mutation_position"] = split_positions[1].fillna(split_positions[0])
+        mutation_metadata_df["end_variant_position"] = split_positions[1].fillna(split_positions[0])
     else:
-        mutation_metadata_df["end_mutation_position"] = mutation_metadata_df["start_mutation_position"]
+        mutation_metadata_df["end_variant_position"] = mutation_metadata_df["start_variant_position"]
 
-    mutation_metadata_df[["start_mutation_position", "end_mutation_position"]] = mutation_metadata_df[["start_mutation_position", "end_mutation_position"]].astype("Int64")
+    mutation_metadata_df[["start_variant_position", "end_variant_position"]] = mutation_metadata_df[["start_variant_position", "end_variant_position"]].astype("Int64")
 
     if mcrs_source is not None:
         mutation_metadata_df[f"nucleotide_positions_{mcrs_source}"] = mutation_metadata_df["nucleotide_positions"]
-        mutation_metadata_df[f"actual_mutation_{mcrs_source}"] = mutation_metadata_df["actual_mutation"]
-        mutation_metadata_df[f"start_mutation_position_{mcrs_source}"] = mutation_metadata_df["start_mutation_position"]
-        mutation_metadata_df[f"end_mutation_position_{mcrs_source}"] = mutation_metadata_df["end_mutation_position"]
+        mutation_metadata_df[f"actual_variant_{mcrs_source}"] = mutation_metadata_df["actual_variant"]
+        mutation_metadata_df[f"start_variant_position_{mcrs_source}"] = mutation_metadata_df["start_variant_position"]
+        mutation_metadata_df[f"end_variant_position_{mcrs_source}"] = mutation_metadata_df["end_variant_position"]
 
     return mutation_metadata_df
 
@@ -211,31 +211,36 @@ columns_to_include_possible_values = OrderedDict(
         ("header_with_gene_name", ("Header with gene name (e.g., ENST00004156 (BRCA1):c.123A>T)", [])),
         ("nearby_variants", ("The list of nearby variants (i.e., within `k` bases) for each variant", ["k"])),
         ("nearby_variants_count", ("Nearby variants count", ["k"])),
-        ("has_a_nearby_variant", ("Has a nearby mutation (a boolean of `nearby_variants_count`)", ["k"])),
-        ("vcrs_header_length", ("MCRS header length", ["k"])),
-        ("mcrs_sequence_length", ("MCRS sequence length", [])),
-        ("dlist", ("States whether an MCRS k-mer aligns to the reference genome (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
-        ("number_of_alignments_to_normal_human_reference", ("Number of alignments to normal human reference (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
-        ("dlist_substring", ("D-list substring", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference (requires bowtie2)", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
-        ("number_of_substring_matches_to_normal_human_reference", ("Number of substring matches to normal human reference (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
-        ("pseudoaligned_to_human_reference", ("Pseudoaligned to human reference", ["k", "dlist_reference_genome_fasta", "dlist_reference_gtf", "threads", "vcrs_strandedness"])),
-        ("pseudoaligned_to_human_reference_despite_not_truly_aligning", ("Pseudoaligned to human reference despite not truly aligning", ["k", "dlist_reference_genome_fasta", "dlist_reference_gtf", "threads", "vcrs_strandedness"])),
-        ("number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference", ("Number of k-mers with overlap to other MCRS items in MCRS reference", ["k", "vcrs_strandedness"])),
-        ("number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference", ("Number of MCRS items with overlapping k-mers in MCRS reference", ["k", "vcrs_strandedness"])),
-        ("kmer_overlap_in_mcrs_reference", ("K-mer overlap in MCRS reference (a boolean of `number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference`)", [])),
+        ("has_a_nearby_variant", ("Has a nearby variant (a boolean of `nearby_variants_count`)", ["k"])),
+        ("vcrs_header_length", ("VCRS header length", ["k"])),
+        ("vcrs_sequence_length", ("VCRS sequence length", [])),
+        ("alignment_to_reference", ("States whether a VCRS contains any k-mer that aligns anywhere in the reference genome ('genome'), transcriptome ('cdna'), genome and transcriptome ('cdna_and_genome'), or neither the genome nor transcriptome ('none') (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
+        ("alignment_to_reference_count_total", ("The total number of times that all k-mers within a VCRS match up to any k-mer in the genome and transcriptome specified by `dlist_reference_source` (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
+        ("alignment_to_reference_count_cdna", ("The total number of times that all k-mers within a VCRS match up to any k-mer in the cDNA specified by `dlist_reference_source` (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
+        ("alignment_to_reference_count_genome", ("The total number of times that all k-mers within a VCRS match up to any k-mer in the genome specified by `dlist_reference_source` (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
+        ("substring_alignment_to_reference", ("States whether a VCRS contains any k-mer that is a substring alignment to anywhere in the reference genome ('genome'), transcriptome ('cdna'), genome and transcriptome ('cdna_and_genome'), or neither the genome nor transcriptome ('none') (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
+        ("substring_alignment_to_reference_count_total", ("Number of substring matches to normal human reference (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
+        ("substring_alignment_to_reference_count_cdna", ("Number of substring matches to normal human reference cDNA (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
+        ("substring_alignment_to_reference_count_genome", ("Number of substring matches to normal human reference genome (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
+        ("pseudoaligned_to_reference", ("Pseudoaligned to human reference", ["k", "dlist_reference_genome_fasta", "dlist_reference_gtf", "threads", "vcrs_strandedness"])),
+        ("pseudoaligned_to_reference_despite_not_truly_aligning", ("Pseudoaligned to human reference despite not truly aligning", ["k", "dlist_reference_genome_fasta", "dlist_reference_gtf", "threads", "vcrs_strandedness"])),
+        ("number_of_kmers_with_overlap_to_other_VCRSs", ("Number of k-mers with overlap to other VCRS items in VCRS reference", ["k", "vcrs_strandedness"])),
+        ("number_of_other_VCRSs_with_overlapping_kmers", ("Number of VCRS items with overlapping k-mers in VCRS reference", ["k", "vcrs_strandedness"])),
+        ("VCRSs_with_overlapping_kmers", ("VCRS items with overlapping k-mers in VCRS reference (requires bowtie2)", ["k", "threads"])),
+        ("kmer_overlap_with_other_VCRSs", ("K-mer overlap in VCRS reference (a boolean of `number_of_kmers_with_overlap_to_other_VCRSs`)", [])),
         ("longest_homopolymer_length", ("Longest homopolymer length", [])),
         ("longest_homopolymer", ("Longest homopolymer", [])),
         ("num_distinct_triplets", ("Number of distinct triplets", [])),
         ("num_total_triplets", ("Number of total triplets", [])),
         ("triplet_complexity", ("Triplet complexity", [])),
-        ("mcrs_mutation_type", ("MCRS mutation type", [])),
-        ("concatenated_headers_in_mcrs", ("Concatenated headers in MCRS", [])),
-        ("number_of_mutations_in_mcrs_header", ("Number of variants in MCRS header", [])),
-        ("mcrs_sequence_rc", ("MCRS sequence reverse complement", [])),
-        ("entries_for_which_this_mcrs_is_substring", ("Entries for which this MCRS is substring (requires bowtie2)", ["threads"])),
-        ("entries_for_which_this_mcrs_is_superstring", ("Entries for which this MCRS is superstring (requires bowtie2)", ["threads"])),
-        ("mcrs_is_substring", ("MCRS is substring (requires bowtie2)", ["threads"])),
-        ("mcrs_is_superstring", ("MCRS is superstring (requires bowtie2)", ["threads"])),
+        ("vcrs_mutation_type", ("VCRS mutation type", [])),
+        ("merged_variants_in_VCRS_entry", ("Concatenated headers in VCRS", [])),
+        ("number_of_variants_in_VCRS_entry", ("Number of variants in VCRS header", [])),
+        ("vcrs_sequence_rc", ("VCRS sequence reverse complement", [])),
+        ("VCRSs_for_which_this_VCRS_is_a_substring", ("Entries for which this VCRS is substring (requires bowtie2)", ["threads"])),
+        ("VCRSs_for_which_this_VCRS_is_a_superstring", ("Entries for which this VCRS is superstring (requires bowtie2)", ["threads"])),
+        ("VCRS_is_a_substring_of_another_VCRS", ("VCRS is substring (requires bowtie2)", ["threads"])),
+        ("VCRS_is_a_superstring_of_another_VCRS", ("VCRS is superstring (requires bowtie2)", ["threads"])),
     ]
 )
 
@@ -243,7 +248,7 @@ columns_to_include_possible_values = OrderedDict(
 # TODO: finish implementing the cdna/genome column stuff, and remove hard-coding of some column names
 def info(
     input_dir,
-    columns_to_include=("number_of_variants_in_this_gene_total", "number_of_alignments_to_normal_human_reference", "pseudoaligned_to_human_reference_despite_not_truly_aligning", "longest_homopolymer_length", "triplet_complexity"),
+    columns_to_include=("number_of_variants_in_this_gene_total", "alignment_to_reference_count_total", "pseudoaligned_to_reference_despite_not_truly_aligning", "longest_homopolymer_length", "triplet_complexity"),
     k=59,
     max_ambiguous_vcrs=0,
     max_ambiguous_reference=0,
@@ -284,35 +289,35 @@ def info(
     **kwargs,
 ):
     """
-    Takes in the input directory containing with the MCRS fasta file generated from varseek build, and returns a dataframe with additional columns containing information about the variants.
+    Takes in the input directory containing with the VCRS fasta file generated from varseek build, and returns a dataframe with additional columns containing information about the variants.
 
     # Required input arguments:
     - input_dir     (str) Path to the directory containing the input files. Corresponds to `out` in the varseek build function.
 
     # Additional Parameters
-    - columns_to_include                 (str or list[str]) List of columns to include in the output dataframe. Default: ("number_of_variants_in_this_gene_total", "number_of_alignments_to_normal_human_reference", "pseudoaligned_to_human_reference_despite_not_truly_aligning", "longest_homopolymer_length", "triplet_complexity"). See all possible values and their description by setting list_columns=True (python) or --list_columns (command line).
-    - k                                  (int) Length of the k-mers utilized by kallisto | bustools. Only used by the following columns: 'nearby_variants', 'nearby_variants_count', 'has_a_nearby_variant', 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference', 'pseudoaligned_to_human_reference', 'pseudoaligned_to_human_reference_despite_not_truly_aligning', 'number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference', 'number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference', 'kmer_overlap_in_mcrs_reference'; and when make_kat_histogram==True. Default: 59.
-    - max_ambiguous_vcrs                 (int) Maximum number of 'N' characters allowed in the MCRS when considering alignment to the reference genome/transcriptome. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference'. Default: 0.
-    - max_ambiguous_reference            (int) Maximum number of 'N' characters allowed in the aligned reference genome portion when considering alignment to the reference genome/transcriptome. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference'. Default: 0.
-    - dlist_reference_source             (str) Source of the d-list reference genome and transcriptome if files are not provided by `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, and `dlist_reference_gtf`. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference', 'pseudoaligned_to_human_reference', 'pseudoaligned_to_human_reference_despite_not_truly_aligning'. Possible values are {supported_dlist_reference_values}. Ignored if values for `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, and `dlist_reference_gtf` are provided. Default: "T2T". (will automatically download the T2T reference genome files to `reference_out_dir`)
-    - dlist_reference_ensembl_release    (int) Ensembl release number for the d-list reference genome and transcriptome if files are not provided by `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, and `dlist_reference_gtf`. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference', 'pseudoaligned_to_human_reference', 'pseudoaligned_to_human_reference_despite_not_truly_aligning'. Only used if `dlist_reference_source`, `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, `dlist_reference_gtf` is grch37 or grch38. Default: 111. (will automatically download the Ensembl reference genome files to `reference_out_dir`)
+    - columns_to_include                 (str or list[str]) List of columns to include in the output dataframe. Default: ("number_of_variants_in_this_gene_total", "alignment_to_reference_count_total", "pseudoaligned_to_reference_despite_not_truly_aligning", "longest_homopolymer_length", "triplet_complexity"). See all possible values and their description by setting list_columns=True (python) or --list_columns (command line).
+    - k                                  (int) Length of the k-mers utilized by kallisto | bustools. Only used by the following columns: 'nearby_variants', 'nearby_variants_count', 'has_a_nearby_variant', 'alignment_to_reference', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome', 'pseudoaligned_to_reference', 'pseudoaligned_to_reference_despite_not_truly_aligning', 'number_of_kmers_with_overlap_to_other_VCRSs', 'number_of_other_VCRSs_with_overlapping_kmers', 'VCRSs_with_overlapping_kmers', 'kmer_overlap_with_other_VCRSs'; and when make_kat_histogram==True. Default: 59.
+    - max_ambiguous_vcrs                 (int) Maximum number of 'N' characters allowed in the VCRS when considering alignment to the reference genome/transcriptome. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome'. Default: 0.
+    - max_ambiguous_reference            (int) Maximum number of 'N' characters allowed in the aligned reference genome portion when considering alignment to the reference genome/transcriptome. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome'. Default: 0.
+    - dlist_reference_source             (str) Source of the d-list reference genome and transcriptome if files are not provided by `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, and `dlist_reference_gtf`. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome', 'pseudoaligned_to_reference', 'pseudoaligned_to_reference_despite_not_truly_aligning'. Possible values are {supported_dlist_reference_values}. Ignored if values for `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, and `dlist_reference_gtf` are provided. Default: "T2T". (will automatically download the T2T reference genome files to `reference_out_dir`)
+    - dlist_reference_ensembl_release    (int) Ensembl release number for the d-list reference genome and transcriptome if files are not provided by `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, and `dlist_reference_gtf`. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome', 'pseudoaligned_to_reference', 'pseudoaligned_to_reference_despite_not_truly_aligning'. Only used if `dlist_reference_source`, `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, `dlist_reference_gtf` is grch37 or grch38. Default: 111. (will automatically download the Ensembl reference genome files to `reference_out_dir`)
 
     # Optional input file paths: (only needed if changing/customizing file names or locations):
-    - vcrs_fasta                         (str) Path to the MCRS fasta file generated from varseek build. Corresponds to `mcrs_fasta_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir`).
-    - variants_updated_csv              (str) Path to the updated dataframe containing the MCRS headers and sequences. Corresponds to `mutations_updated_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).
+    - vcrs_fasta                         (str) Path to the VCRS fasta file generated from varseek build. Corresponds to `mcrs_fasta_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir`).
+    - variants_updated_csv              (str) Path to the updated dataframe containing the VCRS headers and sequences. Corresponds to `variants_updated_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).
     - id_to_header_csv                   (str) Path to the csv file containing the mapping of IDs to headers generated from varseek build corresponding to vcrs_fasta. Corresponds to `id_to_header_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).
     - gtf                                (str) Path to the GTF file containing the gene annotations for the reference genome. Corresponds to `gtf` in the varseek build function. Must align to genome coordinates used in the annotation of variants. Only used by the following columns: 'distance_to_nearest_splice_junction'. Default: None.
-    - dlist_reference_genome_fasta       (str) Path to the reference genome fasta file for the d-list. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference', 'pseudoaligned_to_human_reference', 'pseudoaligned_to_human_reference_despite_not_truly_aligning'. Default: `dlist_reference_source`.
-    - dlist_reference_cdna_fasta         (str) Path to the reference cDNA fasta file for the d-list. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference'. Default: `dlist_reference_source`.
-    - dlist_reference_gtf                (str) Path to the GTF file containing the gene annotations for the reference genome. Only used by the following columns: 'pseudoaligned_to_human_reference', 'pseudoaligned_to_human_reference_despite_not_truly_aligning'. Default: `dlist_reference_source`.
+    - dlist_reference_genome_fasta       (str) Path to the reference genome fasta file for the d-list. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome', 'pseudoaligned_to_reference', 'pseudoaligned_to_reference_despite_not_truly_aligning'. Default: `dlist_reference_source`.
+    - dlist_reference_cdna_fasta         (str) Path to the reference cDNA fasta file for the d-list. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome'. Default: `dlist_reference_source`.
+    - dlist_reference_gtf                (str) Path to the GTF file containing the gene annotations for the reference genome. Only used by the following columns: 'pseudoaligned_to_reference', 'pseudoaligned_to_reference_despite_not_truly_aligning'. Default: `dlist_reference_source`.
 
     # Column names in variants_updated_csv:
-    - vcrs_id_column                     (str) Name of the column containing the MCRS IDs in `variants_updated_csv`. Only used if `variants_updated_csv` exists (i.e., was generated from varseek build). Default: 'mcrs_id'.
-    - vcrs_sequence_column               (str) Name of the column containing the MCRS sequences in `variants_updated_csv`. Only used if `variants_updated_csv` exists (i.e., was generated from varseek build). Default: 'mutant_sequence'.
-    - vcrs_source_column                 (str) Name of the column containing the source of the MCRS (cdna or genome) in `variants_updated_csv`. Only used if `variants_updated_csv` exists (i.e., was generated from varseek build). Default: 'mcrs_source'.
-    - var_column                         (str) Name of the column containing the variants in `variants_updated_csv`. Only used if `variants_updated_csv` exists (i.e., was generated from varseek build). Default: 'mutation'.
+    - vcrs_id_column                     (str) Name of the column containing the VCRS IDs in `variants_updated_csv`. Only used if `variants_updated_csv` exists (i.e., was generated from varseek build). Default: 'vcrs_id'.
+    - vcrs_sequence_column               (str) Name of the column containing the VCRS sequences in `variants_updated_csv`. Only used if `variants_updated_csv` exists (i.e., was generated from varseek build). Default: 'mutant_sequence'.
+    - vcrs_source_column                 (str) Name of the column containing the source of the VCRS (cdna or genome) in `variants_updated_csv`. Only used if `variants_updated_csv` exists (i.e., was generated from varseek build). Default: 'mcrs_source'.
+    - var_column                         (str) Name of the column containing the variants in `variants_updated_csv`. Only used if `variants_updated_csv` exists (i.e., was generated from varseek build). Default: 'mutation_cdna'.
     - seq_id_column                      (str) Name of the column containing the sequence IDs in `variants_updated_csv`. Only used if `variants_updated_csv` exists (i.e., was generated from varseek build). Default: 'seq_ID'.
-    - variant_cdna_column               (str) Name of the column containing the cDNA variants in `variants_updated_csv`. Only used if `variants_updated_csv` exists (i.e., was generated from varseek build) and contains information regarding both genome and cDNA notation (essential if running spliced + unspliced workflow, optional otherwise). Default: 'mutation'.
+    - variant_cdna_column               (str) Name of the column containing the cDNA variants in `variants_updated_csv`. Only used if `variants_updated_csv` exists (i.e., was generated from varseek build) and contains information regarding both genome and cDNA notation (essential if running spliced + unspliced workflow, optional otherwise). Default: 'mutation_cdna'.
     - seq_id_cdna_column                 (str) Name of the column containing the cDNA sequence IDs in `variants_updated_csv`. Only used if `variants_updated_csv` exists (i.e., was generated from varseek build) and contains information regarding both genome and cDNA notation (essential if running spliced + unspliced workflow, optional otherwise). Default: 'seq_ID'.
     - variant_genome_column             (str) Name of the column containing the genome variants in `variants_updated_csv`. Only used if `variants_updated_csv` exists (i.e., was generated from varseek build) and contains information regarding both genome and cDNA notation (essential if running spliced + unspliced workflow, optional otherwise). Default: 'mutation_genome'.
     - seq_id_genome_column               (str) Name of the column containing the genome sequence IDs in `variants_updated_csv`. Only used if `variants_updated_csv` exists (i.e., was generated from varseek build) and contains information regarding both genome and cDNA notation (essential if running spliced + unspliced workflow, optional otherwise). Default: 'chromosome'.
@@ -322,13 +327,13 @@ def info(
     - reference_out_dir                  (str) Path to the directory where the reference files will be saved. Default: `out`/reference.
     - variants_updated_vk_info_csv_out  (str) Path to the output csv file containing the updated dataframe with the additional columns. Default: `out`/variants_updated_vk_info.csv.
     - variants_updated_exploded_vk_info_csv_out (str) Path to the output csv file containing the exploded dataframe with the additional columns. Default: `out`/variants_updated_exploded_vk_info.csv.
-    - dlist_genome_fasta_out             (str) Path to the output fasta file containing the d-list sequences for the genome-based alignmed. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference'. Default: `out`/dlist_genome.fa.
-    - dlist_cdna_fasta_out               (str) Path to the output fasta file containing the d-list sequences for the cDNA-based alignmed. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference'.Default: `out`/dlist_cdna.fa.
-    - dlist_combined_fasta_out           (str) Path to the output fasta file containing the d-list sequences  combined genome-based and cDNA-based alignment. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference'.Default: `out`/dlist.fa.
+    - dlist_genome_fasta_out             (str) Path to the output fasta file containing the d-list sequences for the genome-based alignmed. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome'. Default: `out`/dlist_genome.fa.
+    - dlist_cdna_fasta_out               (str) Path to the output fasta file containing the d-list sequences for the cDNA-based alignmed. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome'.Default: `out`/dlist_cdna.fa.
+    - dlist_combined_fasta_out           (str) Path to the output fasta file containing the d-list sequences  combined genome-based and cDNA-based alignment. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome'.Default: `out`/dlist.fa.
 
     # Returning and saving of optional output
     - save_variants_updated_exploded_vk_info_csv (bool) Whether to save the exploded dataframe. Default: False.
-    - make_pyfastx_summary_file          (bool) Whether to make a summary file of the MCRS fasta file using pyfastx. Default: False.
+    - make_pyfastx_summary_file          (bool) Whether to make a summary file of the VCRS fasta file using pyfastx. Default: False.
     - make_kat_histogram                 (bool) Whether to make a histogram of the k-mer abundances using kat. Default: False.
 
     # General arguments:
@@ -336,13 +341,13 @@ def info(
     - list_columns                       (bool) Whether to list the possible values for `columns_to_include` and their descriptions and immediately exit. Default: False.
     - list_d_list_values                 (bool) Whether to list the possible values for `dlist_reference_source` and immediately exit. Default: False.
     - overwrite                          (bool) Whether to overwrite the output files if they already exist. Default: False.
-    - threads                            (int) Number of threads to use for bowtie2 and bowtie2-build. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference', 'pseudoaligned_to_human_reference', 'pseudoaligned_to_human_reference_despite_not_truly_aligning', 'entries_for_which_this_mcrs_is_substring', 'entries_for_which_this_mcrs_is_superstring', 'mcrs_is_substring', 'mcrs_is_superstring'; and when 'entries_for_which_this_mcrs_is_superstring', 'mcrs_is_substring', 'mcrs_is_superstring', make_kat_histogram==True. Default: 2.
+    - threads                            (int) Number of threads to use for bowtie2 and bowtie2-build. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome', 'pseudoaligned_to_reference', 'pseudoaligned_to_reference_despite_not_truly_aligning', 'VCRSs_for_which_this_VCRS_is_a_substring', 'VCRSs_for_which_this_VCRS_is_a_superstring', 'VCRS_is_a_substring_of_another_VCRS', 'VCRS_is_a_superstring_of_another_VCRS'; and when 'VCRSs_for_which_this_VCRS_is_a_superstring', 'VCRS_is_a_substring_of_another_VCRS', 'VCRS_is_a_superstring_of_another_VCRS', make_kat_histogram==True. Default: 2.
     - verbose                            (bool) Whether to print verbose output. Default: True.
 
     # Hidden arguments (part of kwargs):
-    - w                                  (int) Maximum length of the MCRS flanking regions. Must be an integer between [1, k-1]. Only utilized for the column 'cdna_and_genome_same'. Corresponds to `w` in the varseek build function. Default: 54.
+    - w                                  (int) Maximum length of the VCRS flanking regions. Must be an integer between [1, k-1]. Only utilized for the column 'cdna_and_genome_same'. Corresponds to `w` in the varseek build function. Default: 54.
     - bowtie2_path                        (str) Path to the directory containing the bowtie2 and bowtie2-build executables. Default: None.
-    - vcrs_strandedness                  (bool) Whether to consider VCRSs as stranded when aligning to the human reference and comparing MCRS k-mers to each other. vcrs_strandedness True corresponds to treating forward and reverse-complement as distinct; False corresponds to treating them as the same. Corresponds to `vcrs_strandedness` in the varseek build function. Only used by the following columns: 'dlist', 'number_of_alignments_to_normal_human_reference', 'dlist_substring', 'number_of_substring_matches_to_normal_human_reference', 'pseudoaligned_to_human_reference', 'pseudoaligned_to_human_reference_despite_not_truly_aligning', 'number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference', 'number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference', 'kmer_overlap_in_mcrs_reference'; and if make_kat_histogram==True. Default: False.
+    - vcrs_strandedness                  (bool) Whether to consider VCRSs as stranded when aligning to the human reference and comparing VCRS k-mers to each other. vcrs_strandedness True corresponds to treating forward and reverse-complement as distinct; False corresponds to treating them as the same. Corresponds to `vcrs_strandedness` in the varseek build function. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome', 'pseudoaligned_to_reference', 'pseudoaligned_to_reference_despite_not_truly_aligning', 'number_of_kmers_with_overlap_to_other_VCRSs', 'number_of_other_VCRSs_with_overlapping_kmers', 'VCRSs_with_overlapping_kmers, 'kmer_overlap_with_other_VCRSs'; and if make_kat_histogram==True. Default: False.
     - near_splice_junction_threshold     (int) Maximum distance from a splice junction to be considered "near" a splice junction. Only utilized for the column 'distance_to_nearest_splice_junction'. Default: 10.
     - reference_cdna_fasta               (str) Path to the reference cDNA fasta file. Only utilized for the column 'cdna_and_genome_same'. Default: None.
     - reference_genome_fasta             (str) Path to the reference genome fasta file. Only utilized for the column 'cdna_and_genome_same'. Default: None.
@@ -458,10 +463,10 @@ def info(
     columns_to_explode = ["header", "order"]
     columns_not_successfully_added = []
 
-    # --np (N penalty) caps number of Ns in read (MCRS), reference (human reference genome/transcriptome), or both
-    # --n-ceil (max_ambiguous_vcrs) caps number of Ns in read (MCRS) only
+    # --np (N penalty) caps number of Ns in read (VCRS), reference (human reference genome/transcriptome), or both
+    # --n-ceil (max_ambiguous_vcrs) caps number of Ns in read (VCRS) only
     # I have my remove_Ns_fasta function which caps number of Ns in reference (human reference genome/transcriptome) only
-    if max_ambiguous_vcrs is None:  # no N-penalty for MCRS during d-listing
+    if max_ambiguous_vcrs is None:  # no N-penalty for VCRS during d-listing
         max_ambiguous_vcrs = 99999  #! be careful of changing this number - it must be an int for bowtie2
     if max_ambiguous_reference is None:  # no N-penalty for reference during d-listing
         max_ambiguous_reference = 99999  #! be careful of changing this number - it is related to the condition in 'align_to_normal_genome_and_build_dlist' - max_ambiguous_reference < 9999
@@ -507,7 +512,7 @@ def info(
         fasta_summary_stats(vcrs_fasta, output_file=output_pyfastx_stat_file)
 
     # CELL
-    # columns_to_change = ['nucleotide_positions', 'start_mutation_position', 'end_mutation_position', 'actual_mutation']
+    # columns_to_change = ['nucleotide_positions', 'start_variant_position', 'end_variant_position', 'actual_variant']
 
     if variants_updated_csv is None:  # does not support concatenated cdna and genome
         columns_original = []
@@ -566,7 +571,7 @@ def info(
                 vcrs_id_column,
                 "vcrs_header",
                 "vcrs_sequence",
-                "mutant_sequence_rc",
+                "variant_sequence_rc",
             ]:  # alternative: check if the first and last characters are '[' and ']', respectively
                 mutation_metadata_df[column] = mutation_metadata_df[column].apply(lambda x: (safe_literal_eval(x) if isinstance(x, str) and x.startswith("[") and x.endswith("]") else x))
 
@@ -579,7 +584,7 @@ def info(
                     vcrs_id_column,
                     "vcrs_header",
                     "vcrs_sequence",
-                    "mutant_sequence_rc",
+                    "variant_sequence_rc",
                 ]
             ]
         )
@@ -606,16 +611,16 @@ def info(
             mutation_metadata_df = add_some_mutation_information_when_cdna_and_genome_combined(mutation_metadata_df, columns_to_explode)
         else:
             mutation_metadata_df[f"nucleotide_positions_{mcrs_source}"] = mutation_metadata_df["nucleotide_positions"]
-            mutation_metadata_df[f"actual_mutation_{mcrs_source}"] = mutation_metadata_df["actual_mutation"]
-            mutation_metadata_df[f"start_mutation_position_{mcrs_source}"] = mutation_metadata_df["start_mutation_position"]
-            mutation_metadata_df[f"end_mutation_position_{mcrs_source}"] = mutation_metadata_df["end_mutation_position"]
+            mutation_metadata_df[f"actual_variant_{mcrs_source}"] = mutation_metadata_df["actual_variant"]
+            mutation_metadata_df[f"start_variant_position_{mcrs_source}"] = mutation_metadata_df["start_variant_position"]
+            mutation_metadata_df[f"end_variant_position_{mcrs_source}"] = mutation_metadata_df["end_variant_position"]
 
         columns_to_explode.extend(
             [
                 f"nucleotide_positions_{mcrs_source}",
-                f"actual_mutation_{mcrs_source}",
-                f"start_mutation_position_{mcrs_source}",
-                f"end_mutation_position_{mcrs_source}",
+                f"actual_variant_{mcrs_source}",
+                f"start_variant_position_{mcrs_source}",
+                f"end_variant_position_{mcrs_source}",
             ]
         )
 
@@ -641,7 +646,7 @@ def info(
             "header_cds",
         ]
 
-        if mutation_metadata_df_exploded["mcrs_source"].unique()[0] == "cdna" and variant_genome_column in mutation_metadata_df_exploded:
+        if mutation_metadata_df_exploded[vcrs_source_column].unique()[0] == "cdna" and variant_genome_column in mutation_metadata_df_exploded:
             mutation_metadata_df_exploded = add_mutation_information(
                 mutation_metadata_df_exploded,
                 mutation_column=variant_genome_column,
@@ -650,18 +655,18 @@ def info(
             columns_to_explode_extend_values.extend(
                 [
                     "nucleotide_positions_genome",
-                    "actual_mutation_genome",
-                    "start_mutation_position_genome",
-                    "end_mutation_position_genome",
+                    "actual_variant_genome",
+                    "start_variant_position_genome",
+                    "end_variant_position_genome",
                 ]
             )
             # TODO: this is a little hacky (I set these values in the function and then reset them now)
             mutation_metadata_df_exploded["nucleotide_positions"] = mutation_metadata_df_exploded[f"nucleotide_positions_{mcrs_source}"]
-            mutation_metadata_df_exploded["actual_mutation"] = mutation_metadata_df_exploded[f"actual_mutation_{mcrs_source}"]
-            mutation_metadata_df_exploded["start_mutation_position"] = mutation_metadata_df_exploded[f"start_mutation_position_{mcrs_source}"]
-            mutation_metadata_df_exploded["end_mutation_position"] = mutation_metadata_df_exploded[f"end_mutation_position_{mcrs_source}"]
+            mutation_metadata_df_exploded["actual_variant"] = mutation_metadata_df_exploded[f"actual_variant_{mcrs_source}"]
+            mutation_metadata_df_exploded["start_variant_position"] = mutation_metadata_df_exploded[f"start_variant_position_{mcrs_source}"]
+            mutation_metadata_df_exploded["end_variant_position"] = mutation_metadata_df_exploded[f"end_variant_position_{mcrs_source}"]
 
-        if mutation_metadata_df_exploded["mcrs_source"].unique()[0] == "genome" and variant_cdna_column in mutation_metadata_df_exploded:
+        if mutation_metadata_df_exploded[vcrs_source_column].unique()[0] == "genome" and variant_cdna_column in mutation_metadata_df_exploded:
             mutation_metadata_df_exploded = add_mutation_information(
                 mutation_metadata_df_exploded,
                 mutation_column=variant_cdna_column,
@@ -670,15 +675,15 @@ def info(
             columns_to_explode_extend_values.extend(
                 [
                     "nucleotide_positions_cdna",
-                    "actual_mutation_cdna",
-                    "start_mutation_position_cdna",
-                    "end_mutation_position_cdna",
+                    "actual_variant_cdna",
+                    "start_variant_position_cdna",
+                    "end_variant_position_cdna",
                 ]
             )
             mutation_metadata_df_exploded["nucleotide_positions"] = mutation_metadata_df_exploded[f"nucleotide_positions_{mcrs_source}"]
-            mutation_metadata_df_exploded["actual_mutation"] = mutation_metadata_df_exploded[f"actual_mutation_{mcrs_source}"]
-            mutation_metadata_df_exploded["start_mutation_position"] = mutation_metadata_df_exploded[f"start_mutation_position_{mcrs_source}"]
-            mutation_metadata_df_exploded["end_mutation_position"] = mutation_metadata_df_exploded[f"end_mutation_position_{mcrs_source}"]
+            mutation_metadata_df_exploded["actual_variant"] = mutation_metadata_df_exploded[f"actual_variant_{mcrs_source}"]
+            mutation_metadata_df_exploded["start_variant_position"] = mutation_metadata_df_exploded[f"start_variant_position_{mcrs_source}"]
+            mutation_metadata_df_exploded["end_variant_position"] = mutation_metadata_df_exploded[f"end_variant_position_{mcrs_source}"]
 
     # CELL
     if mcrs_source in {"genome", "combined"}:
@@ -781,22 +786,22 @@ def info(
 
     if columns_to_include == "all" or "vcrs_header_length" in columns_to_include:
         try:
-            logger.info("Calculating MCRS header length")
+            logger.info("Calculating VCRS header length")
             mutation_metadata_df["vcrs_header_length"] = mutation_metadata_df["vcrs_header"].str.len()
         except Exception as e:
-            logger.error(f"Error calculating MCRS header length: {e}")
+            logger.error(f"Error calculating VCRS header length: {e}")
             columns_not_successfully_added.append("vcrs_header_length")
-    if columns_to_include == "all" or "mcrs_sequence_length" in columns_to_include:
+    if columns_to_include == "all" or "vcrs_sequence_length" in columns_to_include:
         try:
-            logger.info("Calculating MCRS sequence length")
-            mutation_metadata_df["mcrs_sequence_length"] = mutation_metadata_df["vcrs_sequence"].str.len()
+            logger.info("Calculating VCRS sequence length")
+            mutation_metadata_df["vcrs_sequence_length"] = mutation_metadata_df["vcrs_sequence"].str.len()
         except Exception as e:
-            logger.error(f"Error calculating MCRS sequence length: {e}")
-            columns_not_successfully_added.append("mcrs_sequence_length")
+            logger.error(f"Error calculating VCRS sequence length: {e}")
+            columns_not_successfully_added.append("vcrs_sequence_length")
 
     # CELL
 
-    # TODO: calculate if MCRS was optimized - compare MCRS_length to length of unoptimized - exclude subs, and calculate max([2*w + length(added) - length(removed)], [2*w - 1])
+    # TODO: calculate if VCRS was optimized - compare MCRS_length to length of unoptimized - exclude subs, and calculate max([2*w + length(added) - length(removed)], [2*w - 1])
 
     if bowtie_path is not None:
         bowtie2_build = f"{bowtie_path}/bowtie2-build"
@@ -805,10 +810,11 @@ def info(
         bowtie2_build = "bowtie2-build"
         bowtie2 = "bowtie2"
 
+
     # TODO: have more columns_to_include options that allows me to do cdna alone, genome alone, or both combined - currently it is either cdna+genome or nothing
-    if columns_to_include == "all" or ("dlist" in columns_to_include or "number_of_alignments_to_normal_human_reference" in columns_to_include or "dlist_substring" in columns_to_include or "number_of_substring_matches_to_normal_human_reference" in columns_to_include):
+    if columns_to_include == "all" or ("alignment_to_reference" in columns_to_include or "alignment_to_reference_count_total" in columns_to_include or 'alignment_to_reference_count_cdna' in columns_to_include or 'alignment_to_reference_count_genome' in columns_to_include or "substring_alignment_to_reference" in columns_to_include or "substring_alignment_to_reference_count_total" in columns_to_include or "substring_alignment_to_reference_count_cdna" in columns_to_include or "substring_alignment_to_reference_count_genome" in columns_to_include):
         if not is_program_installed(bowtie2):
-            bowtie_columns = ["dlist", "number_of_alignments_to_normal_human_reference", "dlist_substring", "number_of_substring_matches_to_normal_human_reference"]
+            bowtie_columns = ["alignment_to_reference", "alignment_to_reference_count_total", "alignment_to_reference_count_cdna", "alignment_to_reference_count_genome", "substring_alignment_to_reference", "substring_alignment_to_reference_count_total", "substring_alignment_to_reference_count_cdna", "substring_alignment_to_reference_count_genome"]
             raise ValueError(f"bowtie2 must be installed to run for the following columns: {bowtie_columns}. Please install bowtie2 or omit these columns")
         try:
             logger.info("Aligning to normal genome and building dlist")
@@ -836,13 +842,17 @@ def info(
                 logger=logger,
             )
         except Exception as e:
-            logger.error("Error aligning to normal genome and building dlist: %s", e)
+            logger.error("Error aligning to normal genome and building alignment_to_reference: %s", e)
             columns_not_successfully_added.extend(
                 [
-                    "dlist",
-                    "number_of_alignments_to_normal_human_reference",
-                    "dlist_substring",
-                    "number_of_substring_matches_to_normal_human_reference",
+                    "alignment_to_reference",
+                    "alignment_to_reference_count_total",
+                    "alignment_to_reference_count_cdna",
+                    "alignment_to_reference_count_genome",
+                    "substring_alignment_to_reference",
+                    "substring_alignment_to_reference_count_total",
+                    "substring_alignment_to_reference_count_cdna",
+                    "substring_alignment_to_reference_count_genome",
                 ]
             )
 
@@ -877,12 +887,12 @@ def info(
 
     # CELL
 
-    if columns_to_include == "all" or ("pseudoaligned_to_human_reference" in columns_to_include or "pseudoaligned_to_human_reference_despite_not_truly_aligning" in columns_to_include):
+    if columns_to_include == "all" or ("pseudoaligned_to_reference" in columns_to_include or "pseudoaligned_to_reference_despite_not_truly_aligning" in columns_to_include):
         if not sequence_names_set_union_genome_and_cdna:
             sequence_names_set_union_genome_and_cdna = set()
-            column_name = "pseudoaligned_to_human_reference"
+            column_name = "pseudoaligned_to_reference"
         else:
-            column_name = "pseudoaligned_to_human_reference_despite_not_truly_aligning"
+            column_name = "pseudoaligned_to_reference_despite_not_truly_aligning"
 
         ref_folder_kb = f"{reference_out_dir}/kb_index_for_mcrs_pseudoalignment_to_reference_genome"
 
@@ -910,9 +920,9 @@ def info(
 
     # CELL
 
-    if columns_to_include == "all" or ("number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference" in columns_to_include or "number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference" in columns_to_include or "kmer_overlap_in_mcrs_reference" in columns_to_include):
+    if columns_to_include == "all" or ("number_of_kmers_with_overlap_to_other_VCRSs" in columns_to_include or "number_of_other_VCRSs_with_overlapping_kmers" in columns_to_include or 'VCRSs_with_overlapping_kmers' in columns_to_include or "kmer_overlap_with_other_VCRSs" in columns_to_include):
         try:
-            logger.info("Calculating overlap between MCRS items")
+            logger.info("Calculating overlap between VCRS items")
             df_overlap_stat_file = f"{output_stat_folder}/df_overlap_stat.txt"
             df_overlap = get_df_overlap(
                 vcrs_fasta,
@@ -925,15 +935,16 @@ def info(
             )
 
             mutation_metadata_df = mutation_metadata_df.merge(df_overlap, on=vcrs_id_column, how="left")
-            mutation_metadata_df["kmer_overlap_in_mcrs_reference"] = mutation_metadata_df["number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference"].astype(bool)
-            mutation_metadata_df["kmer_overlap_in_mcrs_reference"] = mutation_metadata_df["number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference"].notna() & mutation_metadata_df["number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference"].astype(bool)
+            mutation_metadata_df["kmer_overlap_with_other_VCRSs"] = mutation_metadata_df["number_of_kmers_with_overlap_to_other_VCRSs"].astype(bool)
+            mutation_metadata_df["kmer_overlap_with_other_VCRSs"] = mutation_metadata_df["number_of_kmers_with_overlap_to_other_VCRSs"].notna() & mutation_metadata_df["number_of_kmers_with_overlap_to_other_VCRSs"].astype(bool)
         except Exception as e:
-            logger.error(f"Error calculating overlap between MCRS items: {e}")
+            logger.error(f"Error calculating overlap between VCRS items: {e}")
             columns_not_successfully_added.extend(
                 [
-                    "number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference",
-                    "number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference",
-                    "kmer_overlap_in_mcrs_reference",
+                    "number_of_kmers_with_overlap_to_other_VCRSs",
+                    "number_of_other_VCRSs_with_overlapping_kmers",
+                    "VCRSs_with_overlapping_kmers",
+                    "kmer_overlap_with_other_VCRSs",
                 ]
             )
 
@@ -983,51 +994,51 @@ def info(
             columns_not_successfully_added.extend(["num_distinct_triplets", "num_total_triplets", "triplet_complexity"])
 
     # CELL
-    # add metadata: MCRS mutation type
-    if columns_to_include == "all" or "mcrs_mutation_type" in columns_to_include:
+    # add metadata: VCRS mutation type
+    if columns_to_include == "all" or "vcrs_mutation_type" in columns_to_include:
         try:
-            logger.info("Adding MCRS mutation type")
+            logger.info("Adding VCRS mutation type")
             mutation_metadata_df = add_mcrs_mutation_type(mutation_metadata_df, var_column="vcrs_header")
         except Exception as e:
-            logger.error(f"Error adding MCRS mutation type: {e}")
-            columns_not_successfully_added.append("mcrs_mutation_type")
+            logger.error(f"Error adding VCRS mutation type: {e}")
+            columns_not_successfully_added.append("vcrs_mutation_type")
 
     # CELL
 
     # Add metadata: ';' in vcrs_header
-    if columns_to_include == "all" or ("concatenated_headers_in_mcrs" in columns_to_include or "number_of_mutations_in_mcrs_header" in columns_to_include):
+    if columns_to_include == "all" or ("merged_variants_in_VCRS_entry" in columns_to_include or "number_of_variants_in_VCRS_entry" in columns_to_include):
         try:
             logger.info("Adding concatenated header info")
-            mutation_metadata_df["concatenated_headers_in_mcrs"] = mutation_metadata_df["vcrs_header"].str.contains(";")
-            mutation_metadata_df["number_of_mutations_in_mcrs_header"] = mutation_metadata_df["vcrs_header"].str.count(";") + 1
+            mutation_metadata_df["merged_variants_in_VCRS_entry"] = mutation_metadata_df["vcrs_header"].str.contains(";")
+            mutation_metadata_df["number_of_variants_in_VCRS_entry"] = mutation_metadata_df["vcrs_header"].str.count(";") + 1
         except Exception as e:
-            logger.error(f"Error adding concatenated headers in MCRS: {e}")
-            columns_not_successfully_added.extend(["concatenated_headers_in_mcrs", "number_of_mutations_in_mcrs_header"])
+            logger.error(f"Error adding concatenated headers in VCRS: {e}")
+            columns_not_successfully_added.extend(["merged_variants_in_VCRS_entry", "number_of_variants_in_VCRS_entry"])
 
     # CELL
 
-    # Add metadata: mcrs_sequence_rc
-    if columns_to_include == "all" or "mcrs_sequence_rc" in columns_to_include:
+    # Add metadata: vcrs_sequence_rc
+    if columns_to_include == "all" or "vcrs_sequence_rc" in columns_to_include:
         try:
-            logger.info("Adding MCRS reverse complement")
-            mutation_metadata_df["mcrs_sequence_rc"] = mutation_metadata_df["vcrs_sequence"].apply(reverse_complement)
+            logger.info("Adding VCRS reverse complement")
+            mutation_metadata_df["vcrs_sequence_rc"] = mutation_metadata_df["vcrs_sequence"].apply(reverse_complement)
         except Exception as e:
-            logger.error(f"Error adding MCRS reverse complement: {e}")
-            columns_not_successfully_added.append("mcrs_sequence_rc")
+            logger.error(f"Error adding VCRS reverse complement: {e}")
+            columns_not_successfully_added.append("vcrs_sequence_rc")
 
     # CELL
 
-    # Add metadata: mcrs substring and superstring (forward and rc)
-    if columns_to_include == "all" or ("entries_for_which_this_mcrs_is_substring" in columns_to_include or "entries_for_which_this_mcrs_is_superstring" in columns_to_include or "mcrs_is_substring" in columns_to_include or "mcrs_is_superstring" in columns_to_include):
+    # Add metadata: VCRS substring and superstring (forward and rc)
+    if columns_to_include == "all" or ("VCRSs_for_which_this_VCRS_is_a_substring" in columns_to_include or "VCRSs_for_which_this_VCRS_is_a_superstring" in columns_to_include or "VCRS_is_a_substring_of_another_VCRS" in columns_to_include or "VCRS_is_a_superstring_of_another_VCRS" in columns_to_include):
         if not is_program_installed(bowtie2):
-            bowtie_columns = ["entries_for_which_this_mcrs_is_substring", "entries_for_which_this_mcrs_is_superstring", "mcrs_is_substring", "mcrs_is_superstring"]
+            bowtie_columns = ["VCRSs_for_which_this_VCRS_is_a_substring", "VCRSs_for_which_this_VCRS_is_a_superstring", "VCRS_is_a_substring_of_another_VCRS", "VCRS_is_a_superstring_of_another_VCRS"]
             raise ValueError(f"bowtie2 must be installed to run for the following columns: {bowtie_columns}. Please install bowtie2 or omit these columns")
-        mcrs_to_mcrs_bowtie_folder = f"{out}/bowtie_mcrs_to_mcrs"
-        mcrs_sam_file = f"{mcrs_to_mcrs_bowtie_folder}/mutant_reads_to_mcrs_index.sam"
+        mcrs_to_mcrs_bowtie_folder = f"{out}/bowtie_vcrs_to_vcrs"
+        mcrs_sam_file = f"{mcrs_to_mcrs_bowtie_folder}/mutant_reads_to_vcrs_index.sam"
         substring_output_stat_file = f"{output_stat_folder}/substring_output_stat.txt"
 
         try:
-            logger.info("Creating MCRS to self headers")
+            logger.info("Creating VCRS to self headers")
             substring_to_superstring_df, superstring_to_substring_df = create_df_of_mcrs_to_self_headers(
                 mcrs_sam_file=mcrs_sam_file,
                 mcrs_fa=vcrs_fasta,
@@ -1043,36 +1054,36 @@ def info(
             mutation_metadata_df = mutation_metadata_df.merge(substring_to_superstring_df, on=vcrs_id_column, how="left")
             mutation_metadata_df = mutation_metadata_df.merge(superstring_to_substring_df, on=vcrs_id_column, how="left")
 
-            mutation_metadata_df["mcrs_is_substring"] = mutation_metadata_df["mcrs_is_substring"].fillna(False).astype(bool)
-            mutation_metadata_df["mcrs_is_superstring"] = mutation_metadata_df["mcrs_is_superstring"].fillna(False).astype(bool)
+            mutation_metadata_df["VCRS_is_a_substring_of_another_VCRS"] = mutation_metadata_df["VCRS_is_a_substring_of_another_VCRS"].fillna(False).astype(bool)
+            mutation_metadata_df["VCRS_is_a_superstring_of_another_VCRS"] = mutation_metadata_df["VCRS_is_a_superstring_of_another_VCRS"].fillna(False).astype(bool)
 
         except Exception as e:
-            logger.error(f"Error creating MCRS to self headers: {e}")
+            logger.error(f"Error creating VCRS to self headers: {e}")
             columns_not_successfully_added.extend(
                 [
-                    "entries_for_which_this_mcrs_is_substring",
-                    "entries_for_which_this_mcrs_is_superstring",
-                    "mcrs_is_substring",
-                    "mcrs_is_superstring",
+                    "VCRSs_for_which_this_VCRS_is_a_substring",
+                    "VCRSs_for_which_this_VCRS_is_a_superstring",
+                    "VCRS_is_a_substring_of_another_VCRS",
+                    "VCRS_is_a_superstring_of_another_VCRS",
                 ]
             )
 
     # CELL
-    logger.info("sorting mutation metadata by mcrs id")
-    mutation_metadata_df = mutation_metadata_df.sort_values(by="mcrs_id").reset_index(drop=True)
+    logger.info("sorting variant metadata by VCRS id")
+    mutation_metadata_df = mutation_metadata_df.sort_values(by=vcrs_id_column).reset_index(drop=True)
 
-    logger.info("Saving mutation metadata")
+    logger.info("Saving variant metadata")
     mutation_metadata_df.to_csv(variants_updated_vk_info_csv_out, index=False)
 
     # CELL
 
     if save_variants_updated_exploded_vk_info_csv:
-        logger.info("Saving exploded mutation metadata")
+        logger.info("Saving exploded variant metadata")
         mutation_metadata_df_exploded = explode_df(mutation_metadata_df, columns_to_explode)
         mutation_metadata_df_exploded.to_csv(variants_updated_exploded_vk_info_csv_out, index=False)
 
     if verbose:
-        logger.info(f"Saved mutation metadata to {variants_updated_vk_info_csv_out}")
+        logger.info(f"Saved variant metadata to {variants_updated_vk_info_csv_out}")
         logger.info(f"Columns: {mutation_metadata_df.columns}")
         logger.info(f"Columns successfully added: {set(mutation_metadata_df.columns.tolist()) - set(columns_original)}")
         logger.info(f"Columns not successfully added: {columns_not_successfully_added}")

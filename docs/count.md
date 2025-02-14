@@ -10,10 +10,10 @@ Input table
 | adata_reference_genome                                   | .h5ad                                   | False                  | N/A                                                                                 | Only created when it does not exist and it will be used in vk clean                             |
 | kb_count_reference_genome_dir                        | directory                              | False                  | N/A                                                                                 | Only created when it does not exist and it will be used in vk clean                               |
 | vk_ref_dir                                                              | directory                             | False                  | N/A                                                                                 |                                |
-| vcrs_fasta                                                            | .fasta                                   | False                  | <vk_ref_dir>/mcrs_filtered.fa                                         |                                |
+| vcrs_fasta                                                            | .fasta                                   | False                  | <vk_ref_dir>/vcrs_filtered.fa                                         |                                |
 | id_to_header_csv                                                 | .csv                                      | False                  | <vk_ref_dir>/id_to_header_mapping_filtered.csv         |                                |
 | dlist_fasta                                                             | .fasta                                   | False                  | <vk_ref_dir>/dlist_filtered.fa                                           |                               |
-| variants_updated_csv                                        | .csv                                    | False                  | <vk_ref_dir>/mutation_metadata_df_filtered.csv           |                               |
+| variants_updated_csv                                        | .csv                                    | False                  | <vk_ref_dir>/variants_updated_filtered.csv           |                               |
 
 
 Output table

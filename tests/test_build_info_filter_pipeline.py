@@ -26,7 +26,7 @@ cosmic_csv_path_starting = os.path.join(ground_truth_folder, "CancerMutationCens
 
 
 sample_size=2000
-columns_to_drop_info_filter = None  # ["nearby_variants", "number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference", "number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference", "overlapping_kmers", "mcrs_items_with_overlapping_kmers_in_mcrs_reference", "kmer_overlap_in_mcrs_reference"]
+columns_to_drop_info_filter = None  # ["nearby_variants", "number_of_kmers_with_overlap_to_other_VCRSs", "number_of_other_VCRSs_with_overlapping_kmers", "overlapping_kmers", "VCRSs_with_overlapping_kmers", "kmer_overlap_with_other_VCRSs"]
 make_new_gt = False
 
 
@@ -167,11 +167,11 @@ def test_file_processing(cosmic_csv_path, cds_and_cdna_files, genome_and_gtf_fil
     max_ambiguous_vk = 0
     strandedness = False
     fasta_filters = [
-        "dlist_substring:equal=none",  # filter out mutations which are a substring of the reference genome
-        "pseudoaligned_to_human_reference_despite_not_truly_aligning:is_not_true",  # filter out mutations which pseudoaligned to human genome despite not truly aligning
-        "dlist:equal=none",  #*** erase eventually when I want to d-list  # filter out mutations which are capable of being d-listed (given that I filter out the substrings above)
-        "number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference:less_than=999999",  # filter out mutations which overlap with other MCRSs in the reference
-        "number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference:less_than=999999",  # filter out mutations which overlap with other MCRSs in the reference
+        "substring_alignment_to_reference:equal=none",  # filter out mutations which are a substring of the reference genome
+        "pseudoaligned_to_reference_despite_not_truly_aligning:is_not_true",  # filter out mutations which pseudoaligned to human genome despite not truly aligning
+        "alignment_to_reference:equal=none",  #*** erase eventually when I want to d-list  # filter out mutations which are capable of being d-listed (given that I filter out the substrings above)
+        "number_of_kmers_with_overlap_to_other_VCRSs:less_than=999999",  # filter out mutations which overlap with other MCRSs in the reference
+        "number_of_other_VCRSs_with_overlapping_kmers:less_than=999999",  # filter out mutations which overlap with other MCRSs in the reference
         "longest_homopolymer_length:less_or_equal=6",  # filters out MCRSs with repeating single nucleotide - eg 6
         "triplet_complexity:greater_or_equal=0.2"  # filters out MCRSs with repeating triplets - eg 0.2
     ]
@@ -257,8 +257,8 @@ def test_file_processing(cosmic_csv_path, cds_and_cdna_files, genome_and_gtf_fil
         dlist_fasta = f"{out_dir_notebook}/dlist.fa"
         mutation_metadata_df_out_path = os.path.join(out_dir_notebook, "mutation_metadata_df_vk_info.csv")
         mutation_metadata_df_out_exploded_path = os.path.join(out_dir_notebook, "mutation_metadata_df_vk_info_exploded.csv")
-        mcrs_fasta_vk_filter = os.path.join(out_dir_notebook, "mcrs_filtered.fa")
-        output_metadata_df_vk_filter = os.path.join(out_dir_notebook, "mutation_metadata_df_filtered.csv")
+        mcrs_fasta_vk_filter = os.path.join(out_dir_notebook, "vcrs_filtered.fa")
+        output_metadata_df_vk_filter = os.path.join(out_dir_notebook, "variants_updated_filtered.csv")
         dlist_fasta_vk_filter = os.path.join(out_dir_notebook, "dlist_filtered.fa")
         t2g_vk_filter = os.path.join(out_dir_notebook, "t2g_filtered.txt")
         id_to_header_csv_vk_filter = os.path.join(out_dir_notebook, "id_to_header_mapping_filtered.csv")
@@ -266,8 +266,8 @@ def test_file_processing(cosmic_csv_path, cds_and_cdna_files, genome_and_gtf_fil
         dlist_fasta_ground_truth = f"{ground_truth_folder}/dlist.fa"
         mutation_metadata_df_out_path_ground_truth = f"{ground_truth_folder}/variants_updated.csv"
         mutation_metadata_df_out_exploded_path_ground_truth = f"{ground_truth_folder}/mutation_metadata_df_exploded.csv"
-        mcrs_fasta_vk_filter_ground_truth = f"{ground_truth_folder}/mcrs_filtered.fa"
-        output_metadata_df_vk_filter_ground_truth = f"{ground_truth_folder}/mutation_metadata_df_filtered.csv"
+        mcrs_fasta_vk_filter_ground_truth = f"{ground_truth_folder}/vcrs_filtered.fa"
+        output_metadata_df_vk_filter_ground_truth = f"{ground_truth_folder}/variants_updated_filtered.csv"
         dlist_fasta_vk_filter_ground_truth = f"{ground_truth_folder}/dlist_filtered.fa"
         t2g_vk_filter_ground_truth = f"{ground_truth_folder}/t2g_filtered.txt"
         id_to_header_csv_vk_filter_ground_truth = f"{ground_truth_folder}/id_to_header_mapping_filtered.csv"
@@ -287,9 +287,9 @@ def test_file_processing(cosmic_csv_path, cds_and_cdna_files, genome_and_gtf_fil
         vk.filter(
             input_dir=out_dir_notebook,
             filters = fasta_filters,
-            mutations_updated_vk_info_csv = mutation_metadata_df_out_path,
-            mcrs_filtered_fasta_out=mcrs_fasta_vk_filter,
-            mutations_updated_filtered_csv_out=output_metadata_df_vk_filter,
+            variants_updated_vk_info_csv = mutation_metadata_df_out_path,
+            vcrs_filtered_fasta_out=mcrs_fasta_vk_filter,
+            variants_updated_filtered_csv_out=output_metadata_df_vk_filter,
             dlist_fasta=dlist_fasta,
             dlist_filtered_fasta_out=dlist_fasta_vk_filter,
             output_t2g=t2g_vk_filter,

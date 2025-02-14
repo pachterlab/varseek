@@ -81,19 +81,19 @@ def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_
     mask = df["mutation"].str.contains(combined_pattern)
     df = df[~mask]
 
-    df[["nucleotide_positions", "actual_mutation"]] = df["mutation"].str.extract(mutation_pattern)
+    df[["nucleotide_positions", "actual_variant"]] = df["mutation"].str.extract(mutation_pattern)
 
     split_positions = df["nucleotide_positions"].str.split("_", expand=True)
 
-    df["start_mutation_position"] = split_positions[0]
+    df["start_variant_position"] = split_positions[0]
     if split_positions.shape[1] > 1:
-        df["end_mutation_position"] = split_positions[1].fillna(split_positions[0])
+        df["end_variant_position"] = split_positions[1].fillna(split_positions[0])
     else:
-        df["end_mutation_position"] = df["start_mutation_position"]
+        df["end_variant_position"] = df["start_variant_position"]
 
-    df.loc[df["end_mutation_position"].isna(), "end_mutation_position"] = df["start_mutation_position"]
+    df.loc[df["end_variant_position"].isna(), "end_variant_position"] = df["start_variant_position"]
 
-    df[["start_mutation_position", "end_mutation_position"]] = df[["start_mutation_position", "end_mutation_position"]].astype(int)
+    df[["start_variant_position", "end_variant_position"]] = df[["start_variant_position", "end_variant_position"]].astype(int)
 
     # Rename the mutation column
     df.rename(columns={"mutation": "mutation_cds"}, inplace=True)
@@ -133,17 +133,17 @@ def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_
 
             cds_start_pos = find_cds_position(cdna_seq, cds_seq)
             if cds_start_pos is not None:
-                df.at[index, "start_mutation_position"] += cds_start_pos - number_of_leading_ns
-                df.at[index, "end_mutation_position"] += cds_start_pos - number_of_leading_ns
+                df.at[index, "start_variant_position"] += cds_start_pos - number_of_leading_ns
+                df.at[index, "end_variant_position"] += cds_start_pos - number_of_leading_ns
 
-                start = df.at[index, "start_mutation_position"]
-                end = df.at[index, "end_mutation_position"]
-                actual_mutation = row["actual_mutation"]
+                start = df.at[index, "start_variant_position"]
+                end = df.at[index, "end_variant_position"]
+                actual_variant = row["actual_variant"]
 
                 if start == end:
-                    df.at[index, "mutation"] = f"c.{start}{actual_mutation}"
+                    df.at[index, "mutation"] = f"c.{start}{actual_variant}"
                 else:
-                    df.at[index, "mutation"] = f"c.{start}_{end}{actual_mutation}"
+                    df.at[index, "mutation"] = f"c.{start}_{end}{actual_variant}"
             else:
                 df.at[index, "mutation"] = None
                 number_bad += 1
@@ -154,9 +154,9 @@ def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_
     df.drop(
         columns=[
             "nucleotide_positions",
-            "actual_mutation",
-            "start_mutation_position",
-            "end_mutation_position",
+            "actual_variant",
+            "start_variant_position",
+            "end_variant_position",
         ],
         inplace=True,
     )

@@ -55,6 +55,7 @@ def summarize(
     adata,
     top_values=10,
     technology=None,
+    vcrs_header_column="vcrs_header",
     vcrs_id_column="vcrs_id",
     out=".",
     dry_run=False,
@@ -133,10 +134,10 @@ def summarize(
     if vcrs_id_column not in adata.var.columns:
         adata.var[vcrs_id_column] = adata.var_names
 
-    adata.var_names = adata.var["mcrs_header"]
+    adata.var_names = adata.var[vcrs_header_column]
 
-    if "mcrs_count" not in adata.var.columns:
-        adata.var["mcrs_count"] = adata.X.sum(axis=0).A1 if hasattr(adata.X, "A1") else adata.X.sum(axis=0).flatten()
+    if "vcrs_count" not in adata.var.columns:
+        adata.var["vcrs_count"] = adata.X.sum(axis=0).A1 if hasattr(adata.X, "A1") else adata.X.sum(axis=0).flatten()
 
     # 1. Number of Variants with Count > 0 in any Sample/Cell, and for bulk in particular, for each sample; then list the variants
     with open(stats_file, "w", encoding="utf-8") as f:
@@ -157,9 +158,9 @@ def summarize(
 
     # 2. Variants Present Across the Most Samples
     adata.var["number_of_samples_in_which_the_variant_is_detected"] = (adata.X > 0).sum(axis=0).A1 if hasattr(adata.X, "A1") else (adata.X > 0).sum(axis=0)
-    # Sort by number of samples and break ties with mcrs_count
+    # Sort by number of samples and break ties with vcrs_count
     most_common_variants = adata.var.sort_values(
-        by=["number_of_samples_in_which_the_variant_is_detected", "mcrs_count"],
+        by=["number_of_samples_in_which_the_variant_is_detected", "vcrs_count"],
         ascending=False,
     )
     variant_names = most_common_variants.index.tolist()
@@ -172,31 +173,31 @@ def summarize(
         # Write each variant's details
         for variant in most_common_variants.index:
             number_of_samples = adata.var.loc[variant, "number_of_samples_in_which_the_variant_is_detected"]
-            total_counts = adata.var.loc[variant, "mcrs_count"]
+            total_counts = adata.var.loc[variant, "vcrs_count"]
             f.write(f"{variant}\t{number_of_samples}\t{total_counts}\n")
 
-    # 3. Top 10 Variants with Highest mcrs_count Across All Samples
-    top_variants_mcrs_count = adata.var.sort_values(by="mcrs_count", ascending=False)
-    variant_names = top_variants_mcrs_count.index.tolist()
+    # 3. Top 10 Variants with Highest vcrs_count Across All Samples
+    top_variants_vcrs_count = adata.var.sort_values(by="vcrs_count", ascending=False)
+    variant_names = top_variants_vcrs_count.index.tolist()
     variant_names_top_n = variant_names[:top_values]
     with open(stats_file, "a", encoding="utf-8") as f:
         f.write(f"Variants with highest counts across all samples: {', '.join(variant_names_top_n)}")
-    with open(f"{specific_stats_folder}/variants_highest_mcrs_count.txt", "w", encoding="utf-8") as f:
+    with open(f"{specific_stats_folder}/variants_highest_vcrs_count.txt", "w", encoding="utf-8") as f:
         f.write("Variant\tNumber_of_Samples\tTotal_Counts\n")
 
         # Write each variant's details
-        for variant in top_variants_mcrs_count.index:
+        for variant in top_variants_vcrs_count.index:
             number_of_samples = adata.var.loc[variant, "number_of_samples_in_which_the_variant_is_detected"]
-            total_counts = adata.var.loc[variant, "mcrs_count"]
+            total_counts = adata.var.loc[variant, "vcrs_count"]
             f.write(f"{variant}\t{number_of_samples}\t{total_counts}\n")
 
     # --------------------------------------------------------------------------------------------------------
     # 4. Number of Genes with Count > 0 in any Sample/Cell, and for bulk in particular, for each sample; then list the genes
     with open(stats_file, "a", encoding="utf-8") as f:
-        # Sum mcrs_count for each gene
-        gene_counts = adata.var.groupby("gene_name")["mcrs_count"].sum()
+        # Sum vcrs_count for each gene
+        gene_counts = adata.var.groupby("gene_name")["vcrs_count"].sum()
 
-        # Count genes with non-zero mcrs_count across all samples
+        # Count genes with non-zero vcrs_count across all samples
         genes_count_any_row = (gene_counts > 0).sum()
         line = f"Total genes with count > 0 in any sample/cell: {genes_count_any_row}\n"
         f.write(line)
@@ -204,12 +205,12 @@ def summarize(
         # For bulk technologys, calculate counts for each sample
         if technology.lower() == "bulk":
             for sample in adata.obs_names:
-                # Calculate mcrs_count per gene for the specific sample
+                # Calculate vcrs_count per gene for the specific sample
                 gene_counts_per_sample = adata[sample, :].to_df().gt(0).groupby(adata.var["gene_name"], axis=1).sum().gt(0).sum()
                 line = f"Sample {sample} has {gene_counts_per_sample.sum()} genes with count > 0.\n"
                 f.write(line)
 
-    # List of genes with non-zero mcrs_count across all samples
+    # List of genes with non-zero vcrs_count across all samples
     genes_with_nonzero_counts = gene_counts[gene_counts > 0].index
     with open(f"{specific_stats_folder}/genes_with_any_count.txt", "w", encoding="utf-8") as f:
         for gene in genes_with_nonzero_counts:
@@ -220,20 +221,20 @@ def summarize(
     adata.var["detected"] = (adata.X > 0).astype(int)  # Binary matrix indicating presence per sample
     gene_sample_count = adata.var.groupby("gene_name")["detected"].sum()  # Sum across variants per gene
 
-    # Add the total mcrs_count per gene (summing across all variants for that gene)
-    gene_mcrs_count = adata.var.groupby("gene_name")["mcrs_count"].sum()
+    # Add the total vcrs_count per gene (summing across all variants for that gene)
+    gene_vcrs_count = adata.var.groupby("gene_name")["vcrs_count"].sum()
 
     # Combine both into a DataFrame for sorting
     gene_presence_df = pd.DataFrame(
         {
             "number_of_samples_in_which_the_gene_is_detected": gene_sample_count.max(axis=1),
-            "total_mcrs_count": gene_mcrs_count,
+            "total_vcrs_count": gene_vcrs_count,
         }
     )
 
-    # Sort by number of samples and break ties with total mcrs_count
+    # Sort by number of samples and break ties with total vcrs_count
     most_common_genes = gene_presence_df.sort_values(
-        by=["number_of_samples_in_which_the_gene_is_detected", "total_mcrs_count"],
+        by=["number_of_samples_in_which_the_gene_is_detected", "total_vcrs_count"],
         ascending=False,
     )
 
@@ -243,23 +244,23 @@ def summarize(
         f.write(f"Genes present across the most samples: {', '.join(gene_names_top_n)}\n")
 
     with open(f"{specific_stats_folder}/genes_present_across_the_most_samples.txt", "w", encoding="utf-8") as f:
-        f.write("Gene\tNumber_of_Samples\tTotal_mcrs_count\n")
+        f.write("Gene\tNumber_of_Samples\tTotal_vcrs_count\n")
         for gene, row in most_common_genes.iterrows():
-            f.write(f"{gene}\t{row['number_of_samples_in_which_the_gene_is_detected']}\t{row['total_mcrs_count']}\n")
+            f.write(f"{gene}\t{row['number_of_samples_in_which_the_gene_is_detected']}\t{row['total_vcrs_count']}\n")
 
-    # 6. Top 10 Genes with Highest mcrs_count Across All Samples
-    # Sort genes by total mcrs_count
-    top_genes_mcrs_count = gene_presence_df.sort_values(by="total_mcrs_count", ascending=False)
+    # 6. Top 10 Genes with Highest vcrs_count Across All Samples
+    # Sort genes by total vcrs_count
+    top_genes_vcrs_count = gene_presence_df.sort_values(by="total_vcrs_count", ascending=False)
 
-    # Write top genes with highest mcrs_count to stats file and detailed file
+    # Write top genes with highest vcrs_count to stats file and detailed file
     with open(stats_file, "a", encoding="utf-8") as f:
-        gene_names_top_n = top_genes_mcrs_count.index[:top_values].tolist()
-        f.write(f"Genes with highest mcrs_count across all samples: {', '.join(gene_names_top_n)}\n")
+        gene_names_top_n = top_genes_vcrs_count.index[:top_values].tolist()
+        f.write(f"Genes with highest vcrs_count across all samples: {', '.join(gene_names_top_n)}\n")
 
-    with open(f"{specific_stats_folder}/genes_highest_mcrs_count.txt", "w", encoding="utf-8") as f:
-        f.write("Gene\tNumber_of_Samples\tTotal_mcrs_count\n")
-        for gene, row in top_genes_mcrs_count.iterrows():
-            f.write(f"{gene}\t{row['number_of_samples_in_which_the_gene_is_detected']}\t{row['total_mcrs_count']}\n")
+    with open(f"{specific_stats_folder}/genes_highest_vcrs_count.txt", "w", encoding="utf-8") as f:
+        f.write("Gene\tNumber_of_Samples\tTotal_vcrs_count\n")
+        for gene, row in top_genes_vcrs_count.iterrows():
+            f.write(f"{gene}\t{row['number_of_samples_in_which_the_gene_is_detected']}\t{row['total_vcrs_count']}\n")
 
     report_time_elapsed(start_time, logger=logger, verbose=verbose, function_name="summarize")
 

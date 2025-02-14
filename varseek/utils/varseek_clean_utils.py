@@ -195,7 +195,7 @@ def decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_
     else:
         bus_df = pd.read_csv(f"{kb_count_out}/bus_df.csv")
 
-    if "mcrs_mutation_type" not in adata.var.columns:
+    if "vcrs_mutation_type" not in adata.var.columns:
         adata.var = add_mcrs_mutation_type(adata.var, var_column="vcrs_header")
 
     if keep_only_insertions:  # valid when fragment length >= 2*read length
@@ -207,7 +207,7 @@ def decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_
         }
 
         # Filter and retrieve the set of 'vcrs_header' values
-        potentially_double_counted_reference_items = set(adata.var["vcrs_id"][adata.var["mcrs_mutation_type"].isin(mutation_types_with_a_chance_of_being_double_counted_after_N_split)])
+        potentially_double_counted_reference_items = set(adata.var["vcrs_id"][adata.var["vcrs_mutation_type"].isin(mutation_types_with_a_chance_of_being_double_counted_after_N_split)])
 
         # filter bus_df to only keep rows where bus_df['gene_names_final'] contains a gene that is in potentially_double_counted_reference_items
         pattern = "|".join(potentially_double_counted_reference_items)

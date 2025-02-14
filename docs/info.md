@@ -3,7 +3,7 @@ Input table
 | Parameter                                                           | File type         | Required?           | Corresponding parameter from vk build  | Description             |
 |----------------------------------------------------------------|--------------------|------------------------|------------------------------------------------------|---------------------------|
 | input_dir                                                              | directory         | True                    | out                                                           | ...                             |
-| vcrs_fasta                                                           | .fa                  | False                  | mcrs_fasta_out                                       | ...                             |
+| vcrs_fasta                                                           | .fa                  | False                  | vcrs_fasta_out                                       | ...                             |
 | id_to_header_csv                                                | .csv                | False                  | id_to_header_csv_out                            | ...                             |
 | variants_updated_csv                                      | .csv                | False                  | mutations_updated_csv_out                   | ...                             |
 | gtf                                                                        | .csv                | False                  | gtf                                                            | ...                             |

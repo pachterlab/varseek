@@ -8,12 +8,9 @@ import requests
 
 import varseek as vk
 from varseek.utils import (
-    authenticate_cosmic_credentials,
-    authenticate_cosmic_credentials_via_server,
     check_file_path_is_string_with_valid_extension,
     check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal,
     download_varseek_files,
-    encode_cosmic_credentials,
     get_python_or_cli_function_call,
     is_valid_int,
     make_function_parameter_to_value_dict,
@@ -127,9 +124,9 @@ def ref(
     w=54,
     k=59,
     filters=(
-        "dlist_substring:equal=none",  # filter out variants that are a substring of the reference genome
-        "pseudoaligned_to_human_reference_despite_not_truly_aligning:is_not_true",  # filter out variants that pseudoaligned to human genome despite not truly aligning
-        "dlist:equal=none",  # *** erase eventually when I want to d-list  # filter out variants that are capable of being d-listed (given that I filter out the substrings above)
+        "substring_alignment_to_reference:equal=none",  # filter out variants that are a substring of the reference genome
+        "pseudoaligned_to_reference_despite_not_truly_aligning:is_not_true",  # filter out variants that pseudoaligned to human genome despite not truly aligning
+        "alignment_to_reference:equal=none",  # *** erase eventually when I want to d-list  # filter out variants that are capable of being d-listed (given that I filter out the substrings above)
         "longest_homopolymer_length:bottom_percent=99.99",  # filters out VCRSs with repeating single nucleotide - 99.99 keeps the bottom 99.99% (fraction 0.9999) ie filters out the top 0.01%
         "triplet_complexity:top_percent=99.9",  # filters out VCRSs with repeating triplets - 99.9 keeps the top 99.9% (fraction 0.999) ie filters out the bottom 0.1%
     ),

@@ -633,7 +633,7 @@ def main():  # noqa: C901
         type=strpath_or_list_like_of_strings,
         nargs="+",
         required=False,
-        default=("number_of_variants_in_this_gene_total", "number_of_alignments_to_normal_human_reference", "pseudoaligned_to_human_reference_despite_not_truly_aligning", "longest_homopolymer_length", "triplet_complexity"),
+        default=("number_of_variants_in_this_gene_total", "alignment_to_reference_count_total", "pseudoaligned_to_reference_despite_not_truly_aligning", "longest_homopolymer_length", "triplet_complexity"),
         help=extract_help_from_doc(info, "columns_to_include"),
     )
     parser_info.add_argument(
@@ -933,14 +933,14 @@ def main():  # noqa: C901
         help=extract_help_from_doc(filter, "filters"),
     )
     parser_filter.add_argument(
-        "--mutations_updated_vk_info_csv",
+        "--variants_updated_vk_info_csv",
         required=False,
-        help=extract_help_from_doc(filter, "mutations_updated_vk_info_csv"),
+        help=extract_help_from_doc(filter, "variants_updated_vk_info_csv"),
     )
     parser_filter.add_argument(
-        "--mutations_updated_exploded_vk_info_csv",
+        "--variants_updated_exploded_vk_info_csv",
         required=False,
-        help=extract_help_from_doc(filter, "mutations_updated_exploded_vk_info_csv"),
+        help=extract_help_from_doc(filter, "variants_updated_exploded_vk_info_csv"),
     )
     parser_filter.add_argument(
         "--id_to_header_csv",
@@ -974,14 +974,14 @@ def main():  # noqa: C901
         help=extract_help_from_doc(filter, "out"),
     )
     parser_filter.add_argument(
-        "--mutations_updated_filtered_csv_out",
+        "--variants_updated_filtered_csv_out",
         required=False,
-        help=extract_help_from_doc(filter, "mutations_updated_filtered_csv_out"),
+        help=extract_help_from_doc(filter, "variants_updated_filtered_csv_out"),
     )
     parser_filter.add_argument(
-        "--mutations_updated_exploded_filtered_csv_out",
+        "--variants_updated_exploded_filtered_csv_out",
         required=False,
-        help=extract_help_from_doc(filter, "mutations_updated_exploded_filtered_csv_out"),
+        help=extract_help_from_doc(filter, "variants_updated_exploded_filtered_csv_out"),
     )
     parser_filter.add_argument(
         "--id_to_header_filtered_csv_out",
@@ -994,42 +994,42 @@ def main():  # noqa: C901
         help=extract_help_from_doc(filter, "dlist_filtered_fasta_out"),
     )
     parser_filter.add_argument(
-        "--mcrs_filtered_fasta_out",
+        "--vcrs_filtered_fasta_out",
         required=False,
-        help=extract_help_from_doc(filter, "mcrs_filtered_fasta_out"),
+        help=extract_help_from_doc(filter, "vcrs_filtered_fasta_out"),
     )
     parser_filter.add_argument(
-        "--mcrs_t2g_filtered_out",
+        "--vcrs_t2g_filtered_out",
         required=False,
-        help=extract_help_from_doc(filter, "mcrs_t2g_filtered_out"),
+        help=extract_help_from_doc(filter, "vcrs_t2g_filtered_out"),
     )
     parser_filter.add_argument(
-        "--wt_mcrs_filtered_fasta_out",
+        "--wt_vcrs_filtered_fasta_out",
         required=False,
-        help=extract_help_from_doc(filter, "wt_mcrs_filtered_fasta_out"),
+        help=extract_help_from_doc(filter, "wt_vcrs_filtered_fasta_out"),
     )
     parser_filter.add_argument(
-        "--wt_mcrs_t2g_filtered_out",
+        "--wt_vcrs_t2g_filtered_out",
         required=False,
-        help=extract_help_from_doc(filter, "wt_mcrs_t2g_filtered_out"),
+        help=extract_help_from_doc(filter, "wt_vcrs_t2g_filtered_out"),
     )
     parser_filter.add_argument(
-        "--save_wt_mcrs_fasta_and_t2g",
+        "--save_wt_vcrs_fasta_and_t2g",
         action="store_true",
         required=False,
-        help=extract_help_from_doc(filter, "save_wt_mcrs_fasta_and_t2g"),
+        help=extract_help_from_doc(filter, "save_wt_vcrs_fasta_and_t2g"),
     )
     parser_filter.add_argument(
-        "--save_mutations_updated_filtered_csvs",
+        "--save_variants_updated_filtered_csvs",
         action="store_true",
         required=False,
-        help=extract_help_from_doc(filter, "save_mutations_updated_filtered_csvs"),
+        help=extract_help_from_doc(filter, "save_variants_updated_filtered_csvs"),
     )
     parser_filter.add_argument(
-        "--return_mutations_updated_filtered_csv_df",
+        "--return_variants_updated_filtered_csv_df",
         action="store_true",
         required=False,
-        help=extract_help_from_doc(filter, "return_mutations_updated_filtered_csv_df"),
+        help=extract_help_from_doc(filter, "return_variants_updated_filtered_csv_df"),
     )
     parser_filter.add_argument(
         "--dry_run",
@@ -1084,10 +1084,10 @@ def main():  # noqa: C901
         help=extract_help_from_doc(filter, "dlist_cdna_filtered_fasta_out"),
     )
     parser_filter.add_argument(
-        "--disable_save_mcrs_filtered_fasta_and_t2g",
+        "--disable_save_vcrs_filtered_fasta_and_t2g",
         action="store_false",
         required=False,
-        help=extract_help_from_doc(filter, "save_mcrs_filtered_fasta_and_t2g", disable=True),
+        help=extract_help_from_doc(filter, "save_vcrs_filtered_fasta_and_t2g", disable=True),
     )
     parser_filter.add_argument(
         "--disable_use_IDs",
@@ -1915,6 +1915,12 @@ def main():  # noqa: C901
         help=extract_help_from_doc(summarize, "technology"),
     )
     parser_summarize.add_argument(
+        "--vcrs_header_column",
+        required=False,
+        default="vcrs_id",
+        help=extract_help_from_doc(summarize, "vcrs_header_column"),
+    )
+    parser_summarize.add_argument(
         "--vcrs_id_column",
         required=False,
         default="vcrs_id",
@@ -2013,11 +2019,11 @@ def main():  # noqa: C901
         nargs="*",
         required=False,
         default=(
-            "dlist_substring:equal=none",  # filter out mutations which are a substring of the reference genome
-            "pseudoaligned_to_human_reference_despite_not_truly_aligning:is_not_true",  # filter out mutations which pseudoaligned to human genome despite not truly aligning
-            "dlist:equal=none",  # *** erase eventually when I want to d-list  # filter out mutations which are capable of being d-listed (given that I filter out the substrings above)
-            "number_of_kmers_with_overlap_to_other_mcrs_items_in_mcrs_reference:less_than=999999",  # filter out mutations which overlap with other MCRSs in the reference
-            "number_of_mcrs_items_with_overlapping_kmers_in_mcrs_reference:less_than=999999",  # filter out mutations which overlap with other MCRSs in the reference
+            "substring_alignment_to_reference:equal=none",  # filter out mutations which are a substring of the reference genome
+            "pseudoaligned_to_reference_despite_not_truly_aligning:is_not_true",  # filter out mutations which pseudoaligned to human genome despite not truly aligning
+            "alignment_to_reference:equal=none",  # *** erase eventually when I want to d-list  # filter out mutations which are capable of being d-listed (given that I filter out the substrings above)
+            "number_of_kmers_with_overlap_to_other_VCRSs:less_than=999999",  # filter out mutations which overlap with other MCRSs in the reference
+            "number_of_other_VCRSs_with_overlapping_kmers:less_than=999999",  # filter out mutations which overlap with other MCRSs in the reference
             "longest_homopolymer_length:bottom_percent=99.99",  # filters out MCRSs with repeating single nucleotide - 99.99 keeps the bottom 99.99% (fraction 0.9999) ie filters out the top 0.01%
             "triplet_complexity:top_percent=99.9",  # filters out MCRSs with repeating triplets - 99.9 keeps the top 99.9% (fraction 0.999) ie filters out the bottom 0.1%
         ),
@@ -2475,25 +2481,25 @@ def main():  # noqa: C901
         filter_results = filter(
             input_dir=args.input_dir,
             filters=filter_rules,
-            mutations_updated_vk_info_csv=args.mutations_updated_vk_info_csv,
-            mutations_updated_exploded_vk_info_csv=args.mutations_updated_exploded_vk_info_csv,
+            variants_updated_vk_info_csv=args.variants_updated_vk_info_csv,
+            variants_updated_exploded_vk_info_csv=args.variants_updated_exploded_vk_info_csv,
             id_to_header_csv=args.id_to_header_csv,
             dlist_fasta=args.dlist_fasta,
             vcrs_id_column=args.vcrs_id_column,
             vcrs_header_column=args.vcrs_header_column,
             vcrs_sequence_column=args.vcrs_sequence_column,
             out=args.out,
-            mutations_updated_filtered_csv_out=args.mutations_updated_filtered_csv_out,
-            mutations_updated_exploded_filtered_csv_out=args.mutations_updated_exploded_filtered_csv_out,
+            variants_updated_filtered_csv_out=args.variants_updated_filtered_csv_out,
+            variants_updated_exploded_filtered_csv_out=args.variants_updated_exploded_filtered_csv_out,
             id_to_header_filtered_csv_out=args.id_to_header_filtered_csv_out,
             dlist_filtered_fasta_out=args.dlist_filtered_fasta_out,
-            mcrs_filtered_fasta_out=args.mcrs_filtered_fasta_out,
-            mcrs_t2g_filtered_out=args.mcrs_t2g_filtered_out,
-            wt_mcrs_filtered_fasta_out=args.wt_mcrs_filtered_fasta_out,
-            wt_mcrs_t2g_filtered_out=args.wt_mcrs_t2g_filtered_out,
-            save_wt_mcrs_fasta_and_t2g=args.save_wt_mcrs_fasta_and_t2g,
-            save_mutations_updated_filtered_csvs=args.save_mutations_updated_filtered_csvs,
-            return_mutations_updated_filtered_csv_df=args.return_mutations_updated_filtered_csv_df,
+            vcrs_filtered_fasta_out=args.vcrs_filtered_fasta_out,
+            vcrs_t2g_filtered_out=args.vcrs_t2g_filtered_out,
+            wt_vcrs_filtered_fasta_out=args.wt_vcrs_filtered_fasta_out,
+            wt_vcrs_t2g_filtered_out=args.wt_vcrs_t2g_filtered_out,
+            save_wt_vcrs_fasta_and_t2g=args.save_wt_vcrs_fasta_and_t2g,
+            save_variants_updated_filtered_csvs=args.save_variants_updated_filtered_csvs,
+            return_variants_updated_filtered_csv_df=args.return_variants_updated_filtered_csv_df,
             dry_run=args.dry_run,
             list_filter_rules=args.list_filter_rules,
             overwrite=args.overwrite,
@@ -2503,7 +2509,7 @@ def main():  # noqa: C901
             dlist_cdna_fasta=args.dlist_cdna_fasta,
             dlist_genome_filtered_fasta_out=args.dlist_genome_filtered_fasta_out,
             dlist_cdna_filtered_fasta_out=args.dlist_cdna_filtered_fasta_out,
-            save_mcrs_filtered_fasta_and_t2g=args.disable_save_mcrs_filtered_fasta_and_t2g,
+            save_vcrs_filtered_fasta_and_t2g=args.disable_save_vcrs_filtered_fasta_and_t2g,
             use_IDs=args.disable_use_IDs,
             **kwargs,
         )
@@ -2642,6 +2648,7 @@ def main():  # noqa: C901
             id_to_header_csv=args.id_to_header_csv,
             dlist_fasta=args.dlist_fasta,
             variants_updated_csv=args.variants_updated_csv,
+            vcrs_header_column=args.vcrs_header_column,
             vcrs_id_column=args.vcrs_id_column,
             mutations_updated_csv_columns=args.mutations_updated_csv_columns,
             adata_reference_genome=args.adata_reference_genome,
