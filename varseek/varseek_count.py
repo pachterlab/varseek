@@ -57,7 +57,7 @@ def validate_input_count(params_dict):
     for param_name, file_type in {
         "index": "index",
         "t2g": "t2g",
-    }:
+    }.items():
         check_file_path_is_string_with_valid_extension(params_dict[param_name], param_name, file_type=file_type, required=True)
         if not os.path.isfile(params_dict[param_name]):  # ensure that all fastq files exist
             raise ValueError(f"File {params_dict[param_name]} does not exist")

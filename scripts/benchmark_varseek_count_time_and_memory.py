@@ -107,7 +107,7 @@ fastq_output_path_max_reads = os.path.join(tmp_dir, f"reads_{number_of_reads_max
 
 print(f"Building synthetic reads for {number_of_reads_max} reads")
 _ = vk.sim(
-    mutations = cosmic_mutations,
+    variants = cosmic_mutations,
     reads_fastq_out = fastq_output_path_max_reads,
     number_of_variants_to_sample=number_of_variants_to_sample,
     strand=strand,

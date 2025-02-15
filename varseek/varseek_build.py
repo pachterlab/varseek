@@ -310,11 +310,12 @@ def validate_input_build(params_dict):
     if isinstance(sequences, str):
         if all(c in "ACGTNU-.*" for c in sequences.upper()):  # a single reference sequence
             pass
-        if supported_databases_and_corresponding_reference_sequence_type.get(mutations, {}).get("sequence_file_names", {}).get(sequences, None):  # a supported reference genome
+        elif supported_databases_and_corresponding_reference_sequence_type.get(mutations, {}).get("sequence_file_names", {}).get(sequences, None):  # a supported reference genome
             pass
-        if os.path.isfile(sequences) and sequences.endswith(fasta_extensions):  # a path to a reference genome with a valid extension
+        elif os.path.isfile(sequences) and sequences.endswith(fasta_extensions):  # a path to a reference genome with a valid extension
             pass
-        raise ValueError(f"sequences must be a nucleotide string, a list of nucleotide strings, a path to a reference genome, or a string specifying a reference genome supported by varseek. Got {type(sequences)}.\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
+        else:
+            raise ValueError(f"sequences must be a nucleotide string, a list of nucleotide strings, a path to a reference genome, or a string specifying a reference genome supported by varseek. Got {type(sequences)}.\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
 
     # mutations
     if not isinstance(mutations, (list, str)):
@@ -329,7 +330,8 @@ def validate_input_build(params_dict):
                 raise ValueError(f"sequences {sequences} not internally supported.\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
         elif os.path.isfile(mutations) and mutations.endswith(accepted_build_file_types):  # a path to a mutation database with a valid extension
             pass
-        raise ValueError(f"variants must be a string, a list of strings, a path to a variant database, or a string specifying a variant database supported by varseek. Got {type(mutations)}.\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
+        else:
+            raise ValueError(f"variants must be a string, a list of strings, a path to a variant database, or a string specifying a variant database supported by varseek. Got {type(mutations)}.\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
 
     # Directories
     if not isinstance(params_dict.get("out", None), str):
@@ -347,12 +349,12 @@ def validate_input_build(params_dict):
         "wt_vcrs_fasta_out": "fasta",
         "wt_vcrs_t2g_out": "t2g",
         "removed_variants_text_out": "txt",
-    }:
+    }.items():
         check_file_path_is_string_with_valid_extension(params_dict.get(param_name), param_name, file_type)
 
     # column names
-    for column in ["var_column", "seq_id_column", "var_id_column", "gtf_transcript_id_column"]:
-        if not isinstance(params_dict.get(column), str):
+    for column, optional_status in [("var_column", False), ("seq_id_column", False), ("var_id_column", True), ("gtf_transcript_id_column", True)]:
+        if not (isinstance(params_dict.get(column), str) or (optional_status and params_dict.get(column) is None)):
             raise ValueError(f"Invalid column name for {column}: {params_dict.get(column)}")
 
     # integers - optional just means that it's in kwargs
@@ -369,7 +371,7 @@ def validate_input_build(params_dict):
 
     k = params_dict.get("k", None)
     w = params_dict.get("w", None)
-    if int(k) % 2 != 0 or int(k) > 63:
+    if int(k) % 2 == 0 or int(k) > 63:
         logger.warning("If running a workflow with vk ref or kb ref, k should be an odd number between 1 and 63. Got k=%s.", k)
     if int(w) >= int(k):
         raise ValueError(f"w should be less than k. Got w={w}, k={k}.")
@@ -378,27 +380,27 @@ def validate_input_build(params_dict):
     if params_dict.get("required_insertion_overlap_length") is not None and not isinstance(params_dict.get("required_insertion_overlap_length"), (int, str)):
         raise ValueError(f"required_insertion_overlap_length must be an int, a string, or None. Got {type(params_dict.get('required_insertion_overlap_length'))}.")
 
-    # Boolean
-    for param_name in [
-        "optimize_flanking_regions",
-        "remove_seqs_with_wt_kmers",
-        "merge_identical",
-        "vcrs_strandedness",
-        "use_IDs",
-        "save_wt_vcrs_fasta_and_t2g",
-        "save_variants_updated_csv",
-        "store_full_sequences",
-        "translate",
-        "return_variant_output",
-        "save_files",
-        "verbose",
-        "save_removed_variants_text",
-        "save_filtering_report_text",
-        "dry_run",
-        "list_supported_databases",
-        "overwrite",
+    # Boolean - optional_status means that None is also valid (because the kwargs is defined later)
+    for param_name, optional_status in [
+        ("optimize_flanking_regions", True),
+        ("remove_seqs_with_wt_kmers", True),
+        ("merge_identical", True),
+        ("vcrs_strandedness", True),
+        ("use_IDs", True),
+        ("save_wt_vcrs_fasta_and_t2g", False),
+        ("save_variants_updated_csv", False),
+        ("store_full_sequences", False),
+        ("translate", False),
+        ("return_variant_output", True),
+        ("save_files", True),
+        ("verbose", False),
+        ("save_removed_variants_text", False),
+        ("save_filtering_report_text", False),
+        ("dry_run", False),
+        ("list_supported_databases", False),
+        ("overwrite", False),
     ]:
-        if not isinstance(params_dict.get(param_name), bool):
+        if not (isinstance(params_dict.get(param_name), bool) or (optional_status and params_dict.get(param_name) is None)):
             raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
 
     # Validate translation parameters
@@ -517,12 +519,12 @@ def build(
     - var_column                         (str) Name of the column containing the variants to be introduced in 'variants'. Default: 'mutation'.
     - seq_id_column                      (str) Name of the column containing the IDs of the sequences to be mutated in 'variants'. Default: 'seq_ID'.
     - var_id_column                      (str) Name of the column containing the IDs of each variant in 'variants'. Optional. Default: use <seq_id_column>_<var_column> for each row.
-    - gtf                                (str) Path to .gtf file. Only used in conjunction with the arguments `transcript_boundaries` and `identify_all_spliced_from_genome`. Default: None
+    - gtf                                (str) Path to .gtf file. Only used in conjunction with the arguments `transcript_boundaries` and `identify_all_spliced_from_genome`, as well as to add some information to the downloaded database when variants='cosmic_cmc'. If downloading sequence information, then setting gtf=True will automatically include it in the download. Default: None
     - gtf_transcript_id_column           (str) Column name in the input 'variants' file containing the transcript ID.
                                          In this case, column seq_id_column should contain the chromosome number.
                                          Required when 'gtf' is provided. Default: None
     - transcript_boundaries              (True/False) Whether to use the transcript boundaries in the input 'gtf' file to define the boundaries of the VCRSs. Only used when the `sequences` and `variants` information is in terms of the genome, and when `gtf` is specified. Default: False.
-    - identify_all_spliced_from_genome   (True/False) Whether to identify all spliced VCRSs from the genome. Default: False.
+    - identify_all_spliced_from_genome   (True/False) Whether to identify all spliced VCRSs from the genome. Currently not implemented. Default: False.
 
     # Output paths and associated parameters
     - out                                (str) Path to default output directory to containing created files. Any individual output file path can be overriden if the specific file path is provided
@@ -585,7 +587,7 @@ def build(
                                          If False, then an additional file at the path <id_to_header_csv_out> will be formed that maps sequence IDs from the fasta file to the <var_id_column>. Default: True.
 
     # # specific databases
-    - cosmic_release                     (str) COSMIC release version to download. Default: "100".
+    - cosmic_version                     (str) COSMIC release version to download. Default: "100".
     - cosmic_grch                        (str) COSMIC genome reference version to download. Default: "37".
     - cosmic_email                       (str) Email address for COSMIC download. Default: None.
     - cosmic_password                    (str) Password for COSMIC download. Default: None.
@@ -659,7 +661,7 @@ def build(
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
     # * 7. Define kwargs defaults
-    cosmic_release = kwargs.get("cosmic_release", None)
+    cosmic_version = kwargs.get("cosmic_version", None)
     cosmic_grch = kwargs.get("cosmic_grch", None)
     cosmic_email = kwargs.get("cosmic_email", None)
     cosmic_password = kwargs.get("cosmic_password", None)
@@ -697,8 +699,8 @@ def build(
 
     if isinstance(mutations, str):
         if mutations in supported_databases_and_corresponding_reference_sequence_type and "cosmic" in mutations:
-            if not cosmic_release:
-                cosmic_release = "100"
+            if not cosmic_version:
+                cosmic_version = "100"
             if not cosmic_grch:
                 grch_dict = supported_databases_and_corresponding_reference_sequence_type[mutations]["database_version_to_reference_assembly_build"]
                 largest_key = max(int(k) for k in grch_dict.keys())
@@ -719,59 +721,65 @@ def build(
         if mutations in supported_databases_and_corresponding_reference_sequence_type and sequences in supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_download_commands"]:
             # TODO: expand beyond COSMIC
             if "cosmic" in mutations:
-                ensembl_version = supported_databases_and_corresponding_reference_sequence_type[mutations]["database_version_to_reference_release"][cosmic_release]
-                reference_out_sequences = f"{reference_out_dir}/ensembl_grch{grch}_release{ensembl_version}"
+                ensembl_version = supported_databases_and_corresponding_reference_sequence_type[mutations]["database_version_to_reference_release"][cosmic_version]
+                reference_out_sequences = f"{reference_out_dir}/ensembl_grch{grch}_release{ensembl_version}"  # matches vk info
 
                 sequences_download_command = supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_download_commands"][sequences]
                 sequences_download_command = sequences_download_command.replace("OUT_DIR", reference_out_sequences)
-                sequences_download_command = sequences_download_command.replace(
-                    "ENSEMBL_VERSION",
-                    ensembl_version,
-                )
+                sequences_download_command = sequences_download_command.replace("ENSEMBL_VERSION", ensembl_version)
                 sequences_download_command = sequences_download_command.replace("GRCH_NUMBER", gget_ref_grch)
-                sequences_download_command_list = sequences_download_command.split(" ")
+                
+                genome_file = supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_file_names"]["genome"]
+                genome_file = genome_file.replace("GRCH_NUMBER", grch)
+                genome_file = f"{reference_out_sequences}/{genome_file}"
 
-                if sequences == "genome":
-                    genome_file = supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_file_names"]["genome"]
-                    genome_file = genome_file.replace("GRCH_NUMBER", grch)
-                    genome_file = f"{reference_out_sequences}/{genome_file}"
-                    gtf_file = supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_file_names"]["gtf"]
-                    gtf_file = gtf_file.replace("GRCH_NUMBER", grch)
-                    gtf_file = f"{reference_out_sequences}/{gtf_file}"
+                gtf_file = supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_file_names"]["gtf"]
+                gtf_file = gtf_file.replace("GRCH_NUMBER", grch)
+                gtf_file = f"{reference_out_sequences}/{gtf_file}"
+
+                cds_file = supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_file_names"]["cds"]
+                cds_file = cds_file.replace("GRCH_NUMBER", grch)
+                cds_file = f"{reference_out_sequences}/{cds_file}"
+
+                cdna_file = supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_file_names"]["cdna"]
+                cdna_file = cdna_file.replace("GRCH_NUMBER", grch)
+                cdna_file = f"{reference_out_sequences}/{cdna_file}"
+
+                files_to_download_list = []
+                if sequences == "genome" and not os.path.isfile(genome_file):
+                    files_to_download.append("dna")
+                if gtf and not os.path.isfile(gtf):
+                    files_to_download.append("gtf")
                     gtf_transcript_id_column = seq_id_column
                     gtf = gtf_file
+                if (sequences == "cdna" or sequences == "cds") and not os.path.isfile(cds_file):
+                    files_to_download.append("cds")
+                if sequences == "cdna" and not os.path.isfile(cdna_file):
+                    files_to_download.append("cdna")
 
-                    if not os.path.isfile(genome_file) or not os.path.isfile(gtf_file):
-                        logger.warning("Downloading reference sequences with %s. Note that this requires curl >=7.73.0", " ".join(sequences_download_command_list))
-                        subprocess.run(sequences_download_command_list, check=True)
+                files_to_download = ",".join(files_to_download_list)
+                sequences_download_command = sequences_download_command.replace("FILES_TO_DOWNLOAD", files_to_download)
+                
+                sequences_download_command_list = sequences_download_command.split(" ")
 
+                if files_to_download_list:  # means that at least 1 of the necessary files must be downloaded
+                    logger.warning("Downloading reference sequences with %s. Note that this requires curl >=7.73.0", " ".join(sequences_download_command_list))
+                    subprocess.run(sequences_download_command_list, check=True)
+                    if "dna" in files_to_download_list:
                         subprocess.run(["gunzip", f"{genome_file}.gz"], check=True)
+                    if "gtf" in files_to_download_list:
                         subprocess.run(["gunzip", f"{gtf_file}.gz"], check=True)
-
-                    sequences = genome_file
-
-                elif sequences in {"cdna", "cds"}:
-                    cds_file = supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_file_names"]["cds"]
-                    cds_file = cds_file.replace("GRCH_NUMBER", grch)
-                    cds_file = f"{reference_out_sequences}/{cds_file}"
-                    if not os.path.isfile(cds_file) and sequences == "cds":
-                        logger.warning("Downloading reference sequences with %s. Note that this requires curl >=7.73.0", " ".join(sequences_download_command_list))
-                        subprocess.run(sequences_download_command_list, check=True)
-
+                    if "cds" in files_to_download_list:
                         subprocess.run(["gunzip", f"{cds_file}.gz"], check=True)
-                    if sequences == "cdna":
-                        cdna_file = supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_file_names"]["cdna"]
-                        cdna_file = cdna_file.replace("GRCH_NUMBER", grch)
-                        cdna_file = f"{reference_out_sequences}/{cdna_file}"
-                        if not os.path.isfile(cdna_file):
-                            logger.warning("Downloading reference sequences with %s. Note that this requires curl >=7.73.0", " ".join(sequences_download_command_list))
-                            subprocess.run(sequences_download_command_list, check=True)
+                    if "cdna" in files_to_download_list:
+                        subprocess.run(["gunzip", f"{cdna_file}.gz"], check=True)
 
-                            subprocess.run(["gunzip", f"{cds_file}.gz"], check=True)
-                            subprocess.run(["gunzip", f"{cdna_file}.gz"], check=True)
-                        sequences = cdna_file
-                    else:
-                        sequences = cds_file
+                if sequences == "genome":
+                    sequences = genome_file
+                elif sequences == "cds":
+                    sequences = cds_file
+                elif sequences == "cdna":
+                    sequences = cdna_file
 
         titles, seqs = [], []
         for title, seq in pyfastx.Fastx(sequences):
@@ -806,17 +814,29 @@ def build(
         mutations_path = None
 
     if isinstance(mutations, str) and mutations in supported_databases_and_corresponding_reference_sequence_type:
-        # TODO: expand beyond COSMIC
+        # TODO: expand beyond COSMIC (utilize the variant_file_name key in supported_databases_and_corresponding_reference_sequence_type)
         if "cosmic" in mutations:
             reference_out_cosmic = f"{reference_out_dir}/cosmic"
-            mutations = f"{reference_out_cosmic}/CancerMutationCensus_AllData_Tsv_v{cosmic_release}_GRCh{grch}/CancerMutationCensus_AllData_v{cosmic_release}_GRCh{grch}_mutation_workflow.csv"
+            mutations = f"{reference_out_cosmic}/CancerMutationCensus_AllData_Tsv_v{cosmic_version}_GRCh{grch}/CancerMutationCensus_AllData_v{cosmic_version}_GRCh{grch}_mutation_workflow.csv"
             mutations_path = mutations
 
             if not os.path.isfile(mutations):  # DO NOT specify column names in gget cosmic - I instead code them in later
+                print(f"""gget.cosmic(
+                      None,
+                      grch_version={grch},
+                      cosmic_version={cosmic_version},
+                      out='{reference_out_cosmic}',
+                      mutation_class='cancer',
+                      download_cosmic=True,
+                      keep_genome_info=True,
+                      remove_duplicates=True,
+                      email={cosmic_email},
+                      password={cosmic_password})
+                """)
                 gget.cosmic(
                     None,
                     grch_version=grch,
-                    cosmic_version=cosmic_release,
+                    cosmic_version=cosmic_version,
                     out=reference_out_cosmic,
                     mutation_class="cancer",
                     download_cosmic=True,
@@ -828,19 +848,22 @@ def build(
 
                 mutations = pd.read_csv(mutations_path)
 
-                if gtf is not None:
-                    mutations = merge_gtf_transcript_locations_into_cosmic_csv(mutations, gtf, gtf_transcript_id_column=gtf_transcript_id_column, output_mutations_path=mutations_path)
-                    columns_to_keep.extend(
-                        [
-                            "start_transcript_position",
-                            "end_transcript_position",
-                            "strand",
-                        ]
-                    )
+                if gtf:
+                    if os.path.isfile(gtf):
+                        mutations = merge_gtf_transcript_locations_into_cosmic_csv(mutations, gtf, gtf_transcript_id_column=gtf_transcript_id_column, output_mutations_path=mutations_path)
+                        columns_to_keep.extend(
+                            [
+                                "start_transcript_position",
+                                "end_transcript_position",
+                                "strand",
+                            ]
+                        )
 
-                    if "CancerMutationCensus" in mutations or mutations == "cosmic_cmc":
-                        logger.info("COSMIC CMC genome strand information is not fully accurate. Improving with gtf information.")
-                        mutations = improve_genome_strand_information(mutations, mutation_genome_column_name="mutation_genome", output_mutations_path=mutations_path)
+                        if "CancerMutationCensus" in mutations or mutations == "cosmic_cmc":
+                            logger.info("COSMIC CMC genome strand information is not fully accurate. Improving with gtf information.")
+                            mutations = improve_genome_strand_information(mutations, mutation_genome_column_name="mutation_genome", output_mutations_path=mutations_path)
+                    else:
+                        raise ValueError(f"gtf file '{gtf}' does not exist.")
             else:
                 mutations = pd.read_csv(mutations_path)
 

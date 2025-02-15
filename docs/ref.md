@@ -10,5 +10,5 @@ Output table
 |----------------------------------------------------------------|--------------------|---------------------------------------------------------------------|------------------------------------------------------------------------------------------------------|-------------------------|
 | out                                                                       | directory         | N/A                                                                            | "."                                                                                                                     | ...                          |
 | index_out                  											  | .idx                | N/A                                                                            | <out>/vcrs_index.idx												                                         | ...                          |
-| t2g_out         													      | .txt                | save_mutations_updated_exploded_filtered_csv    | <out>/vcrs_t2g.txt                       																		 | ...                          |
+| t2g_out         													      | .txt                | save_variants_updated_exploded_filtered_csv    | <out>/vcrs_t2g.txt                       																		 | ...                          |
 

@@ -13,10 +13,9 @@ import sys
 import time
 from collections import OrderedDict
 from datetime import datetime
+import pathlib
 
-import pandas as pd
 import requests
-from bs4 import BeautifulSoup
 from gget.gget_cosmic import is_valid_email
 
 from varseek.constants import default_filename_dict
@@ -154,7 +153,7 @@ def report_time_elapsed(start_time, logger=None, verbose=True, function_name=Non
             print(time_elapsed_message)
 
 
-def save_params_to_config_file(params=None, out_file="run_config.json"):
+def save_params_to_config_file(params=None, out_file="run_config.json", remove_passwords=True):
     out_file_directory = os.path.dirname(out_file)
     if not out_file_directory:
         out_file_directory = "."
@@ -164,6 +163,11 @@ def save_params_to_config_file(params=None, out_file="run_config.json"):
     # Collect parameters in a dictionary
     if not params:
         params = make_function_parameter_to_value_dict(levels_up=2)
+
+    if remove_passwords:
+        for key in params.keys():
+            if "password" in key.lower():
+                params[key] = "********"
 
     # Write to JSON
     with open(out_file, "w", encoding="utf-8") as file:
@@ -772,10 +776,7 @@ def authenticate_cosmic_credentials_via_server(encoded_token):
 def get_python_function_call():
     # Get the calling frame
     frame = inspect.currentframe().f_back.f_back.f_back.f_back  # goes 4 up - 1 to get_python_function_call, 1 to get_python_or_cli_function_call, 1 to save_run_info, and 1 to the function of interest
-    code_context = inspect.getframeinfo(frame).code_context
-
-    # Extract the exact function call as a string
-    function_call = code_context[0].strip() if code_context else "Unknown call"
+    function_call = inspect.getsource(frame).strip()
 
     return function_call
 
@@ -791,7 +792,7 @@ def get_python_or_cli_function_call():
     return function_call
 
 
-def save_run_info(out_file="run_info.txt"):
+def save_run_info(out_file="run_info.txt", remove_passwords=True):
     from varseek import (
         __version__,  # keep internal to this function to avoid circular import
     )
@@ -804,6 +805,15 @@ def save_run_info(out_file="run_info.txt"):
 
     function_call = get_python_or_cli_function_call()
 
+    if remove_passwords:
+        # for python calls
+        python_pattern = re.compile(r'(\b\w*password\w*\s*=\s*)(["\'].*?["\'])', re.IGNORECASE)
+        function_call = python_pattern.sub(r'\1"******"', function_call)  
+
+        # for CLI calls
+        cli_pattern = re.compile(r'(--\w*password\w*\s+)(\S+)', re.IGNORECASE)
+        function_call = cli_pattern.sub(r'\1******', function_call)
+
     # Get the current date and time
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -811,8 +821,8 @@ def save_run_info(out_file="run_info.txt"):
 
     # Write everything to the file
     with open(out_file, "w", encoding="utf-8") as f:
-        f.write(f"{timestamp}\n")  # Write the date and time
-        f.write(f"Version: {version}\n")  # Write the package version
+        f.write(f"Time of execution: {timestamp}\n\n")  # Write the date and time
+        f.write(f"varseek version: {version}\n\n")  # Write the package version
         f.write(function_call + "\n")  # Write the function call
 
 

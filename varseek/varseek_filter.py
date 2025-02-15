@@ -285,7 +285,7 @@ def validate_input_filter(params_dict):
         "vcrs_t2g_filtered_out": "t2g",
         "wt_vcrs_filtered_fasta_out": "fasta",
         "wt_vcrs_t2g_filtered_out": "t2g",
-    }:
+    }.items():
         check_file_path_is_string_with_valid_extension(params_dict.get(param_name), param_name, file_type)
 
     # boolean

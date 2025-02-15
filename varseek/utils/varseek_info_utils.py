@@ -693,7 +693,7 @@ def compare_cdna_and_genome(mutation_metadata_df_exploded, varseek_build_temp_fo
             cosmic_email=os.getenv("COSMIC_EMAIL"),
             cosmic_password=os.getenv("COSMIC_PASSWORD"),
             save_variants_updated_csv=True,
-            save_variants_updated_csv=varseek_build_cdna_out_df,
+            variants_updated_csv_out=varseek_build_cdna_out_df,
             seq_id_column=seq_id_column_cdna,
             var_column=var_column_cdna,
         )

@@ -11,7 +11,7 @@ sequences_fasta_path = "/Users/joeyrich/Desktop/local/data/ensembl/grch37_releas
 output_file = "/Users/joeyrich/Desktop/local/varseek/logs/vk_ref_time_and_memory.txt"
 
 # only if cosmic_mutations_path does not exist
-cosmic_release = "100"
+cosmic_version = "100"
 grch = "37"
 reference_out = "cosmic"
 os.environ['COSMIC_EMAIL'] = 'your_email'  # replace with your email
@@ -56,12 +56,12 @@ if not os.path.isfile(cosmic_mutations_path):
         raise ValueError("Please provide COSMIC email and password via the environment variables COSMIC_EMAIL and COSMIC_PASSWORD, respectively; or please download the COSMIC CMC database manually with gget_cosmic using the download_cosmic=True flag.")
 
     os.makedirs(os.path.dirname(cosmic_mutations_path), exist_ok=True)
-    mutations = f"{reference_out}/CancerMutationCensus_AllData_Tsv_v{cosmic_release}_GRCh{grch}/CancerMutationCensus_AllData_v{cosmic_release}_GRCh{grch}_mutation_workflow.csv"
+    mutations = f"{reference_out}/CancerMutationCensus_AllData_Tsv_v{cosmic_version}_GRCh{grch}/CancerMutationCensus_AllData_v{cosmic_version}_GRCh{grch}_mutation_workflow.csv"
     
     gget.cosmic(
         None,
         grch_version=grch,
-        cosmic_version=cosmic_release,
+        cosmic_version=cosmic_version,
         out=reference_out,
         mutation_class="cancer",
         download_cosmic=True,
@@ -79,5 +79,5 @@ cosmic_df = pd.read_csv(cosmic_mutations_path)
 for number_of_variants in number_of_variants_list:
     number_of_variants *= 1000
     cosmic_df_subsampled = cosmic_df.sample(n=number_of_variants, random_state=random_seed)
-    argparse_flags = f"--mutations {cosmic_df_subsampled} --sequences {sequences_fasta_path}"  # make sure to provide all keyword args with two-dashes (ie full argument name)
+    argparse_flags = f"--variants {cosmic_df_subsampled} --sequences {sequences_fasta_path}"  # make sure to provide all keyword args with two-dashes (ie full argument name)
     report_time_and_memory_of_script(vk_ref_script_path, output_file = output_file, argparse_flags = argparse_flags)

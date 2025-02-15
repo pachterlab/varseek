@@ -461,7 +461,6 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "save_removed_variants_text"),
     )
     parser_build.add_argument(
-        "-dsfrt",
         "--disable_save_filtering_report_text",
         action="store_false",
         required=False,
@@ -545,14 +544,12 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "optimize_flanking_regions", disable=True),
     )
     parser_build.add_argument(
-        "-drswk",
         "--disable_remove_seqs_with_wt_kmers",
         action="store_false",
         required=False,
         help=extract_help_from_doc(build, "remove_seqs_with_wt_kmers", disable=True),
     )
     parser_build.add_argument(
-        "-riol",
         "--required_insertion_overlap_length",
         default=6,
         type=int_or_str,
@@ -560,7 +557,6 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "required_insertion_overlap_length"),
     )
     parser_build.add_argument(
-        "-dmi",
         "--disable_merge_identical",
         action="store_false",
         required=False,
@@ -574,17 +570,16 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "vcrs_strandedness"),
     )
     parser_build.add_argument(
-        "-droh",
         "--disable_use_IDs",
         action="store_false",
         required=False,
         help=extract_help_from_doc(build, "use_IDs", disable=True),
     )
     parser_build.add_argument(
-        "--cosmic_release",
+        "--cosmic_version",
         type=lambda x: int(x) if x is not None else None,
         required=False,
-        help=extract_help_from_doc(build, "cosmic_release"),
+        help=extract_help_from_doc(build, "cosmic_version"),
     )
     parser_build.add_argument(
         "--cosmic_grch",
@@ -903,7 +898,7 @@ def main():  # noqa: C901
         help=extract_help_from_doc(info, "reference_genome_fasta"),
     )
     parser_info.add_argument(
-        "--mutations_csv",
+        "variants_csv",
         required=False,
         help=extract_help_from_doc(info, "mutations_csv"),
     )
@@ -1108,12 +1103,12 @@ def main():  # noqa: C901
         formatter_class=CustomHelpFormatter,
     )
     parser_sim.add_argument(
-        "-m",
-        "--mutations",
+        "-v",
+        "--variants",
         default=None,
         type=strpath_or_strnonpath_or_df,
         required=True,
-        help=extract_help_from_doc(sim, "mutations"),
+        help=extract_help_from_doc(sim, "variants"),
     )
     parser_sim.add_argument(
         "--number_of_variants_to_sample",
@@ -2004,12 +1999,12 @@ def main():  # noqa: C901
         help=extract_help_from_doc(ref, "sequences"),
     )
     parser_ref.add_argument(
-        "-m",
-        "--mutations",
+        "-v",
+        "--variants",
         type=strpath_or_str_or_list_or_df,
         nargs="+",
         required=True,
-        help=extract_help_from_doc(ref, "mutations"),
+        help=extract_help_from_doc(ref, "variants"),
     )
     parser_ref.add_argument(
         "-w",
@@ -2423,7 +2418,7 @@ def main():  # noqa: C901
             merge_identical=args.disable_merge_identical,
             vcrs_strandedness=args.vcrs_strandedness,
             use_IDs=args.disable_use_IDs,
-            cosmic_release=args.cosmic_release,
+            cosmic_version=args.cosmic_version,
             cosmic_grch=args.cosmic_grch,
             cosmic_email=args.cosmic_email,
             cosmic_password=args.cosmic_password,
@@ -2535,7 +2530,51 @@ def main():  # noqa: C901
     if args.command == "sim":
         filter_rules = prepare_filters_list(args.filters)
 
-        simulated_df_dict = sim(mutations=args.mutations, number_of_variants_to_sample=args.number_of_variants_to_sample, number_of_reads_per_variant_alt=args.number_of_reads_per_variant_alt, number_of_reads_per_variant_ref=args.number_of_reads_per_variant_ref, sample_ref_and_alt_reads_from_same_locations=args.sample_ref_and_alt_reads_from_same_locations, with_replacement=args.with_replacement, strand=args.strand, read_length=args.read_length, filters=filter_rules, add_noise_sequencing_error=args.add_noise_sequencing_error, add_noise_base_quality=args.add_noise_base_quality, error_rate=args.error_rate, error_distribution=args.error_distribution, max_errors=args.max_errors, variant_sequence_read_parent_column=args.variant_sequence_read_parent_column, ref_sequence_read_parent_column=args.ref_sequence_read_parent_column, variant_sequence_read_parent_rc_column=args.variant_sequence_read_parent_rc_column, ref_sequence_read_parent_rc_column=args.ref_sequence_read_parent_rc_column, reads_fastq_parent=args.reads_fastq_parent, reads_csv_parent=args.reads_csv_parent, out=args.out, reads_fastq_out=args.reads_fastq_out, variants_updated_csv_out=args.variants_updated_csv_out, reads_csv_out=args.reads_csv_out, save_variants_updated_csv=args.disable_save_variants_updated_csv, save_reads_csv=args.disable_save_reads_csv, vk_build_out_dir=args.vk_build_out_dir, sequences=args.sequences, seq_id_column=args.seq_id_column, var_column=args.var_column, k=args.k, w=args.w, sequences_cdna=args.sequences_cdna, seq_id_column_cdna=args.seq_id_column_cdna, var_column_cdna=args.var_column_cdna, sequences_genome=args.sequences_genome, seq_id_column_genome=args.seq_id_column_genome, var_column_genome=args.var_column_genome, seed=args.seed, gzip_reads_fastq_out=args.gzip_reads_fastq_out, dry_run=args.dry_run, verbose=args.quiet, **kwargs)
+        simulated_df_dict = sim(
+            variants=args.variants,
+            number_of_variants_to_sample=args.number_of_variants_to_sample,
+            number_of_reads_per_variant_alt=args.number_of_reads_per_variant_alt,
+            number_of_reads_per_variant_ref=args.number_of_reads_per_variant_ref,
+            sample_ref_and_alt_reads_from_same_locations=args.sample_ref_and_alt_reads_from_same_locations,
+            with_replacement=args.with_replacement,
+            strand=args.strand,
+            read_length=args.read_length,
+            filters=filter_rules,
+            add_noise_sequencing_error=args.add_noise_sequencing_error,
+            add_noise_base_quality=args.add_noise_base_quality,
+            error_rate=args.error_rate,
+            error_distribution=args.error_distribution,
+            max_errors=args.max_errors,
+            variant_sequence_read_parent_column=args.variant_sequence_read_parent_column,
+            ref_sequence_read_parent_column=args.ref_sequence_read_parent_column, 
+            variant_sequence_read_parent_rc_column=args.variant_sequence_read_parent_rc_column,
+            ref_sequence_read_parent_rc_column=args.ref_sequence_read_parent_rc_column,
+            reads_fastq_parent=args.reads_fastq_parent,
+            reads_csv_parent=args.reads_csv_parent, 
+            out=args.out,
+            reads_fastq_out=args.reads_fastq_out,
+            variants_updated_csv_out=args.variants_updated_csv_out,
+            reads_csv_out=args.reads_csv_out,
+            save_variants_updated_csv=args.disable_save_variants_updated_csv,
+            save_reads_csv=args.disable_save_reads_csv, 
+            vk_build_out_dir=args.vk_build_out_dir,
+            sequences=args.sequences,
+            seq_id_column=args.seq_id_column,
+            var_column=args.var_column,
+            k=args.k,
+            w=args.w,
+            sequences_cdna=args.sequences_cdna,
+            seq_id_column_cdna=args.seq_id_column_cdna,
+            var_column_cdna=args.var_column_cdna,
+            sequences_genome=args.sequences_genome,
+            seq_id_column_genome=args.seq_id_column_genome,
+            var_column_genome=args.var_column_genome,
+            seed=args.seed,
+            gzip_reads_fastq_out=args.gzip_reads_fastq_out,
+            dry_run=args.dry_run,
+            verbose=args.quiet,
+            **kwargs
+        )
 
         # * optionally do something with simulated_df_dict (e.g., save, or print to console)
 

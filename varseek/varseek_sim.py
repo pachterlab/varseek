@@ -56,7 +56,8 @@ def validate_input_sim(params_dict):
                 raise ValueError(f"sequences {sequences} not internally supported.\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
             elif os.path.isfile(variants) and variants.endswith(accepted_build_file_types):  # a path to a variant database with a valid extension
                 pass
-            raise ValueError(f"variants must be a df, a path to a variant database, or a string specifying a variant database supported by varseek. Got {type(variants)}.\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
+            else:
+                raise ValueError(f"variants must be a df, a path to a variant database, or a string specifying a variant database supported by varseek. Got {type(variants)}.\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
     elif isinstance(variants, pd.DataFrame):
         pass
     else:
@@ -106,7 +107,7 @@ def validate_input_sim(params_dict):
     if not (is_valid_int(params_dict["max_errors"], ">=", 0) or isinstance(params_dict["max_errors"], float)):
         raise ValueError("max_errors must be a positive integer or float.")
 
-    for param_name, file_type in {"reads_fastq_parent": "fastq", "reads_csv_parent": "csv", "variants_updated_csv_out": "csv", "reads_fastq_out": "fastq", "reads_csv_out": "csv", "wt_vcrs_fasta_out": "fasta", "wt_vcrs_t2g_out": "t2g", "removed_variants_text_out": "txt", "gtf": "gtf"}:
+    for param_name, file_type in {"reads_fastq_parent": "fastq", "reads_csv_parent": "csv", "variants_updated_csv_out": "csv", "reads_fastq_out": "fastq", "reads_csv_out": "csv", "wt_vcrs_fasta_out": "fasta", "wt_vcrs_t2g_out": "t2g", "removed_variants_text_out": "txt", "gtf": "gtf"}.items():
         check_file_path_is_string_with_valid_extension(params_dict.get(param_name), param_name, file_type)
 
     # Boolean

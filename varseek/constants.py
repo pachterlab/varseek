@@ -1,7 +1,7 @@
 """varseek constant values."""
 
 # allowable_kwargs = {
-#     "varseek_build": {"insertion_size_limit", "min_seq_len", "optimize_flanking_regions", "remove_seqs_with_wt_kmers", "required_insertion_overlap_length", "merge_identical", "merge_identical_strandedness", "use_IDs", "cosmic_release", "cosmic_grch", "cosmic_email", "cosmic_password", "save_files"},
+#     "varseek_build": {"insertion_size_limit", "min_seq_len", "optimize_flanking_regions", "remove_seqs_with_wt_kmers", "required_insertion_overlap_length", "merge_identical", "merge_identical_strandedness", "use_IDs", "cosmic_version", "cosmic_grch", "cosmic_email", "cosmic_password", "save_files"},
 #     "varseek_info": {"bowtie_path"},
 #     "varseek_filter": {"filter_all_dlists", "dlist_genome_fasta", "dlist_cdna_fasta", "dlist_genome_filtered_fasta_out", "dlist_cdna_filtered_fasta_out"},
 #     "kb_ref": set(),
@@ -115,21 +115,21 @@ codon_to_amino_acid = {
 # download_info should be a string of the command to download the reference sequence - use OUT_DIR as the output directory, and replace in the script
 
 
-# a dictionary that maps from dict[mutations][sequences] to a dict of files {"index": index_url, "t2g": t2g_url}
+# a dictionary that maps from dict[variants][sequences] to a dict of files {"index": index_url, "t2g": t2g_url}
 
 default_filename_dict = {"index": "vcrs_index.idx", "t2g": "vcrs_t2g.txt"}
 
 # * add more keys here as needed (e.g., k, w, d-list, dlist_reference_source, etc)
-# * if I add modes to varseek ref, then have it be dict[mutations][sequences][mode]
+# * if I add modes to varseek ref, then have it be dict[variants][sequences][mode]
 # * for cosmic, leave the value "COSMIC" in place of a link (used for authentication), and keep the links in varseek_server/validate_cosmic.py; for others, replace with a link
 prebuilt_vk_ref_files = {"cosmic_cmc": {"cdna": {"index": "COSMIC", "t2g": "COSMIC"}, "genome": {"index": "COSMIC", "t2g": "COSMIC"}}}  # leave it as "COSMIC"
 
 supported_databases_and_corresponding_reference_sequence_type = {
     "cosmic_cmc": {
         "sequence_download_commands": {
-            "genome": "gget ref -w dna,gtf -r ENSEMBL_VERSION --out_dir OUT_DIR -d GRCH_NUMBER",
-            "cdna": "gget ref -w cdna,cds -r ENSEMBL_VERSION --out_dir OUT_DIR -d GRCH_NUMBER",
-            "cds": "gget ref -w cds -r ENSEMBL_VERSION --out_dir OUT_DIR -d GRCH_NUMBER",
+            "genome": "gget ref -w FILES_TO_DOWNLOAD -r ENSEMBL_VERSION --out_dir OUT_DIR -d GRCH_NUMBER",  # dna,gtf
+            "cdna": "gget ref -w FILES_TO_DOWNLOAD -r ENSEMBL_VERSION --out_dir OUT_DIR -d GRCH_NUMBER",  # cdna,cds
+            "cds": "gget ref -w FILES_TO_DOWNLOAD -r ENSEMBL_VERSION --out_dir OUT_DIR -d GRCH_NUMBER",  # cds
         },
         "sequence_file_names": {
             "genome": "Homo_sapiens.GRChGRCH_NUMBER.dna.primary_assembly.fa",
@@ -139,7 +139,7 @@ supported_databases_and_corresponding_reference_sequence_type = {
         },
         "database_version_to_reference_release": {"100": "93"},
         "database_version_to_reference_assembly_build": {"100": "37"},
-        "mutation_file_name": "CancerMutationCensus_AllData_Tsv_vCOSMIC_RELEASE_GRChGRCH_NUMBER/CancerMutationCensus_AllData_vCOSMIC_RELEASE_GRChGRCH_NUMBER_mutation_workflow.csv",
+        "variant_file_name": "CancerMutationCensus_AllData_Tsv_vCOSMIC_RELEASE_GRChGRCH_NUMBER/CancerMutationCensus_AllData_vCOSMIC_RELEASE_GRChGRCH_NUMBER_mutation_workflow.csv",
     }
 }
 

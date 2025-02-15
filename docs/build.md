@@ -1,6 +1,6 @@
 > Python arguments are equivalent to long-option arguments (`--arg`), unless otherwise specified. Flags are True/False arguments in Python. The manual for any varseek tool can be called from the command-line using the `-h` `--help` flag.  
 # varseek build 🔨
-Takes in nucleotide sequences and mutations (in [standard mutation annotation](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1867422/) and returns mutated versions of the input sequences according to the provided mutations.  
+Takes in nucleotide sequences and variants (in [standard mutation annotation](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1867422/) and returns mutated versions of the input sequences according to the provided variants.  
 Return format: Saves mutated sequences in FASTA format.
 
 Input table
@@ -27,7 +27,7 @@ Output table
 `-s` `--sequences`
 Path to the fasta file containing the sequences to be mutated, e.g., 'seqs.fa'.
 Sequence identifiers following the '>' character must correspond to the identifiers
-in the seq_ID column of 'mutations'.
+in the seq_ID column of 'variants'.
 
 Example:
 >seq1 (or ENSG00000106443)
@@ -42,16 +42,16 @@ NOTE: Only the letters until the first space or dot will be used as sequence ide
 - Version numbers of Ensembl IDs will be ignored.
 NOTE: When 'sequences' input is a genome, also see 'gtf' argument below.
 
-Alternatively, if 'mutations' is a string specifying a supported database, 
-sequences can be a string indicating the source upon which to apply the mutations.
+Alternatively, if 'variants' is a string specifying a supported database, 
+sequences can be a string indicating the source upon which to apply the variants.
 See below for supported databases and sequences options.
-To see the supported combinations of mutations and sequences, either
+To see the supported combinations of variants and sequences, either
 1) run `vk build --help` from the command line, or
 2) run varseek.varseek_build.print_valid_values_for_variants_and_sequences_in_varseek_build() in python
 
 `-v` `--variants`  
-Path to csv or tsv file (str) (e.g., 'mutations.csv'), or DataFrame (DataFrame object),
-containing information about the mutations in the following format:
+Path to csv or tsv file (str) (e.g., 'variants.csv'), or DataFrame (DataFrame object),
+containing information about the variants in the following format:
 
 | mutation         | mut_ID | seq_ID |
 | c.2C>T           | mut1   | seq1   | -> Apply mutation 1 to sequence 1
@@ -60,38 +60,38 @@ containing information about the mutations in the following format:
 | c.9_13delinsAAT  | mut3   | seq3   | -> Apply mutation 3 to sequence 3
 | ...              | ...    | ...    |
 
-'mutation' = Column containing the mutations to be performed written in standard mutation annotation (see below)
+'mutation' = Column containing the variants to be performed written in standard mutation annotation (see below)
 'seq_ID' = Column containing the identifiers of the sequences to be mutated (must correspond to the string following
 the > character in the 'sequences' fasta file; do NOT include spaces or dots)
 'mut_ID' = Column containing an identifier for each mutation (optional).
 
 Alternatively: Input mutation(s) as a string or list, e.g., 'c.2C>T' or ['c.2C>T', 'c.1A>C'].
-If a list is provided, the number of mutations must equal the number of input sequences.
+If a list is provided, the number of variants must equal the number of input sequences.
 
 For more information on the standard mutation annotation, see https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1867422/.
 
-Alternatively, 'mutations' can be a string specifying a supported database, which will automatically download
+Alternatively, 'variants' can be a string specifying a supported database, which will automatically download
 both the mutation database and corresponding reference sequence (if the 'sequences' is not a path).
-To see the supported combinations of mutations and sequences, either
+To see the supported combinations of variants and sequences, either
 1) run `vk build --help` from the command line, or
 2) run varseek.varseek_build.print_valid_values_for_variants_and_sequences_in_varseek_build() in python
 
 
 **Optional input-related arguments**  
 `-vc` `--var_column`  
-Name of the column containing the mutations to be performed in `mutations`. Default: 'mutation'.  
+Name of the column containing the variants to be performed in `variants`. Default: 'mutation'.  
 
 `-sic` `--seq_id_column`  
-Name of the column containing the IDs of the sequences to be mutated in `mutations`. Default: 'seq_ID'.
+Name of the column containing the IDs of the sequences to be mutated in `variants`. Default: 'seq_ID'.
 
 `-vic` `--var_id_column`  
-Name of the column containing the IDs of each mutation in `mutations`. Optional. Default: use <seq_ID>_<mutation> for each row.
+Name of the column containing the IDs of each mutation in `variants`. Optional. Default: use <seq_ID>_<mutation> for each row.
 
 `-gtf` `--gtf`  
 Path to a .gtf file. When providing a genome fasta file as input for 'sequences', you can provide a .gtf file here and the input sequences will be defined according to the transcript boundaries, e.g. 'path/to/genome_annotation.gtf'. Default: None
 
 `-gtic` `--gtf_transcript_id_column`  
-Column name in the input `mutations` file containing the transcript ID. In this case, column `seq_id_column` should contain the chromosome number.  
+Column name in the input `variants` file containing the transcript ID. In this case, column `seq_id_column` should contain the chromosome number.  
 Required when `gtf` is provided. Default: None  
   
 **Optional mutant sequence generation/filtering arguments**  
@@ -135,29 +135,29 @@ Whether to keep the original sequence headers in the output fasta file, or to re
 
 **Optional arguments to generate additional output**   
 `-smuc` `--save_variants_updated_csv`   
-Whether to update the input `mutations` DataFrame to include additional columns with the mutation type, wildtype nucleotide sequence, and mutant nucleotide sequence (only valid if `mutations` is a csv or tsv file). Default: False
+Whether to update the input `variants` DataFrame to include additional columns with the mutation type, wildtype nucleotide sequence, and mutant nucleotide sequence (only valid if `variants` is a csv or tsv file). Default: False
 
 `--save_wt_vcrs_fasta_and_t2g`
 Whether to create a fasta file containing the wildtype sequence counterparts of the mutation-containing reference sequences (vcrss) and the corresponding t2g. Default: False.
 
 **Optional flags to modify additional output**  
 `-sfs` `--store_full_sequences`         
-Includes the complete wildtype and mutant sequences in the updated `mutations` DataFrame (not just the sub-sequence with k-length flanks). Only valid when used with `--update_df`.   
+Includes the complete wildtype and mutant sequences in the updated `variants` DataFrame (not just the sub-sequence with k-length flanks). Only valid when used with `--update_df`.   
 
 `-tr` `--translate`                  
-Adds additional columns to the updated `mutations` DataFrame containing the wildtype and mutant amino acid sequences. Only valid when used with `--store_full_sequences`.   
+Adds additional columns to the updated `variants` DataFrame containing the wildtype and mutant amino acid sequences. Only valid when used with `--store_full_sequences`.   
 
 `-ts` `--translate_start`              
-(int or str) The position in the input nucleotide sequence to start translating, e.g. 5. If a string is provided, it should correspond to a column name in `mutations` containing the open reading frame start positions for each sequence/mutation. Only valid when used with `--translate`.  
+(int or str) The position in the input nucleotide sequence to start translating, e.g. 5. If a string is provided, it should correspond to a column name in `variants` containing the open reading frame start positions for each sequence/mutation. Only valid when used with `--translate`.  
 Default: translates from the beginning of each sequence  
 
 `-te` `--translate_end`                
-(int or str) The position in the input nucleotide sequence to end translating, e.g. 35. If a string is provided, it should correspond to a column name in `mutations` containing the open reading frame end positions for each sequence/mutation. Only valid when used with `--translate`.  
+(int or str) The position in the input nucleotide sequence to end translating, e.g. 35. If a string is provided, it should correspond to a column name in `variants` containing the open reading frame end positions for each sequence/mutation. Only valid when used with `--translate`.  
 Default: translates until the end of each sequence  
                                   
 **Optional general arguments**
 `-ro` `--reference_out`
-Path to reference files to be downloaded if 'mutations' is a supported database and 'sequences' is not provided. Default: 'out' directory.  
+Path to reference files to be downloaded if `variants` is a supported database and 'sequences' is not provided. Default: 'out' directory.  
 
 `-o` `--out`   
 Path to output folder containing created files (if fasta_out and/or update_df_out not supplied) Default: '.'.
@@ -171,7 +171,7 @@ Python: Use `verbose=False` to prevent progress information from being displayed
 
 ### Examples
 ```bash
-varseek build ATCGCTAAGCT -m 'c.4G>T'
+varseek build ATCGCTAAGCT -v 'c.4G>T'
 ```
 ```python
 # Python
@@ -183,7 +183,7 @@ varseek.build("ATCGCTAAGCT", "c.4G>T")
 
 **List of sequences with a mutation for each sequence provided in a list:**  
 ```bash
-varseek build ATCGCTAAGCT TAGCTA -m 'c.4G>T' 'c.1_3inv' -o mut_fasta.fa
+varseek build ATCGCTAAGCT TAGCTA -v 'c.4G>T' 'c.1_3inv' -o mut_fasta.fa
 ```
 ```python
 # Python
@@ -201,7 +201,7 @@ GATCTA
 
 **One mutation applied to several sequences with adjusted `k`:**  
 ```bash
-varseek build ATCGCTAAGCT TAGCTA -m 'c.1_3inv' -k 3
+varseek build ATCGCTAAGCT TAGCTA -v 'c.1_3inv' -k 3
 ```
 ```python
 # Python
@@ -212,29 +212,29 @@ varseek.build(["ATCGCTAAGCT", "TAGCTA"], "c.1_3inv", k=3)
 
 <br/><br/>
 
-**Add mutations to an entire genome with extended output**  
+**Add variants to an entire genome with extended output**  
 Main input:   
-- mutation information as a `mutations` CSV (by having `seq_id_column` contain chromosome information, and `var_column` contain mutation information with respect to genome coordinates)  
+- mutation information as a `variants` CSV (by having `seq_id_column` contain chromosome information, and `var_column` contain mutation information with respect to genome coordinates)  
 - the genome as the `sequences` file  
 
-Since we are passing the path to a gtf file to the `gtf` argument, transcript boundaries will be respected (the genome will be split into transcripts). `gtf_transcript_id_column` specifies the name of the column in `mutations` containing the transcript IDs corresponding to the transcript IDs in the `gtf` file.  
+Since we are passing the path to a gtf file to the `gtf` argument, transcript boundaries will be respected (the genome will be split into transcripts). `gtf_transcript_id_column` specifies the name of the column in `variants` containing the transcript IDs corresponding to the transcript IDs in the `gtf` file.  
 
 The `optimize_flanking_regions` argument maximizes the length of the resulting mutation-containing sequences while maintaining specificity (no wildtype k-mer will be retained).
 
-`update_df` activates the creation of a new CSV file with updated information about each input and output sequence. This new CSV file will be saved as `update_df_out`. Since `store_full_sequences` is activated, this new CSV file will not only contain the output sequences (restricted in size by flanking regiong of size `k`), but also the complete input and output sequences. This allows us to observe the mutation in the context of the entire sequence. Lastly, we are also adding the translated versions of the complete sequences by adding the with the `translate` flag, so we can observe how the resulting amino acid sequence is changed. The `translate_start` and `translate_end` arguments specify the names of the columns in `mutations` that contain the start and end positions of the open reading frame (start and end positions for translating the nucleotide sequence to an amino acid sequence), respectively.  
+`update_df` activates the creation of a new CSV file with updated information about each input and output sequence. This new CSV file will be saved as `update_df_out`. Since `store_full_sequences` is activated, this new CSV file will not only contain the output sequences (restricted in size by flanking regiong of size `k`), but also the complete input and output sequences. This allows us to observe the mutation in the context of the entire sequence. Lastly, we are also adding the translated versions of the complete sequences by adding the with the `translate` flag, so we can observe how the resulting amino acid sequence is changed. The `translate_start` and `translate_end` arguments specify the names of the columns in `variants` that contain the start and end positions of the open reading frame (start and end positions for translating the nucleotide sequence to an amino acid sequence), respectively.  
 
 ```bash
 varseek build \
-  -m mutations_input.csv \
+  -v variants_input.csv \
   -o mut_fasta.fa \
   -w 4 \
   -sic Chromosome \
-  -mic Mutation \
+  -vic Mutation \
   -gtf genome_annotation.gtf \
   -gtic Ensembl_Transcript_ID \
   -ofr \
   -update_df \
-  -udf_o mutations_updated.csv \
+  -udf_o variants_updated.csv \
   -sfs \
   -tr \
   -ts Translate_Start \
@@ -245,7 +245,7 @@ varseek build \
 # Python
 varseek.build(
   sequences="genome_reference.fa",
-  mutations="mutations_input.csv",
+  variants="variants_input.csv",
   out="mut_fasta.fa",
   w=4,
   seq_id_column="Chromosome",
@@ -254,14 +254,14 @@ varseek.build(
   gtf_transcript_id_column="Ensembl_Transcript_ID",
   optimize_flanking_regions=True,
   update_df=True,
-  update_df_out="mutations_updated.csv",
+  update_df_out="variants_updated.csv",
   store_full_sequences=True,
   translate=True,
   translate_start="Translate_Start",
   translate_end="Translate_End"
 )
 ```
-&rarr; Takes in a genome fasta ('genome_reference.fa') and gtf file ('genome_annotation.gtf') (these can be downloaded using [`gget ref`](ref.md)) as well as a 'mutations_input.csv' file containing: 
+&rarr; Takes in a genome fasta ('genome_reference.fa') and gtf file ('genome_annotation.gtf') (these can be downloaded using [`gget ref`](ref.md)) as well as a 'variants_input.csv' file containing: 
 ```
 | Chromosome | Mutation          | Ensembl_Transcript_ID  | Translate_Start | Translate_End |
 |------------|-------------------|------------------------|-----------------|---------------|
@@ -278,7 +278,7 @@ GAGTCGAT
 >X:g.1011_1012insAA
 TTAGAACTT
 ``` 
-&rarr; Saves 'mutations_updated.csv' file containing: 
+&rarr; Saves 'variants_updated.csv' file containing: 
 ```
 
 | Chromosome | Mutation          | Ensembl_Transcript_ID  | variant_type  | wt_sequence | variant_sequence| wt_sequence_full  | variant_sequence_full| wt_sequence_aa_full | variant_sequence_aa_full |

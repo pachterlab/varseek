@@ -138,7 +138,7 @@ def validate_input_clean(params_dict):
         "adata_vcrs_clean_out": "adata",
         "adata_reference_genome_clean_out": "adata",
         "vcf_out": "vcf",
-    }:
+    }.items():
         check_file_path_is_string_with_valid_extension(params_dict.get(param_name), param_name, file_type)
 
     # directories
