@@ -5,6 +5,8 @@ from pdb import set_trace as st
 import numpy as np
 import pandas as pd
 import pytest
+from datetime import datetime
+from pathlib import Path
 
 import varseek as vk
 from varseek.utils import (
@@ -14,6 +16,11 @@ from varseek.utils import (
     load_t2g_as_dict,
     make_mapping_dict,
 )
+
+store_out_in_permanent_paths = True
+tests_dir = Path(__file__).resolve().parent
+pytest_permanent_out_dir_base = tests_dir / "pytest_output" / Path(__file__).stem
+current_datetime = datetime.now().strftime("date_%Y_%m_%d_time_%H%M_%S")
 
 
 def add_numeric_value_column_to_df_that_applies_range_of_len_df(toy_mutation_metadata_df_path, column_name="numeric_value"):

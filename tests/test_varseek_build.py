@@ -10,7 +10,8 @@ import pytest
 import varseek as vk
 
 store_out_in_permanent_paths = True
-pytest_permanent_out_dir_base = "/Users/joeyrich/Desktop/pytest_output"
+tests_dir = Path(__file__).resolve().parent
+pytest_permanent_out_dir_base = tests_dir / "pytest_output" / Path(__file__).stem
 current_datetime = datetime.now().strftime("date_%Y_%m_%d_time_%H%M_%S")
 
 @pytest.fixture
@@ -20,7 +21,7 @@ def out_dir(tmp_path, request):
         current_test_function_name = request.node.name
         out = Path(f"{pytest_permanent_out_dir_base}/{current_datetime}/{current_test_function_name}")
     else:
-        out = tmp_path / "out_vk_build_feb25"
+        out = tmp_path / "out_vk_build"
 
     out.mkdir(parents=True, exist_ok=True)  # Ensure the directory exists
     return out
@@ -82,7 +83,7 @@ def assert_global_variables_zero(number_intronic_position_mutations = 0, number_
     assert vk.varseek_build.mut_idx_outside_seq == number_index_errors
 
 
-def test_single_substitution(long_sequence, out_dir):    
+def test_single_substitution(long_sequence, out_dir):
     result = vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = True,
@@ -98,16 +99,16 @@ def test_single_substitution(long_sequence, out_dir):
 
     assert_global_variables_zero()
 
-def test_single_substitution_near_right_end(long_sequence):
+def test_single_substitution_near_right_end(long_sequence, out_dir):
     result = vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.65G>A",
-        save_files=False,
         return_variant_output=True,
         required_insertion_overlap_length=None,
         w=30,
-        k=31
+        k=31,
+        out=out_dir
     )
 
     assert result[0] == "GCCCCTCCCCGCCCCACCCCGCCCCTCCCCACCCCACCCCG"
@@ -115,16 +116,16 @@ def test_single_substitution_near_right_end(long_sequence):
     assert_global_variables_zero()
 
 
-def test_single_substitution_near_left_end(long_sequence):
+def test_single_substitution_near_left_end(long_sequence, out_dir):
     result = vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.5G>A",
-        save_files=False,
         return_variant_output=True,
         required_insertion_overlap_length=None,
         w=30,
-        k=31
+        k=31,
+        out=out_dir
     )
 
     assert result[0] == "CCCCACCCCACCCCGCCCCTCCCCGCCCCACCCCG"
@@ -132,16 +133,16 @@ def test_single_substitution_near_left_end(long_sequence):
     assert_global_variables_zero()
 
 
-def test_single_deletion(long_sequence):
+def test_single_deletion(long_sequence, out_dir):
     result = vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.35del",  # del the G
-        save_files=False,
         return_variant_output=True,
         required_insertion_overlap_length=None,
         w=30,
-        k=31
+        k=31,
+        out=out_dir
     )
 
     assert result[0] == "GCCCCACCCCGCCCCTCCCCGCCCCACCCCCCCCTCCCCGCCCCACCCCGCCCCTCCCCG"
@@ -149,96 +150,96 @@ def test_single_deletion(long_sequence):
     assert_global_variables_zero()
 
 
-def test_multi_deletion(long_sequence):
+def test_multi_deletion(long_sequence, out_dir):
     result = vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.35_40del",
-        save_files=False,
         return_variant_output=True,
         required_insertion_overlap_length=None,
         w=30,
-        k=31
+        k=31,
+        out=out_dir
     )
 
     assert result[0] == "GCCCCACCCCGCCCCTCCCCGCCCCACCCCCCCCGCCCCACCCCGCCCCTCCCCGCCCCA"
 
     assert_global_variables_zero()
 
-def test_single_deletion_with_right_repeats(long_sequence):
+def test_single_deletion_with_right_repeats(long_sequence, out_dir):
     result = vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.31del",
-        save_files=False,
         return_variant_output=True,
         required_insertion_overlap_length=None,
         w=30,
-        k=31
+        k=31,
+        out=out_dir
     )
 
     assert result[0] == "CGCCCCACCCCGCCCCTCCCCGCCCCACCCGCCCCTCCCCGCCCCACCCCGCCCCTC"
 
     assert_global_variables_zero()
 
-def test_single_deletion_with_left_repeats(long_sequence):
+def test_single_deletion_with_left_repeats(long_sequence, out_dir):
     result = vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.34del",
-        save_files=False,
         return_variant_output=True,
         required_insertion_overlap_length=None,
         w=30,
-        k=31
+        k=31,
+        out=out_dir
     )
 
     assert result[0] == "CGCCCCACCCCGCCCCTCCCCGCCCCACCCGCCCCTCCCCGCCCCACCCCGCCCCTC"
 
     assert_global_variables_zero()
 
-def test_multi_deletion_with_right_repeats(long_sequence):
+def test_multi_deletion_with_right_repeats(long_sequence, out_dir):
     result = vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.31_32del",
-        save_files=False,
         return_variant_output=True,
         required_insertion_overlap_length=None,
         w=30,
-        k=31
+        k=31,
+        out=out_dir
     )
 
     assert result[0] == "CCGCCCCACCCCGCCCCTCCCCGCCCCACCGCCCCTCCCCGCCCCACCCCGCCCCTCC"
 
     assert_global_variables_zero()
 
-def test_single_insertion(long_sequence):
+def test_single_insertion(long_sequence, out_dir):
     result = vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.4_5insT",
-        save_files=False,
         return_variant_output=True,
         required_insertion_overlap_length=None,
         w=30,
-        k=31
+        k=31,
+        out=out_dir
     )
 
     assert result[0] == "CCCCTGCCCCACCCCGCCCCTCCCCGCCCCACCCC"
 
     assert_global_variables_zero()
 
-def test_single_insertion_mid_sequence_small_w(long_sequence):
+def test_single_insertion_mid_sequence_small_w(long_sequence, out_dir):
     result = vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.20_21insA", # --> 19_20 (index 0) --> start at 15, end at 24 (0-index positions, inclusive, from original sequence)
         w=5,
-        save_files=False,
         return_variant_output=True,
         required_insertion_overlap_length=None,
-        k=7
+        k=7,
+        out=out_dir
     )
 
     # CCCCGCCCCACCCCGCCCCTCCCCGCCCCACCCCGCCCCTCCCCGCCCCACCCCGCCCCTCCCCGCCCCACCCCG
@@ -248,16 +249,16 @@ def test_single_insertion_mid_sequence_small_w(long_sequence):
     assert_global_variables_zero()
 
 
-def test_multi_insertion(long_sequence):
+def test_multi_insertion(long_sequence, out_dir):
     result = vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.65_66insTTTTT",
-        save_files=False,
         return_variant_output=True,
         required_insertion_overlap_length=None,
         w=30,
-        k=31
+        k=31,
+        out=out_dir
     )
 
     assert result[0] == "CCCCTCCCCGCCCCACCCCGCCCCTCCCCGTTTTTCCCCACCCCG"
@@ -265,16 +266,16 @@ def test_multi_insertion(long_sequence):
     assert_global_variables_zero()
 
 
-def test_multi_insertion_with_left_repeats(long_sequence):
+def test_multi_insertion_with_left_repeats(long_sequence, out_dir):
     result = vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.20_21insCCAAA",
-        save_files=False,
         return_variant_output=True,
         required_insertion_overlap_length=None,
         w=30,
-        k=31
+        k=31,
+        out=out_dir
     )
 
     assert result[0] == "CCCCGCCCCACCCCGCCCCTCCAAACCCCGCCCCACCCCGCCCCTCCCCGCCCCA"
@@ -282,16 +283,16 @@ def test_multi_insertion_with_left_repeats(long_sequence):
     assert_global_variables_zero()
 
 
-def test_single_delins(long_sequence):
+def test_single_delins(long_sequence, out_dir):
     result = vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.38delinsAAA",
-        save_files=False,
         return_variant_output=True,
         required_insertion_overlap_length=None,
         w=30,
-        k=31
+        k=31,
+        out=out_dir
     )
 
     assert result[0] == "CCACCCCGCCCCTCCCCGCCCCACCCCGCCAAACTCCCCGCCCCACCCCGCCCCTCCCCGCCC"
@@ -299,16 +300,16 @@ def test_single_delins(long_sequence):
     assert_global_variables_zero()
 
 
-def test_multi_delins(long_sequence):
+def test_multi_delins(long_sequence, out_dir):
     result = vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.38_40delinsAAA",
-        save_files=False,
         return_variant_output=True,
         required_insertion_overlap_length=None,
         w=30,
-        k=31
+        k=31,
+        out=out_dir
     )
 
     assert result[0] == "CCACCCCGCCCCTCCCCGCCCCACCCCGCCAAACCCCGCCCCACCCCGCCCCTCCCCGCCCCA"
@@ -316,32 +317,32 @@ def test_multi_delins(long_sequence):
     assert_global_variables_zero()
 
 
-def test_multi_delins_with_psuedo_left_repeats(long_sequence):
+def test_multi_delins_with_psuedo_left_repeats(long_sequence, out_dir):
     result = vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.36_37delinsAG",
-        save_files=False,
         return_variant_output=True,
         required_insertion_overlap_length=None,
         w=30,
-        k=31
+        k=31,
+        out=out_dir
     )
 
     assert result[0] == "CCCCACCCCGCCCCTCCCCGCCCCACCCCGAGCCTCCCCGCCCCACCCCGCCCCTCCCCGCC"
 
     assert_global_variables_zero()
 
-def test_multi_delins_with_true_left_repeats(long_sequence):
+def test_multi_delins_with_true_left_repeats(long_sequence, out_dir):
     result = vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.36_37delinsAC",
-        save_files=False,
         return_variant_output=True,
         required_insertion_overlap_length=None,
         w=30,
-        k=31
+        k=31,
+        out=out_dir
     )
 
     assert result[0] == "CCCCACCCCGCCCCTCCCCGCCCCACCCCGACCCTCCCCGCCCCACCCCGCCCCTCCCCGC"
@@ -349,64 +350,64 @@ def test_multi_delins_with_true_left_repeats(long_sequence):
     assert_global_variables_zero()
 
 
-def test_multi_delins_with_true_right_repeats(long_sequence):
+def test_multi_delins_with_true_right_repeats(long_sequence, out_dir):
     result = vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.36_37delinsCA",
-        save_files=False,
         return_variant_output=True,
         required_insertion_overlap_length=None,
         w=30,
-        k=31
+        k=31,
+        out=out_dir
     )
 
     assert result[0] == "CCCACCCCGCCCCTCCCCGCCCCACCCCGCACCTCCCCGCCCCACCCCGCCCCTCCCCGCC"
 
     assert_global_variables_zero()
 
-def test_single_dup(long_sequence):
+def test_single_dup(long_sequence, out_dir):
     result = vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.35dup",
-        save_files=False,
         return_variant_output=True,
         required_insertion_overlap_length=None,
         w=30,
-        k=31
+        k=31,
+        out=out_dir
     )
 
     assert result[0] == "CCCCACCCCGCCCCTCCCCGCCCCACCCCGGCCCCTCCCCGCCCCACCCCGCCCCTCCCC"
 
     assert_global_variables_zero()
 
-def test_multi_dup(long_sequence):
+def test_multi_dup(long_sequence, out_dir):
     result = vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.35_37dup",
-        save_files=False,
         return_variant_output=True,
         required_insertion_overlap_length=None,
         w=30,
-        k=31
+        k=31,
+        out=out_dir
     )
 
     assert result[0] == "CCACCCCGCCCCTCCCCGCCCCACCCCGCCGCCCCTCCCCGCCCCACCCCGCCCCTCC"
 
     assert_global_variables_zero()
 
-def test_inversion_with_overlaps(long_sequence):
+def test_inversion_with_overlaps(long_sequence, out_dir):
     result = vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.35_38inv",
-        save_files=False,
         return_variant_output=True,
         required_insertion_overlap_length=None,
         w=30,
-        k=31
+        k=31,
+        out=out_dir
     )
 
     assert result[0] == "CCCCACCCCGCCCCTCCCCGCCCCACCCCGGGCCTCCCCGCCCCACCCCGCCCCTCCCCGCC"
@@ -416,18 +417,18 @@ def test_inversion_with_overlaps(long_sequence):
 
 
 
-def test_list_of_mutations(long_sequence):
+def test_list_of_mutations(long_sequence, out_dir):
     mutation_list = ["c.35G>A", "c.65G>A", "c.35del", "c.4_5insT"]
     sequence_list = [long_sequence for _ in range(len(mutation_list))]
     
     result = vk.build(
         sequences=sequence_list,
         variants=mutation_list,
-        save_files=False,
         return_variant_output=True,
         required_insertion_overlap_length=None,
         w=30,
-        k=31
+        k=31,
+        out=out_dir
     )
 
     assert result == ["GCCCCACCCCGCCCCTCCCCGCCCCACCCCACCCCTCCCCGCCCCACCCCGCCCCTCCCCG", "GCCCCTCCCCGCCCCACCCCGCCCCTCCCCACCCCACCCCG", "GCCCCACCCCGCCCCTCCCCGCCCCACCCCCCCCTCCCCGCCCCACCCCGCCCCTCCCCG", "CCCCTGCCCCACCCCGCCCCTCCCCGCCCCACCCC"]
@@ -435,17 +436,17 @@ def test_list_of_mutations(long_sequence):
     assert_global_variables_zero()
 
 
-def test_csv_of_mutations(create_temp_files):
+def test_csv_of_mutations(create_temp_files, out_dir):
     mutation_temp_csv_file, sequence_temp_fasta_path = create_temp_files
 
     result = vk.build(
         sequences=sequence_temp_fasta_path,
         variants=mutation_temp_csv_file,
-        save_files=False,
         return_variant_output=True,
         required_insertion_overlap_length=None,
         w=30,
-        k=31
+        k=31,
+        out=out_dir
     )
 
     assert result == ["GCCCCACCCCGCCCCTCCCCGCCCCACCCCACCCCTCCCCGCCCCACCCCGCCCCTCCCCG", "GCCCCTCCCCGCCCCACCCCGCCCCTCCCCACCCCACCCCG", "GCCCCACCCCGCCCCTCCCCGCCCCACCCCCCCCTCCCCGCCCCACCCCGCCCCTCCCCG", "CCCCTGCCCCACCCCGCCCCTCCCCGCCCCACCCC"]
@@ -454,89 +455,89 @@ def test_csv_of_mutations(create_temp_files):
 
 
 
-def test_intron_mutation_plus(long_sequence):
+def test_intron_mutation_plus(long_sequence, out_dir):
     vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.20+3T>A",
-        save_files=False
+        out=out_dir
     )
     
     assert_global_variables_zero(number_intronic_position_mutations=1)
 
-def test_intron_mutation_minus(long_sequence):
+def test_intron_mutation_minus(long_sequence, out_dir):
     vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.20-3T>A",
-        save_files=False
+        out=out_dir
     )
 
     assert_global_variables_zero(number_intronic_position_mutations=1)
 
 
-def test_posttranslational_mutation(long_sequence):
+def test_posttranslational_mutation(long_sequence, out_dir):
     vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.20*5T>A",
-        save_files=False)
+        out=out_dir)
 
     assert_global_variables_zero(number_posttranslational_region_mutations=1)
 
 
-def test_uncertain_mutation(long_sequence):
+def test_uncertain_mutation(long_sequence, out_dir):
     vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.?",
-        save_files=False)
+        out=out_dir)
 
     assert_global_variables_zero(number_uncertain_mutations=1)
 
 
-def test_ambiguous_mutation(long_sequence):
+def test_ambiguous_mutation(long_sequence, out_dir):
     vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.(20_28)del",
-        save_files=False)
+        out=out_dir)
 
     assert_global_variables_zero(number_ambiguous_position_mutations=1)
 
 
-def test_index_error(long_sequence):
+def test_index_error(long_sequence, out_dir):
     vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.99999999C>A",
-        save_files=False)
+        out=out_dir)
 
     assert_global_variables_zero(number_index_errors=1)
 
 
-def test_mismatch_error(long_sequence):
+def test_mismatch_error(long_sequence, out_dir):
     vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.2G>A",
-        save_files=False)
+        out=out_dir)
     
     assert vk.varseek_build.cosmic_incorrect_wt_base == 1   
 
     assert_global_variables_zero()
 
 
-def test_large_w(extra_long_sequence):
+def test_large_w(extra_long_sequence, out_dir):
     result = vk.build(
         sequences=extra_long_sequence,
         optimize_flanking_regions = True,
         variants="c.40T>G",
         w=54,
-        save_files=False,
         return_variant_output=True,
         required_insertion_overlap_length=None,
-        k=55
+        k=55,
+        out=out_dir
     )
 
     assert result[0] == "CCCCGCCCCACCCCGCCCCTCCCCGCCCCACCCCGCCCCGCCCCGCCCCACCCCGCCCCTCCCCGCCCCACCCCGCCCCTCCCCGCCCCACCCC"
@@ -544,72 +545,72 @@ def test_large_w(extra_long_sequence):
     assert_global_variables_zero()
 
 
-def test_large_min_seq_length(long_sequence):
+def test_large_min_seq_length(long_sequence, out_dir):
     result = vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.35G>A",
         min_seq_len=100,
-        save_files=False,
         return_variant_output=True,
         required_insertion_overlap_length=None,
         w=30,
-        k=31
+        k=31,
+        out=out_dir
     )
 
     assert result is None
 
 
-def test_single_deletion_with_right_repeats_and_unoptimized_flanks(long_sequence):
+def test_single_deletion_with_right_repeats_and_unoptimized_flanks(long_sequence, out_dir):
     result = vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = False,
         remove_seqs_with_wt_kmers = False,
         variants="c.31del",
-        save_files=False,
         return_variant_output=True,
         required_insertion_overlap_length=None,
         w=30,
-        k=31
+        k=31,
+        out=out_dir
     )
 
     assert result[0] == "CCCCGCCCCACCCCGCCCCTCCCCGCCCCACCCGCCCCTCCCCGCCCCACCCCGCCCCTC"
 
 
-def test_single_deletion_with_right_repeats_and_removing_seqs_with_wt_kmers(long_sequence):
+def test_single_deletion_with_right_repeats_and_removing_seqs_with_wt_kmers(long_sequence, out_dir):
     result = vk.build(
         sequences=long_sequence,
         optimize_flanking_regions = False,
         variants="c.31del",
         remove_seqs_with_wt_kmers = True,
-        save_files=False,
         return_variant_output=True,
         required_insertion_overlap_length=None,
         w=30,
-        k=31
+        k=31,
+        out=out_dir
     )
 
     assert result is None
 
 
-def test_sequence_with_N(long_sequence_with_N):
+def test_sequence_with_N(long_sequence_with_N, out_dir):
     result = vk.build(
         sequences=long_sequence_with_N,
         optimize_flanking_regions = True,
         variants="c.35G>A",
         max_ambiguous = 0,
-        save_files=False,
         return_variant_output=True,
         required_insertion_overlap_length=None,
         w=30,
-        k=31
+        k=31,
+        out=out_dir
     )
 
     assert result is None
 
 
 
-def test_semicolon_merging(long_sequence):
+def test_semicolon_merging(long_sequence, out_dir):
     mutation_list = ["c.35G>A", "c.35G>A"]
     sequence_list = [long_sequence, f"{long_sequence}AAAAAAA"]
     
@@ -617,11 +618,11 @@ def test_semicolon_merging(long_sequence):
         sequences=sequence_list,
         variants=mutation_list,
         merge_identical=True,
-        save_files=False,
         return_variant_output=True,
         required_insertion_overlap_length=None,
         w=30,
-        k=31
+        k=31,
+        out=out_dir
     )
 
     assert result == ["GCCCCACCCCGCCCCTCCCCGCCCCACCCCACCCCTCCCCGCCCCACCCCGCCCCTCCCCG"]
@@ -629,7 +630,7 @@ def test_semicolon_merging(long_sequence):
     assert_global_variables_zero()
 
 
-# def test_translation(long_sequence_with_N):
+# def test_translation(long_sequence_with_N, out_dir):
 #     result = vk.build(
 #         sequences=long_sequence_with_N,
 #         optimize_flanking_regions = True,
@@ -637,11 +638,11 @@ def test_semicolon_merging(long_sequence):
 #         translate = True,
 #         save_variants_updated_csv = True,
 #         store_full_sequences=True,
-#         save_files=False,
 #         return_variant_output=True,
 #         required_insertion_overlap_length=None,
 #         w=30,
-#         k=31
+#         k=31,
+#         out=out_dir
 #     )
 
 #     assert result[0] == "APPRPSPPHPTPPRPTPPLP"  #* translate is not returned by vk build; only stored in update_df

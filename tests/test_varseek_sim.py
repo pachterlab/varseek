@@ -5,6 +5,8 @@ from pdb import set_trace as st
 import numpy as np
 import pandas as pd
 import pytest
+from datetime import datetime
+from pathlib import Path
 
 import varseek as vk
 from varseek.utils import (
@@ -12,6 +14,11 @@ from varseek.utils import (
     create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting,
     make_mapping_dict,
 )
+
+store_out_in_permanent_paths = True
+tests_dir = Path(__file__).resolve().parent
+pytest_permanent_out_dir_base = tests_dir / "pytest_output" / Path(__file__).stem
+current_datetime = datetime.now().strftime("date_%Y_%m_%d_time_%H%M_%S")
 
 
 @pytest.fixture

@@ -396,7 +396,6 @@ def validate_input_build(params_dict):
         ("store_full_sequences", False),
         ("translate", False),
         ("return_variant_output", True),
-        ("save_files", True),
         ("verbose", False),
         ("save_removed_variants_text", False),
         ("save_filtering_report_text", False),
@@ -597,9 +596,6 @@ def build(
     - cosmic_email                       (str) Email address for COSMIC download. Default: None.
     - cosmic_password                    (str) Password for COSMIC download. Default: None.
 
-    # # debugging
-    - save_files                         (True/False) Whether to save the output files. Default: True.
-
 
     Saves mutated sequences in fasta format (or returns a list containing the mutated sequences if out=None).
     """
@@ -624,14 +620,11 @@ def build(
         return None
 
     # * 4. Save params to config file and run info file
-    save_files = kwargs.get("save_files", True)
+    config_file = os.path.join(out, "config", "vk_build_config.json")
+    save_params_to_config_file(params_dict, config_file)
 
-    if save_files:
-        config_file = os.path.join(out, "config", "vk_build_config.json")
-        save_params_to_config_file(params_dict, config_file)
-
-        run_info_file = os.path.join(out, "config", "vk_build_run_info.txt")
-        save_run_info(run_info_file)
+    run_info_file = os.path.join(out, "config", "vk_build_run_info.txt")
+    save_run_info(run_info_file)
 
     # * 5. Set up default folder/file input paths, and make sure the necessary ones exist
     # all input files for vk build are required in the varseek workflow, so this is skipped
@@ -640,9 +633,8 @@ def build(
     if not reference_out_dir:
         reference_out_dir = os.path.join(out, "reference")
 
-    if save_files:
-        os.makedirs(out, exist_ok=True)
-        os.makedirs(reference_out_dir, exist_ok=True)
+    os.makedirs(out, exist_ok=True)
+    os.makedirs(reference_out_dir, exist_ok=True)
     
     # if someone specifies an output path, then it should be saved - could technically incorporate this logic in else statements below, but this feels cleaner
     if variants_updated_csv_out:
@@ -676,7 +668,7 @@ def build(
     for output_file in output_files:
         if os.path.isfile(output_file) and not overwrite:
             raise ValueError(f"Output file '{output_file}' already exists. Set 'overwrite=True' to overwrite it.")
-        if os.path.dirname(output_file) and save_files:
+        if os.path.dirname(output_file):
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
     # * 7. Define kwargs defaults
@@ -1417,7 +1409,7 @@ def build(
         logger.info("All variants correctly recorded")
 
     # Save the report string to the specified path
-    if save_filtering_report_text and save_files:
+    if save_filtering_report_text:
         with open(filtering_report_text_out, "w", encoding="utf-8") as file:
             file.write(report)
 
@@ -1490,7 +1482,7 @@ def build(
     removed_mutation_set = initial_mutation_id_set - final_mutation_id_set
 
     # Save as a newline-separated text file
-    if save_removed_variants_text and save_files:
+    if save_removed_variants_text:
         with open(removed_variants_text_out, "w", encoding="utf-8") as file:
             for mutation in removed_mutation_set:
                 file.write(f"{mutation}\n")
@@ -1596,7 +1588,7 @@ def build(
         """
 
         # Save the report string to the specified path
-        if save_filtering_report_text and save_files:
+        if save_filtering_report_text:
             filtering_report_write_mode = "a" if os.path.exists(filtering_report_text_out) else "w"
             with open(filtering_report_text_out, filtering_report_write_mode, encoding="utf-8") as file:
                 file.write(merging_report)
@@ -1618,12 +1610,11 @@ def build(
 
     if use_IDs:  # or (var_id_column in mutations.columns and not merge_identical):
         mutations["vcrs_id"] = generate_unique_ids(len(mutations))
-        if save_files:
-            mutations[["vcrs_id", "header"]].to_csv(id_to_header_csv_out, index=False)  # make the mapping csv
+        mutations[["vcrs_id", "header"]].to_csv(id_to_header_csv_out, index=False)  # make the mapping csv
     else:
         mutations["vcrs_id"] = mutations["header"]
 
-    if save_variants_updated_csv and save_files:  # use variants_updated_csv_out if present,
+    if save_variants_updated_csv:  # use variants_updated_csv_out if present,
         logger.info("Saving dataframe with updated variant info...")
         logger.warning("File size can be very large if the number of variants is large.")
         mutations.to_csv(variants_updated_csv_out, index=False)
@@ -1648,17 +1639,17 @@ def build(
             mutations_with_exactly_1_wt_sequence_per_row["fasta_format_wt"] = ">" + mutations_with_exactly_1_wt_sequence_per_row["vcrs_id"] + "\n" + mutations_with_exactly_1_wt_sequence_per_row["wt_sequence"] + "\n"
 
     # Save mutated sequences in new fasta file
-    if save_files:
+    if not mutations.empty:
         with open(vcrs_fasta_out, "w", encoding="utf-8") as fasta_file:
             fasta_file.write("".join(mutations["fasta_format"].values))
 
         create_identity_t2g(vcrs_fasta_out, vcrs_t2g_out)
 
-    if verbose and save_files:
+    if verbose:
         logger.info("FASTA file containing VCRSs created at %s.", vcrs_fasta_out)
         logger.info("t2g file containing VCRSs created at %s.", vcrs_t2g_out)
 
-    if save_wt_vcrs_fasta_and_t2g and save_files:
+    if save_wt_vcrs_fasta_and_t2g:
         with open(wt_vcrs_fasta_out, "w", encoding="utf-8") as fasta_file:
             fasta_file.write("".join(mutations_with_exactly_1_wt_sequence_per_row["fasta_format_wt"].values))
         create_identity_t2g(wt_vcrs_fasta_out, wt_vcrs_t2g_out)  # separate t2g is needed because it may have a subset of the rows of mutant (because it doesn't contain any VCRSs with merged mutations and 2+ originating WT sequences)

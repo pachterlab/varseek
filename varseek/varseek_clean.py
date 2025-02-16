@@ -306,7 +306,6 @@ def clean(
 
     # Hidden arguments
     - id_to_header_csv                      (str): Path to the VCRS id to header csv file. Default: None.
-    - save_files                            (bool) Whether to save the output files. Default: True.
     """
     # * 1. Start timer
     start_time = time.perf_counter()
@@ -326,14 +325,11 @@ def clean(
         return None
 
     # * 4. Save params to config file and run info file
-    save_files = kwargs.get("save_files", True)
+    config_file = os.path.join(out, "config", "vk_info_config.json")
+    save_params_to_config_file(params_dict, config_file)
 
-    if save_files:
-        config_file = os.path.join(out, "config", "vk_info_config.json")
-        save_params_to_config_file(params_dict, config_file)
-
-        run_info_file = os.path.join(out, "config", "vk_info_run_info.txt")
-        save_run_info(run_info_file)
+    run_info_file = os.path.join(out, "config", "vk_info_run_info.txt")
+    save_run_info(run_info_file)
 
     # * 5. Set up default folder/file input paths, and make sure the necessary ones exist
     if kb_count_reference_genome_dir and not adata_reference_genome:
@@ -373,12 +369,11 @@ def clean(
     for output_path in [output_figures_dir, adata_vcrs_clean_out, adata_reference_genome_clean_out]:
         if os.path.exists(output_path) and not overwrite:
             raise ValueError(f"Output path {output_path} already exists. Please set overwrite=True to overwrite it.")
-        if os.path.dirname(output_path) and save_files:
+        if os.path.dirname(output_path):
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-    if save_files:
-        os.makedirs(out, exist_ok=True)
-        os.makedirs(output_figures_dir, exist_ok=True)
+    os.makedirs(out, exist_ok=True)
+    os.makedirs(output_figures_dir, exist_ok=True)
 
     # * 7. Define kwargs defaults
     # id_to_header_csv is currently the only kwargs and was defined in step 5
@@ -673,14 +668,13 @@ def clean(
 
     adata.var["vcrs_count"] = adata.X.sum(axis=0).A1 if hasattr(adata.X, "A1") else np.asarray(adata.X.sum(axis=0)).flatten()
 
-    if save_vcf and save_files:
+    if save_vcf:
         make_vcf(vcf_out)  # TODO: write this
 
-    if isinstance(adata_reference_genome, anndata.AnnData) and save_files:
+    if isinstance(adata_reference_genome, anndata.AnnData):
         adata_reference_genome.write(adata_reference_genome_clean_out)
 
-    if save_files:
-        adata.write(adata_vcrs_clean_out)
+    adata.write(adata_vcrs_clean_out)
 
     report_time_elapsed(start_time, logger=logger, verbose=verbose, function_name="clean")
 

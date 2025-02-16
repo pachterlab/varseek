@@ -18,7 +18,7 @@ from .conftest import (
     compare_two_t2gs,
 )
 
-test_directory = os.path.abspath("")
+test_directory = os.path.dirname(os.path.abspath(__file__))
 ground_truth_folder = os.path.join(test_directory, "pytest_ground_truth")
 reference_folder_parent = os.path.join(test_directory, "data", "reference")
 reference_folder = os.path.join(reference_folder_parent, "ensembl_grch37_release93")
