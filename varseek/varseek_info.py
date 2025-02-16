@@ -3,6 +3,7 @@
 # CELL
 import os
 import subprocess
+from pathlib import Path
 import time
 from collections import OrderedDict
 
@@ -113,11 +114,11 @@ def print_list_columns():
 
 def validate_input_info(params_dict):
     # Directories
-    if not isinstance(params_dict.get("input_dir"), str) or not os.path.isdir(params_dict.get("input_dir")):  # only use os.path.isdir when I require that a directory already exists
+    if not isinstance(params_dict.get("input_dir"), (str, Path)) or not os.path.isdir(params_dict.get("input_dir")):  # only use os.path.isdir when I require that a directory already exists
         raise ValueError(f"Invalid value for input_dir: {params_dict.get('input_dir')}")
-    if not isinstance(params_dict.get("out"), str):
+    if not isinstance(params_dict.get("out"), (str, Path)):
         raise ValueError(f"Invalid value for out: {params_dict.get('out')}")
-    if params_dict.get("reference_out_dir") and (not isinstance(params_dict.get("reference_out_dir"), str) or not os.path.isdir(params_dict.get("reference_out_dir"))):
+    if params_dict.get("reference_out_dir") and (not isinstance(params_dict.get("reference_out_dir"), (str, Path)) or not os.path.isdir(params_dict.get("reference_out_dir"))):
         raise ValueError(f"Invalid value for reference_out_dir: {params_dict.get('reference_out_dir')}")
 
     # file paths
@@ -403,6 +404,10 @@ def info(
 
     os.makedirs(out, exist_ok=True)
     os.makedirs(reference_out_dir, exist_ok=True)
+
+    # if someone specifies an output path, then it should be saved
+    if variants_updated_exploded_vk_info_csv_out:
+        save_variants_updated_exploded_vk_info_csv = True
 
     if not variants_updated_vk_info_csv_out:
         variants_updated_vk_info_csv_out = os.path.join(out, "variants_updated_vk_info.csv")

@@ -357,7 +357,6 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "gtf_transcript_id_column"),
     )
     parser_build.add_argument(
-        "-tb",
         "--transcript_boundaries",
         default=False,
         action="store_true",
@@ -385,7 +384,6 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "reference_out_dir"),
     )
     parser_build.add_argument(
-        "-vfo",
         "--vcrs_fasta_out",
         default=None,
         required=False,
@@ -434,14 +432,12 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "filtering_report_text_out"),
     )
     parser_build.add_argument(
-        "-rvo",
         "--return_variant_output",
         action="store_true",
         required=False,
         help=extract_help_from_doc(build, "return_variant_output"),
     )
     parser_build.add_argument(
-        "-svuc",
         "--save_variants_updated_csv",
         action="store_true",
         required=False,
@@ -454,7 +450,6 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "save_wt_vcrs_fasta_and_t2g"),
     )
     parser_build.add_argument(
-        "-dsrvt",
         "--disable_save_removed_variants_text",
         action="store_false",
         required=False,
@@ -467,7 +462,6 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "save_filtering_report_text"),
     )
     parser_build.add_argument(
-        "-sfs",
         "--store_full_sequences",
         action="store_true",
         required=False,
@@ -537,7 +531,6 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "min_seq_len"),
     )
     parser_build.add_argument(
-        "-dofr",
         "--disable_optimize_flanking_regions",
         action="store_false",
         required=False,
@@ -598,7 +591,6 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "cosmic_password"),
     )
     parser_build.add_argument(
-        "-dsf",
         "--disable_save_files",
         action="store_false",
         required=False,
@@ -898,7 +890,7 @@ def main():  # noqa: C901
         help=extract_help_from_doc(info, "reference_genome_fasta"),
     )
     parser_info.add_argument(
-        "variants_csv",
+        "--variants_csv",
         required=False,
         help=extract_help_from_doc(info, "mutations_csv"),
     )
@@ -2132,7 +2124,7 @@ def main():  # noqa: C901
     )
 
     # NEW PARSER
-    count_desc = "Perform variant screening on sequencing data. Wraps around varseek fastqpp, kb count, varseek clean, and kb summarize.."
+    count_desc = "Perform variant screening on sequencing data. Wraps around varseek fastqpp, kb count, varseek clean, and vk summarize."
     parser_count = parent_subparsers.add_parser(
         "count",
         parents=[parent],

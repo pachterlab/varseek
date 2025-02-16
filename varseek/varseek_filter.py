@@ -3,6 +3,7 @@
 import ast
 import csv
 import os
+from pathlib import Path
 import time
 
 import pandas as pd
@@ -257,9 +258,9 @@ def validate_input_filter(params_dict):
     input_dir = params_dict["input_dir"]
     out = params_dict["out"]
     # Type-checking for paths
-    if not isinstance(input_dir, str) or not os.path.isdir(input_dir):
+    if not isinstance(input_dir, (str, Path)) or not os.path.isdir(input_dir):
         raise ValueError(f"Invalid input directory: {input_dir}")
-    if not isinstance(out, str) or not os.path.isdir(out):
+    if not isinstance(out, (str, Path)) or not os.path.isdir(out):
         raise ValueError(f"Invalid input directory: {out}")
 
     # filters
@@ -451,6 +452,12 @@ def filter(
         id_to_header_csv = None
 
     # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
+    # if someone specifies an output path, then it should be saved
+    if wt_vcrs_filtered_fasta_out or wt_vcrs_t2g_filtered_out:
+        save_wt_vcrs_fasta_and_t2g = True
+    if variants_updated_filtered_csv_out or variants_updated_exploded_vk_info_csv:
+        save_variants_updated_filtered_csvs = True
+    
     # define output file names if not provided
     if not variants_updated_filtered_csv_out:  # variants_updated_vk_info_csv must exist or else an exception will be raised from earlier
         variants_updated_filtered_csv_out = os.path.join(out, "variants_updated_filtered.csv")

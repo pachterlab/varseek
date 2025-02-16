@@ -37,7 +37,6 @@ dependencies = [
     "anndata>=0.8.0",
     "kb-python>=0.29.1",
     "gget>=0.29.0",
-    "biopython>=1.83",
     "scipy>=1.13.1",
     "pyfastx>=2.1.0",
 ]
@@ -61,8 +60,8 @@ analysis = [
     "multiqc>=1.25.1",
     "rich>=11.0.0",
     "pysam>=0.22.1",
-    "leidenalg>=0.10.0",
     "kneed>=0.8.0",
+    "scanpy>=1.10.4",
 ]
 
 

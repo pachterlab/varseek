@@ -4,6 +4,7 @@ import base64
 import getpass
 import inspect
 import json
+from pathlib import Path
 import logging
 import os
 import re
@@ -13,6 +14,7 @@ import sys
 import time
 from collections import OrderedDict
 from datetime import datetime
+import shlex
 import pathlib
 
 import requests
@@ -77,7 +79,7 @@ def check_file_path_is_string_with_valid_extension(file_path, variable_name, fil
     }
     if file_path:  # skip if None or empty string, as I will provide the default path in this case
         # check if file_path is a string
-        if not isinstance(file_path, str):
+        if not isinstance(file_path, (str, Path)):
             raise ValueError(f"{variable_name} must be a string, got {type(file_path)}")
 
         # check if file_type is a single value or list of values
@@ -145,7 +147,7 @@ def make_function_parameter_to_value_dict(levels_up=1):
 def report_time_elapsed(start_time, logger=None, verbose=True, function_name=None):
     elapsed = time.perf_counter() - start_time
     function_name_message = f" for vk {function_name}" if function_name else ""
-    time_elapsed_message = f"Total runtime{function_name_message}\n: {int(elapsed // 60)}m, {elapsed % 60:.2f}s"
+    time_elapsed_message = f"Total runtime{function_name_message}: {int(elapsed // 60)}m, {elapsed % 60:.2f}s"
     if verbose:
         if logger:
             logger.info(time_elapsed_message)
@@ -168,6 +170,8 @@ def save_params_to_config_file(params=None, out_file="run_config.json", remove_p
         for key in params.keys():
             if "password" in key.lower():
                 params[key] = "********"
+
+    params = {k: str(v) if isinstance(v, Path) else v for k, v in params.items()}  # converts Path to str to avoid json serialization error
 
     # Write to JSON
     with open(out_file, "w", encoding="utf-8") as file:
@@ -284,13 +288,23 @@ def is_program_installed(program):
     return shutil.which(program) is not None or os.path.exists(program)
 
 
+
+# # if I want to remove shell below:
+# command = ["/usr/bin/time", time_flag, "python3", script_path]
+# if argparse_flags:
+    # command.extend(shlex.split(argparse_flags))
+# try:
+    # result = subprocess.run(command, text=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE, check=True)
+
 def report_time_and_memory_of_script(script_path, argparse_flags=None, output_file=None):
     # Run the command and capture stderr, where `/usr/bin/time -l` outputs its results
     system = os.uname().sysname
     time_flag = "-v" if system == "Linux" else "-l"
     command = f"/usr/bin/time {time_flag} python3 {script_path}"
+    
     if argparse_flags:
         command += f" {argparse_flags}"
+
     try:
         result = subprocess.run(command, shell=True, text=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE, check=True)
     except Exception as e:

@@ -1,6 +1,7 @@
 """varseek build and specific helper functions."""
 
 import os
+from pathlib import Path
 import re
 import subprocess
 import time
@@ -169,11 +170,11 @@ def improve_genome_strand_information(cosmic_reference_file_mutation_csv, mutati
 
     df.loc[minus_sub_mask, "actual_variant_rc"] = df.loc[minus_sub_mask, "actual_variant"].apply(complement_substitution)
 
-    df.loc[ins_delins_mask, ["variant_type", "mut_nucleotides"]] = df.loc[ins_delins_mask, "actual_variant"].str.extract(r"(delins|ins)([A-Z]+)").values
+    df.loc[ins_delins_mask, ["mutation_type", "mut_nucleotides"]] = df.loc[ins_delins_mask, "actual_variant"].str.extract(r"(delins|ins)([A-Z]+)").values
 
     df.loc[ins_delins_mask, "mut_nucleotides_rc"] = df.loc[ins_delins_mask, "mut_nucleotides"].apply(reverse_complement_insertion)
 
-    df.loc[ins_delins_mask, "actual_variant_rc"] = df.loc[ins_delins_mask, "variant_type"] + df.loc[ins_delins_mask, "mut_nucleotides_rc"]
+    df.loc[ins_delins_mask, "actual_variant_rc"] = df.loc[ins_delins_mask, "mutation_type"] + df.loc[ins_delins_mask, "mut_nucleotides_rc"]
 
     df["actual_variant_final"] = np.where(df["strand_modified"] == "+", df["actual_variant"], df["actual_variant_rc"])
 
@@ -184,7 +185,7 @@ def improve_genome_strand_information(cosmic_reference_file_mutation_csv, mutati
     )
 
     df.drop(
-        columns=["GENOME_START", "GENOME_STOP", "nucleotide_positions", "actual_variant", "actual_variant_rc", "variant_type", "mut_nucleotides", "mut_nucleotides_rc", "actual_variant_final", "strand_modified"],
+        columns=["GENOME_START", "GENOME_STOP", "nucleotide_positions", "actual_variant", "actual_variant_rc", "mutation_type", "mut_nucleotides", "mut_nucleotides_rc", "actual_variant_final", "strand_modified"],
         inplace=True,
     )  # drop all columns except mutation_genome (and the original ones)
 
@@ -270,12 +271,12 @@ def end_mut_nucleotides_with_left_flank(mut_nucleotides, left_flank_region):
 
 
 def calculate_beginning_mutation_overlap_with_right_flank(row):
-    if row["variant_type"] == "deletion":
+    if row["mutation_type"] == "deletion":
         sequence_to_check = row["wt_nucleotides_ensembl"]
     else:
         sequence_to_check = row["mut_nucleotides"]
 
-    if row["variant_type"] == "delins" or row["variant_type"] == "inversion":
+    if row["mutation_type"] == "delins" or row["mutation_type"] == "inversion":
         original_sequence = row["wt_nucleotides_ensembl"] + row["right_flank_region"]
     else:
         original_sequence = row["right_flank_region"]
@@ -284,12 +285,12 @@ def calculate_beginning_mutation_overlap_with_right_flank(row):
 
 
 def calculate_end_mutation_overlap_with_left_flank(row):
-    if row["variant_type"] == "deletion":
+    if row["mutation_type"] == "deletion":
         sequence_to_check = row["wt_nucleotides_ensembl"]
     else:
         sequence_to_check = row["mut_nucleotides"]
 
-    if row["variant_type"] == "delins" or row["variant_type"] == "inversion":
+    if row["mutation_type"] == "delins" or row["mutation_type"] == "inversion":
         original_sequence = row["left_flank_region"] + row["wt_nucleotides_ensembl"]
     else:
         original_sequence = row["left_flank_region"]
@@ -303,7 +304,7 @@ def validate_input_build(params_dict):
     sequences = params_dict.get("sequences")
     mutations = params_dict.get("variants")  # apologies for the naming confusion
 
-    if not isinstance(sequences, (list, str)):
+    if not isinstance(sequences, (list, str, Path)):
         raise ValueError(f"sequences must be a nucleotide string, a list of nucleotide strings, a path to a reference genome, or a string specifying a reference genome supported by varseek. Got {type(sequences)}\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
     if isinstance(sequences, list) and not all(isinstance(seq, str) for seq in sequences):
         raise ValueError("All elements in sequences must be nucleotide strings.")
@@ -318,7 +319,7 @@ def validate_input_build(params_dict):
             raise ValueError(f"sequences must be a nucleotide string, a list of nucleotide strings, a path to a reference genome, or a string specifying a reference genome supported by varseek. Got {type(sequences)}.\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
 
     # mutations
-    if not isinstance(mutations, (list, str)):
+    if not isinstance(mutations, (list, str, Path)):
         raise ValueError(f"variants must be a string, a list of strings, a path to a variant database, or a string specifying a variant database supported by varseek. Got {type(mutations)}\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
     if isinstance(mutations, list) and not all((isinstance(mut, str) and mut.startswith(("c.", "g."))) for mut in mutations):
         raise ValueError("All elements in variants must be strings that start with 'c.' or 'g.'.")
@@ -334,14 +335,17 @@ def validate_input_build(params_dict):
             raise ValueError(f"variants must be a string, a list of strings, a path to a variant database, or a string specifying a variant database supported by varseek. Got {type(mutations)}.\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
 
     # Directories
-    if not isinstance(params_dict.get("out", None), str):
+    if not isinstance(params_dict.get("out", None), (str, Path)):
         raise ValueError(f"Invalid value for out: {params_dict.get('out', None)}")
-    if params_dict.get("reference_out_dir", None) and not isinstance(params_dict.get("reference_out_dir", None), str):
+    if params_dict.get("reference_out_dir", None) and not isinstance(params_dict.get("reference_out_dir", None), (str, Path)):
         raise ValueError(f"Invalid value for reference_out_dir: {params_dict.get('reference_out_dir', None)}")
+    
+    gtf = params_dict.get("gtf")  # gtf gets special treatment because it can be a bool
+    if gtf is not None and not isinstance(gtf, bool) and not gtf.lower().endswith(("gtf", "gtf.zip", "gtf.gz")):
+        raise ValueError(f"Invalid value for gtf: {gtf}. Expected gtf filepath string, bool, or None.")
 
     # file paths
     for param_name, file_type in {
-        "gtf": "gtf",
         "vcrs_fasta_out": "fasta",
         "variants_updated_csv_out": "csv",
         "id_to_header_csv_out": "csv",
@@ -377,8 +381,8 @@ def validate_input_build(params_dict):
         raise ValueError(f"w should be less than k. Got w={w}, k={k}.")
 
     # required_insertion_overlap_length
-    if params_dict.get("required_insertion_overlap_length") is not None and not isinstance(params_dict.get("required_insertion_overlap_length"), (int, str)):
-        raise ValueError(f"required_insertion_overlap_length must be an int, a string, or None. Got {type(params_dict.get('required_insertion_overlap_length'))}.")
+    if params_dict.get("required_insertion_overlap_length") is not None and not is_valid_int(params_dict.get("required_insertion_overlap_length"), ">=", 1) and params_dict.get("required_insertion_overlap_length") != "all":
+        raise ValueError(f"required_insertion_overlap_length must be an int >= 1, the string 'all', or None. Got {type(params_dict.get('required_insertion_overlap_length'))}.")
 
     # Boolean - optional_status means that None is also valid (because the kwargs is defined later)
     for param_name, optional_status in [
@@ -410,7 +414,7 @@ def validate_input_build(params_dict):
             raise ValueError(f"{param_name} must be an int, a string, or None. Got param_name of type {type(param_value)}.")
 
 
-accepted_build_file_types = {".csv", ".tsv", ".vcf"}
+accepted_build_file_types = (".csv", ".tsv", ".vcf")
 
 
 def build(
@@ -485,10 +489,10 @@ def build(
                     containing information about the variants in the following format:
 
                     | var_column         | var_id_column | seq_id_column |
-                    | c.2C>T             | var1          | seq1          | -> Apply varation 1 to sequence 1
-                    | c.9_13inv          | var2          | seq2          | -> Apply varation 2 to sequence 2
-                    | c.9_13inv          | var2          | seq3          | -> Apply varation 2 to sequence 3
-                    | c.9_13delinsAAT    | var3          | seq3          | -> Apply varation 3 to sequence 3
+                    | c.2C>T             | var1          | seq1          | -> Apply variant 1 to sequence 1
+                    | c.9_13inv          | var2          | seq2          | -> Apply variant 2 to sequence 2
+                    | c.9_13inv          | var2          | seq3          | -> Apply variant 2 to sequence 3
+                    | c.9_13delinsAAT    | var3          | seq3          | -> Apply variant 3 to sequence 3
                     | ...                | ...           | ...           |
 
                     'var_column' = Column containing the variants to be performed written in standard mutation/variant annotation (see below)
@@ -579,12 +583,13 @@ def build(
                                          Default: True
 
     - required_insertion_overlap_length  (int | str | None) Enforces the minimum number of bases included in the inserted region for all (w+1)-mers (where a (w+1)-mer is a subsequence of length w+1, with w defined by the 'w' argument),
-                                         or that all (w+1)-mers contain the entire inserted sequence (whatever is smaller). Only effective when optimize_flanking_regions is also True. None means that flank optimization occurs only until there is no shared k-mer in the VCRS and the reference sequence. If "all", then require the entire insertion and the following nucleotide (and filter out insertions of length >= 2*w). Default: 6
+                                         or that all (w+1)-mers contain the entire inserted sequence (whatever is smaller). Only effective when optimize_flanking_regions is also True. None or 1 (minimum value) means that flank optimization occurs only until there is no shared k-mer in the VCRS and the reference sequence (i.e., as little as 1 base from the insertion could be required). If "all", then require the entire insertion and the following nucleotide (and filter out insertions of length >= 2*w). Experimental - does not work quite properly with values > 1 when there is overlap between the mutated regions and flanks. Default: None
     - merge_identical                    (True/False) Whether to merge sequence-identical VCRSs in the output (identical VCRSs will be merged by concatenating the sequence
                                          headers for all identical sequences with semicolons). Default: True
     - vcrs_strandedness                  (True/False) Whether to consider the forward and reverse-complement mutant sequences as distinct if merging identical sequences. Only effective when merge_identical is also True. Default: False (ie consider forward and reverse-complement sequences to be equivalent).
     - use_IDs                            (True/False) Whether to keep the original sequence headers in the output fasta file, or to replace them with unique IDs of the form 'vcrs_<int>.
                                          If False, then an additional file at the path <id_to_header_csv_out> will be formed that maps sequence IDs from the fasta file to the <var_id_column>. Default: True.
+    - original_order                     (True/False) Whether to keep the original order of the sequences in the output fasta file. Default: True.
 
     # # specific databases
     - cosmic_version                     (str) COSMIC release version to download. Default: "100".
@@ -619,11 +624,14 @@ def build(
         return None
 
     # * 4. Save params to config file and run info file
-    config_file = os.path.join(out, "config", "vk_build_config.json")
-    save_params_to_config_file(params_dict, config_file)
+    save_files = kwargs.get("save_files", True)
 
-    run_info_file = os.path.join(out, "config", "vk_build_run_info.txt")
-    save_run_info(run_info_file)
+    if save_files:
+        config_file = os.path.join(out, "config", "vk_build_config.json")
+        save_params_to_config_file(params_dict, config_file)
+
+        run_info_file = os.path.join(out, "config", "vk_build_run_info.txt")
+        save_run_info(run_info_file)
 
     # * 5. Set up default folder/file input paths, and make sure the necessary ones exist
     # all input files for vk build are required in the varseek workflow, so this is skipped
@@ -632,8 +640,19 @@ def build(
     if not reference_out_dir:
         reference_out_dir = os.path.join(out, "reference")
 
-    os.makedirs(out, exist_ok=True)
-    os.makedirs(reference_out_dir, exist_ok=True)
+    if save_files:
+        os.makedirs(out, exist_ok=True)
+        os.makedirs(reference_out_dir, exist_ok=True)
+    
+    # if someone specifies an output path, then it should be saved - could technically incorporate this logic in else statements below, but this feels cleaner
+    if variants_updated_csv_out:
+        save_variants_updated_csv = True
+    if wt_vcrs_fasta_out or wt_vcrs_t2g_out:
+        save_wt_vcrs_fasta_and_t2g = True
+    if removed_variants_text_out:
+        save_removed_variants_text = True
+    if filtering_report_text_out:
+        save_filtering_report_text = True
 
     if not vcrs_fasta_out:
         vcrs_fasta_out = os.path.join(out, "vcrs.fa")
@@ -657,7 +676,7 @@ def build(
     for output_file in output_files:
         if os.path.isfile(output_file) and not overwrite:
             raise ValueError(f"Output file '{output_file}' already exists. Set 'overwrite=True' to overwrite it.")
-        if os.path.dirname(output_file):
+        if os.path.dirname(output_file) and save_files:
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
     # * 7. Define kwargs defaults
@@ -665,15 +684,15 @@ def build(
     cosmic_grch = kwargs.get("cosmic_grch", None)
     cosmic_email = kwargs.get("cosmic_email", None)
     cosmic_password = kwargs.get("cosmic_password", None)
-    save_files = kwargs.get("save_files", True)
     insertion_size_limit = kwargs.get("insertion_size_limit", None)
     min_seq_len = kwargs.get("min_seq_len", k)
     optimize_flanking_regions = kwargs.get("optimize_flanking_regions", True)
     remove_seqs_with_wt_kmers = kwargs.get("remove_seqs_with_wt_kmers", True)
-    required_insertion_overlap_length = kwargs.get("required_insertion_overlap_length", 6)  # set to None for original vk build
+    required_insertion_overlap_length = kwargs.get("required_insertion_overlap_length", None)  # set to None for original vk build
     merge_identical = kwargs.get("merge_identical", True)
     vcrs_strandedness = kwargs.get("vcrs_strandedness", False)
     use_IDs = kwargs.get("use_IDs", True)
+    original_order = kwargs.get("original_order", True)
 
     mutations = variants
     del variants
@@ -688,7 +707,7 @@ def build(
         "header",
         seq_id_column,
         var_column,
-        "variant_type",
+        "mutation_type",
         "wt_sequence",
         "variant_sequence",
         "nucleotide_positions",
@@ -747,15 +766,16 @@ def build(
 
                 files_to_download_list = []
                 if sequences == "genome" and not os.path.isfile(genome_file):
-                    files_to_download.append("dna")
+                    files_to_download_list.append("dna")
                 if gtf and not os.path.isfile(gtf):
-                    files_to_download.append("gtf")
-                    gtf_transcript_id_column = seq_id_column
                     gtf = gtf_file
+                    gtf_transcript_id_column = seq_id_column
+                    if not os.path.isfile(gtf):  # now that I have overridden the user-provided gtf with my gtf
+                        files_to_download_list.append("gtf")
                 if (sequences == "cdna" or sequences == "cds") and not os.path.isfile(cds_file):
-                    files_to_download.append("cds")
+                    files_to_download_list.append("cds")
                 if sequences == "cdna" and not os.path.isfile(cdna_file):
-                    files_to_download.append("cdna")
+                    files_to_download_list.append("cdna")
 
                 files_to_download = ",".join(files_to_download_list)
                 sequences_download_command = sequences_download_command.replace("FILES_TO_DOWNLOAD", files_to_download)
@@ -808,7 +828,7 @@ def build(
             """
         )
 
-    if os.path.isfile(mutations):
+    if isinstance(mutations, str) and os.path.isfile(mutations):
         mutations_path = mutations  # will account for mutations in supported_databases_and_corresponding_reference_sequence_type once the file is defined in the conditional
     else:
         mutations_path = None
@@ -816,23 +836,15 @@ def build(
     if isinstance(mutations, str) and mutations in supported_databases_and_corresponding_reference_sequence_type:
         # TODO: expand beyond COSMIC (utilize the variant_file_name key in supported_databases_and_corresponding_reference_sequence_type)
         if "cosmic" in mutations:
+            mutations_original = mutations
             reference_out_cosmic = f"{reference_out_dir}/cosmic"
-            mutations = f"{reference_out_cosmic}/CancerMutationCensus_AllData_Tsv_v{cosmic_version}_GRCh{grch}/CancerMutationCensus_AllData_v{cosmic_version}_GRCh{grch}_mutation_workflow.csv"
+            if int(cosmic_version) == 100:
+                mutations = f"{reference_out_cosmic}/CancerMutationCensus_AllData_Tsv_v{cosmic_version}_GRCh{grch}_v2/CancerMutationCensus_AllData_v{cosmic_version}_GRCh{grch}_mutation_workflow.csv"
+            else:
+                mutations = f"{reference_out_cosmic}/CancerMutationCensus_AllData_Tsv_v{cosmic_version}_GRCh{grch}/CancerMutationCensus_AllData_v{cosmic_version}_GRCh{grch}_mutation_workflow.csv"
             mutations_path = mutations
 
             if not os.path.isfile(mutations):  # DO NOT specify column names in gget cosmic - I instead code them in later
-                print(f"""gget.cosmic(
-                      None,
-                      grch_version={grch},
-                      cosmic_version={cosmic_version},
-                      out='{reference_out_cosmic}',
-                      mutation_class='cancer',
-                      download_cosmic=True,
-                      keep_genome_info=True,
-                      remove_duplicates=True,
-                      email={cosmic_email},
-                      password={cosmic_password})
-                """)
                 gget.cosmic(
                     None,
                     grch_version=grch,
@@ -859,7 +871,7 @@ def build(
                             ]
                         )
 
-                        if "CancerMutationCensus" in mutations or mutations == "cosmic_cmc":
+                        if "CancerMutationCensus" in mutations_original or mutations_original == "cosmic_cmc":
                             logger.info("COSMIC CMC genome strand information is not fully accurate. Improving with gtf information.")
                             mutations = improve_genome_strand_information(mutations, mutation_genome_column_name="mutation_genome", output_mutations_path=mutations_path)
                     else:
@@ -867,19 +879,21 @@ def build(
             else:
                 mutations = pd.read_csv(mutations_path)
 
-            if "cdna" in sequences:  # covers whether sequences == "cdna" or sequences == "PATH/TO/Homo_sapiens.GRCh37.cdna.all.fa"
-                logger.info("Adding in cdna information into COSMIC. Note that the 'mutation_cdna' column will refer to cDNA mutation notation, and the 'mutation' column will refer to CDS mutation notation.")
-                mutations = convert_mutation_cds_locations_to_cdna(
-                    input_csv_path=mutations,
-                    output_csv_path=mutations_path,
-                    cds_fasta_path=cds_file,
-                    cdna_fasta_path=cdna_file,
-                )
+            if sequences == "cdna" or sequences.endswith(supported_databases_and_corresponding_reference_sequence_type[mutations_original]["sequence_file_names"]["cdna"].replace("GRCH_NUMBER", grch)):  # covers whether sequences == "cdna" or sequences == "PATH/TO/Homo_sapiens.GRCh37.cdna.all.fa"
+                if "mutation_cdna" not in mutations.columns:
+                    logger.info("Adding in cdna information into COSMIC. Note that the 'mutation_cdna' column will refer to cDNA mutation notation, and the 'mutation' column will refer to CDS mutation notation.")
+                    mutations = convert_mutation_cds_locations_to_cdna(
+                        input_csv_path=mutations,
+                        output_csv_path=mutations_path,
+                        cds_fasta_path=cds_file,
+                        cdna_fasta_path=cdna_file,
+                        verbose=verbose
+                    )
 
                 seq_id_column = "seq_ID"
                 var_column = "mutation_cdna"
 
-            elif sequences == "genome" or "primary_assembly" in sequences:  # covers whether sequences == "genome" or sequences == "PATH/TO/Homo_sapiens.GRCh37.dna.primary_assembly.fa"
+            elif sequences == "genome" or sequences.endswith(supported_databases_and_corresponding_reference_sequence_type[mutations_original]["sequence_file_names"]["genome"].replace("GRCH_NUMBER", grch)):  # covers whether sequences == "genome" or sequences == "PATH/TO/Homo_sapiens.GRCh37.dna.primary_assembly.fa"
                 mutations_path_no_duplications = mutations_path.replace(".csv", "_no_duplications.csv")
                 if not os.path.isfile(mutations_path_no_duplications):
                     logger.info("COSMIC genome location is not accurate for duplications. Dropping duplications in a copy of the csv file.")
@@ -890,13 +904,11 @@ def build(
                 seq_id_column = "chromosome"
                 var_column = "mutation_genome"
 
-            elif "cds" in sequences:  # covers whether sequences == "cds" or sequences == "PATH/TO/Homo_sapiens.GRCh37.cds.all.fa"
+            elif sequences == "cds" or sequences.endswith(supported_databases_and_corresponding_reference_sequence_type[mutations_original]["sequence_file_names"]["cds"].replace("GRCH_NUMBER", grch)):  # covers whether sequences == "cds" or sequences == "PATH/TO/Homo_sapiens.GRCh37.cds.all.fa"
                 seq_id_column = "seq_ID"
                 var_column = "mutation"  # if "mutation_cds" not in mutations.columns else "mutation_cds"  # checks if CDS mutation column was renamed by convert_mutation_cds_locations_to_cdna
 
             var_id_column = "mutation_id" if var_id_column is not None else None  # use the id column if the user wanted to; otherwise keep as default
-
-    original_mutations_type = "string"
 
     # Read in 'mutations' if passed as filepath to comma-separated csv
     if isinstance(mutations, str) and mutations.endswith(".csv"):
@@ -918,7 +930,6 @@ def build(
 
     # Handle mutations passed as a list
     elif isinstance(mutations, list):
-        original_mutations_type = "list"
         if len(mutations) > 1:
             if len(mutations) != len(seqs):
                 raise ValueError("If a list is passed, the number of mutations must equal the number of input sequences.")
@@ -939,6 +950,7 @@ def build(
     elif isinstance(mutations, str) and mutations not in supported_databases_and_corresponding_reference_sequence_type:
         # This will work for one mutation for one sequence as well as one mutation for multiple sequences
         temp = pd.DataFrame()
+        mutations = [mutations]
         temp[var_column] = [mutations[0]] * len(seqs)
         temp[var_id_column] = [f"var{i+1}" for i in range(len(seqs))]
         temp[seq_id_column] = [f"seq{i+1}" for i in range(len(seqs))]
@@ -975,8 +987,15 @@ def build(
         # Dots are removed so Ensembl version numbers are removed
         seq_dict[title.split(" ")[0].split(".")[0]] = seq
 
+    del titles
+    del seqs
+
     if non_nuc_seqs > 0:
         logger.warning("Non-nucleotide characters detected in %s input sequences. vk build is only optimized for mutating nucleotide sequences.", non_nuc_seqs)
+
+    if original_order:
+        mutations['original_order'] = range(len(mutations))  # ensure that original order can be restored at the end
+        columns_to_keep.append("original_order")  # just so it doesn't get removed automatically (but I remove it manually later)
 
     # remove duplicate entries from the mutations dataframe, keeping the ones with the most information
     duplicate_count = mutations.duplicated(subset=[seq_id_column, var_column], keep=False).sum() // 2
@@ -1039,18 +1058,16 @@ def build(
     mutations["variant_sequence"] = ""
 
     if var_id_column is not None:
-        mutations["header"] = ">" + mutations[var_id_column]
+        mutations["header"] = mutations[var_id_column]
         if verbose:
             logger.info("Using var_id_column '%s' as the variant header column.", var_id_column)
     else:
-        mutations["header"] = ">" + mutations[seq_id_column] + ":" + mutations[var_column]
+        mutations["header"] = mutations[seq_id_column] + ":" + mutations[var_column]
         if verbose:
             logger.info("Using the seq_id_column:var_column '%s' columns as the variant header column.", f"{seq_id_column}:{var_column}")
 
     # make a set of all initial mutation IDs
-    mutations["header_temp"] = mutations["header"].str[1:]
-    initial_mutation_id_set = set(mutations["header_temp"].dropna())
-    mutations.drop(columns=["header_temp"], inplace=True)
+    initial_mutation_id_set = set(mutations["header"].dropna())
 
     # Calculate number of bad mutations
     uncertain_mutations = mutations[var_column].str.contains(r"\?").sum()
@@ -1110,17 +1127,17 @@ def build(
 
     # Create masks for each type of mutation
     mutations["wt_nucleotides_ensembl"] = None
-    substitution_mask = mutations["variant_type"] == "substitution"
-    deletion_mask = mutations["variant_type"] == "deletion"
-    delins_mask = mutations["variant_type"] == "delins"
-    insertion_mask = mutations["variant_type"] == "insertion"
-    duplication_mask = mutations["variant_type"] == "duplication"
-    inversion_mask = mutations["variant_type"] == "inversion"
+    substitution_mask = mutations["mutation_type"] == "substitution"
+    deletion_mask = mutations["mutation_type"] == "deletion"
+    delins_mask = mutations["mutation_type"] == "delins"
+    insertion_mask = mutations["mutation_type"] == "insertion"
+    duplication_mask = mutations["mutation_type"] == "duplication"
+    inversion_mask = mutations["mutation_type"] == "inversion"
 
     if remove_seqs_with_wt_kmers:
-        long_duplications = ((duplication_mask) & ((mutations["end_variant_position"] - mutations["start_variant_position"]) >= w)).sum()
-        logger.info("Removing %d duplications > w", long_duplications)
-        mutations = mutations[~((duplication_mask) & ((mutations["end_variant_position"] - mutations["start_variant_position"]) >= w))]
+        long_duplications = ((duplication_mask) & ((mutations["end_variant_position"] - mutations["start_variant_position"]) >= k)).sum()
+        logger.info("Removing %d duplications > k", long_duplications)
+        mutations = mutations[~((duplication_mask) & ((mutations["end_variant_position"] - mutations["start_variant_position"]) >= k))]
 
     # Create a mask for all non-substitution mutations
     non_substitution_mask = deletion_mask | delins_mask | insertion_mask | duplication_mask | inversion_mask
@@ -1260,7 +1277,8 @@ def build(
         mutations.loc[non_substitution_mask, "end_mutation_overlap_with_left_flank"] = mutations.loc[non_substitution_mask].apply(calculate_end_mutation_overlap_with_left_flank, axis=1)
 
         # for insertions and delins, make sure I see at bare minimum the full insertion context and the subseqeuent nucleotide - eg if I have c.2_3insA to become ACGTT to ACAGTT, if I only check for ACAG, then I can't distinguosh between ACAGTT, ACAGGTT, ACAGGGTT, etc. (and there are more complex examples)
-        if required_insertion_overlap_length and insertion_and_delins_and_dup_and_inversion_mask.any():  # * new as of 11/20/24
+        # TODO: for duplications, required_insertion_overlap_length=None works fine; but required_insertion_overlap_length="all" causes issues (ruins symmetry)
+        if required_insertion_overlap_length and required_insertion_overlap_length != 1 and insertion_and_delins_and_dup_and_inversion_mask.any():  # * new as of 11/20/24
             if required_insertion_overlap_length == "all":
                 required_insertion_overlap_length = np.inf
 
@@ -1269,12 +1287,12 @@ def build(
 
             mutations.loc[insertion_and_delins_and_dup_and_inversion_mask, "beginning_mutation_overlap_with_right_flank"] = np.maximum(
                 mutations.loc[insertion_and_delins_and_dup_and_inversion_mask, "beginning_mutation_overlap_with_right_flank"],
-                np.minimum(mutations.loc[insertion_and_delins_and_dup_and_inversion_mask, "inserted_nucleotide_length"], required_insertion_overlap_length),
+                np.minimum(mutations.loc[insertion_and_delins_and_dup_and_inversion_mask, "inserted_nucleotide_length"], required_insertion_overlap_length-1),  # Feb 2025: the -1 was added empirically
             )
 
             mutations.loc[insertion_and_delins_and_dup_and_inversion_mask, "end_mutation_overlap_with_left_flank"] = np.maximum(
                 mutations.loc[insertion_and_delins_and_dup_and_inversion_mask, "end_mutation_overlap_with_left_flank"],
-                np.minimum(mutations.loc[insertion_and_delins_and_dup_and_inversion_mask, "inserted_nucleotide_length"], required_insertion_overlap_length),
+                np.minimum(mutations.loc[insertion_and_delins_and_dup_and_inversion_mask, "inserted_nucleotide_length"], required_insertion_overlap_length-1),
             )
 
         # Calculate w-len(flank) (see above instructions)
@@ -1381,12 +1399,12 @@ def build(
         """
 
     if remove_seqs_with_wt_kmers:
-        report += f"""{long_duplications} duplications longer than w found ({long_duplications/total_mutations*100:.2f}%)
+        report += f"""{long_duplications} duplications longer than k found ({long_duplications/total_mutations*100:.2f}%)
         {mutations_overlapping_with_wt} variants with overlapping kmers found ({mutations_overlapping_with_wt/total_mutations*100:.2f}%)
         """
 
     if min_seq_len:
-        report += f"""{rows_less_than_minimum} variants with fragment length < w found ({rows_less_than_minimum/total_mutations*100:.2f}%)
+        report += f"""{rows_less_than_minimum} variants with fragment length < min_seq_len found ({rows_less_than_minimum/total_mutations*100:.2f}%)
         """
 
     if max_ambiguous is not None:
@@ -1399,7 +1417,7 @@ def build(
         logger.info("All variants correctly recorded")
 
     # Save the report string to the specified path
-    if save_filtering_report_text:
+    if save_filtering_report_text and save_files:
         with open(filtering_report_text_out, "w", encoding="utf-8") as file:
             file.write(report)
 
@@ -1467,9 +1485,7 @@ def build(
     mutations = mutations[columns_to_keep]
 
     # save text files of mutations filtered out
-    mutations["header_temp"] = mutations["header"].str[1:]
-    final_mutation_id_set = set(mutations["header_temp"].dropna())
-    mutations.drop(columns=["header_temp"], inplace=True)
+    final_mutation_id_set = set(mutations["header"].dropna())
 
     removed_mutation_set = initial_mutation_id_set - final_mutation_id_set
 
@@ -1496,6 +1512,8 @@ def build(
 
     if merge_identical:
         logger.info("Merging rows of identical VCRSs")
+
+        mutations = mutations.sort_values(by='header', ascending=True)  # so that the headers are merged in alphabetical order
 
         # total mutations
         number_of_mutations_total = len(mutations)
@@ -1527,10 +1545,17 @@ def build(
         if save_variants_updated_csv:
             logger.warning("Merging rows of identical VCRSs can take a while if save_variants_updated_csv=True since it will concatenate all VCRSs too)")
             mutations = mutations.groupby(group_key, sort=False).agg({col: ("first" if col in columns_not_to_semicolon_join else (";".join if col == "header" else lambda x: list(x.fillna(np.nan)))) for col in agg_columns}).reset_index(drop=merge_identical_rc)  # lambda x: list(x) will make simple list, but lengths will be inconsistent with NaN values  # concatenate values with semicolons: lambda x: `";".join(x.astype(str))`   # drop if merging by variant_sequence_and_rc_tuple, but not if merging by variant_sequence
-
+            if original_order:
+                mutations['original_order'] = mutations['original_order'].apply(min)  # get the minimum original order for each group
         else:
-            mutations_temp = mutations.groupby(group_key, sort=False, group_keys=False)["header"].apply(";".join).reset_index()
-
+            if original_order:
+                mutations_temp = mutations.groupby(group_key, sort=False, group_keys=False).agg({
+                    "header": ";".join,
+                    "original_order": lambda x: min(x)  # Take the minimum order value
+                }).reset_index()
+            else:
+                mutations_temp = mutations.groupby(group_key, sort=False, group_keys=False)["header"].apply(";".join).reset_index()  # ignores original_order
+            
             if merge_identical_rc:
                 mutations_temp = mutations_temp.merge(mutations[["variant_sequence", group_key]], on=group_key, how="left")
                 mutations_temp = mutations_temp.drop_duplicates(subset="header")
@@ -1540,9 +1565,6 @@ def build(
 
         if "variant_sequence_and_rc_tuple" in mutations.columns:
             mutations = mutations.drop(columns=["variant_sequence_and_rc_tuple"])
-
-        # apply remove_gt_after_semicolon to variant_sequence
-        mutations["header"] = mutations["header"].apply(remove_gt_after_semicolon)
 
         # Calculate the number of semicolons in each entry
         mutations["semicolon_count"] = mutations["header"].str.count(";")
@@ -1574,7 +1596,7 @@ def build(
         """
 
         # Save the report string to the specified path
-        if save_filtering_report_text:
+        if save_filtering_report_text and save_files:
             filtering_report_write_mode = "a" if os.path.exists(filtering_report_text_out) else "w"
             with open(filtering_report_text_out, filtering_report_write_mode, encoding="utf-8") as file:
                 file.write(merging_report)
@@ -1590,7 +1612,9 @@ def build(
 
     mutations = mutations[mutations["variant_sequence"] != ""]
 
-    mutations["header"] = mutations["header"].str[1:]  # remove the > character
+    # Restore the original order (minus any dropped rows)
+    if original_order:
+        mutations = mutations.sort_values(by="original_order").drop(columns="original_order")
 
     if use_IDs:  # or (var_id_column in mutations.columns and not merge_identical):
         mutations["vcrs_id"] = generate_unique_ids(len(mutations))
@@ -1599,7 +1623,7 @@ def build(
     else:
         mutations["vcrs_id"] = mutations["header"]
 
-    if save_variants_updated_csv:  # use variants_updated_csv_out if present,
+    if save_variants_updated_csv and save_files:  # use variants_updated_csv_out if present,
         logger.info("Saving dataframe with updated variant info...")
         logger.warning("File size can be very large if the number of variants is large.")
         mutations.to_csv(variants_updated_csv_out, index=False)
@@ -1630,31 +1654,26 @@ def build(
 
         create_identity_t2g(vcrs_fasta_out, vcrs_t2g_out)
 
-    if verbose:
+    if verbose and save_files:
         logger.info("FASTA file containing VCRSs created at %s.", vcrs_fasta_out)
         logger.info("t2g file containing VCRSs created at %s.", vcrs_t2g_out)
 
-    if save_wt_vcrs_fasta_and_t2g:
+    if save_wt_vcrs_fasta_and_t2g and save_files:
         with open(wt_vcrs_fasta_out, "w", encoding="utf-8") as fasta_file:
             fasta_file.write("".join(mutations_with_exactly_1_wt_sequence_per_row["fasta_format_wt"].values))
         create_identity_t2g(wt_vcrs_fasta_out, wt_vcrs_t2g_out)  # separate t2g is needed because it may have a subset of the rows of mutant (because it doesn't contain any VCRSs with merged mutations and 2+ originating WT sequences)
 
     # When stream_output is True, return list of mutated seqs
     if return_variant_output:
-        if original_mutations_type == "list":
-            all_mut_seqs = []
-            all_mut_seqs.extend(mutations["variant_sequence"].values)
+        all_mut_seqs = []
+        all_mut_seqs.extend(mutations["variant_sequence"].values)
 
-            # Remove empty strings from final list of mutated sequences
-            # (these are introduced when unknown mutations are encountered)
-            while "" in all_mut_seqs:
-                all_mut_seqs.remove("")
+        # Remove empty strings from final list of mutated sequences (these are introduced when unknown mutations are encountered)
+        while "" in all_mut_seqs:
+            all_mut_seqs.remove("")
 
-            if len(all_mut_seqs) > 0:
-                report_time_elapsed(start_time, logger=logger, verbose=verbose, function_name="build")
-                return all_mut_seqs
-        else:
+        if len(all_mut_seqs) > 0:
             report_time_elapsed(start_time, logger=logger, verbose=verbose, function_name="build")
-            return mutations
+            return all_mut_seqs
 
     report_time_elapsed(start_time, logger=logger, verbose=verbose, function_name="build")

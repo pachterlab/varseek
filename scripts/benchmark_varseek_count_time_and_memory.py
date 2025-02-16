@@ -222,13 +222,19 @@ if any(tool in tools_that_require_star_alignment for tool in tools_to_benchmark)
 
 if "deepvariant" in tools_to_benchmark:
     if not os.path.exists(model_checkpoint_data_path):
-        subprocess.run(f"curl https://storage.googleapis.com/deepvariant/models/DeepVariant/1.4.0/DeepVariant-inception_v3-1.4.0+data-rnaseq_standard/model.ckpt.data-00000-of-00001 > {model_checkpoint_data_path}", check=True, shell=True)
+        with open(model_checkpoint_data_path, "wb") as output_file:
+            subprocess.run(["curl", "https://storage.googleapis.com/deepvariant/models/DeepVariant/1.4.0/DeepVariant-inception_v3-1.4.0+data-rnaseq_standard/model.ckpt.data-00000-of-00001"], stdout=output_file, check=True)
+        # subprocess.run(f"curl https://storage.googleapis.com/deepvariant/models/DeepVariant/1.4.0/DeepVariant-inception_v3-1.4.0+data-rnaseq_standard/model.ckpt.data-00000-of-00001 > {model_checkpoint_data_path}", check=True, shell=True)
 
     if not os.path.exists(model_checkpoint_index_path):
-        subprocess.run(f"curl https://storage.googleapis.com/deepvariant/models/DeepVariant/1.4.0/DeepVariant-inception_v3-1.4.0+data-rnaseq_standard/model.ckpt.index > {model_checkpoint_index_path}", check=True, shell=True)
+        with open(model_checkpoint_index_path, "wb") as output_file:
+            subprocess.run(["curl", "https://storage.googleapis.com/deepvariant/models/DeepVariant/1.4.0/DeepVariant-inception_v3-1.4.0+data-rnaseq_standard/model.ckpt.index"], stdout=output_file, check=True)
+        # subprocess.run(f"curl https://storage.googleapis.com/deepvariant/models/DeepVariant/1.4.0/DeepVariant-inception_v3-1.4.0+data-rnaseq_standard/model.ckpt.index > {model_checkpoint_index_path}", check=True, shell=True)
 
     if not os.path.exists(model_checkpoint_meta_path):
-        subprocess.run(f"curl https://storage.googleapis.com/deepvariant/models/DeepVariant/1.4.0/DeepVariant-inception_v3-1.4.0+data-rnaseq_standard/model.ckpt.meta > {model_checkpoint_meta_path}", check=True, shell=True)
+        with open(model_checkpoint_meta_path, "wb") as output_file:
+            subprocess.run(["curl", "https://storage.googleapis.com/deepvariant/models/DeepVariant/1.4.0/DeepVariant-inception_v3-1.4.0+data-rnaseq_standard/model.ckpt.meta"], stdout=output_file, check=True)
+        # subprocess.run(f"curl https://storage.googleapis.com/deepvariant/models/DeepVariant/1.4.0/DeepVariant-inception_v3-1.4.0+data-rnaseq_standard/model.ckpt.meta > {model_checkpoint_meta_path}", check=True, shell=True)
 
 if ("gatk_haplotypecaller" in tools_to_benchmark or "gatk_mutect2" in tools_to_benchmark):
     if not is_program_installed(java):
@@ -265,8 +271,11 @@ for number_of_reads in number_of_reads_list:
     if number_of_reads != number_of_reads_max:
         number_of_reads_fraction = number_of_reads / number_of_reads_max
         fastq_output_path = os.path.join(tmp_dir, f"reads_{number_of_reads}_fastq.fastq")
-        seqtk_sample_command = f"{seqtk} sample -s {random_seed} {fastq_output_path_max_reads} {number_of_reads_fraction} > {fastq_output_path}"
-        subprocess.run(seqtk_sample_command, shell=True, check=True)
+        seqtk_sample_command = [seqtk, "sample", "-s", str(random_seed), fastq_output_path_max_reads, str(number_of_reads_fraction)]
+        with open(fastq_output_path, "w", encoding="utf-8") as output_file:
+            subprocess.run(seqtk_sample_command, stdout=output_file, check=True)
+        # seqtk_sample_command = f"{seqtk} sample -s {random_seed} {fastq_output_path_max_reads} {number_of_reads_fraction} > {fastq_output_path}"
+        # subprocess.run(seqtk_sample_command, shell=True, check=True)
 
     #* Variant calling: varseek
     if "varseek" in tools_to_benchmark:

@@ -1,13 +1,14 @@
 """varseek clean and specific helper functions."""
 
 import os
+from pathlib import Path
 import subprocess
 import time
 
 import anndata
 import numpy as np
 import pandas as pd
-import scanpy as sc
+import anndata as ad
 from packaging import version
 
 from varseek.utils import (
@@ -59,12 +60,13 @@ def prepare_set(vcrs_id_set_to_exclusively_keep):
         raise ValueError("Invalid input: must be None, a list, tuple, set, or a path to a text file")
 
 
+scanpy_conditions = ['filter_cells_by_min_counts', 'filter_cells_by_min_genes', 'filter_genes_by_min_cells', 'filter_cells_by_max_mt_content', 'doublet_detection']
 def validate_input_clean(params_dict):
     # check if adata_vcrs is of type Anndata
     adata_vcrs = params_dict["adata_vcrs"]
-    if not isinstance(adata_vcrs, anndata.AnnData) or (not isinstance(adata_vcrs, str) and not adata_vcrs.endswith(".h5ad")):
+    if not isinstance(adata_vcrs, anndata.AnnData) or (not isinstance(adata_vcrs, (str, Path)) and not adata_vcrs.endswith(".h5ad")):
         raise ValueError("adata_vcrs must be an AnnData object or a file path to an h5ad object.")
-    if isinstance(adata_vcrs, str) and not os.path.isfile(adata_vcrs):
+    if isinstance(adata_vcrs, (str, Path)) and not os.path.isfile(adata_vcrs):
         raise ValueError(f"adata_vcrs file path {adata_vcrs} does not exist.")
 
     # technology
@@ -84,6 +86,30 @@ def validate_input_clean(params_dict):
             must_be_value = f"an integer >= {min_value}" if not optional_value else f"an integer >= {min_value} or None"
             raise ValueError(f"{param_name} must be {must_be_value}. Got {param_value} of type {type(param_value)}.")
 
+    if params_dict.get("cpm_normalization") and (not params_dict.get("adata_reference_genome") and not params_dict.get("kb_count_reference_genome_dir")):
+        raise ValueError("adata_reference_genome or kb_count_reference_genome_dir must be provided if cpm_normalization=True.")
+    
+    if technology not in non_single_cell_technologies:
+        if params_dict.get("filter_cells_by_min_counts") is True:
+            try:
+                from kneed import KneeLocator
+            except ImportError:
+                raise ImportError(
+                    "kneed is required for filter_cells_by_min_counts=True. See pyproject.toml project.optional-dependencies for version recommendation. Install it with:\n"
+                    "  pip install kneed"
+                )
+        for condition in scanpy_conditions:
+            if params_dict.get(condition):
+                if not params_dict.get("adata_reference_genome") and not params_dict.get("kb_count_reference_genome_dir"):
+                    raise ValueError(f"adata_reference_genome or kb_count_reference_genome_dir must be provided if {condition}=True.")
+                try:
+                    import scanpy as sc
+                except ImportError:
+                    raise ImportError(
+                        "Scanpy is required for this function. See pyproject.toml project.optional-dependencies for version recommendation. Install it with:\n"
+                        "  pip install scanpy"
+                    )
+    
     # filter_cells_by_min_counts - gets special treatment because it can also be True for automatic calculation
     filter_cells_by_min_counts = params_dict.get("filter_cells_by_min_counts", None)
     if filter_cells_by_min_counts is not None and not is_valid_int(filter_cells_by_min_counts, ">=", 1):
@@ -143,7 +169,7 @@ def validate_input_clean(params_dict):
 
     # directories
     for param_name in ["vk_ref_dir", "kb_count_vcrs_dir", "kb_count_reference_genome_dir", "out"]:
-        if not isinstance(params_dict.get(param_name), str):
+        if not isinstance(params_dict.get(param_name), (str, Path)):
             raise ValueError(f"Directory {params_dict.get(param_name)} is not a string")
     if params_dict.get("vk_ref_dir") and not os.path.isdir(params_dict.get("vk_ref_dir")):
         raise ValueError(f"Directory {params_dict.get('vk_ref_dir')} does not exist")
@@ -280,6 +306,7 @@ def clean(
 
     # Hidden arguments
     - id_to_header_csv                      (str): Path to the VCRS id to header csv file. Default: None.
+    - save_files                            (bool) Whether to save the output files. Default: True.
     """
     # * 1. Start timer
     start_time = time.perf_counter()
@@ -299,11 +326,14 @@ def clean(
         return None
 
     # * 4. Save params to config file and run info file
-    config_file = os.path.join(out, "config", "vk_info_config.json")
-    save_params_to_config_file(params_dict, config_file)
+    save_files = kwargs.get("save_files", True)
 
-    run_info_file = os.path.join(out, "config", "vk_info_run_info.txt")
-    save_run_info(run_info_file)
+    if save_files:
+        config_file = os.path.join(out, "config", "vk_info_config.json")
+        save_params_to_config_file(params_dict, config_file)
+
+        run_info_file = os.path.join(out, "config", "vk_info_run_info.txt")
+        save_run_info(run_info_file)
 
     # * 5. Set up default folder/file input paths, and make sure the necessary ones exist
     if kb_count_reference_genome_dir and not adata_reference_genome:
@@ -330,6 +360,10 @@ def clean(
         raise ValueError("kb_count_reference_genome_dir must be provided as the output from kb count out to the reference genome if qc_against_gene_matrix is True.")
 
     # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
+    # if someone specifies an output path, then it should be saved
+    if vcf_out:
+        save_vcf = True
+    
     output_figures_dir = os.path.join(out, "vk_clean_figures")
 
     adata_vcrs_clean_out = os.path.join(out, "adata_cleaned.h5ad") if not adata_vcrs_clean_out else adata_vcrs_clean_out
@@ -339,9 +373,12 @@ def clean(
     for output_path in [output_figures_dir, adata_vcrs_clean_out, adata_reference_genome_clean_out]:
         if os.path.exists(output_path) and not overwrite:
             raise ValueError(f"Output path {output_path} already exists. Please set overwrite=True to overwrite it.")
+        if os.path.dirname(output_path) and save_files:
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-    os.makedirs(out, exist_ok=True)
-    os.makedirs(output_figures_dir, exist_ok=True)
+    if save_files:
+        os.makedirs(out, exist_ok=True)
+        os.makedirs(output_figures_dir, exist_ok=True)
 
     # * 7. Define kwargs defaults
     # id_to_header_csv is currently the only kwargs and was defined in step 5
@@ -387,7 +424,7 @@ def clean(
     adata = adata_vcrs
 
     if isinstance(adata, str) and os.path.exists(adata) and adata.endswith(".h5ad"):
-        adata = sc.read_h5ad(adata)
+        adata = ad.read_h5ad(adata)
 
     adata.var[vcrs_id_column] = adata.var.index
     original_var_names = adata.var_names.copy()
@@ -413,7 +450,7 @@ def clean(
 
     if adata_reference_genome:
         if isinstance(adata_reference_genome, str) and os.path.exists(adata_reference_genome) and adata_reference_genome.endswith(".h5ad"):
-            adata_reference_genome = sc.read_h5ad(adata_reference_genome)
+            adata_reference_genome = ad.read_h5ad(adata_reference_genome)
 
     if id_to_header_csv and isinstance(id_to_header_csv, str) and os.path.exists(id_to_header_csv):
         id_to_header_df = pd.read_csv(id_to_header_csv, index_col=0)
@@ -485,6 +522,9 @@ def clean(
     # TODO: make sure the adata objects are in the same order (relevant for both bulk and sc) - possibly with match_adata_orders
     if isinstance(adata_reference_genome, anndata.AnnData):
         if technology not in non_single_cell_technologies:  # pardon the double negative - this is just a way to say "if technology is single cell"
+            for condition in scanpy_conditions:
+                if params_dict.get(condition):
+                    import scanpy as sc
             if filter_cells_by_min_counts:
                 if not isinstance(filter_cells_by_min_counts, int):  # ie True for automatic
                     from kneed import KneeLocator
@@ -633,13 +673,14 @@ def clean(
 
     adata.var["vcrs_count"] = adata.X.sum(axis=0).A1 if hasattr(adata.X, "A1") else np.asarray(adata.X.sum(axis=0)).flatten()
 
-    if save_vcf:
+    if save_vcf and save_files:
         make_vcf(vcf_out)  # TODO: write this
 
-    if isinstance(adata_reference_genome, anndata.AnnData):
+    if isinstance(adata_reference_genome, anndata.AnnData) and save_files:
         adata_reference_genome.write(adata_reference_genome_clean_out)
 
-    adata.write(adata_vcrs_clean_out)
+    if save_files:
+        adata.write(adata_vcrs_clean_out)
 
     report_time_elapsed(start_time, logger=logger, verbose=verbose, function_name="clean")
 

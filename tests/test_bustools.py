@@ -6,7 +6,7 @@ import tempfile
 import numpy as np
 import pandas as pd
 import pytest
-import scanpy as sc
+import anndata as ad
 
 import varseek as vk
 from varseek.utils import create_identity_t2g, make_bus_df
@@ -100,7 +100,7 @@ def test_bustools_df_bulk(temp_fastq_file, temp_fasta_file, temp_index_file, tem
     assert read_to_ref_dict == {'seq1': ['vcrs1', 'vcrs6'], 'seq2': ['vcrs2'], 'seq3': ['vcrs1', 'vcrs6'], 'seq5': ['vcrs2', 'vcrs4', 'vcrs5']}
 
     adata_path = f"{temp_kb_count_out_folder}/counts_unfiltered/adata.h5ad"
-    adata = sc.read_h5ad(adata_path)
+    adata = ad.read_h5ad(adata_path)
 
     assert np.array_equal(adata.X.toarray(), np.array([[0., 1., 0., 0., 0., 0.]]))
 

@@ -596,16 +596,19 @@ def download_t2t_reference_files(reference_out_dir_sequences_dlist):
     temp_dir = f"{reference_out_dir_sequences_dlist}/temp"
     subprocess.run(["unzip", zip_file, "-d", temp_dir], check=True)
 
-    # Step 3: Move the files from the extracted directory to the target folder
-    extracted_path = f"{temp_dir}/ncbi_dataset/data/GCF_009914755.1/"
-    subprocess.run(
-        f"mv {extracted_path}* {reference_out_dir_sequences_dlist}",
-        shell=True,
-        check=True,
-    )
+    try:
+        # Step 3: Move the files from the extracted directory to the target folder
+        extracted_path = f"{temp_dir}/ncbi_dataset/data/GCF_009914755.1/"
+        destination = reference_out_dir_sequences_dlist
+        for filename in os.listdir(extracted_path):
+            shutil.move(os.path.join(extracted_path, filename), destination)  # new Feb 2025 (used subprocess)
+    except Exception as e:
+        raise RuntimeError(f"Error moving files: {e}") from e
+    finally:
+        # Step 4: Remove the temporary folder
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir, ignore_errors=True)  # new Feb 2025 (used subprocess)
 
-    # Step 4: Remove the temporary folder
-    subprocess.run(["rm", "-rf", temp_dir], check=True)
     return ref_dlist_fa_genome, ref_dlist_fa_cdna, ref_dlist_gtf
 
 

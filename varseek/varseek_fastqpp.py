@@ -2,6 +2,7 @@
 
 import os
 import time
+from pathlib import Path
 
 from .constants import technology_valid_values
 from .utils import (
@@ -56,7 +57,7 @@ def validate_input_fastqpp(params_dict):
         raise ValueError(f"Parity must be one of {parity_valid_values}")
 
     # directories
-    if not isinstance(params_dict.get("out", None), str):
+    if not isinstance(params_dict.get("out", None), (str, Path)):
         raise ValueError(f"Invalid value for out: {params_dict.get('out', None)}")
 
     # optional str

@@ -5,11 +5,7 @@ from pdb import set_trace as st
 import numpy as np
 import pandas as pd
 import pytest
-from Bio import SeqIO
-from Bio.Seq import Seq
-from Bio.SeqRecord import SeqRecord
 
-import varseek as vk
 from varseek.utils import (
     add_vcrs_mutation_type,
     align_to_normal_genome_and_build_dlist,

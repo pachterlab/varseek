@@ -1,6 +1,7 @@
 """varseek count and specific helper functions."""
 
 import inspect
+from pathlib import Path
 import os
 import subprocess
 import time
@@ -73,7 +74,7 @@ def validate_input_count(params_dict):
 
     # out dirs
     for param_name in ["out", "kb_count_vcrs_out_dir", "kb_count_reference_genome_out_dir", "vk_summarize_out_dir"]:
-        if not isinstance(params_dict.get(param_name, None), str):
+        if not isinstance(params_dict.get(param_name, None), (str, Path)):
             raise ValueError(f"Invalid value for {param_name}: {params_dict.get(param_name, None)}")
 
     # booleans

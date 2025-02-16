@@ -6,6 +6,7 @@ import time
 
 import numpy as np
 import pandas as pd
+from pathlib import Path
 from tqdm import tqdm
 
 import varseek
@@ -50,7 +51,7 @@ def validate_input_sim(params_dict):
     variants = params_dict["variants"]
     sequences = params_dict["sequences"]
 
-    if isinstance(variants, str):
+    if isinstance(variants, (str, Path)):
         if variants in supported_databases_and_corresponding_reference_sequence_type:
             if sequences not in supported_databases_and_corresponding_reference_sequence_type[variants]["sequence_download_commands"]:
                 raise ValueError(f"sequences {sequences} not internally supported.\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
@@ -450,7 +451,7 @@ def sim(
     # Write to a FASTA file
     total_fragments = 0
     skipped = 0
-    with open(fasta_output_path_temp, "a", encoding="utf-8") as fa_file:
+    with open(fasta_output_path_temp, "w", encoding="utf-8") as fa_file:
         for row in sampled_reference_df.itertuples(index=False):
             # try:
             header = row.header

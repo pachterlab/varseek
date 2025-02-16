@@ -5,7 +5,8 @@ import time
 
 import anndata
 import pandas as pd
-import scanpy as sc
+from pathlib import Path
+import anndata as ad
 
 from varseek.utils import (
     check_file_path_is_string_with_valid_extension,
@@ -41,8 +42,8 @@ def validate_input_summarize(params_dict):
         if technology.lower() not in technology_valid_values_lower:
             raise ValueError(f"Technology must be None or one of {technology_valid_values_lower}")
 
-    if not isinstance(params_dict["out"], str):
-        raise ValueError("out must be a string.")
+    if not isinstance(params_dict["out"], (str, Path)):
+        raise ValueError("out must be a string or Path object.")
 
     if not isinstance(params_dict["vcrs_id"], str):
         raise ValueError("vcrs_id must be a string.")
@@ -128,7 +129,7 @@ def summarize(
     if isinstance(adata, anndata.AnnData):
         pass
     elif isinstance(adata, str):
-        adata = sc.read_h5ad(adata)
+        adata = ad.read_h5ad(adata)
     else:
         raise ValueError("adata must be a string (file path) or an AnnData object.")
 

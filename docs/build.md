@@ -281,7 +281,7 @@ TTAGAACTT
 &rarr; Saves 'variants_updated.csv' file containing: 
 ```
 
-| Chromosome | Mutation          | Ensembl_Transcript_ID  | variant_type  | wt_sequence | variant_sequence| wt_sequence_full  | variant_sequence_full| wt_sequence_aa_full | variant_sequence_aa_full |
+| Chromosome | Mutation          | Ensembl_Transcript_ID  | mutation_type  | wt_sequence | variant_sequence| wt_sequence_full  | variant_sequence_full| wt_sequence_aa_full | variant_sequence_aa_full |
 |------------|-------------------|------------------------|---------------|-------------|-----------------|-------------------|----------------------|---------------------|-------------------------|
 | 1          | g.224411A>C       | ENSMUST00000193812     | Substitution  | TGCTATGCT   | TGCTCTGCT       | ...TGCTATGCT...   | ...TGCTCTGCT...      | ...CYA...           | ...CSA...               |
 | 8          | g.25111del        | ENST00000174411        | Deletion      | GAGTCCGAT   | GAGTCGAT        | ...GAGTCCGAT...   | ...GAGTCGAT...       | ...ESD...           | ...ES...                |

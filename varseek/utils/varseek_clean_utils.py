@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import pyfastx
 import pysam
-import scanpy as sc
+import anndata as ad
 import scipy.sparse as sp
 from scipy.sparse import csr_matrix
 from tqdm import tqdm
@@ -34,22 +34,21 @@ def run_kb_count_dry_run(index, t2g, fastq, kb_count_out, newer_kallisto, k=31, 
     #     kallisto_install_from_source_commands = "git clone https://github.com/pachterlab/kallisto.git && cd kallisto && git checkout 0397342 && mkdir build && cd build && cmake .. -DMAX_KMER_SIZE=64 && make"
     #     subprocess.run(kallisto_install_from_source_commands, shell=True, check=True)
 
-    kb_count_dry_run = f"kb count -t {threads} -i {index} -g {t2g} -x bulk -k {k} --dry-run --parity single -o {kb_count_out} {fastq}"  # should be the same as the kb count run before with the exception of removing --h5ad, swapping in the newer kallisto for the kallisto bus command, and adding --union and --dfk-onlist  # TODO: add support for more kb arguments
+    kb_count_dry_run = ["kb", "count", "-t", str(threads), "-i", index, "-g", t2g, "-x", "bulk", "-k", str(k), "--dry-run", "--parity", "single", "-o", kb_count_out, fastq]  # should be the same as the kb count run before with the exception of removing --h5ad, swapping in the newer kallisto for the kallisto bus command, and adding --union and --dfk-onlist  # TODO: add support for more kb arguments
     if "--h5ad" in kb_count_dry_run:
-        kb_count_dry_run = kb_count_dry_run.replace("--h5ad", "")  # not supported
+        kb_count_dry_run.remove("--h5ad")  # not supported
 
-    result = subprocess.run(kb_count_dry_run, shell=True, stdout=subprocess.PIPE, text=True, check=True)
+    result = subprocess.run(kb_count_dry_run, stdout=subprocess.PIPE, text=True, check=True)  # used to be shell (changed Feb 2025)
     commands = result.stdout.strip().split("\n")
 
     for cmd in commands:
         # print(f"Running command: {cmd}")
+        cmd_split = cmd.split()
         if "kallisto bus" in cmd:
-            cmd_split = cmd.split()
             cmd_split[0] = newer_kallisto
             cmd_split.insert(2, "--union")
             cmd_split.insert(3, "--dfk-onlist")
-            cmd = " ".join(cmd_split)
-        result = subprocess.run(cmd, shell=True, check=True)
+        result = subprocess.run(cmd_split, check=True)
         if result.returncode != 0:
             print(f"Command failed: {cmd}")
             break
@@ -381,8 +380,8 @@ def make_bus_df(kallisto_out, fastq_file_list, t2g_file, mm=False, union=False, 
     if not os.path.exists(bus_text_file):
         print("running bustools text")
         bus_txt_file_existed_originally = False
-        create_bus_txt_file_command = f"{bustools} text -o {bus_text_file} -f {bus_file}"
-        subprocess.run(create_bus_txt_file_command, shell=True, check=True)
+        create_bus_txt_file_command = [bustools, "text", "-o", bus_text_file, "-f", bus_file]
+        subprocess.run(create_bus_txt_file_command, check=True)
         # bustools text -p -a -f -d output.bus
     else:
         bus_txt_file_existed_originally = True
@@ -458,7 +457,7 @@ def make_bus_df(kallisto_out, fastq_file_list, t2g_file, mm=False, union=False, 
         bus_df["counted_in_count_matrix"] = bus_df["gene_names_final_set"].apply(lambda x: len(x) == 1)
 
     # adata_path = f"{kallisto_out}/counts_unfiltered/adata.h5ad"
-    # adata = sc.read_h5ad(adata_path)
+    # adata = ad.read_h5ad(adata_path)
     # barcode_length = len(adata.obs.index[0])
     # bus_df['barcode_without_padding'] = bus_df['barcode'].str[(32 - barcode_length):]
 
@@ -548,7 +547,7 @@ def adjust_variant_adata_by_normal_gene_matrix(adata, kb_count_vcrs_dir, kb_coun
     if not adata:
         adata = f"{kb_count_vcrs_dir}/counts_unfiltered/adata.h5ad"
     if isinstance(adata, str):
-        adata = sc.read_h5ad(adata)
+        adata = ad.read_h5ad(adata)
 
     bus_df_mutation_path = f"{kb_count_vcrs_dir}/bus_df.csv"
     bus_df_standard_path = f"{kb_count_reference_genome_dir}/bus_df.csv"
@@ -659,8 +658,8 @@ def match_adata_orders(adata, adata_ref):
 
 
 def make_vaf_matrix(adata_mutant_vcrs_path, adata_wt_vcrs_path, adata_vaf_output=None, mutant_vcf=None):
-    adata_mutant_vcrs = sc.read_h5ad(adata_mutant_vcrs_path)
-    adata_wt_vcrs = sc.read_h5ad(adata_wt_vcrs_path)
+    adata_mutant_vcrs = ad.read_h5ad(adata_mutant_vcrs_path)
+    adata_wt_vcrs = ad.read_h5ad(adata_wt_vcrs_path)
 
     adata_mutant_vcrs_path_out = adata_mutant_vcrs_path.replace(".h5ad", "_with_vaf.h5ad")
     adata_wt_vcrs_path_out = adata_wt_vcrs_path.replace(".h5ad", "_with_vaf.h5ad")

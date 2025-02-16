@@ -14,7 +14,6 @@ from collections import defaultdict
 import numpy as np
 import pandas as pd
 import pyfastx
-from Bio import SeqIO
 from tqdm import tqdm
 
 from varseek.utils.logger_utils import splitext_custom
@@ -705,7 +704,7 @@ def compare_cdna_and_genome(mutation_metadata_df_exploded, varseek_build_temp_fo
             "variant_sequence",
             "seq_ID",
             "mutation_cdna",
-            "variant_type",
+            "mutation_type",
         ],
     )
 
@@ -739,7 +738,7 @@ def compare_cdna_and_genome(mutation_metadata_df_exploded, varseek_build_temp_fo
             "variant_sequence",
             "chromosome",
             "mutation_genome",
-            "variant_type",
+            "mutation_type",
             "seq_ID",
             "mutation_cdna",
         ],
@@ -811,7 +810,7 @@ def hash_kmer(kmer):
 def count_kmer_overlaps_new(fasta_file, k=31, strandedness=False, vcrs_id_column="vcrs_id"):
     """Count k-mer overlaps between sequences in the FASTA file."""
     # Parse the FASTA file and store sequences
-    id_and_sequence_list_of_tuples = [(record.id, str(record.seq)) for record in SeqIO.parse(fasta_file, "fasta")]
+    fasta_read_only = pyfastx.Fastx(fasta_file)  # new Feb 2025
 
     if sys.version_info >= (3, 9):
         hash_kmer_function = hash_kmer_security_specified
@@ -820,7 +819,7 @@ def count_kmer_overlaps_new(fasta_file, k=31, strandedness=False, vcrs_id_column
 
     # Create a combined k-mer overlap dictionary
     kmer_to_seqids = defaultdict(set)
-    for seq_id, sequence in tqdm(id_and_sequence_list_of_tuples, desc="Generating k-mers", unit="sequence"):
+    for seq_id, sequence in tqdm(fasta_read_only, desc="Generating k-mers", unit="sequence"):
         for kmer in generate_kmers(sequence, k, strandedness=strandedness):
             # kmer_to_seqids[kmer].add(seq_id)
             # TODO: erase the line above and try storing hashes of k-mers instead
@@ -829,7 +828,7 @@ def count_kmer_overlaps_new(fasta_file, k=31, strandedness=False, vcrs_id_column
 
     # Process forward sequences only, checking overlaps with both forward and reverse complement k-mers
     results = []
-    for seq_id, sequence in tqdm(id_and_sequence_list_of_tuples, desc="Checking overlaps", unit="sequence"):
+    for seq_id, sequence in tqdm(fasta_read_only, desc="Checking overlaps", unit="sequence"):
         kmers = generate_kmers(sequence, k)
         overlapping_kmers = 0
         distinct_sequences_set = set()
@@ -1034,7 +1033,6 @@ def get_vcrss_that_pseudoalign_but_arent_dlisted(
 
     if not os.path.exists(kb_human_reference_index_file):
         subprocess.run(kb_ref_command, check=True)
-        # subprocess.run(" ".join(kb_ref_command), shell=True, check=True)
 
     kb_extract_out_dir_bowtie_filtered = f"{out_dir_notebook}/kb_extract_bowtie_filtered"
 

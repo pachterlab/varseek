@@ -1,21 +1,15 @@
+import os
 import re
 from collections import OrderedDict, defaultdict
+import tempfile
 
 import pandas as pd
 import pyfastx
-from Bio import SeqIO
 from tqdm import tqdm
 
 from varseek.constants import codon_to_amino_acid, mutation_pattern
 
 tqdm.pandas()
-
-
-# Function to ensure unique IDs
-def generate_unique_ids(num_ids):
-    num_digits = len(str(num_ids))
-    generated_ids = [f"vcrs_{i+1:0{num_digits}}" for i in range(num_ids)]
-    return list(generated_ids)
 
 
 def convert_chromosome_value_to_int_when_possible(val):
@@ -24,8 +18,13 @@ def convert_chromosome_value_to_int_when_possible(val):
         return str(int(float(val)))
     except ValueError:
         # If conversion fails, keep the value as it is
-        return val
+        return str(val)
 
+# Function to ensure unique IDs
+def generate_unique_ids(num_ids):
+    num_digits = len(str(num_ids))
+    generated_ids = [f"vcrs_{i+1:0{num_digits}}" for i in range(num_ids)]
+    return list(generated_ids)
 
 def translate_sequence(sequence, start, end):
     amino_acid_sequence = ""
@@ -49,18 +48,45 @@ def wt_fragment_and_mutant_fragment_share_kmer(mutated_fragment: str, wildtype_f
             return True
     return False
 
+def return_pyfastx_index_object_with_header_versions_removed(fasta_path, verbose=True):
+    if verbose:
+        print(f"Removing version numbers in in fasta headers for {fasta_path}")
+    fa_read_only = pyfastx.Fastx(fasta_path)
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".fa", encoding="utf-8", delete=True) as temp_fasta:
+        temp_fasta_path = temp_fasta.name
+        temp_fasta_index_path = temp_fasta_path + ".fxi"
+        for name, seq in fa_read_only:
+            name_without_version = name.split(".")[0]
+            temp_fasta.write(f">{name_without_version}\n{seq}\n")
+        temp_fasta.flush()
+        if verbose:
+            print(f"Building pyfastx index for {fasta_path}")
+        fa = pyfastx.Fasta(temp_fasta_path, build_index=True)
+    return fa, temp_fasta_index_path
 
-def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_fasta_path, output_csv_path):
+# Helper function to find starting position of CDS in cDNA
+def find_cds_position(cdna_seq, cds_seq):
+    pos = cdna_seq.find(cds_seq)
+    return pos if pos != -1 else None
+
+def count_leading_Ns(seq):
+    return len(seq) - len(seq.lstrip("N"))
+
+def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_fasta_path, output_csv_path, verbose=True):
     # Load the CSV
     if isinstance(input_csv_path, str):
+        if verbose:
+            print(f"Loading CSV from {input_csv_path}")
         df = pd.read_csv(input_csv_path)
     elif isinstance(input_csv_path, pd.DataFrame):
         df = input_csv_path
     else:
         raise ValueError("input_csv_path must be a string or a pandas DataFrame")
 
+    print("Copying df internally to avoid in-place modifications")
     df_original = df.copy()
 
+    print("Removing unknown mutations")
     # get rids of mutations that are uncertain, ambiguous, intronic, posttranslational
     uncertain_mutations = df["mutation"].str.contains(r"\?").sum()
 
@@ -81,6 +107,10 @@ def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_
     mask = df["mutation"].str.contains(combined_pattern)
     df = df[~mask]
 
+    print("Sorting df")
+    df = df.sort_values(by="seq_ID")  # to make iterrows more efficient
+
+    print("Determining mutation positions")
     df[["nucleotide_positions", "actual_variant"]] = df["mutation"].str.extract(mutation_pattern)
 
     split_positions = df["nucleotide_positions"].str.split("_", expand=True)
@@ -95,44 +125,41 @@ def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_
 
     df[["start_variant_position", "end_variant_position"]] = df[["start_variant_position", "end_variant_position"]].astype(int)
 
-    # Rename the mutation column
-    df.rename(columns={"mutation": "mutation_cds"}, inplace=True)
+    # # Rename the mutation column
+    # df.rename(columns={"mutation": "mutation_cds"}, inplace=True)
 
-    # Load the FASTA files
-    cdna_seqs = SeqIO.to_dict(SeqIO.parse(cdna_fasta_path, "fasta"))
-    cds_seqs = SeqIO.to_dict(SeqIO.parse(cds_fasta_path, "fasta"))
+    temp_fasta_index_path_cdna, temp_fasta_index_path_cds = None, None  # in case the block fails
 
-    def remove_transcript_version_number(seq_dict):
-        new_seq_dict = {}
-        for key in seq_dict:
-            new_key = key.split(".")[0]
-            new_seq_dict[new_key] = seq_dict[key]
-        return new_seq_dict
+    # put in try-except-finally block to ensure that the temp index files are erased no matter what
+    try:
+        # Load the FASTA files
+        fa_cdna, temp_fasta_index_path_cdna = return_pyfastx_index_object_with_header_versions_removed(cdna_fasta_path, verbose=verbose)
+        fa_cds, temp_fasta_index_path_cds = return_pyfastx_index_object_with_header_versions_removed(cds_fasta_path, verbose=verbose)
 
-    cdna_seqs = remove_transcript_version_number(cdna_seqs)
-    cds_seqs = remove_transcript_version_number(cds_seqs)
+        number_bad = 0
+        seq_id_previous = None
 
-    # Helper function to find starting position of CDS in cDNA
-    def find_cds_position(cdna_seq, cds_seq):
-        pos = cdna_seq.find(cds_seq)
-        return pos if pos != -1 else None
+        iterator = tqdm(df.iterrows(), total=len(df), desc="Processing rows") if verbose else df.iterrows()
 
-    def count_leading_Ns(seq):
-        return len(seq) - len(seq.lstrip("N"))
+        # Process each row
+        for index, row in iterator:
+            seq_id = row["seq_ID"]
 
-    number_bad = 0
-
-    # Process each row
-    for index, row in df.iterrows():
-        seq_id = row["seq_ID"]
-        if seq_id in cdna_seqs and seq_id in cds_seqs:
-            cdna_seq = str(cdna_seqs[seq_id].seq)
-            cds_seq = str(cds_seqs[seq_id].seq)
-            number_of_leading_ns = count_leading_Ns(cdna_seq)
-            cds_seq = cds_seq.strip("N")
-
-            cds_start_pos = find_cds_position(cdna_seq, cds_seq)
-            if cds_start_pos is not None:
+            if seq_id != seq_id_previous:
+                if seq_id in fa_cdna and seq_id in fa_cds:
+                    cdna_seq = fa_cdna[seq_id].seq
+                    cds_seq = fa_cds[seq_id].seq
+                    number_of_leading_ns = count_leading_Ns(cdna_seq)
+                    cds_seq = cds_seq.strip("N")
+                    cds_start_pos = find_cds_position(cdna_seq, cds_seq)
+                    seq_id_found_in_cdna_and_cds = True
+                else:
+                    seq_id_found_in_cdna_and_cds = False
+            
+            if (not seq_id_found_in_cdna_and_cds) or (cds_start_pos is None):
+                df.at[index, "mutation_cdna"] = None
+                number_bad += 1
+            else:
                 df.at[index, "start_variant_position"] += cds_start_pos - number_of_leading_ns
                 df.at[index, "end_variant_position"] += cds_start_pos - number_of_leading_ns
 
@@ -141,36 +168,37 @@ def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_
                 actual_variant = row["actual_variant"]
 
                 if start == end:
-                    df.at[index, "mutation"] = f"c.{start}{actual_variant}"
+                    df.at[index, "mutation_cdna"] = f"c.{start}{actual_variant}"
                 else:
-                    df.at[index, "mutation"] = f"c.{start}_{end}{actual_variant}"
-            else:
-                df.at[index, "mutation"] = None
-                number_bad += 1
+                    df.at[index, "mutation_cdna"] = f"c.{start}_{end}{actual_variant}"
+
+            seq_id_previous = seq_id
+
+        if verbose:
+            print(f"Number of bad mutations: {number_bad}")
+            print("Merging dfs")
+        
+        if (df_original.duplicated(subset=["seq_ID", "mutation"]).sum() == 0) and (df.duplicated(subset=["seq_ID", "mutation"]).sum() == 0):  # this condition should be True if downloading with default gget cosmic, but in case the user wants duplicate rows then I'll give both options
+            df_merged = df_original.set_index(["seq_ID", "mutation"]).join(df.set_index(["seq_ID", "mutation"])[["mutation_cdna"]], how="left").reset_index()
         else:
-            df.at[index, "mutation"] = None
-            number_bad += 1
+            df_merged = df_original.merge(df[["seq_ID", "mutation", "mutation_cdna"]], on=["seq_ID", "mutation"], how="left")  # new as of Feb 2025
 
-    df.drop(
-        columns=[
-            "nucleotide_positions",
-            "actual_variant",
-            "start_variant_position",
-            "end_variant_position",
-        ],
-        inplace=True,
-    )
+        # Write to new CSV
+        if output_csv_path:
+            if verbose:
+                print(f"Saving output to {output_csv_path}")
+            df_merged.to_csv(output_csv_path, index=False)  # new as of Feb 2025 (replaced df.to_csv with df_merged.to_csv)
 
-    df.rename(columns={"mutation": "mutation_cdna", "mutation_cds": "mutation"}, inplace=True)  # new as of Feb 2025
-    df_merged = df_original.merge(df[["mutation", "mutation_cdna"]], on="mutation", how="left")  # new as of Feb 2025
-
-    # Write to new CSV
-    df_merged.to_csv(output_csv_path, index=False)  # new as of Feb 2025 (replaced df.to_csv with df_merged.to_csv)
-
-    print(f"Number of bad mutations: {number_bad}")
-    print(f"Output written to {output_csv_path}")
-
-    return df
+        return df_merged
+    
+    except Exception as e:
+        raise RuntimeError(f"Error converting CDS to cDNA: {e}") from e
+    finally:
+        if verbose:
+            print("Cleaning up temporary files...")
+        for temp_path in [temp_fasta_index_path_cdna, temp_fasta_index_path_cds]:
+            if temp_path and os.path.exists(temp_path):
+                os.remove(temp_path)
 
 
 def find_matching_sequences_through_fasta(file_path, ref_sequence):

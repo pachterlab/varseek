@@ -120,6 +120,7 @@ def cosmic_csv_path(cds_and_cdna_files, tmp_path):
                 output_csv_path=cosmic_csv_with_cdna_path,
                 cds_fasta_path=cds_file,
                 cdna_fasta_path=cdna_file,
+                verbose=True,
             )
 
 
