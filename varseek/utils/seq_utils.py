@@ -807,7 +807,7 @@ def illumina_sort_order_for_kb_count_fastqs(filepath):
 
 
 def sort_fastq_files_for_kb_count(fastq_files, technology=None, multiplexed=None, logger=None, check_only=False, verbose=True):
-    printlog = get_printlog(verbose, logger)
+    logger_info = get_printlog(verbose=verbose, logger=logger)
 
     file_name_format = None
 
@@ -823,21 +823,21 @@ def sort_fastq_files_for_kb_count(fastq_files, technology=None, multiplexed=None
         else:
             message = f"File {fastq_file} does not match the expected bulk file naming convention of SAMPLE_PAIR.EXT where SAMPLE is sample name, PAIR is 1/2, and EXT is a fastq extension - or the Illumina file naming convention of SAMPLE_LANE_R[12]_001.fastq.gz, where SAMPLE is letters, numbers, underscores; LANE is numbers with optional leading 0s; pair is either R1 or R2; and it has .fq or .fastq extension (or .fq.gz or .fastq.gz)."
             if check_only:
-                printlog(message)
+                logger_info(message)
             else:
                 message += "\nRaising exception and exiting because sort_fastqs=True, which requires standard bulk or Illumina file naming convention. Please check fastq file names or set sort_fastqs=False."
                 raise ValueError(message)
 
     if technology is None:
-        printlog("No technology specified, so defaulting to None when checking file order (i.e., will not drop index files from fastq file list)")
+        logger_info("No technology specified, so defaulting to None when checking file order (i.e., will not drop index files from fastq file list)")
     if "smartseq" in technology.lower() and multiplexed is None:
-        printlog("Multiplexed not specified with smartseq technology, so defaulting to None when checking file order (i.e., will not drop index files from fastq file list)")
+        logger_info("Multiplexed not specified with smartseq technology, so defaulting to None when checking file order (i.e., will not drop index files from fastq file list)")
         multiplexed = True
 
     if technology is None or technology == "10xv1" or ("smartseq" in technology.lower() and multiplexed):  # keep the index I1/I2 files (pass into kb count) for 10xv1 or multiplexed smart-seq
         filtered_files = fastq_files
     else:  # remove the index files
-        printlog(f"Removing index files from fastq files list, as they are not utilized in kb count with technology {technology}")
+        logger_info(f"Removing index files from fastq files list, as they are not utilized in kb count with technology {technology}")
         filtered_files = [f for f in fastq_files if not any(x in os.path.basename(f) for x in ["I1", "I2"])]
 
     if file_name_format == "illumina":
@@ -849,9 +849,9 @@ def sort_fastq_files_for_kb_count(fastq_files, technology=None, multiplexed=None
 
     if check_only:
         if sorted_files == fastq_files:
-            printlog("Fastq files are in the expected order")
+            logger_info("Fastq files are in the expected order")
         else:
-            printlog("Fastq files are not in the expected order. Fastq files are expected to be sorted (in order) by (a) SAMPLE, (b) LANE, and (c) PARITY (R1/R2). Index files (I1/I2) are not included in the sort order except for technology=10xv1 and multiplexed smartseq. To enable automatic sorting, set sort_fastqs=True.")
+            logger_info("Fastq files are not in the expected order. Fastq files are expected to be sorted (in order) by (a) SAMPLE, (b) LANE, and (c) PARITY (R1/R2). Index files (I1/I2) are not included in the sort order except for technology=10xv1 and multiplexed smartseq. To enable automatic sorting, set sort_fastqs=True.")
         return fastq_files
     else:
         return sorted_files

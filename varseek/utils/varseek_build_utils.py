@@ -8,6 +8,7 @@ import pyfastx
 from tqdm import tqdm
 
 from varseek.constants import codon_to_amino_acid, mutation_pattern
+from varseek.utils.logger_utils import get_printlog
 
 tqdm.pandas()
 
@@ -48,9 +49,9 @@ def wt_fragment_and_mutant_fragment_share_kmer(mutated_fragment: str, wildtype_f
             return True
     return False
 
-def return_pyfastx_index_object_with_header_versions_removed(fasta_path, verbose=True):
-    if verbose:
-        print(f"Removing version numbers in in fasta headers for {fasta_path}")
+def return_pyfastx_index_object_with_header_versions_removed(fasta_path, logger=None):
+    logger_info = get_printlog(logger=logger)
+    logger_info(f"Removing version numbers in in fasta headers for {fasta_path}")
     fa_read_only = pyfastx.Fastx(fasta_path)
     with tempfile.NamedTemporaryFile(mode="w", suffix=".fa", encoding="utf-8", delete=True) as temp_fasta:
         temp_fasta_path = temp_fasta.name
@@ -59,8 +60,7 @@ def return_pyfastx_index_object_with_header_versions_removed(fasta_path, verbose
             name_without_version = name.split(".")[0]
             temp_fasta.write(f">{name_without_version}\n{seq}\n")
         temp_fasta.flush()
-        if verbose:
-            print(f"Building pyfastx index for {fasta_path}")
+        logger_info(f"Building pyfastx index for {fasta_path}")
         fa = pyfastx.Fasta(temp_fasta_path, build_index=True)
     return fa, temp_fasta_index_path
 
@@ -72,11 +72,11 @@ def find_cds_position(cdna_seq, cds_seq):
 def count_leading_Ns(seq):
     return len(seq) - len(seq.lstrip("N"))
 
-def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_fasta_path, output_csv_path, verbose=True):
+def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_fasta_path, output_csv_path, logger=None, verbose=True):
+    logger_info = get_printlog(logger=logger)
     # Load the CSV
     if isinstance(input_csv_path, str):
-        if verbose:
-            print(f"Loading CSV from {input_csv_path}")
+        logger_info(f"Loading CSV from {input_csv_path}")
         df = pd.read_csv(input_csv_path)
     elif isinstance(input_csv_path, pd.DataFrame):
         df = input_csv_path
@@ -140,8 +140,8 @@ def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_
     # put in try-except-finally block to ensure that the temp index files are erased no matter what
     try:
         # Load the FASTA files
-        fa_cdna, temp_fasta_index_path_cdna = return_pyfastx_index_object_with_header_versions_removed(cdna_fasta_path, verbose=verbose)
-        fa_cds, temp_fasta_index_path_cds = return_pyfastx_index_object_with_header_versions_removed(cds_fasta_path, verbose=verbose)
+        fa_cdna, temp_fasta_index_path_cdna = return_pyfastx_index_object_with_header_versions_removed(cdna_fasta_path, logger=logger)
+        fa_cds, temp_fasta_index_path_cds = return_pyfastx_index_object_with_header_versions_removed(cds_fasta_path, logger=logger)
 
         number_bad = 0
         seq_id_previous = None
@@ -181,9 +181,8 @@ def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_
 
             seq_id_previous = seq_id
 
-        if verbose:
-            print(f"Number of bad mutations: {number_bad}")
-            print("Merging dfs")
+        logger_info(f"Number of bad mutations: {number_bad}")
+        logger_info("Merging dfs")
         
         if (df_original.duplicated(subset=["seq_ID", "mutation"]).sum() == 0) and (df.duplicated(subset=["seq_ID", "mutation"]).sum() == 0):  # this condition should be True if downloading with default gget cosmic, but in case the user wants duplicate rows then I'll give both options
             df_merged = df_original.set_index(["seq_ID", "mutation"]).join(df.set_index(["seq_ID", "mutation"])[["mutation_cdna"]], how="left").reset_index()
@@ -192,8 +191,7 @@ def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_
 
         # Write to new CSV
         if output_csv_path:
-            if verbose:
-                print(f"Saving output to {output_csv_path}")
+            logger_info(f"Saving output to {output_csv_path}")
             df_merged.to_csv(output_csv_path, index=False)  # new as of Feb 2025 (replaced df.to_csv with df_merged.to_csv)
 
         return df_merged, bad_mutations_dict
@@ -201,8 +199,7 @@ def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_
     except Exception as e:
         raise RuntimeError(f"Error converting CDS to cDNA: {e}") from e
     finally:
-        if verbose:
-            print("Cleaning up temporary files...")
+        logger_info("Cleaning up temporary files...")
         for temp_path in [temp_fasta_index_path_cdna, temp_fasta_index_path_cds]:
             if temp_path and os.path.exists(temp_path):
                 os.remove(temp_path)

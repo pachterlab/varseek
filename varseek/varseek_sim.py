@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from tqdm import tqdm
+import logging
 
 import varseek
 from varseek.varseek_build import accepted_build_file_types
@@ -30,7 +31,7 @@ from .utils import (
 )
 
 tqdm.pandas()
-logger = set_up_logger()
+logger = logging.getLogger(__name__)
 
 
 def assign_strands(read_start_indices_mutant, strand, seed=None):
@@ -121,7 +122,6 @@ def validate_input_sim(params_dict):
         "save_variants_updated_csv",
         "gzip_reads_fastq_out",
         "dry_run",
-        "verbose",
     ]:
         if not isinstance(params_dict.get(param_name), bool):
             raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
@@ -169,7 +169,9 @@ def sim(
     seed=None,
     gzip_reads_fastq_out=False,
     dry_run=False,
-    verbose=True,
+    logging_level=None,
+    save_logs=False,
+    log_out_dir=None,
     **kwargs,
 ):
     """
@@ -224,15 +226,26 @@ def sim(
     - seq_id_column_genome              (str) Only applies if variants does not exist or have the expected columns. Name of the column containing the sequence IDs for genome sequences. Default: "chromosome"
     - var_column_genome                 (str) Only applies if variants does not exist or have the expected columns. Name of the column containing the variants for genome sequences. Default: "mutation_genome"
     - seed                              (int) Seed for random number generation. Default: None
-    - gzip_reads_fastq_out                 (bool) Whether to gzip the output fastq file. Default: False
+    - gzip_reads_fastq_out              (bool) Whether to gzip the output fastq file. Default: False
     - dry_run                           (bool) Whether to run in dry-run mode. Default: False
-    - verbose                           (bool) Whether to print progress messages. Default: True
+    - logging_level                     (str) Logging level. Can also be set with the environment variable VARSEEK_LOGGING_LEVEL. Default: INFO.
+    - save_logs                         (True/False) Whether to save logs to a file. Default: False.
+    - log_out_dir                       (str) Directory to save logs. Default: None (do not save logs).
 
     # Hidden arguments
     All kwargs get passed into vk build
     """
     # * 1. Start timer
     start_time = time.perf_counter()
+
+    # * 1.5. logger
+    global logger
+    if kwargs.get("logger") and isinstance(kwargs.get("logger"), logging.Logger):
+        logger = kwargs.get("logger")
+    else:
+        if save_logs and not log_out_dir:
+            log_out_dir = os.path.join(out, "logs")
+        logger = set_up_logger(logger, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir)
 
     # * 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
@@ -275,7 +288,7 @@ def sim(
         variants = pd.read_csv(variants)
 
     if (isinstance(variants, str) and not os.path.exists(variants)) or (variant_sequence_read_parent_column not in variants.columns and sample_type != "w") or (ref_sequence_read_parent_column not in variants.columns and sample_type != "m"):
-        print("cannot find mutant sequence read parent")
+        logger.info("cannot find mutant sequence read parent")
         update_df_out = f"{vk_build_out_dir}/sim_data_df.csv"
 
         if k and w:
@@ -305,7 +318,7 @@ def sim(
             sim_data_df.to_csv(update_df_out, index=False)
         else:
             if not os.path.exists(update_df_out):
-                print("running varseek build")
+                logger.info("running varseek build")
                 varseek.build(sequences=sequences, variants=variants, out=vk_build_out_dir, w=read_w, k=k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, required_insertion_overlap_length=None, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, cosmic_email=os.getenv("COSMIC_EMAIL"), cosmic_password=os.getenv("COSMIC_PASSWORD"), save_variants_updated_csv=True, variants_updated_csv_out=update_df_out, seq_id_column=seq_id_column, var_column=var_column, **kwargs)  # uncomment for genome support
 
             sim_data_df = pd.read_csv(update_df_out)
@@ -402,7 +415,7 @@ def sim(
         sampled_reference_df = filtered_df.sample(n=number_of_variants_to_sample, random_state=None)
 
     if sampled_reference_df.empty:
-        print("No variants to sample")
+        logger.warning("No variants to sample")
         # return dict with empty values
         return {
             "read_df": pd.DataFrame(),
@@ -645,7 +658,7 @@ def sim(
             #     skipped += 1
 
     if skipped > 0:
-        print(f"Skipped {skipped} variants due to errors")
+        logger.warning(f"Skipped {skipped} variants due to errors")
 
     for key in new_column_dict:
         sampled_reference_df[key] = new_column_dict[key]
@@ -692,7 +705,7 @@ def sim(
 
     os.remove(fasta_output_path_temp)
 
-    print(f"Wrote {total_fragments} variants to {reads_fastq_out}")
+    logger.info(f"Wrote {total_fragments} variants to {reads_fastq_out}")
 
     simulated_df_dict = {
         "read_df": read_df,
@@ -705,6 +718,6 @@ def sim(
     if variants_updated_csv_out is not None:
         variants.to_csv(variants_updated_csv_out, index=False)
 
-    report_time_elapsed(start_time, logger=logger, verbose=verbose, function_name="sim")
+    report_time_elapsed(start_time, logger=logger, function_name="sim")
 
     return simulated_df_dict

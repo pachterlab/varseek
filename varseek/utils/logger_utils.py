@@ -26,13 +26,23 @@ from varseek.constants import default_filename_dict
 logging.getLogger("numexpr").setLevel(logging.WARNING)
 
 
-def set_up_logger(logging_level_name=None, save_logs=False, log_dir=None):
-    if logging_level_name is None:
-        logging_level_name = os.getenv("VARSEEK_LOGLEVEL", "INFO")
-    logging_level = logging.getLevelName(logging_level_name)  # "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"
-    if not isinstance(logging_level, int):  # unknown log level
+def set_up_logger(logger, logging_level=None, save_logs=False, log_dir=None):
+    # type checking
+    if not isinstance(save_logs, bool):
+        raise TypeError(f"save_logs must be a boolean, got {type(save_logs)}")
+    if log_dir is not None and not isinstance(log_dir, (str, Path)):
+        raise TypeError(f"log_dir must be a string or Path or None, got {type(log_dir)}")
+    if log_dir is not None:
+        save_logs = True  # if someone provides a log_dir, they want to save logs
+    
+    # retrieve logging_level and check value
+    if logging_level is None:
+        logging_level = os.getenv("VARSEEK_LOGGING_LEVEL", "INFO")
+    if logging_level not in {"NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", 0, 10, 20, 30, 40, 50, 60}:  # unknown log level
+        print(f"Unknown log level: {logging_level}. Defaulting to INFO.")
         logging_level = logging.INFO
-    logger = logging.getLogger(__name__)
+    
+    # logger = logging.getLogger(__name__)  # leave commented out and run in each module individually
     logger.setLevel(logging_level)
 
     if not logger.hasHandlers():
@@ -44,16 +54,18 @@ def set_up_logger(logging_level_name=None, save_logs=False, log_dir=None):
 
         if save_logs:
             if log_dir is None:
-                package_dir = os.path.dirname(os.path.abspath(__file__))
+                package_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
                 log_dir = os.path.join(package_dir, "logs")
 
             if not os.path.exists(log_dir):
                 os.makedirs(log_dir)
 
-            log_file = os.path.join(log_dir, f"logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+            function_name = inspect.stack()[1].function  # gets the name of the function that called it (eg build, info, filter, etc)
+            log_file = os.path.join(log_dir, f"logs_{function_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
 
             file_handler = logging.FileHandler(log_file)
             file_handler.setFormatter(formatter)
+            # file_handler.setLevel(logging.DEBUG)  # Capture all logs regardless of logger's level
             logger.addHandler(file_handler)
 
     return logger
@@ -144,15 +156,14 @@ def make_function_parameter_to_value_dict(levels_up=1):
     return params
 
 
-def report_time_elapsed(start_time, logger=None, verbose=True, function_name=None):
+def report_time_elapsed(start_time, logger=None, function_name=None):
     elapsed = time.perf_counter() - start_time
     function_name_message = f" for vk {function_name}" if function_name else ""
     time_elapsed_message = f"Total runtime{function_name_message}: {int(elapsed // 60)}m, {elapsed % 60:.2f}s"
-    if verbose:
-        if logger:
-            logger.info(time_elapsed_message)
-        else:
-            print(time_elapsed_message)
+    if logger:
+        logger.info(time_elapsed_message)
+    else:
+        print(time_elapsed_message)
 
 
 def save_params_to_config_file(params=None, out_file="run_config.json", remove_passwords=True):

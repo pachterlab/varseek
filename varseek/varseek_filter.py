@@ -5,6 +5,7 @@ import csv
 import os
 from pathlib import Path
 import time
+import logging
 
 import pandas as pd
 
@@ -24,12 +25,12 @@ from .utils import (
     set_up_logger,
 )
 
-logger = set_up_logger()
+logger = logging.getLogger(__name__)
 
 
 def apply_filters(df, filters, verbose=False, filtering_report_text_out=None):
     logger.info("Initial variant report")
-    filtering_report_dict = make_filtering_report(df, verbose=verbose, filtering_report_text_out=filtering_report_text_out)
+    filtering_report_dict = make_filtering_report(df, filtering_report_text_out=filtering_report_text_out)
     initial_filtering_report_dict = filtering_report_dict.copy()
 
     for filter in filters:
@@ -42,7 +43,8 @@ def apply_filters(df, filters, verbose=False, filtering_report_text_out=None):
             continue
 
         message = f"{column} {rule} {value}"
-        print(message) if not logger else logger.info(message)
+
+        logger.info(message)
 
         if rule == "greater_than":
             df = df.loc[(df[column].astype(float) > float(value)) | (df[column].isnull())]
@@ -103,16 +105,15 @@ def apply_filters(df, filters, verbose=False, filtering_report_text_out=None):
         else:
             raise ValueError(f"Rule '{rule}' not recognized")
 
-        filtering_report_dict = make_filtering_report(df, verbose=verbose, filtering_report_text_out=filtering_report_text_out, prior_filtering_report_dict=filtering_report_dict)
+        filtering_report_dict = make_filtering_report(df, filtering_report_text_out=filtering_report_text_out, prior_filtering_report_dict=filtering_report_dict)
 
-    if verbose:
-        number_of_variants_total_difference = initial_filtering_report_dict["number_of_variants_total"] - filtering_report_dict["number_of_variants_total"]
-        number_of_vcrss_total_difference = initial_filtering_report_dict["number_of_vcrss_total"] - filtering_report_dict["number_of_vcrss_total"]
-        number_of_unique_variants_difference = initial_filtering_report_dict["number_of_unique_variants"] - filtering_report_dict["number_of_unique_variants"]
-        number_of_merged_variants_difference = initial_filtering_report_dict["number_of_merged_variants"] - filtering_report_dict["number_of_merged_variants"]
+    number_of_variants_total_difference = initial_filtering_report_dict["number_of_variants_total"] - filtering_report_dict["number_of_variants_total"]
+    number_of_vcrss_total_difference = initial_filtering_report_dict["number_of_vcrss_total"] - filtering_report_dict["number_of_vcrss_total"]
+    number_of_unique_variants_difference = initial_filtering_report_dict["number_of_unique_variants"] - filtering_report_dict["number_of_unique_variants"]
+    number_of_merged_variants_difference = initial_filtering_report_dict["number_of_merged_variants"] - filtering_report_dict["number_of_merged_variants"]
 
-        message = f"Total variants filtered: {number_of_variants_total_difference}; total VCRSs filtered: {number_of_vcrss_total_difference}; unique variants filtered: {number_of_unique_variants_difference}; merged variants filtered: {number_of_merged_variants_difference}"
-        print(message) if not logger else logger.info(message)
+    message = f"Total variants filtered: {number_of_variants_total_difference}; total VCRSs filtered: {number_of_vcrss_total_difference}; unique variants filtered: {number_of_unique_variants_difference}; merged variants filtered: {number_of_merged_variants_difference}"
+    logger.info(message)
 
     return df
 
@@ -204,7 +205,7 @@ def filter_id_to_header_csv(id_to_header_csv, id_to_header_csv_filtered, filtere
                 writer.writerow(row)
 
 
-def make_filtering_report(variant_metadata_df, vcrs_header_column="vcrs_header", verbose=False, filtering_report_text_out=None, prior_filtering_report_dict=None):
+def make_filtering_report(variant_metadata_df, vcrs_header_column="vcrs_header", filtering_report_text_out=None, prior_filtering_report_dict=None):
     if "semicolon_count" not in variant_metadata_df.columns:  # already checked 'and vcrs_header_column in variant_metadata_df.columns' before
         variant_metadata_df["semicolon_count"] = variant_metadata_df[vcrs_header_column].str.count(";")
 
@@ -229,11 +230,7 @@ def make_filtering_report(variant_metadata_df, vcrs_header_column="vcrs_header",
     else:
         filtering_report = f"Number of total variants: {number_of_variants_total}; VCRSs: {number_of_vcrss}; unique variants: {number_of_unique_variants}; merged variants: {number_of_merged_variants}\n"
 
-    if verbose:
-        if logger:
-            logger.info(filtering_report)
-        else:
-            print(filtering_report)
+    logger.info(filtering_report)
 
     # Save the report string to the specified path
     if isinstance(filtering_report_text_out, str):
@@ -329,7 +326,9 @@ def filter(
     dry_run=False,
     list_filter_rules=False,
     overwrite=False,
-    verbose=True,
+    logging_level=None,
+    save_logs=False,
+    log_out_dir=None,
     **kwargs,
 ):
     """
@@ -368,7 +367,9 @@ def filter(
     - dry_run                                      (bool) If True, print the parameters and exit without running the function. Default: False.
     - list_filter_rules                            (bool) If True, print the available filter rules and exit without running the function. Default: False.
     - overwrite                                    (bool) If True, overwrite the output files if they already exist. Default: False.
-    - verbose                                      (bool) If True, print progress messages. Default: True.
+    - logging_level                                (str) Logging level. Can also be set with the environment variable VARSEEK_LOGGING_LEVEL. Default: INFO.
+    - save_logs                                    (True/False) Whether to save logs to a file. Default: False.
+    - log_out_dir                                  (str) Directory to save logs. Default: None (do not save logs).
 
     # Hidden arguments:
     filter_all_dlists (bool) If True, filter all dlists. Default: False.
@@ -386,6 +387,15 @@ def filter(
 
     # * 1. Start timer
     start_time = time.perf_counter()
+
+    # * 1.5. logger
+    global logger
+    if kwargs.get("logger") and isinstance(kwargs.get("logger"), logging.Logger):
+        logger = kwargs.get("logger")
+    else:
+        if save_logs and not log_out_dir:
+            log_out_dir = os.path.join(out, "logs")
+        logger = set_up_logger(logger, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir)
 
     # * 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
@@ -515,7 +525,7 @@ def filter(
         variant_metadata_df["semicolon_count"] = variant_metadata_df[vcrs_header_column].str.count(";")
 
     filtering_report_text_out = os.path.join(out, "filtering_report.txt")
-    filtered_df = apply_filters(variant_metadata_df, filters, verbose=verbose, filtering_report_text_out=filtering_report_text_out)
+    filtered_df = apply_filters(variant_metadata_df, filters, filtering_report_text_out=filtering_report_text_out)
     filtered_df = filtered_df.copy()  # here to avoid pandas warning about assigning to a slice rather than a copy
 
     if "semicolon_count" in variant_metadata_df.columns:
@@ -595,14 +605,13 @@ def filter(
     if id_to_header_csv and os.path.isfile(id_to_header_csv):
         filter_id_to_header_csv(id_to_header_csv, id_to_header_filtered_csv_out, filtered_df_vcrs_ids)
 
-    if verbose:
-        logger.info(f"Output fasta file with filtered variants: {vcrs_filtered_fasta_out}")
-        logger.info(f"t2g file containing mutated sequences created at {vcrs_t2g_filtered_out}.")
-        if dlist_filtered_fasta_out and os.path.isfile(dlist_filtered_fasta_out):
-            logger.info(f"Filtered dlist fasta created at {dlist_filtered_fasta_out}.")
+    logger.info(f"Output fasta file with filtered variants: {vcrs_filtered_fasta_out}")
+    logger.info(f"t2g file containing mutated sequences created at {vcrs_t2g_filtered_out}.")
+    if dlist_filtered_fasta_out and os.path.isfile(dlist_filtered_fasta_out):
+        logger.info(f"Filtered dlist fasta created at {dlist_filtered_fasta_out}.")
 
     # Report time
-    report_time_elapsed(start_time, logger=logger, verbose=verbose, function_name="filter")
+    report_time_elapsed(start_time, logger=logger, function_name="filter")
 
     if return_variants_updated_filtered_csv_df:
         return filtered_df

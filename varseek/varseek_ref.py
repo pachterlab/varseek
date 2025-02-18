@@ -5,6 +5,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
+import logging
 
 import requests
 
@@ -22,9 +23,9 @@ from varseek.utils import (
     set_up_logger,
 )
 
-from .constants import prebuilt_vk_ref_files
+from .constants import prebuilt_vk_ref_files, supported_databases_and_corresponding_reference_sequence_type
 
-logger = set_up_logger()
+logger = logging.getLogger(__name__)
 COSMIC_CREDENTIAL_VALIDATION_URL = "https://varseek-server-3relpk35fa-wl.a.run.app"
 
 mode_parameters = {
@@ -146,7 +147,10 @@ def ref(
     minimum_info_columns=True,
     overwrite=False,
     threads=2,
-    verbose=True,
+    logging_level=None,
+    save_logs=False,
+    log_out_dir=None,
+    verbose=False,
     **kwargs,  # * including all arguments for vk build, info, and filter
 ):
     """
@@ -225,7 +229,10 @@ def ref(
     - minimum_info_columns (bool) If True, run vk info with minimum columns. Default: True.
     - overwrite     (bool) If True, overwrite existing files. Default: False.
     - threads       (int) Number of threads to use. Default: 2.
-    - verbose       (bool) If True, print progress messages. Default: True.
+    - logging_level (str) Logging level. Can also be set with the environment variable VARSEEK_LOGGING_LEVEL. Default: INFO.
+    - save_logs     (True/False) Whether to save logs to a file. Default: False.
+    - log_out_dir   (str) Directory to save logs. Default: None (do not save logs).
+    - verbose       (True/False) Whether to print additional information e.g., progress bars. Default: False.
 
     For a complete list of supported parameters, see the documentation for varseek build, varseek info, varseek filter, and kb ref. Note that any shared parameter names between functions are meant to have identical purposes.
     """
@@ -252,6 +259,15 @@ def ref(
     # * 1. Start timer
     start_time = time.perf_counter()
 
+    # * 1.25 logger
+    global logger
+    if kwargs.get("logger") and isinstance(kwargs.get("logger"), logging.Logger):
+        logger = kwargs.get("logger")
+    else:
+        if save_logs and not log_out_dir:
+            log_out_dir = os.path.join(out, "logs")
+        logger = set_up_logger(logger, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir)
+
     # * 1.5. Load in parameters from a config file if provided
     if isinstance(config, str) and os.path.isfile(config):
         vk_ref_config_file_input = vk.utils.load_params(config)
@@ -270,6 +286,7 @@ def ref(
     vk.varseek_info.validate_input_info(params_dict)
     vk.varseek_filter.validate_input_filter(params_dict)
     validate_input_ref(params_dict)
+    params_dict['logger'] = logger
 
     # * 3. Dry-run
     # handled within child functions
@@ -355,6 +372,26 @@ def ref(
     # Nothing to see here
 
     # * 8. Start the actual function
+    # some copy-paste from vk build to ensure correct column names if using the cosmic_cmc database
+    if variants == "cosmic_cmc":
+        if not params_dict.get("cosmic_grch"):
+            grch_dict = supported_databases_and_corresponding_reference_sequence_type[variants]["database_version_to_reference_assembly_build"]
+            largest_key = max(int(k) for k in grch_dict.keys())
+            grch = grch_dict[str(largest_key)]
+        else:
+            grch = params_dict.get("cosmic_grch")
+        if sequences == "cdna" or sequences.endswith(supported_databases_and_corresponding_reference_sequence_type[variants]["sequence_file_names"]["cdna"].replace("GRCH_NUMBER", grch)):  # covers whether sequences == "cdna" or sequences == "PATH/TO/Homo_sapiens.GRCh37.cdna.all.fa"
+            params_dict["seq_id_column"] = "seq_ID"
+            params_dict["var_column"] = "mutation_cdna"
+        elif sequences == "genome" or sequences.endswith(supported_databases_and_corresponding_reference_sequence_type[variants]["sequence_file_names"]["genome"].replace("GRCH_NUMBER", grch)):  # covers whether sequences == "genome" or sequences == "PATH/TO/Homo_sapiens.GRCh37.dna.primary_assembly.fa"
+            params_dict["seq_id_column"] = "chromosome"
+            params_dict["var_column"] = "mutation_genome"
+        elif sequences == "cds" or sequences.endswith(supported_databases_and_corresponding_reference_sequence_type[variants]["sequence_file_names"]["cds"].replace("GRCH_NUMBER", grch)):  # covers whether sequences == "cds" or sequences == "PATH/TO/Homo_sapiens.GRCh37.cds.all.fa"
+            params_dict["seq_id_column"] = "seq_ID"
+            params_dict["var_column"] = "mutation"
+        params_dict["var_id_column"] = "mutation_id" if params_dict.get("var_id_column") is not None else None
+
+
     # get COSMIC info
     cosmic_email = params_dict.get("cosmic_email", None)
     if not cosmic_email:
@@ -553,7 +590,7 @@ def ref(
     vk_ref_output_dict["t2g"] = vcrs_t2g_for_alignment
 
     # Report time
-    report_time_elapsed(start_time, logger=logger, verbose=verbose, function_name="ref")
+    report_time_elapsed(start_time, logger=logger, function_name="ref")
 
     return vk_ref_output_dict
 

@@ -228,7 +228,7 @@ def check_if_read_has_index_and_umi_smartseq3(sequence):
 
 
 def split_fastq_reads_by_N(input_fastq_file, out_dir=".", minimum_sequence_length=None, technology="bulk", contains_barcodes_or_umis=False, seqtk="seqtk", logger=None, verbose=True, suffix="splitNs"):  # set to False for bulk and for the paired file of any single-cell technology
-    printlog = get_printlog(verbose, logger)
+    logger_info = get_printlog(verbose=verbose, logger=logger)
     os.makedirs(out_dir, exist_ok=True)
     parts = input_fastq_file.split(".", 1)
     output_fastq_file = os.path.join(out_dir, f"{parts[0]}_{suffix}.{parts[1]}")
@@ -255,7 +255,7 @@ def split_fastq_reads_by_N(input_fastq_file, out_dir=".", minimum_sequence_lengt
                     os.rename(output_fastq_file_temp, output_fastq_file)
             except Exception as e:
                 print(f"Error: {e}")
-                printlog("seqtk seq did not work. Skipping minimum length filtering")
+                logger_info("seqtk seq did not work. Skipping minimum length filtering")
                 if os.path.exists(output_fastq_file_temp):
                     os.remove(output_fastq_file_temp)
     else:  # must copy barcode/umi to each read, so seqtk will not work here
@@ -335,23 +335,23 @@ def split_fastq_reads_by_N(input_fastq_file, out_dir=".", minimum_sequence_lengt
 
                         out_file.write(f"{new_header}\n{split_sequence[i]}\n{plus_line}\n{split_qualities[i]}\n")
 
-        # printlog(f"Split reads written to {output_fastq_file}")
+        # logger_info(f"Split reads written to {output_fastq_file}")
 
     return output_fastq_file
 
 
 def trim_edges_off_reads_fastq_list(rnaseq_fastq_files, parity, minimum_base_quality_trim_reads=0, cut_window_size=4, qualified_quality_phred=0, unqualified_percent_limit=100, n_base_limit=None, length_required=None, fastp="fastp", seqtk="seqtk", out_dir=".", threads=2, logger=None, verbose=True, suffix="qc"):
-    printlog = get_printlog(verbose, logger)
+    logger_info = get_printlog(verbose=verbose, logger=logger)
     os.makedirs(out_dir, exist_ok=True)
     rnaseq_fastq_files_quality_controlled = []
     if parity == "single":
         for i in range(len(rnaseq_fastq_files)):
-            printlog(f"Trimming {rnaseq_fastq_files[i]}")
+            logger_info(f"Trimming {rnaseq_fastq_files[i]}")
             rnaseq_fastq_file, _ = trim_edges_and_adaptors_off_fastq_reads(filename=rnaseq_fastq_files[i], filename_r2=None, cut_mean_quality=minimum_base_quality_trim_reads, cut_window_size=cut_window_size, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, n_base_limit=n_base_limit, length_required=length_required, fastp=fastp, seqtk=seqtk, out_dir=out_dir, threads=threads, suffix=suffix)
             rnaseq_fastq_files_quality_controlled.append(rnaseq_fastq_file)
     elif parity == "paired":
         for i in range(0, len(rnaseq_fastq_files), 2):
-            printlog(f"Trimming {rnaseq_fastq_files[i]} and {rnaseq_fastq_files[i + 1]}")
+            logger_info(f"Trimming {rnaseq_fastq_files[i]} and {rnaseq_fastq_files[i + 1]}")
             rnaseq_fastq_file, rnaseq_fastq_file_2 = trim_edges_and_adaptors_off_fastq_reads(filename=rnaseq_fastq_files[i], filename_r2=rnaseq_fastq_files[i + 1], cut_mean_quality=minimum_base_quality_trim_reads, cut_window_size=cut_window_size, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, n_base_limit=n_base_limit, length_required=length_required, fastp=fastp, seqtk=seqtk, out_dir=out_dir, threads=threads, suffix=suffix)
             rnaseq_fastq_files_quality_controlled.extend([rnaseq_fastq_file, rnaseq_fastq_file_2])
 
@@ -378,11 +378,11 @@ def run_fastqc_and_multiqc(rnaseq_fastq_files_quality_controlled, fastqc_out_dir
 
 
 def replace_low_quality_bases_with_N_list(rnaseq_fastq_files, minimum_base_quality, seqtk="seqtk", out_dir=".", delete_original_files=False, logger=None, verbose=True, suffix="addedNs"):
-    printlog = get_printlog(verbose, logger)
+    logger_info = get_printlog(verbose=verbose, logger=logger)
     os.makedirs(out_dir, exist_ok=True)
     rnaseq_fastq_files_replace_low_quality_bases_with_N = []
     for i, rnaseq_fastq_file in enumerate(rnaseq_fastq_files):
-        printlog(f"Replacing low quality bases with N in {rnaseq_fastq_file}")
+        logger_info(f"Replacing low quality bases with N in {rnaseq_fastq_file}")
         rnaseq_fastq_file = replace_low_quality_base_with_N(rnaseq_fastq_file, seqtk=seqtk, minimum_base_quality=minimum_base_quality, out_dir=out_dir, suffix=suffix)
         rnaseq_fastq_files_replace_low_quality_bases_with_N.append(rnaseq_fastq_file)
         # delete the file in rnaseq_fastq_files[i]
@@ -393,11 +393,11 @@ def replace_low_quality_bases_with_N_list(rnaseq_fastq_files, minimum_base_quali
 
 # TODO: enable single vs paired end mode (single end works as-is; paired end requires 2 files as input, and for every line it splits in file 1, I will add a line of all Ns in file 2); also get it working for scRNA-seq data (which is single end parity but still requires the paired-end treatment) - get Delaney's help to determine how to treat single cell files
 def split_reads_by_N_list(rnaseq_fastq_files_replace_low_quality_bases_with_N, minimum_sequence_length=None, out_dir=".", delete_original_files=True, logger=None, verbose=True, suffix="splitNs", seqtk="seqtk"):
-    printlog = get_printlog(verbose, logger)
+    logger_info = get_printlog(verbose=verbose, logger=logger)
     os.makedirs(out_dir, exist_ok=True)
     rnaseq_fastq_files_split_reads_by_N = []
     for i, rnaseq_fastq_file in enumerate(rnaseq_fastq_files_replace_low_quality_bases_with_N):
-        printlog(f"Splitting reads by N in {rnaseq_fastq_file}")
+        logger_info(f"Splitting reads by N in {rnaseq_fastq_file}")
         rnaseq_fastq_file = split_fastq_reads_by_N(rnaseq_fastq_file, minimum_sequence_length=minimum_sequence_length, out_dir=out_dir, logger=logger, verbose=verbose, suffix=suffix, seqtk=seqtk)  # TODO: would need a way of postprocessing to make sure I don't double-count fragmented reads - I would need to see where each fragmented read aligns - perhaps with kb extract or pseudobam
         # replace_low_quality_base_with_N_and_split_fastq_reads_by_N(input_fastq_file = rnaseq_fastq_file, output_fastq_file = None, minimum_sequence_length=k, seqtk = seqtk, minimum_base_quality = minimum_base_quality_replace_with_N)
         rnaseq_fastq_files_split_reads_by_N.append(rnaseq_fastq_file)

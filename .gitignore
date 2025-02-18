@@ -147,6 +147,7 @@ dmypy.json
 
 # log files
 logs/
+**/logs/
 
 # Scratch directories
 trash/

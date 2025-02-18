@@ -5,6 +5,7 @@ from pathlib import Path
 import os
 import subprocess
 import time
+import logging
 
 import varseek as vk
 from varseek.utils import (
@@ -26,7 +27,7 @@ from .constants import (
     supported_downloadable_normal_reference_genomes_with_kb_ref,
 )
 
-logger = set_up_logger()
+logger = logging.getLogger(__name__)
 
 mode_parameters = {
     "very_sensitive": {},
@@ -78,7 +79,7 @@ def validate_input_count(params_dict):
             raise ValueError(f"Invalid value for {param_name}: {params_dict.get(param_name, None)}")
 
     # booleans
-    for param_name in ["dry_run", "overwrite", "sort_fastqs", "verbose"]:
+    for param_name in ["dry_run", "overwrite", "sort_fastqs", "disable_fastqpp", "disable_clean", "disable_summarize"]:
         if not isinstance(params_dict.get(param_name), bool):
             raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
 
@@ -142,7 +143,9 @@ def count(
     overwrite=False,
     sort_fastqs=True,
     threads=2,
-    verbose=True,
+    logging_level=None,
+    save_logs=False,
+    log_out_dir=None,
     **kwargs,  # * including all arguments for vk build, info, and filter
 ):
     """
@@ -182,7 +185,9 @@ def count(
     - overwrite                             (bool) If True, overwrite existing files. Default: False.
     - sort_fastqs                           (bool) If True, sort fastq files by kb count. If False, then still check the order but do not change anything. Default: True
     - threads                               (int) Number of threads to use. Default: 2.
-    - verbose                               (bool) If True, print progress messages. Default: True.
+    - logging_level                         (str) Logging level. Can also be set with the environment variable VARSEEK_LOGGING_LEVEL. Default: INFO.
+    - save_logs                             (True/False) Whether to save logs to a file. Default: False.
+    - log_out_dir                           (str) Directory to save logs. Default: None (do not save logs).
 
     # Hidden arguments (part of kwargs):
     - use_num                              (bool) If True, use the --num argument in kb count. Default: False.
@@ -195,6 +200,15 @@ def count(
 
     # * 1. Start timer
     start_time = time.perf_counter()
+
+    # * 1.25. logger
+    global logger
+    if kwargs.get("logger") and isinstance(kwargs.get("logger"), logging.Logger):
+        logger = kwargs.get("logger")
+    else:
+        if save_logs and not log_out_dir:
+            log_out_dir = os.path.join(out, "logs")
+        logger = set_up_logger(logger, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir)
 
     # * 1.5. Load in parameters from a config file if provided
     if isinstance(config, str) and os.path.isfile(config):
@@ -219,6 +233,7 @@ def count(
     vk.varseek_summarize.validate_input_summarize(params_dict)
     validate_input_count(params_dict)
     params_dict["fastqs"] = fastqs_original  # for config file - reversed later
+    params_dict['logger'] = logger
 
     # * 3. Dry-run
     # handled within child functions
@@ -299,7 +314,7 @@ def count(
 
     # * 8. Start the actual function
     fastqs_unsorted = fastqs.copy()
-    fastqs = sort_fastq_files_for_kb_count(fastqs, technology=technology, multiplexed=params_dict.get("multiplexed"), logger=logger, check_only=(not sort_fastqs), verbose=verbose)
+    fastqs = sort_fastq_files_for_kb_count(fastqs, technology=technology, multiplexed=params_dict.get("multiplexed"), logger=logger, check_only=(not sort_fastqs))
     # params_dict["fastqs"] = fastqs  # no need because I do this later
 
     parity = params_dict.get("parity", "single")
@@ -542,6 +557,6 @@ def count(
     vk_count_output_dict["vcf"] = vcf_out
     vk_count_output_dict["vk_summarize_output_dir"] = vk_summarize_out_dir
 
-    report_time_elapsed(start_time, logger=logger, verbose=verbose, function_name="count")
+    report_time_elapsed(start_time, logger=logger, function_name="count")
 
     return vk_count_output_dict

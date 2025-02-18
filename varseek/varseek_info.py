@@ -5,6 +5,7 @@ import os
 import subprocess
 from pathlib import Path
 import time
+import logging
 from collections import OrderedDict
 
 import numpy as np
@@ -49,7 +50,7 @@ from varseek.utils import (
 )
 
 tqdm.pandas()
-logger = set_up_logger()
+logger = logging.getLogger(__name__)
 pd.set_option("display.max_columns", None)
 
 
@@ -189,7 +190,7 @@ def validate_input_info(params_dict):
         logger.warning(f"If running a workflow with vk ref or kb ref, k should be an odd number between 1 and 63. Got k={k}.")
 
     # boolean
-    for param_name in ["vcrs_strandedness", "verbose", "save_variants_updated_exploded_vk_info_csv", "make_pyfastx_summary_file", "make_kat_histogram", "dry_run", "list_columns", "overwrite", "threads"]:
+    for param_name in ["vcrs_strandedness", "save_variants_updated_exploded_vk_info_csv", "make_pyfastx_summary_file", "make_kat_histogram", "dry_run", "list_columns", "overwrite", "threads"]:
         param_value = params_dict.get(param_name)
         if not isinstance(param_value, bool):
             raise ValueError(f"{param_name} must be a boolean. Got {param_value} of type {type(param_value)}.")
@@ -281,7 +282,9 @@ def info(
     list_d_list_values=False,
     overwrite=False,
     threads=2,
-    verbose=True,
+    logging_level=None,
+    save_logs=False,
+    log_out_dir=None,
     **kwargs,
 ):
     """
@@ -338,16 +341,18 @@ def info(
     - list_d_list_values                 (bool) Whether to list the possible values for `dlist_reference_source` and immediately exit. Default: False.
     - overwrite                          (bool) Whether to overwrite the output files if they already exist. Default: False.
     - threads                            (int) Number of threads to use for bowtie2 and bowtie2-build. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome', 'pseudoaligned_to_reference', 'pseudoaligned_to_reference_despite_not_truly_aligning', 'VCRSs_for_which_this_VCRS_is_a_substring', 'VCRSs_for_which_this_VCRS_is_a_superstring', 'VCRS_is_a_substring_of_another_VCRS', 'VCRS_is_a_superstring_of_another_VCRS'; and when 'VCRSs_for_which_this_VCRS_is_a_superstring', 'VCRS_is_a_substring_of_another_VCRS', 'VCRS_is_a_superstring_of_another_VCRS', make_kat_histogram==True. Default: 2.
-    - verbose                            (bool) Whether to print verbose output. Default: True.
+    - logging_level                      (str) Logging level. Can also be set with the environment variable VARSEEK_LOGGING_LEVEL. Default: INFO.
+    - save_logs                          (True/False) Whether to save logs to a file. Default: False.
+    - log_out_dir                        (str) Directory to save logs. Default: `out`/logs
 
     # Hidden arguments (part of kwargs):
     - w                                  (int) Maximum length of the VCRS flanking regions. Must be an integer between [1, k-1]. Only utilized for the column 'cdna_and_genome_same'. Corresponds to `w` in the varseek build function. Default: 54.
-    - bowtie2_path                        (str) Path to the directory containing the bowtie2 and bowtie2-build executables. Default: None.
+    - bowtie2_path                       (str) Path to the directory containing the bowtie2 and bowtie2-build executables. Default: None.
     - vcrs_strandedness                  (bool) Whether to consider VCRSs as stranded when aligning to the human reference and comparing VCRS k-mers to each other. vcrs_strandedness True corresponds to treating forward and reverse-complement as distinct; False corresponds to treating them as the same. Corresponds to `vcrs_strandedness` in the varseek build function. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome', 'pseudoaligned_to_reference', 'pseudoaligned_to_reference_despite_not_truly_aligning', 'number_of_kmers_with_overlap_to_other_VCRSs', 'number_of_other_VCRSs_with_overlapping_kmers', 'VCRSs_with_overlapping_kmers, 'kmer_overlap_with_other_VCRSs'; and if make_kat_histogram==True. Default: False.
     - near_splice_junction_threshold     (int) Maximum distance from a splice junction to be considered "near" a splice junction. Only utilized for the column 'distance_to_nearest_splice_junction'. Default: 10.
     - reference_cdna_fasta               (str) Path to the reference cDNA fasta file. Only utilized for the column 'cdna_and_genome_same'. Default: None.
     - reference_genome_fasta             (str) Path to the reference genome fasta file. Only utilized for the column 'cdna_and_genome_same'. Default: None.
-    - variants                      (str) Path to the variants csv file. Only utilized for the column 'cdna_and_genome_same'. Corresponds to `variants` in the varseek build function. Default: None.
+    - variants                           (str) Path to the variants csv file. Only utilized for the column 'cdna_and_genome_same'. Corresponds to `variants` in the varseek build function. Default: None.
     """
     # CELL
     # * 0. Informational arguments that exit early
@@ -361,6 +366,15 @@ def info(
 
     # * 1. Start timer
     start_time = time.perf_counter()
+
+    # * 1.5. logger
+    global logger
+    if kwargs.get("logger") and isinstance(kwargs.get("logger"), logging.Logger):
+        logger = kwargs.get("logger")
+    else:
+        if save_logs and not log_out_dir:
+            log_out_dir = os.path.join(out, "logs")
+        logger = set_up_logger(logger, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir)
 
     # * 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
@@ -1081,11 +1095,10 @@ def info(
         mutation_metadata_df_exploded = explode_df(mutation_metadata_df, columns_to_explode)
         mutation_metadata_df_exploded.to_csv(variants_updated_exploded_vk_info_csv_out, index=False)
 
-    if verbose:
-        logger.info(f"Saved variant metadata to {variants_updated_vk_info_csv_out}")
-        logger.info(f"Columns: {mutation_metadata_df.columns}")
-        logger.info(f"Columns successfully added: {set(mutation_metadata_df.columns.tolist()) - set(columns_original)}")
-        logger.info(f"Columns not successfully added: {columns_not_successfully_added}")
+    logger.info(f"Saved variant metadata to {variants_updated_vk_info_csv_out}")
+    logger.info(f"Columns: {mutation_metadata_df.columns}")
+    logger.info(f"Columns successfully added: {set(mutation_metadata_df.columns.tolist()) - set(columns_original)}")
+    logger.info(f"Columns not successfully added: {columns_not_successfully_added}")
 
     # Report time
-    report_time_elapsed(start_time, logger=logger, verbose=verbose, function_name="info")
+    report_time_elapsed(start_time, logger=logger, function_name="info")

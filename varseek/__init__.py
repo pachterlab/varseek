@@ -2,6 +2,10 @@
 
 import logging
 
+# # a possible alternative to avoid running imports from each function - but I already run all imports from utils functions, so it doesn't really matter
+# def build(*args, **kwargs):
+#     return importlib.import_module("varseek.varseek_build").build(*args, **kwargs)
+
 from .utils import *  # only imports what is in __all__ in .utils/__init__.py
 from .varseek_build import build
 from .varseek_clean import clean

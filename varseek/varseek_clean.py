@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import subprocess
 import time
+import logging
 
 import anndata
 import numpy as np
@@ -34,7 +35,7 @@ from varseek.utils import (
 
 from .constants import non_single_cell_technologies, technology_valid_values
 
-logger = set_up_logger()
+logger = logging.getLogger(__name__)
 
 
 def make_vcf():
@@ -120,7 +121,7 @@ def validate_input_clean(params_dict):
         raise ValueError(f"filter_cells_by_max_mt_content must be an integer between 0 and 100, or None. Got {params_dict.get('filter_cells_by_max_mt_content')}.")
 
     # boolean
-    for param_name in ["use_binary_matrix", "drop_empty_columns", "apply_single_end_mode_on_paired_end_data_correction", "split_reads_by_Ns", "apply_dlist_correction", "qc_against_gene_matrix", "doublet_detection", "remove_doublets", "cpm_normalization", "sum_rows", "mm", "union", "multiplexed", "save_vcf", "dry_run", "overwrite", "verbose"]:
+    for param_name in ["use_binary_matrix", "drop_empty_columns", "apply_single_end_mode_on_paired_end_data_correction", "split_reads_by_Ns", "apply_dlist_correction", "qc_against_gene_matrix", "doublet_detection", "remove_doublets", "cpm_normalization", "sum_rows", "mm", "union", "multiplexed", "save_vcf", "dry_run", "overwrite"]:
         if not isinstance(params_dict.get(param_name), bool):
             raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
 
@@ -232,7 +233,9 @@ def clean(
     threads=2,
     kallisto=None,
     bustools=None,
-    verbose=False,
+    logging_level=None,
+    save_logs=False,
+    log_out_dir=None,
     **kwargs,
 ):
     """
@@ -302,13 +305,24 @@ def clean(
     - threads                               (int): Number of threads to use. Default: 2.
     - kallisto                              (str): Path to the kallisto binary. Default: None.
     - bustools                              (str): Path to the bustools binary. Default: None.
-    - verbose                               (bool): Whether to print verbose output. Default: False.
+    - logging_level                         (str) Logging level. Can also be set with the environment variable VARSEEK_LOGGING_LEVEL. Default: INFO.
+    - save_logs                             (True/False) Whether to save logs to a file. Default: False.
+    - log_out_dir                           (str) Directory to save logs. Default: `out`/logs
 
     # Hidden arguments
     - id_to_header_csv                      (str): Path to the VCRS id to header csv file. Default: None.
     """
     # * 1. Start timer
     start_time = time.perf_counter()
+
+    # * 1.25. logger
+    global logger
+    if kwargs.get("logger") and isinstance(kwargs.get("logger"), logging.Logger):
+        logger = kwargs.get("logger")
+    else:
+        if save_logs and not log_out_dir:
+            log_out_dir = os.path.join(out, "logs")
+        logger = set_up_logger(logger, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir)
 
     # * 1.5 load in fastqs
     fastqs_original = fastqs
@@ -390,7 +404,7 @@ def clean(
         raise ValueError("dlist_fasta must be provided if apply_dlist_correction is True.")
 
     try:
-        fastqs = sort_fastq_files_for_kb_count(fastqs, technology=technology, multiplexed=multiplexed, logger=logger, check_only=(not sort_fastqs), verbose=verbose)
+        fastqs = sort_fastq_files_for_kb_count(fastqs, technology=technology, multiplexed=multiplexed, logger=logger, check_only=(not sort_fastqs))
     except Exception:
         pass
 
@@ -488,7 +502,7 @@ def clean(
 
     if qc_against_gene_matrix:
         # TODO: test this
-        adata = adjust_variant_adata_by_normal_gene_matrix(adata, kb_count_vcrs_dir=kb_count_vcrs_dir, kb_count_reference_genome_dir=kb_count_reference_genome_dir, id_to_header_csv=id_to_header_csv, vcrs_t2g=vcrs_t2g, t2g_standard=None, fastq_file_list=fastqs, mm=mm, union=union, technology=technology, parity=parity, bustools=bustools, verbose=verbose)
+        adata = adjust_variant_adata_by_normal_gene_matrix(adata, kb_count_vcrs_dir=kb_count_vcrs_dir, kb_count_reference_genome_dir=kb_count_reference_genome_dir, id_to_header_csv=id_to_header_csv, vcrs_t2g=vcrs_t2g, t2g_standard=None, fastq_file_list=fastqs, mm=mm, union=union, technology=technology, parity=parity, bustools=bustools)
 
     if sum_rows and adata.shape[0] > 1:
         # Sum across barcodes (rows)
@@ -676,6 +690,6 @@ def clean(
 
     adata.write(adata_vcrs_clean_out)
 
-    report_time_elapsed(start_time, logger=logger, verbose=verbose, function_name="clean")
+    report_time_elapsed(start_time, logger=logger, function_name="clean")
 
     return adata

@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import subprocess
 import time
+import logging
 
 import gget
 import numpy as np
@@ -40,7 +41,7 @@ from .utils import (
 )
 
 tqdm.pandas()
-logger = set_up_logger()
+logger = logging.getLogger(__name__)
 
 # Define global variables to count occurences of weird mutations
 intronic_mutations = 0
@@ -396,10 +397,10 @@ def validate_input_build(params_dict):
         ("store_full_sequences", False),
         ("translate", False),
         ("return_variant_output", True),
-        ("verbose", False),
         ("save_removed_variants_text", False),
         ("save_filtering_report_text", False),
         ("dry_run", False),
+        ("verbose", False),
         ("list_supported_databases", False),
         ("overwrite", False),
     ]:
@@ -451,7 +452,10 @@ def build(
     dry_run=False,
     list_supported_databases=False,
     overwrite=False,
-    verbose=True,
+    logging_level=None,
+    save_logs=False,
+    log_out_dir=None,
+    verbose=False,
     **kwargs,
 ):
     """
@@ -568,7 +572,10 @@ def build(
     - dry_run                            (True/False) Whether to simulate the function call without executing it. Default: False.
     - list_supported_databases           (True/False) Whether to print the supported databases and sequences. Default: False.
     - overwrite                          (True/False) Whether to overwrite existing output files. Will return if any output file already exists. Default: False.
-    - verbose                            (True/False) Whether to print progress information. Default: True
+    - logging_level                      (str) Logging level. Can also be set with the environment variable VARSEEK_LOGGING_LEVEL. Default: INFO.
+    - save_logs                          (True/False) Whether to save logs to a file. Default: False.
+    - log_out_dir                        (str) Directory to save logs. Default: `out`/logs
+    - verbose                            (True/False) Whether to print additional information e.g., progress bars. Default: False.
 
     # # Hidden arguments (part of kwargs) - for niche use cases, specific databases, or debugging:
     # # niche use cases
@@ -596,6 +603,9 @@ def build(
     - cosmic_email                       (str) Email address for COSMIC download. Default: None.
     - cosmic_password                    (str) Password for COSMIC download. Default: None.
 
+    # other
+    - logger                             (logging.Logger) Logger object. Default: None.
+
 
     Saves mutated sequences in fasta format (or returns a list containing the mutated sequences if out=None).
     """
@@ -609,6 +619,15 @@ def build(
 
     # * 1. Start timer
     start_time = time.perf_counter()
+
+    # * 1.5. logger
+    global logger
+    if kwargs.get("logger") and isinstance(kwargs.get("logger"), logging.Logger):
+        logger = kwargs.get("logger")
+    else:
+        if save_logs and not log_out_dir:
+            log_out_dir = os.path.join(out, "logs")
+        logger = set_up_logger(logger, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir)
 
     # * 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
@@ -879,6 +898,7 @@ def build(
                         output_csv_path=mutations_path,
                         cds_fasta_path=cds_file,
                         cdna_fasta_path=cdna_file,
+                        logger=logger,
                         verbose=verbose
                     )
 
@@ -1044,12 +1064,10 @@ def build(
 
     if var_id_column is not None:
         mutations["header"] = mutations[var_id_column]
-        if verbose:
-            logger.info("Using var_id_column '%s' as the variant header column.", var_id_column)
+        logger.info("Using var_id_column '%s' as the variant header column.", var_id_column)
     else:
         mutations["header"] = mutations[seq_id_column] + ":" + mutations[var_column]
-        if verbose:
-            logger.info("Using the seq_id_column:var_column '%s' columns as the variant header column.", f"{seq_id_column}:{var_column}")
+        logger.info("Using the seq_id_column:var_column '%s' columns as the variant header column.", f"{seq_id_column}:{var_column}")
 
     # make a set of all initial mutation IDs
     initial_mutation_id_set = set(mutations["header"].dropna())
@@ -1357,8 +1375,7 @@ def build(
 
         mutations = mutations[mutations["variant_sequence_kmer_length"] >= min_seq_len]
 
-        if verbose:
-            logger.info("Removed %d variant kmers with length less than %d...", rows_less_than_minimum, min_seq_len)
+        logger.info("Removed %d variant kmers with length less than %d...", rows_less_than_minimum, min_seq_len)
     else:
         rows_less_than_minimum = 0
 
@@ -1368,8 +1385,7 @@ def build(
         num_rows_with_N = (mutations["num_N"] > max_ambiguous).sum()
         mutations = mutations[mutations["num_N"] <= max_ambiguous]
 
-        if verbose:
-            logger.info("Removed %d variant kmers containing more than %d 'N's...", num_rows_with_N, max_ambiguous)
+        logger.info("Removed %d variant kmers containing more than %d 'N's...", num_rows_with_N, max_ambiguous)
     else:
         num_rows_with_N = 0
 
@@ -1598,13 +1614,12 @@ def build(
             with open(filtering_report_text_out, filtering_report_write_mode, encoding="utf-8") as file:
                 file.write(merging_report)
 
-        if verbose:
-            logger.info(merging_report)
-            logger.info("Merged headers were combined and separated using a semicolon (;). Occurences of identical VCRSs may be reduced by increasing w.")
+        logger.info(merging_report)
+        logger.info("Merged headers were combined and separated using a semicolon (;). Occurences of identical VCRSs may be reduced by increasing w.")
 
     empty_kmer_count = (mutations["variant_sequence"] == "").sum()
 
-    if empty_kmer_count > 0 and verbose:
+    if empty_kmer_count > 0:
         logger.warning(f"{empty_kmer_count} VCRSs were empty and were not included in the output.")
 
     mutations = mutations[mutations["variant_sequence"] != ""]
@@ -1650,9 +1665,8 @@ def build(
 
         create_identity_t2g(vcrs_fasta_out, vcrs_t2g_out)
 
-    if verbose:
-        logger.info("FASTA file containing VCRSs created at %s.", vcrs_fasta_out)
-        logger.info("t2g file containing VCRSs created at %s.", vcrs_t2g_out)
+    logger.info("FASTA file containing VCRSs created at %s.", vcrs_fasta_out)
+    logger.info("t2g file containing VCRSs created at %s.", vcrs_t2g_out)
 
     if save_wt_vcrs_fasta_and_t2g:
         with open(wt_vcrs_fasta_out, "w", encoding="utf-8") as fasta_file:
@@ -1669,7 +1683,7 @@ def build(
             all_mut_seqs.remove("")
 
         if len(all_mut_seqs) > 0:
-            report_time_elapsed(start_time, logger=logger, verbose=verbose, function_name="build")
+            report_time_elapsed(start_time, logger=logger, function_name="build")
             return all_mut_seqs
 
-    report_time_elapsed(start_time, logger=logger, verbose=verbose, function_name="build")
+    report_time_elapsed(start_time, logger=logger, function_name="build")

@@ -508,6 +508,24 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "overwrite"),
     )
     parser_build.add_argument(
+        "--logging_level",
+        choices=["NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", 0, 10, 20, 30, 40, 50, 60, None],
+        default=None,
+        required=False,
+        help=extract_help_from_doc(build, "logging_level"),
+    )
+    parser_build.add_argument(
+        "--save_logs",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(build, "save_logs"),
+    )
+    parser_build.add_argument(
+        "--log_out_dir",
+        required=False,
+        help=extract_help_from_doc(build, "log_out_dir"),
+    )
+    parser_build.add_argument(
         "-q",
         "--quiet",
         action="store_false",
@@ -846,12 +864,24 @@ def main():  # noqa: C901
         help=extract_help_from_doc(info, "threads"),
     )
     parser_info.add_argument(
-        "-q",
-        "--quiet",
-        action="store_false",
+        "--logging_level",
+        choices=["NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", 0, 10, 20, 30, 40, 50, 60, None],
+        default=None,
         required=False,
-        help="Do not print progress information.",
+        help=extract_help_from_doc(info, "logging_level"),
     )
+    parser_info.add_argument(
+        "--save_logs",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(info, "save_logs"),
+    )
+    parser_info.add_argument(
+        "--log_out_dir",
+        required=False,
+        help=extract_help_from_doc(info, "log_out_dir"),
+    )
+
     # kwargs
     parser_info.add_argument(
         "-w",
@@ -1038,12 +1068,24 @@ def main():  # noqa: C901
         help=extract_help_from_doc(filter, "overwrite"),
     )
     parser_filter.add_argument(
-        "-q",
-        "--quiet",
-        action="store_false",
+        "--logging_level",
+        choices=["NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", 0, 10, 20, 30, 40, 50, 60, None],
+        default=None,
         required=False,
-        help="Do not print progress information.",
+        help=extract_help_from_doc(filter, "logging_level"),
     )
+    parser_filter.add_argument(
+        "--save_logs",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(filter, "save_logs"),
+    )
+    parser_filter.add_argument(
+        "--log_out_dir",
+        required=False,
+        help=extract_help_from_doc(filter, "log_out_dir"),
+    )
+
     # kwargs
     parser_filter.add_argument(
         "--filter_all_dlists",
@@ -1334,18 +1376,6 @@ def main():  # noqa: C901
         action="store_true",
         help=extract_help_from_doc(sim, "dry_run"),
     )
-    parser_sim.add_argument(
-        "--verbose",
-        action="store_true",
-        help=extract_help_from_doc(sim, "verbose"),
-    )
-    parser_sim.add_argument(
-        "-q",
-        "--quiet",
-        action="store_false",
-        required=False,
-        help="Do not print progress information.",
-    )
 
     # NEW PARSER
     fastqpp_desc = "Preprocess the fastq files."
@@ -1502,12 +1532,24 @@ def main():  # noqa: C901
         help=extract_help_from_doc(fastqpp, "threads"),
     )
     parser_fastqpp.add_argument(
-        "-q",
-        "--quiet",
-        action="store_false",
+        "--logging_level",
+        choices=["NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", 0, 10, 20, 30, 40, 50, 60, None],
+        default=None,
         required=False,
-        help="Do not print progress information.",
+        help=extract_help_from_doc(fastqpp, "logging_level"),
     )
+    parser_fastqpp.add_argument(
+        "--save_logs",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(fastqpp, "save_logs"),
+    )
+    parser_fastqpp.add_argument(
+        "--log_out_dir",
+        required=False,
+        help=extract_help_from_doc(fastqpp, "log_out_dir"),
+    )
+
     # kwargs
     parser_fastqpp.add_argument(
         "--fastp_path",
@@ -1879,12 +1921,22 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "bustools"),
     )
     parser_clean.add_argument(
-        "-q",
-        "--quiet",
-        default=True,
-        action="store_false",
+        "--logging_level",
+        choices=["NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", 0, 10, 20, 30, 40, 50, 60, None],
+        default=None,
         required=False,
-        help="Do not print progress information.",
+        help=extract_help_from_doc(clean, "logging_level"),
+    )
+    parser_clean.add_argument(
+        "--save_logs",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(clean, "save_logs"),
+    )
+    parser_clean.add_argument(
+        "--log_out_dir",
+        required=False,
+        help=extract_help_from_doc(clean, "log_out_dir"),
     )
 
     # NEW PARSER
@@ -1948,13 +2000,24 @@ def main():  # noqa: C901
         help=extract_help_from_doc(summarize, "overwrite"),
     )
     parser_summarize.add_argument(
-        "-q",
-        "--quiet",
-        default=True,
-        action="store_false",
+        "--logging_level",
+        choices=["NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", 0, 10, 20, 30, 40, 50, 60, None],
+        default=None,
         required=False,
-        help="Do not print progress information.",
+        help=extract_help_from_doc(summarize, "logging_level"),
     )
+    parser_summarize.add_argument(
+        "--save_logs",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(summarize, "save_logs"),
+    )
+    parser_summarize.add_argument(
+        "--log_out_dir",
+        required=False,
+        help=extract_help_from_doc(summarize, "log_out_dir"),
+    )
+
     # kwargs
     parser_summarize.add_argument(
         "--stats_file",
@@ -2116,11 +2179,22 @@ def main():  # noqa: C901
         help=extract_help_from_doc(ref, "threads"),
     )
     parser_ref.add_argument(
-        "-q",
-        "--quiet",
-        action="store_false",
+        "--logging_level",
+        choices=["NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", 0, 10, 20, 30, 40, 50, 60, None],
+        default=None,
         required=False,
-        help="Do not print progress information.",
+        help=extract_help_from_doc(ref, "logging_level"),
+    )
+    parser_ref.add_argument(
+        "--save_logs",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(ref, "save_logs"),
+    )
+    parser_ref.add_argument(
+        "--log_out_dir",
+        required=False,
+        help=extract_help_from_doc(ref, "log_out_dir"),
     )
 
     # NEW PARSER
@@ -2284,12 +2358,24 @@ def main():  # noqa: C901
         help=extract_help_from_doc(count, "threads"),
     )
     parser_count.add_argument(
-        "-q",
-        "--quiet",
-        action="store_false",
+        "--logging_level",
+        choices=["NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", 0, 10, 20, 30, 40, 50, 60, None],
+        default=None,
         required=False,
-        help="Do not print progress information.",
+        help=extract_help_from_doc(count, "logging_level"),
     )
+    parser_count.add_argument(
+        "--save_logs",
+        action="store_true",
+        required=False,
+        help=extract_help_from_doc(count, "save_logs"),
+    )
+    parser_count.add_argument(
+        "--log_out_dir",
+        required=False,
+        help=extract_help_from_doc(count, "log_out_dir"),
+    )
+
     # kwargs
     parser_count.add_argument(
         "--use_num",
@@ -2464,7 +2550,6 @@ def main():  # noqa: C901
             list_dlist_references=args.list_dlist_references,
             overwrite=args.overwrite,
             threads=args.threads,
-            verbose=args.quiet,
             bowtie2_path=args.bowtie2_path,
             vcrs_strandedness=args.vcrs_strandedness,
             near_splice_junction_threshold=args.near_splice_junction_threshold,
@@ -2505,7 +2590,6 @@ def main():  # noqa: C901
             dry_run=args.dry_run,
             list_filter_rules=args.list_filter_rules,
             overwrite=args.overwrite,
-            verbose=args.quiet,
             filter_all_dlists=args.filter_all_dlists,
             dlist_genome_fasta=args.dlist_genome_fasta,
             dlist_cdna_fasta=args.dlist_cdna_fasta,
@@ -2564,7 +2648,6 @@ def main():  # noqa: C901
             seed=args.seed,
             gzip_reads_fastq_out=args.gzip_reads_fastq_out,
             dry_run=args.dry_run,
-            verbose=args.quiet,
             **kwargs
         )
 
@@ -2595,7 +2678,6 @@ def main():  # noqa: C901
             overwrite=args.overwrite,
             sort_fastqs=args.disable_sort_fastqs,
             threads=args.threads,
-            verbose=args.quiet,
             fastp_path=args.fastp_path,
             seqtk_path=args.seqtk_path,
             fastqc_path=args.fastqc_path,
@@ -2667,7 +2749,6 @@ def main():  # noqa: C901
             threads=args.threads,
             kallisto=args.kallisto,
             bustools=args.bustools,
-            verbose=args.quiet,
             **kwargs,
         )
 
@@ -2682,7 +2763,6 @@ def main():  # noqa: C901
             vcrs_id_column=args.vcrs_id_column,
             dry_run=args.dry_run,
             overwrite=args.overwrite,
-            verbose=args.quiet,
             stats_file=args.stats_file,
             specific_stats_folder=args.specific_stats_folder,
             plots_folder=args.plots_folder,
@@ -2708,7 +2788,6 @@ def main():  # noqa: C901
             list_downloadable_references=args.list_downloadable_references,
             disable_minimum_info_columns=args.disable_minimum_info_columns,
             overwrite=args.overwrite,
-            verbose=args.quiet,
             **kwargs,
         )
 
@@ -2742,7 +2821,6 @@ def main():  # noqa: C901
             overwrite=args.overwrite,
             sort_fastqs=args.sort_fastqs,
             threads=args.threads,
-            verbose=args.quiet,
             use_num=args.use_num,
             **kwargs,
         )

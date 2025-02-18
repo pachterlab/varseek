@@ -7,6 +7,7 @@ import anndata
 import pandas as pd
 from pathlib import Path
 import anndata as ad
+import logging
 
 from varseek.utils import (
     check_file_path_is_string_with_valid_extension,
@@ -21,7 +22,7 @@ from varseek.utils import (
 
 from .constants import technology_valid_values
 
-logger = set_up_logger()
+logger = logging.getLogger(__name__)
 
 
 def validate_input_summarize(params_dict):
@@ -48,7 +49,7 @@ def validate_input_summarize(params_dict):
     if not isinstance(params_dict["vcrs_id"], str):
         raise ValueError("vcrs_id must be a string.")
 
-    for param_name in ["dry_run", "overwrite", "verbose"]:
+    for param_name in ["dry_run", "overwrite"]:
         if not isinstance(params_dict.get(param_name), bool):
             raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
 
@@ -62,7 +63,9 @@ def summarize(
     out=".",
     dry_run=False,
     overwrite=False,
-    verbose=True,
+    logging_level=None,
+    save_logs=False,
+    log_out_dir=None,
     **kwargs,
 ):
     """
@@ -78,7 +81,9 @@ def summarize(
     - out                               (str) Output directory. Default: "."
     - dry_run                           (bool) If True, print the commands that would be run without actually running them. Default: False
     - overwrite                         (bool) Whether to overwrite existing files. Default: False
-    - verbose                           (bool) Whether to print progress messages. Default: True
+    - logging_level                     (str) Logging level. Can also be set with the environment variable VARSEEK_LOGGING_LEVEL. Default: INFO.
+    - save_logs                         (True/False) Whether to save logs to a file. Default: False.
+    - log_out_dir                       (str) Directory to save logs. Default: None (do not save logs).
 
     # Hidden arguments (part of kwargs):
     - stats_file                        (str) Path to the stats file. Default: `out`/varseek_summarize_stats.txt
@@ -88,6 +93,15 @@ def summarize(
 
     # * 1. Start timer
     start_time = time.perf_counter()
+
+    # * 1.5. logger
+    global logger
+    if kwargs.get("logger") and isinstance(kwargs.get("logger"), logging.Logger):
+        logger = kwargs.get("logger")
+    else:
+        if save_logs and not log_out_dir:
+            log_out_dir = os.path.join(out, "logs")
+        logger = set_up_logger(logger, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir)
 
     # * 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
@@ -264,7 +278,7 @@ def summarize(
         for gene, row in top_genes_vcrs_count.iterrows():
             f.write(f"{gene}\t{row['number_of_samples_in_which_the_gene_is_detected']}\t{row['total_vcrs_count']}\n")
 
-    report_time_elapsed(start_time, logger=logger, verbose=verbose, function_name="summarize")
+    report_time_elapsed(start_time, logger=logger, function_name="summarize")
 
     # TODO: things to add
     # differentially expressed variants/mutated genes
