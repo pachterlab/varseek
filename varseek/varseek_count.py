@@ -87,6 +87,12 @@ def validate_input_count(params_dict):
     parity_valid_values = {"single", "paired"}
     if params_dict["parity"] not in parity_valid_values:
         raise ValueError(f"Parity must be one of {parity_valid_values}")
+    
+    if params_dict.get("parity_kb_count") is not None and params_dict.get("parity_kb_count") not in parity_valid_values:
+        raise ValueError(f"parity_kb_count must be one of {parity_valid_values}")
+    
+    if params_dict.get("parity_kb_count") == "paired" and params_dict["parity"] == "single":
+        raise ValueError("If parity_kb_count is 'paired', then parity must be 'paired' as well")
 
     strand_valid_values = {"unstranded", "forward", "reverse"}
     if params_dict["strand"] not in strand_valid_values:
@@ -162,7 +168,7 @@ def count(
     - strand                                (str)  The strandedness of the data. Either "unstranded", "forward", or "reverse". Default: "unstranded".
     - mm                                    (bool)  If True, use the multi-mapping reads. Default: False.
     - union                                 (bool)  If True, use the union of the read mappings. Default: False.
-    - parity                                (str)  The parity of the reads. Either "single" or "paired". Only used if technology is bulk or a smart-seq. Default: "single".
+    - parity                                (str)  The parity of the reads for vk fastqpp. Either "single" or "paired". Only used if technology is bulk or a smart-seq. For parity in kb count, see parity_kb_count. Default: "single".
     - species                               (str)  The species of the reference genome. Only used if qc_against_gene_matrix=True (see vk clean --help). Default: None.
 
     # Optional input arguments
@@ -191,6 +197,7 @@ def count(
 
     # Hidden arguments (part of kwargs):
     - use_num                              (bool) If True, use the --num argument in kb count. Default: False.
+    - kb_count_parity                      (str) The parity of the reads for kb count. Default: "single".
 
     For a complete list of supported parameters, see the documentation for varseek fastqpp, kb count, varseek clean, and varseek summarize. Note that any shared parameter names between functions are meant to have identical purposes.
     """
@@ -311,6 +318,7 @@ def count(
 
     # * 7. Define kwargs defaults
     use_num = params_dict.get("use_num", False)
+    kb_count_parity = params_dict.get("kb_count_parity", "single")
 
     # * 8. Start the actual function
     fastqs_unsorted = fastqs.copy()
@@ -374,7 +382,7 @@ def count(
         if params_dict.get("concatenate_paired_fastqs"):
             parity_vcrs = "single"
         else:
-            parity_vcrs = parity
+            parity_vcrs = kb_count_parity
 
         kb_count_command = [
             "kb",
@@ -470,8 +478,6 @@ def count(
             "count",
             "-t",
             str(threads),
-            "-k",
-            str(k),
             "-i",
             reference_genome_index,
             "-g",

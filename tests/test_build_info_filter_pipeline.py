@@ -170,10 +170,7 @@ def test_file_processing(cosmic_csv_path, cds_and_cdna_files, genome_and_gtf_fil
         "substring_alignment_to_reference:equal=none",  # filter out mutations which are a substring of the reference genome
         "pseudoaligned_to_reference_despite_not_truly_aligning:is_not_true",  # filter out mutations which pseudoaligned to human genome despite not truly aligning
         "alignment_to_reference:equal=none",  #*** erase eventually when I want to d-list  # filter out mutations which are capable of being d-listed (given that I filter out the substrings above)
-        "number_of_kmers_with_overlap_to_other_VCRSs:less_than=999999",  # filter out mutations which overlap with other VCRSs in the reference
-        "number_of_other_VCRSs_with_overlapping_kmers:less_than=999999",  # filter out mutations which overlap with other VCRSs in the reference
-        "longest_homopolymer_length:less_or_equal=6",  # filters out VCRSs with repeating single nucleotide - eg 6
-        "triplet_complexity:greater_or_equal=0.2"  # filters out VCRSs with repeating triplets - eg 0.2
+        "num_distinct_triplets:greater_than=2"
     ]
 
     

@@ -127,11 +127,10 @@ def ref(
     w=54,
     k=59,
     filters=(
-        "substring_alignment_to_reference:equal=none",  # filter out variants that are a substring of the reference genome
+        "alignment_to_reference:equal=none",
+        # "substring_alignment_to_reference:equal=none",  # filter out variants that are a substring of the reference genome  #* uncomment this and erase the line above when implementing d-list
         "pseudoaligned_to_reference_despite_not_truly_aligning:is_not_true",  # filter out variants that pseudoaligned to human genome despite not truly aligning
-        "alignment_to_reference:equal=none",  # *** erase eventually when I want to d-list  # filter out variants that are capable of being d-listed (given that I filter out the substrings above)
-        "longest_homopolymer_length:bottom_percent=99.99",  # filters out VCRSs with repeating single nucleotide - 99.99 keeps the bottom 99.99% (fraction 0.9999) ie filters out the top 0.01%
-        "triplet_complexity:top_percent=99.9",  # filters out VCRSs with repeating triplets - 99.9 keeps the top 99.9% (fraction 0.999) ie filters out the bottom 0.1%
+        "num_distinct_triplets:greater_than=2",  # filters out VCRSs with <= 2 unique triplets
     ),
     mode=None,
     dlist=None,

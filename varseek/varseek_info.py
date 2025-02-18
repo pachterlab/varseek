@@ -245,7 +245,7 @@ columns_to_include_possible_values = OrderedDict(
 # TODO: finish implementing the cdna/genome column stuff, and remove hard-coding of some column names
 def info(
     input_dir,
-    columns_to_include=("number_of_variants_in_this_gene_total", "alignment_to_reference_count_total", "pseudoaligned_to_reference_despite_not_truly_aligning", "longest_homopolymer_length", "triplet_complexity"),
+    columns_to_include=("number_of_variants_in_this_gene_total", "alignment_to_reference", "pseudoaligned_to_reference_despite_not_truly_aligning", "triplet_complexity"),
     k=59,
     max_ambiguous_vcrs=0,
     max_ambiguous_reference=0,
@@ -294,7 +294,7 @@ def info(
     - input_dir     (str) Path to the directory containing the input files. Corresponds to `out` in the varseek build function.
 
     # Additional Parameters
-    - columns_to_include                 (str or list[str]) List of columns to include in the output dataframe. Default: ("number_of_variants_in_this_gene_total", "alignment_to_reference_count_total", "pseudoaligned_to_reference_despite_not_truly_aligning", "longest_homopolymer_length", "triplet_complexity"). See all possible values and their description by setting list_columns=True (python) or --list_columns (command line).
+    - columns_to_include                 (str or list[str]) List of columns to include in the output dataframe. Default: ("number_of_variants_in_this_gene_total", "alignment_to_reference", "pseudoaligned_to_reference_despite_not_truly_aligning", "num_distinct_triplets"). See all possible values and their description by setting list_columns=True (python) or --list_columns (command line).
     - k                                  (int) Length of the k-mers utilized by kallisto | bustools. Only used by the following columns: 'nearby_variants', 'nearby_variants_count', 'has_a_nearby_variant', 'alignment_to_reference', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome', 'pseudoaligned_to_reference', 'pseudoaligned_to_reference_despite_not_truly_aligning', 'number_of_kmers_with_overlap_to_other_VCRSs', 'number_of_other_VCRSs_with_overlapping_kmers', 'VCRSs_with_overlapping_kmers', 'kmer_overlap_with_other_VCRSs'; and when make_kat_histogram==True. Default: 59.
     - max_ambiguous_vcrs                 (int) Maximum number of 'N' characters allowed in the VCRS when considering alignment to the reference genome/transcriptome. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome'. Default: 0.
     - max_ambiguous_reference            (int) Maximum number of 'N' characters allowed in the aligned reference genome portion when considering alignment to the reference genome/transcriptome. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome'. Default: 0.
@@ -971,6 +971,14 @@ def info(
                 mutation_metadata_df["longest_homopolymer_length"],
                 mutation_metadata_df["longest_homopolymer"],
             ) = zip(*mutation_metadata_df["vcrs_sequence"].apply(lambda x: (longest_homopolymer(x) if pd.notna(x) else (np.nan, np.nan))))
+
+            output_file_longest_homopolymer = f"{output_plot_folder}/longest_homopolymer.png"
+            plot_histogram_of_nearby_mutations_7_5(
+                mutation_metadata_df,
+                "longest_homopolymer_length",
+                bins=20,
+                output_file=output_file_longest_homopolymer,
+            )
         except Exception as e:
             logger.error(f"Error calculating longest homopolymer: {e}")
             columns_not_successfully_added.extend(["longest_homopolymer_length", "longest_homopolymer"])
@@ -985,14 +993,6 @@ def info(
                 mutation_metadata_df["num_total_triplets"],
                 mutation_metadata_df["triplet_complexity"],
             ) = zip(*mutation_metadata_df["vcrs_sequence"].apply(lambda x: (triplet_stats(x) if pd.notna(x) else (np.nan, np.nan, np.nan))))
-
-            output_file_longest_homopolymer = f"{output_plot_folder}/longest_homopolymer.png"
-            plot_histogram_of_nearby_mutations_7_5(
-                mutation_metadata_df,
-                "longest_homopolymer_length",
-                bins=20,
-                output_file=output_file_longest_homopolymer,
-            )
 
             output_file_triplet_complexity = f"{output_plot_folder}/triplet_complexity.png"
             plot_histogram_of_nearby_mutations_7_5(

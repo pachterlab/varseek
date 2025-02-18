@@ -639,7 +639,7 @@ def main():  # noqa: C901
         type=strpath_or_list_like_of_strings,
         nargs="+",
         required=False,
-        default=("number_of_variants_in_this_gene_total", "alignment_to_reference_count_total", "pseudoaligned_to_reference_despite_not_truly_aligning", "longest_homopolymer_length", "triplet_complexity"),
+        default=("number_of_variants_in_this_gene_total", "alignment_to_reference", "pseudoaligned_to_reference_despite_not_truly_aligning", "num_distinct_triplets"),
         help=extract_help_from_doc(info, "columns_to_include"),
     )
     parser_info.add_argument(
@@ -2078,13 +2078,10 @@ def main():  # noqa: C901
         nargs="*",
         required=False,
         default=(
-            "substring_alignment_to_reference:equal=none",  # filter out mutations which are a substring of the reference genome
-            "pseudoaligned_to_reference_despite_not_truly_aligning:is_not_true",  # filter out mutations which pseudoaligned to human genome despite not truly aligning
-            "alignment_to_reference:equal=none",  # *** erase eventually when I want to d-list  # filter out mutations which are capable of being d-listed (given that I filter out the substrings above)
-            "number_of_kmers_with_overlap_to_other_VCRSs:less_than=999999",  # filter out mutations which overlap with other VCRSs in the reference
-            "number_of_other_VCRSs_with_overlapping_kmers:less_than=999999",  # filter out mutations which overlap with other VCRSs in the reference
-            "longest_homopolymer_length:bottom_percent=99.99",  # filters out VCRSs with repeating single nucleotide - 99.99 keeps the bottom 99.99% (fraction 0.9999) ie filters out the top 0.01%
-            "triplet_complexity:top_percent=99.9",  # filters out VCRSs with repeating triplets - 99.9 keeps the top 99.9% (fraction 0.999) ie filters out the bottom 0.1%
+            "alignment_to_reference:equal=none",
+            # "substring_alignment_to_reference:equal=none",  # filter out variants that are a substring of the reference genome  #* uncomment this and erase the line above when implementing d-list
+            "pseudoaligned_to_reference_despite_not_truly_aligning:is_not_true",  # filter out variants that pseudoaligned to human genome despite not truly aligning
+            "num_distinct_triplets:greater_than=2",  # filters out VCRSs with <= 2 unique triplets
         ),
         help=extract_help_from_doc(ref, "filters"),
     )
