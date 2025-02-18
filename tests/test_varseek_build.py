@@ -523,7 +523,7 @@ def test_mismatch_error(long_sequence, out_dir):
         variants="c.2G>A",
         out=out_dir)
     
-    assert vk.varseek_build.cosmic_incorrect_wt_base == 1   
+    assert vk.varseek_build.variants_incorrect_wt_base == 1   
 
     assert_global_variables_zero()
 

@@ -86,6 +86,8 @@ def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_
     print("Copying df internally to avoid in-place modifications")
     df_original = df.copy()
 
+    bad_mutations_dict = {}
+
     print("Removing unknown mutations")
     # get rids of mutations that are uncertain, ambiguous, intronic, posttranslational
     uncertain_mutations = df["mutation"].str.contains(r"\?").sum()
@@ -101,6 +103,11 @@ def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_
     print(f"Ambiguous position mutations: {ambiguous_position_mutations}")
     print(f"Intronic mutations: {intronic_mutations}")
     print(f"Posttranslational region mutations: {posttranslational_region_mutations}")
+
+    bad_mutations_dict["uncertain_mutations"] = uncertain_mutations
+    bad_mutations_dict["ambiguous_position_mutations"] = ambiguous_position_mutations
+    bad_mutations_dict["intronic_mutations"] = intronic_mutations
+    bad_mutations_dict["posttranslational_region_mutations"] = posttranslational_region_mutations
 
     # Filter out bad mutations
     combined_pattern = re.compile(r"(\?|\(|\)|\+|\-|\*)")  # gets rids of mutations that are uncertain, ambiguous, intronic, posttranslational
@@ -189,7 +196,7 @@ def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_
                 print(f"Saving output to {output_csv_path}")
             df_merged.to_csv(output_csv_path, index=False)  # new as of Feb 2025 (replaced df.to_csv with df_merged.to_csv)
 
-        return df_merged
+        return df_merged, bad_mutations_dict
     
     except Exception as e:
         raise RuntimeError(f"Error converting CDS to cDNA: {e}") from e

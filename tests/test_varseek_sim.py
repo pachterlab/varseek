@@ -2,23 +2,29 @@ import os
 import tempfile
 from pdb import set_trace as st
 
-import numpy as np
 import pandas as pd
 import pytest
 from datetime import datetime
 from pathlib import Path
 
 import varseek as vk
-from varseek.utils import (
-    compare_dicts,
-    create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting,
-    make_mapping_dict,
-)
 
 store_out_in_permanent_paths = True
 tests_dir = Path(__file__).resolve().parent
 pytest_permanent_out_dir_base = tests_dir / "pytest_output" / Path(__file__).stem
 current_datetime = datetime.now().strftime("date_%Y_%m_%d_time_%H%M_%S")
+
+@pytest.fixture
+def out_dir(tmp_path, request):
+    """Fixture that returns the appropriate output directory for each test."""
+    if store_out_in_permanent_paths:
+        current_test_function_name = request.node.name
+        out = Path(f"{pytest_permanent_out_dir_base}/{current_datetime}/{current_test_function_name}")
+    else:
+        out = tmp_path / "out_vk_build"
+
+    out.mkdir(parents=True, exist_ok=True)  # Ensure the directory exists
+    return out
 
 
 @pytest.fixture

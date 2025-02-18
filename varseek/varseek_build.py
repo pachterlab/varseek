@@ -48,7 +48,7 @@ posttranslational_region_mutations = 0
 unknown_mutations = 0
 uncertain_mutations = 0
 ambiguous_position_mutations = 0
-cosmic_incorrect_wt_base = 0
+variants_incorrect_wt_base = 0
 mut_idx_outside_seq = 0
 
 
@@ -600,7 +600,7 @@ def build(
     Saves mutated sequences in fasta format (or returns a list containing the mutated sequences if out=None).
     """
 
-    global intronic_mutations, posttranslational_region_mutations, unknown_mutations, uncertain_mutations, ambiguous_position_mutations, cosmic_incorrect_wt_base, mut_idx_outside_seq
+    global intronic_mutations, posttranslational_region_mutations, unknown_mutations, uncertain_mutations, ambiguous_position_mutations, variants_incorrect_wt_base, mut_idx_outside_seq
 
     # * 0. Informational arguments that exit early
     if list_supported_databases:
@@ -874,7 +874,7 @@ def build(
             if sequences == "cdna" or sequences.endswith(supported_databases_and_corresponding_reference_sequence_type[mutations_original]["sequence_file_names"]["cdna"].replace("GRCH_NUMBER", grch)):  # covers whether sequences == "cdna" or sequences == "PATH/TO/Homo_sapiens.GRCh37.cdna.all.fa"
                 if "mutation_cdna" not in mutations.columns:
                     logger.info("Adding in cdna information into COSMIC. Note that the 'mutation_cdna' column will refer to cDNA mutation notation, and the 'mutation' column will refer to CDS mutation notation.")
-                    mutations = convert_mutation_cds_locations_to_cdna(
+                    mutations, bad_cosmic_mutations_dict = convert_mutation_cds_locations_to_cdna(
                         input_csv_path=mutations,
                         output_csv_path=mutations_path,
                         cds_fasta_path=cds_file,
@@ -882,6 +882,11 @@ def build(
                         verbose=verbose
                     )
 
+                    # uncertain_mutations += bad_cosmic_mutations_dict["uncertain_mutations"]
+                    # ambiguous_position_mutations += bad_cosmic_mutations_dict["ambiguous_position_mutations"]
+                    # intronic_mutations += bad_cosmic_mutations_dict["intronic_mutations"]
+                    # posttranslational_region_mutations += bad_cosmic_mutations_dict["posttranslational_region_mutations"]
+                    
                 seq_id_column = "seq_ID"
                 var_column = "mutation_cdna"
 
@@ -989,20 +994,28 @@ def build(
         mutations['original_order'] = range(len(mutations))  # ensure that original order can be restored at the end
         columns_to_keep.append("original_order")  # just so it doesn't get removed automatically (but I remove it manually later)
 
+    total_mutations = mutations.shape[0]
+
+    # Drop inputs for sequences or variants that were not found
+    mutations = mutations.dropna(subset=[seq_id_column, var_column])
+    missing_seq_id_or_var = total_mutations - mutations.shape[0]
+    total_mutations_updated = mutations.shape[0]
+    if len(mutations) < 1:
+        raise ValueError(
+            """
+            None of the input sequences match the sequence IDs provided in 'mutations'.
+            Ensure that the sequence IDs correspond to the string following the > character in the 'sequences' fasta file (do NOT include spaces or dots).
+            """
+        )
+
     # remove duplicate entries from the mutations dataframe, keeping the ones with the most information
-    duplicate_count = mutations.duplicated(subset=[seq_id_column, var_column], keep=False).sum() // 2
     mutations["non_na_count"] = mutations.notna().sum(axis=1)
     mutations = mutations.sort_values(by="non_na_count", ascending=False)
     mutations = mutations.drop_duplicates(subset=[seq_id_column, var_column], keep="first")
     mutations = mutations.drop(columns=["non_na_count"])
 
-    number_of_missing_seq_ids = mutations[seq_id_column].isna().sum()
-
-    if number_of_missing_seq_ids > 0:
-        logger.warning("%s rows in 'variants' are missing sequence IDs. These rows will be dropped from the analysis.", number_of_missing_seq_ids)
-
-        # Drop rows with missing sequence IDs
-        mutations = mutations.dropna(subset=[seq_id_column])
+    duplicate_count = total_mutations_updated - mutations.shape[0]
+    total_mutations_updated = mutations.shape[0]
 
     # ensure seq_ID column is string type, and chromosome numbers don't have decimals
     mutations[seq_id_column] = mutations[seq_id_column].apply(convert_chromosome_value_to_int_when_possible)
@@ -1014,38 +1027,18 @@ def build(
         mutations["wt_sequence_full"] = mutations[seq_id_column].map(seq_dict)
 
     # Handle sequences that were not found based on their sequence IDs
-    seqs_not_found = mutations[~mutations[seq_id_column].isin(seq_dict.keys())]
-    if 0 < len(seqs_not_found) < 20:
-        logger.warning(
-            """
-            The sequences with the following %d sequence ID(s) were not found: %s
-            These sequences and their corresponding mutations will not be included in the output.
-            Ensure that the sequence IDs correspond to the string following the > character in the 'sequences' FASTA file (do NOT include spaces or dots).
-            """,
-            len(seqs_not_found),
-            ", ".join(seqs_not_found[seq_id_column].values),
-        )
-    elif len(seqs_not_found) > 0:
+    seqs_not_found_count = len(mutations[~mutations[seq_id_column].isin(seq_dict.keys())])
+    if seqs_not_found_count > 0:
         logger.warning(
             """
             The sequences corresponding to %d sequence IDs were not found.
             These sequences and their corresponding mutations will not be included in the output.
             Ensure that the sequence IDs correspond to the string following the > character in the 'sequences' FASTA file (do NOT include spaces or dots).
             """,
-            len(seqs_not_found),
+            seqs_not_found_count,
         )
 
-    # Drop inputs for sequences that were not found
-    mutations = mutations.dropna(subset=[seq_id_column, var_column])
-    if len(mutations) < 1:
-        raise ValueError(
-            """
-            None of the input sequences match the sequence IDs provided in 'mutations'.
-            Ensure that the sequence IDs correspond to the string following the > character in the 'sequences' fasta file (do NOT include spaces or dots).
-            """
-        )
-
-    total_mutations = mutations.shape[0]
+        mutations = mutations[mutations[seq_id_column].isin(seq_dict.keys())]
 
     mutations["variant_sequence"] = ""
 
@@ -1062,7 +1055,7 @@ def build(
     initial_mutation_id_set = set(mutations["header"].dropna())
 
     # Calculate number of bad mutations
-    uncertain_mutations = mutations[var_column].str.contains(r"\?").sum()
+    uncertain_mutations = mutations[var_column].str.contains(r"\?").sum()  # I originally tried doing a += thing here to account for the cDNA to CDS thing, but then it is hard to track with the double counting and becomes not worth it
 
     ambiguous_position_mutations = mutations[var_column].str.contains(r"\(|\)").sum()
 
@@ -1084,7 +1077,7 @@ def build(
 
     if mutations.empty:
         logger.warning("No valid variants found in the input.")
-        return []
+        return [] if return_variant_output else None
 
     # Split nucleotide positions into start and end positions
     split_positions = mutations["nucleotide_positions"].str.split("_", expand=True)
@@ -1115,7 +1108,7 @@ def build(
 
     if mutations.empty:
         logger.warning("No valid variants found in the input.")
-        return []
+        return [] if return_variant_output else None
 
     # Create masks for each type of mutation
     mutations["wt_nucleotides_ensembl"] = None
@@ -1130,6 +1123,8 @@ def build(
         long_duplications = ((duplication_mask) & ((mutations["end_variant_position"] - mutations["start_variant_position"]) >= k)).sum()
         logger.info("Removing %d duplications > k", long_duplications)
         mutations = mutations[~((duplication_mask) & ((mutations["end_variant_position"] - mutations["start_variant_position"]) >= k))]
+    else:
+        long_duplications = 0
 
     # Create a mask for all non-substitution mutations
     non_substitution_mask = deletion_mask | delins_mask | insertion_mask | duplication_mask | inversion_mask
@@ -1149,13 +1144,13 @@ def build(
 
     congruent_wt_bases_mask = (mutations["wt_nucleotides_cosmic"] == mutations["wt_nucleotides_ensembl"]) | mutations[["wt_nucleotides_cosmic", "wt_nucleotides_ensembl"]].isna().any(axis=1)
 
-    cosmic_incorrect_wt_base = (~congruent_wt_bases_mask).sum()
+    variants_incorrect_wt_base = (~congruent_wt_bases_mask).sum()
 
     mutations = mutations[congruent_wt_bases_mask]
 
     if mutations.empty:
         logger.warning("No valid variants found in the input.")
-        return []
+        return [] if return_variant_output else None
 
     # Adjust the start and end positions for insertions
     mutations.loc[insertion_mask, "start_variant_position"] += 1  # in other cases, we want left flank to exclude the start of mutation site; but with insertion, the start of mutation site as it is denoted still belongs in the flank region
@@ -1345,6 +1340,8 @@ def build(
         mutations_overlapping_with_wt = mutations["wt_fragment_and_mutant_fragment_share_kmer"].sum()
 
         mutations = mutations[~mutations["wt_fragment_and_mutant_fragment_share_kmer"]]
+    else:
+        mutations_overlapping_with_wt = 0
 
     if save_variants_updated_csv and store_full_sequences:
         columns_to_keep.extend(["wt_sequence_full", "variant_sequence_full"])
@@ -1362,6 +1359,8 @@ def build(
 
         if verbose:
             logger.info("Removed %d variant kmers with length less than %d...", rows_less_than_minimum, min_seq_len)
+    else:
+        rows_less_than_minimum = 0
 
     if max_ambiguous is not None:
         # Get number of 'N' or 'n' occuring in the sequence
@@ -1371,36 +1370,42 @@ def build(
 
         if verbose:
             logger.info("Removed %d variant kmers containing more than %d 'N's...", num_rows_with_N, max_ambiguous)
+    else:
+        num_rows_with_N = 0
 
         # Drop the 'num_N' column after filtering
         mutations = mutations.drop(columns=["num_N"])
 
     # Report status of mutations back to user
     good_mutations = mutations.shape[0]
+    total_removed_mutations = total_mutations - good_mutations
 
     report = f"""
         {good_mutations} variants correctly recorded ({good_mutations/total_mutations*100:.2f}%)
-        {duplicate_count} duplicate entries found ({duplicate_count/total_mutations*100:.2f}%)
-        {intronic_mutations} intronic variants found ({intronic_mutations/total_mutations*100:.2f}%)
-        {posttranslational_region_mutations} posttranslational region variants found ({posttranslational_region_mutations/total_mutations*100:.2f}%)
-        {unknown_mutations} unknown variants found ({unknown_mutations/total_mutations*100:.2f}%)
-        {uncertain_mutations} variants with uncertain mutation found ({uncertain_mutations/total_mutations*100:.2f}%)
-        {ambiguous_position_mutations} variants with ambiguous position found ({ambiguous_position_mutations/total_mutations*100:.2f}%)
-        {cosmic_incorrect_wt_base} variants with incorrect wildtype base found ({cosmic_incorrect_wt_base/total_mutations*100:.2f}%)
-        {mut_idx_outside_seq} variants with indices outside of the sequence length found ({mut_idx_outside_seq/total_mutations*100:.2f}%)
+        {total_removed_mutations} variants removed ({total_removed_mutations/total_mutations*100:.2f}%)
+          {missing_seq_id_or_var} variants missing seq_id or var_column ({missing_seq_id_or_var/total_mutations*100:.3f}%)
+          {duplicate_count} entries removed due to having a duplicate entry ({duplicate_count/total_mutations*100:.3f}%)
+          {seqs_not_found_count} variants with seq_ID not found in sequences ({seqs_not_found_count/total_mutations*100:.3f}%)
+          {intronic_mutations} intronic variants found ({intronic_mutations/total_mutations*100:.3f}%)
+          {posttranslational_region_mutations} posttranslational region variants found ({posttranslational_region_mutations/total_mutations*100:.3f}%)
+          {unknown_mutations} unknown variants found ({unknown_mutations/total_mutations*100:.3f}%)
+          {uncertain_mutations} variants with uncertain mutation found ({uncertain_mutations/total_mutations*100:.3f}%)
+          {ambiguous_position_mutations} variants with ambiguous position found ({ambiguous_position_mutations/total_mutations*100:.3f}%)
+          {variants_incorrect_wt_base} variants with incorrect wildtype base found ({variants_incorrect_wt_base/total_mutations*100:.3f}%)
+          {mut_idx_outside_seq} variants with indices outside of the sequence length found ({mut_idx_outside_seq/total_mutations*100:.3f}%)
         """
 
     if remove_seqs_with_wt_kmers:
-        report += f"""{long_duplications} duplications longer than k found ({long_duplications/total_mutations*100:.2f}%)
-        {mutations_overlapping_with_wt} variants with overlapping kmers found ({mutations_overlapping_with_wt/total_mutations*100:.2f}%)
+        report += f"""  {long_duplications} duplications longer than k found ({long_duplications/total_mutations*100:.3f}%)
+          {mutations_overlapping_with_wt} variants with overlapping kmers found ({mutations_overlapping_with_wt/total_mutations*100:.3f}%)
         """
 
     if min_seq_len:
-        report += f"""{rows_less_than_minimum} variants with fragment length < min_seq_len found ({rows_less_than_minimum/total_mutations*100:.2f}%)
+        report += f"""  {rows_less_than_minimum} variants with fragment length < min_seq_len found ({rows_less_than_minimum/total_mutations*100:.3f}%)
         """
 
     if max_ambiguous is not None:
-        report += f"""{num_rows_with_N} variants with Ns found ({num_rows_with_N/total_mutations*100:.2f}%)
+        report += f"""  {num_rows_with_N} variants with Ns found ({num_rows_with_N/total_mutations*100:.3f}%)
         """
 
     if good_mutations != total_mutations:

@@ -202,10 +202,10 @@ def build_random_genome_read_df(
     fasta_output_path_temp = fastq_output_path_base + "_temp.fa"
 
     # TODO: stop hard-coding this
-    if "start_mutation_position_cdna" in mutation_metadata_df.columns:
-        mutation_metadata_df["start_position_for_which_read_contains_mutation_cdna"] = mutation_metadata_df["start_mutation_position_cdna"] - read_length + 1
-    if "start_mutation_position_genome" in mutation_metadata_df.columns:
-        mutation_metadata_df["start_position_for_which_read_contains_mutation_genome"] = mutation_metadata_df["start_mutation_position_genome"] - read_length + 1
+    if "start_variant_position_cdna" in mutation_metadata_df.columns:
+        mutation_metadata_df["start_position_for_which_read_contains_mutation_cdna"] = mutation_metadata_df["start_variant_position_cdna"] - read_length + 1
+    if "start_variant_position_genome" in mutation_metadata_df.columns:
+        mutation_metadata_df["start_position_for_which_read_contains_mutation_genome"] = mutation_metadata_df["start_variant_position_genome"] - read_length + 1
 
     fasta_entries = list(pyfastx.Fastx(reference_fasta_file_path))
     if read_df is None:
@@ -218,11 +218,11 @@ def build_random_genome_read_df(
         fasta_entries = [entry for entry in fasta_entries if entry[0] not in chromosomes]
         fasta_entry_column = "chromosome"
         vcrs_start_column = "start_position_for_which_read_contains_mutation_genome"
-        vcrs_end_column = "end_mutation_position_genome"
+        vcrs_end_column = "end_variant_position_genome"
     elif input_type == "transcriptome":
         fasta_entry_column = "seq_ID"
         vcrs_start_column = "start_position_for_which_read_contains_mutation_cdna"
-        vcrs_end_column = "end_mutation_position_cdna"
+        vcrs_end_column = "end_variant_position_cdna"
     else:
         raise ValueError(f"Invalid input_type: {input_type}")
 

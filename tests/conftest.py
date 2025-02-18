@@ -311,8 +311,8 @@ def toy_mutation_metadata_df_exploded():
         "end_variant_position": [101, 1212, 256, 260, 403, 501, 303, 301, 602, 101, 108],
         "nucleotide_positions_cdna": ["101", "1211_1212", "256", "256_260", "401_403", "501", "301_303", "301", "599_602", "101", "108"],
         "actual_variant_cdna": ["A>G", "insAAG", "del", "del", "delinsG", "delinsGA", "dup", "dup", "inv", "A>G", "A>G"],
-        "start_mutation_position_cdna": [101, 1211, 256, 256, 401, 501, 301, 301, 599, 101, 108],
-        "end_mutation_position_cdna": [101, 1212, 256, 260, 403, 501, 303, 301, 602, 101, 108],
+        "start_variant_position_cdna": [101, 1211, 256, 256, 401, 501, 301, 301, 599, 101, 108],
+        "end_variant_position_cdna": [101, 1212, 256, 260, 403, 501, 303, 301, 602, 101, 108],
         "seq_ID": ["ENST1", "ENST2", "ENST3", "ENST4", "ENST5", "ENST6", "ENST7", "ENST8", "ENST9", "ENST1", "ENST11"],
         "vcrs_id": ["seq_1", "seq_2", "seq_3", "seq_4", "seq_5", "seq_6", "seq_7", "seq_8", "seq_9", "seq_1", "seq_1"],
         "vcrs_header": ["ENST1:c.101A>G;ENST1:c.101A>G;ENST11:c.108A>G", "ENST2:c.1211_1212insAAG", "ENST3:c.256del", "ENST4:c.256_260del", "ENST5:c.401_403delinsG", "ENST6:c.501delinsGA", "ENST7:c.301_303dup", "ENST8:c.301dup", "ENST9:c.599_602inv", "ENST1:c.101A>G;ENST1:c.101A>G;ENST11:c.108A>G", "ENST1:c.101A>G;ENST1:c.101A>G;ENST11:c.108A>G"],
@@ -321,7 +321,7 @@ def toy_mutation_metadata_df_exploded():
     mutation_metadata_df = pd.DataFrame(data)
 
     mutation_metadata_df[["start_variant_position", "end_variant_position"]] = mutation_metadata_df[["start_variant_position", "end_variant_position"]].astype("Int64")
-    mutation_metadata_df[["start_mutation_position_cdna", "end_mutation_position_cdna"]] = mutation_metadata_df[["start_mutation_position_cdna", "end_mutation_position_cdna"]].astype("Int64")
+    mutation_metadata_df[["start_variant_position_cdna", "end_variant_position_cdna"]] = mutation_metadata_df[["start_variant_position_cdna", "end_variant_position_cdna"]].astype("Int64")
 
     mutation_metadata_df["header_list"] = mutation_metadata_df["vcrs_header"].str.split(";")
     mutation_metadata_df['order_list'] = mutation_metadata_df['header_list'].apply(lambda x: list(range(len(x))))
@@ -343,8 +343,8 @@ def toy_mutation_metadata_df_collapsed():
         "end_variant_position": [[101, 101, 108], [1212], [256], [260], [403], [501], [303], [301], [602]],
         "nucleotide_positions_cdna": [["101", "101", "108"], ["1211_1212"], ["256"], ["256_260"], ["401_403"], ["501"], ["301_303"], ["301"], ["599_602"]],
         "actual_variant_cdna": [["A>G", "A>G", "A>G"], ["insAAG"], ["del"], ["del"], ["delinsG"], ["delinsGA"], ["dup"], ["dup"], ["inv"]],
-        "start_mutation_position_cdna": [[101, 101, 108], [1211], [256], [256], [401], [501], [301], [301], [599]],
-        "end_mutation_position_cdna": [[101, 101, 108], [1212], [256], [260], [403], [501], [303], [301], [602]],
+        "start_variant_position_cdna": [[101, 101, 108], [1211], [256], [256], [401], [501], [301], [301], [599]],
+        "end_variant_position_cdna": [[101, 101, 108], [1212], [256], [260], [403], [501], [303], [301], [602]],
         "seq_ID": [["ENST1", "ENST1", "ENST11"], ["ENST2"], ["ENST3"], ["ENST4"], ["ENST5"], ["ENST6"], ["ENST7"], ["ENST8"], ["ENST9"]],
         "vcrs_id": ["seq_1", "seq_2", "seq_3", "seq_4", "seq_5", "seq_6", "seq_7", "seq_8", "seq_9"],
         "vcrs_header": ["ENST1:c.101A>G;ENST1:c.101A>G;ENST11:c.108A>G", "ENST2:c.1211_1212insAAG", "ENST3:c.256del", "ENST4:c.256_260del", "ENST5:c.401_403delinsG", "ENST6:c.501delinsGA", "ENST7:c.301_303dup", "ENST8:c.301dup", "ENST9:c.599_602inv"],

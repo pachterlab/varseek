@@ -1377,14 +1377,14 @@ def compute_distance_to_closest_splice_junction(
         total=len(mutation_metadata_df_exploded),
     ):
         # TODO: stop hard-coding column names
-        if pd.isna(row["chromosome"]) or pd.isna(row["start_mutation_position_genome"]) or pd.isna(row["end_mutation_position_genome"]):
+        if pd.isna(row["chromosome"]) or pd.isna(row["start_variant_position_genome"]) or pd.isna(row["end_variant_position_genome"]):
             distances.append(np.nan)
             continue
 
         try:
             chrom = str(row["chromosome"])
-            start_pos = int(row["start_mutation_position_genome"])
-            end_pos = int(row["end_mutation_position_genome"])
+            start_pos = int(row["start_variant_position_genome"])
+            end_pos = int(row["end_variant_position_genome"])
         except ValueError:
             distances.append(np.nan)
             continue
@@ -1626,8 +1626,8 @@ def calculate_nearby_mutations(
             mutation_metadata_df_exploded_cdna,
             k=k,
             fasta_entry_column="seq_ID",
-            start_column="start_mutation_position_cdna",
-            end_column="end_mutation_position_cdna",
+            start_column="start_variant_position_cdna",
+            end_column="end_variant_position_cdna",
             header_column="header",
         )  # * change to header_column='header_cdna' (along with below) if I don't want to distinguish between spliced and unspliced variants being close
         mutation_metadata_df_exploded = mutation_metadata_df_exploded.merge(
@@ -1654,8 +1654,8 @@ def calculate_nearby_mutations(
             mutation_metadata_df_exploded_genome,
             k=k,
             fasta_entry_column="chromosome",
-            start_column="start_mutation_position_genome",
-            end_column="end_mutation_position_genome",
+            start_column="start_variant_position_genome",
+            end_column="end_variant_position_genome",
             header_column="header",
         )  # * change to header_column='header_cdna' (along with above) if I don't want to distinguish between spliced and unspliced variants being close
         mutation_metadata_df_exploded = mutation_metadata_df_exploded.merge(

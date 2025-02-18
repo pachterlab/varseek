@@ -31,6 +31,18 @@ tests_dir = Path(__file__).resolve().parent
 pytest_permanent_out_dir_base = tests_dir / "pytest_output" / Path(__file__).stem
 current_datetime = datetime.now().strftime("date_%Y_%m_%d_time_%H%M_%S")
 
+@pytest.fixture
+def out_dir(tmp_path, request):
+    """Fixture that returns the appropriate output directory for each test."""
+    if store_out_in_permanent_paths:
+        current_test_function_name = request.node.name
+        out = Path(f"{pytest_permanent_out_dir_base}/{current_datetime}/{current_test_function_name}")
+    else:
+        out = tmp_path / "out_vk_build"
+
+    out.mkdir(parents=True, exist_ok=True)  # Ensure the directory exists
+    return out
+
 
 @pytest.fixture
 def temporary_output_files():
@@ -62,7 +74,7 @@ def test_add_mutation_information(toy_mutation_metadata_df_exploded):
         if column in toy_mutation_metadata_df_exploded.columns:
             toy_mutation_metadata_df_exploded.drop(column, axis=1, inplace=True)
 
-    mutation_metadata_df = toy_mutation_metadata_df_exploded[["mutation", "seq_ID", "vcrs_id", "vcrs_header", "vcrs_sequence"]].copy()
+    mutation_metadata_df = toy_mutation_metadata_df_exploded[["mutation", "seq_ID", "vcrs_id", "header", "vcrs_sequence"]].copy()
     output_df = add_mutation_information(mutation_metadata_df, mutation_column="mutation", vcrs_source="cdna")
     output_df = output_df[expected_df.columns]
 
@@ -92,8 +104,8 @@ def test_explode(toy_mutation_metadata_df_exploded, toy_mutation_metadata_df_col
     output_df = output_df.sort_values(by=['vcrs_id']).reset_index(drop=True)
     expected_df = expected_df.sort_values(by=['vcrs_id']).reset_index(drop=True)
 
-    output_df[["start_variant_position", "end_variant_position", "start_mutation_position_cdna", "end_mutation_position_cdna"]] = output_df[["start_variant_position", "end_variant_position", "start_mutation_position_cdna", "end_mutation_position_cdna"]].astype("Int64")
-    expected_df[["start_variant_position", "end_variant_position", "start_mutation_position_cdna", "end_mutation_position_cdna"]] = expected_df[["start_variant_position", "end_variant_position", "start_mutation_position_cdna", "end_mutation_position_cdna"]].astype("Int64")
+    output_df[["start_variant_position", "end_variant_position", "start_variant_position_cdna", "end_variant_position_cdna"]] = output_df[["start_variant_position", "end_variant_position", "start_variant_position_cdna", "end_variant_position_cdna"]].astype("Int64")
+    expected_df[["start_variant_position", "end_variant_position", "start_variant_position_cdna", "end_variant_position_cdna"]] = expected_df[["start_variant_position", "end_variant_position", "start_variant_position_cdna", "end_variant_position_cdna"]].astype("Int64")
 
     # Assert that the output matches the expected DataFrame
     pd.testing.assert_frame_equal(output_df, expected_df)
@@ -115,8 +127,8 @@ def test_compute_distance_to_closest_splice_junction(mock_helpers):
     # Create a toy DataFrame with mutations
     data = {
         "chromosome": ["1", "1", "2", "2", "2", "2", "2", "3"],  # Chromosome 3 is to check missing junctions
-        "start_mutation_position_genome": [95, 210, 240, 248, 250, 550, 700, 400],
-        "end_mutation_position_genome": [105, 210, 260, 254, 250, 550, 700, 400]
+        "start_variant_position_genome": [95, 210, 240, 248, 250, 550, 700, 400],
+        "end_variant_position_genome": [105, 210, 260, 254, 250, 550, 700, 400]
     }
     mutation_metadata_df_exploded = pd.DataFrame(data)
 
