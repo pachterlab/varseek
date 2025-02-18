@@ -28,7 +28,7 @@ from .utils import (
 logger = logging.getLogger(__name__)
 
 
-def apply_filters(df, filters, verbose=False, filtering_report_text_out=None):
+def apply_filters(df, filters, filtering_report_text_out=None):
     logger.info("Initial variant report")
     filtering_report_dict = make_filtering_report(df, filtering_report_text_out=filtering_report_text_out)
     initial_filtering_report_dict = filtering_report_dict.copy()

@@ -120,7 +120,6 @@ def cosmic_csv_path(cds_and_cdna_files, tmp_path):
                 output_csv_path=cosmic_csv_with_cdna_path,
                 cds_fasta_path=cds_file,
                 cdna_fasta_path=cdna_file,
-                verbose=True,
             )
 
 
@@ -296,7 +295,6 @@ def test_file_processing(cosmic_csv_path, cds_and_cdna_files, genome_and_gtf_fil
             output_t2g=t2g_vk_filter,
             id_to_header_csv=id_to_header_csv,
             id_to_header_filtered_csv_out=id_to_header_csv_vk_filter,
-            verbose=True,
         )
 
         if make_new_gt:

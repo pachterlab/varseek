@@ -112,4 +112,4 @@ COLUMN1:RULE1=VALUE1
 COLUMN2:RULE2=VALUE2
 COLUMN3:RULE3=VALUE3
 
-While the order of filters does not affect the output filtered fasta file, it will affect the stats printed to the console when in verbose mode. The stats will be printed in the order of the filters.
+While the order of filters does not affect the output filtered fasta file, it will affect the logged stats. The stats will be logged in the order of the filters.

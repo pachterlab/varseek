@@ -162,12 +162,7 @@ Path to reference files to be downloaded if `variants` is a supported database a
 `-o` `--out`   
 Path to output folder containing created files (if fasta_out and/or update_df_out not supplied) Default: '.'.
 Default: None -> returns a list of the mutated sequences to standard out.    
-The identifiers (following the '>') of the mutated sequences in the output FASTA will be '>[seq_ID]_[mut_ID]'. 
-
-**Optional general flags**  
-`-q` `--quiet`   
-Command-line only. Prevents progress information from being displayed.  
-Python: Use `verbose=False` to prevent progress information from being displayed.  
+The identifiers (following the '>') of the mutated sequences in the output FASTA will be '>[seq_ID]_[mut_ID]'.   
 
 ### Examples
 ```bash
