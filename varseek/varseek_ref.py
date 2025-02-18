@@ -265,7 +265,7 @@ def ref(
     else:
         if save_logs and not log_out_dir:
             log_out_dir = os.path.join(out, "logs")
-        logger = set_up_logger(logger, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir)
+        logger = set_up_logger(logger, logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
 
     # * 1.5. Load in parameters from a config file if provided
     if isinstance(config, str) and os.path.isfile(config):

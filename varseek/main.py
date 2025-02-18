@@ -25,8 +25,6 @@ from .varseek_summarize import summarize
 # Get current date and time for alphafold default foldername
 dt_string = datetime.now().strftime("%Y_%m_%d-%H_%M")
 
-logger = set_up_logger(logging_level_name=None, save_logs=False, log_dir="logs")
-
 
 def extract_help_from_doc(module, arg_name, disable=False):
     """
