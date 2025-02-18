@@ -1467,23 +1467,17 @@ def main():  # noqa: C901
         help=extract_help_from_doc(fastqpp, "fastqc_and_multiqc"),
     )
     parser_fastqpp.add_argument(
-        "--replace_low_quality_bases_with_N",
-        required=False,
-        action="store_true",
-        help=extract_help_from_doc(fastqpp, "replace_low_quality_bases_with_N"),
-    )
-    parser_fastqpp.add_argument(
-        "--min_base_quality",
+        "--min_base_quality_for_splitting",
         required=False,
         type=int,
         default=13,
-        help=extract_help_from_doc(fastqpp, "min_base_quality"),
+        help=extract_help_from_doc(fastqpp, "min_base_quality_for_splitting"),
     )
     parser_fastqpp.add_argument(
-        "--split_reads_by_Ns",
+        "--split_reads_by_Ns_and_low_quality_bases",
         required=False,
         action="store_true",
-        help=extract_help_from_doc(fastqpp, "split_reads_by_Ns"),
+        help=extract_help_from_doc(fastqpp, "split_reads_by_Ns_and_low_quality_bases"),
     )
     parser_fastqpp.add_argument(
         "--concatenate_paired_fastqs",
@@ -1647,10 +1641,10 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "apply_single_end_mode_on_paired_end_data_correction"),
     )
     parser_clean.add_argument(
-        "--split_reads_by_Ns",
+        "--split_reads_by_Ns_and_low_quality_bases",
         action="store_true",
         required=False,
-        help=extract_help_from_doc(clean, "split_reads_by_Ns"),
+        help=extract_help_from_doc(clean, "split_reads_by_Ns_and_low_quality_bases"),
     )
     parser_clean.add_argument(
         "--apply_dlist_correction",
@@ -2668,9 +2662,8 @@ def main():  # noqa: C901
             max_ambiguous=args.max_ambiguous,
             min_read_len=args.min_read_len,
             fastqc_and_multiqc=args.fastqc_and_multiqc,
-            replace_low_quality_bases_with_N=args.replace_low_quality_bases_with_N,
-            min_base_quality=args.min_base_quality,
-            split_reads_by_Ns=args.split_reads_by_Ns,
+            min_base_quality_for_splitting=args.min_base_quality_for_splitting,
+            split_reads_by_Ns_and_low_quality_bases=args.split_reads_by_Ns_and_low_quality_bases,
             concatenate_paired_fastqs=args.concatenate_paired_fastqs,
             out=args.out,
             delete_intermediate_files=args.delete_intermediate_files,
@@ -2700,7 +2693,7 @@ def main():  # noqa: C901
             use_binary_matrix=args.use_binary_matrix,
             drop_empty_columns=args.drop_empty_columns,
             apply_single_end_mode_on_paired_end_data_correction=args.apply_single_end_mode_on_paired_end_data_correction,
-            split_reads_by_Ns=args.split_reads_by_Ns,
+            split_reads_by_Ns_and_low_quality_bases=args.split_reads_by_Ns_and_low_quality_bases,
             apply_dlist_correction=args.apply_dlist_correction,
             qc_against_gene_matrix=args.qc_against_gene_matrix,
             filter_cells_by_min_counts=args.filter_cells_by_min_counts,

@@ -324,8 +324,8 @@ def count(
 
     # so parity_vcrs is set correctly - copied from fastqpp
     concatenate_paired_fastqs = params_dict.get("concatenate_paired_fastqs", False)
-    split_reads_by_Ns = params_dict.get("split_reads_by_Ns", False)
-    if (concatenate_paired_fastqs or split_reads_by_Ns) and parity == "paired":
+    split_reads_by_Ns_and_low_quality_bases = params_dict.get("split_reads_by_Ns_and_low_quality_bases", False)
+    if (concatenate_paired_fastqs or split_reads_by_Ns_and_low_quality_bases) and parity == "paired":
         if not concatenate_paired_fastqs:
             logger.info("Setting concatenate_paired_fastqs=True")
         concatenate_paired_fastqs = True

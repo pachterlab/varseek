@@ -236,7 +236,7 @@ def split_fastq_reads_by_N(input_fastq_file, out_dir=".", minimum_sequence_lengt
     technology = technology.lower()
 
     if not is_program_installed(seqtk):
-        logger.info("Seqtk is not installed. replace_low_quality_bases_with_N sees significant speedups for bulk technology with seqtk, so it is recommended to install seqtk for this step")
+        logger.info("Seqtk is not installed. split_reads_by_Ns_and_low_quality_bases sees significant speedups for bulk technology with seqtk, so it is recommended to install seqtk for this step")
         seqtk_installed = False
     else:
         seqtk_installed = True

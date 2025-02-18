@@ -62,7 +62,7 @@ def validate_input_fastqpp(params_dict):
         raise ValueError(f"Invalid value for out: {params_dict.get('out', None)}")
 
     # optional str
-    for file_name_suffix in ["quality_control_fastqs_out_suffix", "replace_low_quality_bases_with_N_out_suffix", "split_by_N_out_suffix", "concatenate_paired_fastqs_out_suffix"]:
+    for file_name_suffix in ["quality_control_fastqs_out_suffix", "replace_low_quality_bases_with_N_out_suffix", "split_by_Ns_and_low_quality_bases_out_suffix", "concatenate_paired_fastqs_out_suffix"]:
         if params_dict.get(file_name_suffix) is not None and not isinstance(params_dict.get(file_name_suffix), str):
             raise ValueError(f"Invalid suffix: {params_dict.get(file_name_suffix)}")
 
@@ -73,7 +73,7 @@ def validate_input_fastqpp(params_dict):
         ("qualified_quality_phred", 0, 93, False),
         ("unqualified_percent_limit", 1, 100, False),
         ("max_ambiguous", 1, 50, False),
-        ("min_base_quality", 0, 93, False),
+        ("min_base_quality_for_splitting", 0, 93, False),
     ]:
         param_value = params_dict.get(param_name)
         if not is_valid_int(param_value, "between", min_value_inclusive=min_value, max_value_inclusive=max_value, optional=optional_value):
@@ -86,12 +86,12 @@ def validate_input_fastqpp(params_dict):
         raise ValueError(f"min_read_len must be an integer >= 1 or None. Got {params_dict.get('threads')}.")
 
     # boolean
-    for param_name in ["quality_control_fastqs", "fastqc_and_multiqc", "replace_low_quality_bases_with_N", "split_reads_by_Ns", "concatenate_paired_fastqs", "delete_intermediate_files", "dry_run", "overwrite", "sort_fastqs"]:
+    for param_name in ["quality_control_fastqs", "fastqc_and_multiqc", "split_reads_by_Ns_and_low_quality_bases", "concatenate_paired_fastqs", "delete_intermediate_files", "dry_run", "overwrite", "sort_fastqs"]:
         if not isinstance(params_dict.get(param_name), bool):
             raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
 
-    if parity == "paired" and params_dict["split_reads_by_Ns"] and not params_dict["concatenate_paired_fastqs"]:
-        raise ValueError("When parity==paired, if split_reads_by_Ns==True, then concatenate_paired_fastqs must also be True (split_reads_by_Ns messes up the paired nature of the fastqs).")
+    if parity == "paired" and params_dict["split_reads_by_Ns_and_low_quality_bases"] and not params_dict["concatenate_paired_fastqs"]:
+        raise ValueError("When parity==paired, if split_reads_by_Ns_and_low_quality_bases==True, then concatenate_paired_fastqs must also be True (split_reads_by_Ns_and_low_quality_bases messes up the paired nature of the fastqs).")
 
     if not isinstance(params_dict.get("multiplexed"), bool) and params_dict.get("multiplexed") is not None:
         raise ValueError(f"multiplexed must be a boolean or None. Got {params_dict.get('multiplexed')} of type {type(params_dict.get('multiplexed'))}.")
@@ -110,12 +110,10 @@ def fastqpp(
     max_ambiguous=50,
     min_read_len=63,
     fastqc_and_multiqc=False,
-    replace_low_quality_bases_with_N=False,
-    min_base_quality=13,
-    split_reads_by_Ns=False,
+    split_reads_by_Ns_and_low_quality_bases=False,
+    min_base_quality_for_splitting=5,
     concatenate_paired_fastqs=False,
     out=".",
-    delete_intermediate_files=False,
     dry_run=False,
     overwrite=False,
     sort_fastqs=True,
@@ -141,11 +139,10 @@ def fastqpp(
     - qualified_quality_phred           (int) The phred quality score for a base to be considered qualified. Only used if quality_control_fastqs=True. See details with `fastp --help`. Range: 0-93. Default: 0 (no average quality filtering)
     - unqualified_percent_limit         (int) The percent of unqualified bases allowed in a read. Only used if quality_control_fastqs=True. See details with `fastp --help`. Range: 1-100. Default: 100 (no average quality filtering)
     - max_ambiguous                     (int) The maximum number of ambiguous bases allowed in a read. Only used if quality_control_fastqs=True. See details with `fastp --help`. Range: 1-50. Default: 50
-    - min_read_len                      (int) The minimum length of a read. Only used if quality_control_fastqs=True or replace_low_quality_bases_with_N=True. Recommended to set equal to the value of k in kb ref/count. Default: None (no minimum length)
+    - min_read_len                      (int) The minimum length of a read. Only used if quality_control_fastqs=True or split_reads_by_Ns_and_low_quality_bases=True. Recommended to set equal to the value of k in kb ref/count. Default: None (no minimum length)
     - fastqc_and_multiqc                (bool) If True, run FastQC and MultiQC. Requires FastQC ± MultiQC to be installed. Default: False
-    - replace_low_quality_bases_with_N  (bool) If True, replace low quality bases with N. Requires seqtk to be installed. Default: False
-    - min_base_quality                  (int) The minimum acceptable base quality. Bases below this quality will be masked with 'N'. Only used if replace_low_quality_bases_with_N=True. Range: 0-93. Default: 13
-    - split_reads_by_Ns                 (bool) If True, split reads by Ns into multiple smaller reads. If technology == "bulk", then seqtk will speed this up significantly. Default: False
+    - split_reads_by_Ns_and_low_quality_bases   (bool) If True, split reads by Ns and low quality bases (lower than min_base_quality_for_splitting) into multiple smaller reads. If min_base_quality_for_splitting > 0, then requires seqtk to be installed. If technology == "bulk", then seqtk will speed this up significantly. Default: False
+    - min_base_quality_for_splitting    (int) The minimum acceptable base quality for split_reads_by_Ns_and_low_quality_bases. Bases below this quality will split. Only used if split_reads_by_Ns_and_low_quality_bases=True. Range: 0-93. Default: 13
     - concatenate_paired_fastqs         (bool) If True, concatenate paired fastq files. Default: False
     - out                               (str) Output directory. Default: "."
     - delete_intermediate_files         (bool) If True, delete intermediate files. Default: False
@@ -164,8 +161,9 @@ def fastqpp(
     - multiqc_path                     (str) Path to multiqc. Default: "multiqc"
     - quality_control_fastqs_out_suffix (str) Suffix to add to fastq files after quality control (preceded by underscore). Default: "qc"
     - replace_low_quality_bases_with_N_out_suffix (str) Suffix to add to fastq files after replacing low quality bases with N (preceded by underscore). Default: "addedNs"
-    - split_by_N_out_suffix            (str) Suffix to add to fastq files after splitting by Ns (preceded by underscore). Default: "splitNs"
+    - split_by_Ns_and_low_quality_bases_out_suffix            (str) Suffix to add to fastq files after splitting by Ns (preceded by underscore). Default: "splitNs"
     - concatenate_paired_fastqs_out_suffix (str) Suffix to add to fastq files after concatenating paired fastq files (preceded by underscore). Default: "concatenated"
+    - delete_intermediate_files        (bool) If True, delete intermediate files. Default: True
     """
 
     # * 0. Informational arguments that exit early
@@ -207,14 +205,10 @@ def fastqpp(
     # * 5. Set up default folder/file input paths, and make sure the necessary ones exist
     # all input files for vk fastqpp are required in the varseek workflow, so this is skipped
 
-    # * 5.5 Quick warning
-    if replace_low_quality_bases_with_N and not split_reads_by_Ns:
-        logger.warning("Setting split_reads_by_Ns=True is recommended when replace_low_quality_bases_with_N=True")
-
     # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
     quality_control_fastqs_out_suffix = kwargs.get("quality_control_fastqs_out_suffix", "qc")
     replace_low_quality_bases_with_N_out_suffix = kwargs.get("replace_low_quality_bases_with_N_out_suffix", "addedNs")
-    split_by_N_out_suffix = kwargs.get("split_by_N_out_suffix", "splitNs")
+    split_by_Ns_and_low_quality_bases_out_suffix = kwargs.get("split_by_Ns_and_low_quality_bases_out_suffix", "split")
     concatenate_paired_fastqs_out_suffix = kwargs.get("concatenate_paired_fastqs_out_suffix", "concatenatedPairs")
 
     os.makedirs(out, exist_ok=True)
@@ -222,7 +216,7 @@ def fastqpp(
     fastq_quality_controlled_all_files = []
     fastq_fastqc_all_files = []
     fastq_more_Ns_all_files = []
-    fastq_split_by_N_all_files = []
+    split_by_Ns_and_low_quality_bases_all_files = []
     fastq_concatenated_all_files = []
 
     if not overwrite:
@@ -235,13 +229,12 @@ def fastqpp(
                 fastq_fastqc_html = os.path.join(out, f"{parts_filename[0]}_fastqc.html")
                 fastq_fastqc_zip = os.path.join(out, f"{parts_filename[0]}_fastqc.zip")
                 fastq_fastqc_all_files.extend([fastq_fastqc_html, fastq_fastqc_zip])
-            if replace_low_quality_bases_with_N:
+            if split_reads_by_Ns_and_low_quality_bases:
                 fastq_more_Ns = os.path.join(out, f"{parts_filename[0]}_{replace_low_quality_bases_with_N_out_suffix}.{parts_filename[1]}")
                 fastq_more_Ns_all_files.append(fastq_more_Ns)
-            if split_reads_by_Ns:
-                fastq_split_by_N = os.path.join(out, f"{parts_filename[0]}_{split_by_N_out_suffix}.{parts_filename[1]}")
-                fastq_split_by_N_all_files.append(fastq_split_by_N)
-            if (concatenate_paired_fastqs or split_reads_by_Ns) and parity == "paired":
+                fastq_split_by_N_and_low_quality_bases = os.path.join(out, f"{parts_filename[0]}_{split_by_Ns_and_low_quality_bases_out_suffix}.{parts_filename[1]}")
+                split_by_Ns_and_low_quality_bases_all_files.append(fastq_split_by_N_and_low_quality_bases)
+            if (concatenate_paired_fastqs or split_reads_by_Ns_and_low_quality_bases) and parity == "paired":
                 fastq_concatenated = os.path.join(out, f"{parts_filename[0]}_{concatenate_paired_fastqs_out_suffix}.{parts_filename[1]}")
                 fastq_concatenated_all_files.append(fastq_concatenated)
 
@@ -254,6 +247,7 @@ def fastqpp(
     seqtk = kwargs.get("seqtk_path", "seqtk")
     fastqc = kwargs.get("fastqc_path", "fastqc")
     multiqc = kwargs.get("multiqc_path", "multiqc")
+    delete_intermediate_files = kwargs.get("delete_intermediate_files", True)
 
     # * 8. Start the actual function
     fastqs = sort_fastq_files_for_kb_count(fastqs, technology=technology, multiplexed=multiplexed, logger=logger, check_only=(not sort_fastqs))
@@ -261,7 +255,7 @@ def fastqpp(
     if technology.lower() != "bulk" and "smartseq" not in technology.lower():
         parity = "single"
 
-    if (concatenate_paired_fastqs or split_reads_by_Ns) and parity == "paired":
+    if (concatenate_paired_fastqs or split_reads_by_Ns_and_low_quality_bases) and parity == "paired":
         if not concatenate_paired_fastqs:
             logger.info("Setting concatenate_paired_fastqs=True")
         concatenate_paired_fastqs = True
@@ -313,28 +307,35 @@ def fastqpp(
         else:
             logger.warning("FastQC and MultiQC files already exist. Skipping FastQC and MultiQC step. Use overwrite=True to overwrite existing files.")
 
-    if replace_low_quality_bases_with_N:
-        if not is_program_installed(seqtk):
-            raise ValueError(f"seqtk must be installed to run replace_low_quality_bases_with_N. Please install it and try again, or set replace_low_quality_bases_with_N=False.")
+    if split_reads_by_Ns_and_low_quality_bases:  # seqtk install is checked internally, as it only applies to the bulk condition and the code can still run with the same output without it (albeit slower)
+        delete_intermediate_files_original = delete_intermediate_files
+        if min_base_quality_for_splitting > 0:
+            if not is_program_installed(seqtk):
+                raise ValueError(f"seqtk must be installed to run split_reads_by_Ns_and_low_quality_bases with min_base_quality_for_splitting > 0. Please install it and try again, set split_reads_by_Ns_and_low_quality_bases=False, or set min_base_quality_for_splitting>0.")
 
-        # check if any file in fastq_more_Ns_all_files does not exist
-        if not all(os.path.exists(f) for f in fastq_more_Ns_all_files) or overwrite:
-            logger.info("Replacing low quality bases with N")
-            fastqs = replace_low_quality_bases_with_N_list(rnaseq_fastq_files=fastqs, minimum_base_quality=min_base_quality, seqtk=seqtk, out_dir=out, logger=logger, suffix=replace_low_quality_bases_with_N_out_suffix)
+            # check if any file in fastq_more_Ns_all_files does not exist
+            if not all(os.path.exists(f) for f in fastq_more_Ns_all_files) or overwrite:
+                logger.info("Replacing low quality bases with N")
+                fastqs = replace_low_quality_bases_with_N_list(rnaseq_fastq_files=fastqs, minimum_base_quality=min_base_quality_for_splitting, seqtk=seqtk, out_dir=out, logger=logger, suffix=replace_low_quality_bases_with_N_out_suffix)
+            else:
+                logger.warning("Fastq files with low quality bases replaced with N already exist. Skipping this step. Use overwrite=True to overwrite existing files.")
+            if not delete_intermediate_files:
+                fastqpp_dict["replaced_loq_quality_with_N"] = fastqs
         else:
-            logger.warning("Fastq files with low quality bases replaced with N already exist. Skipping this step. Use overwrite=True to overwrite existing files.")
-        if not delete_intermediate_files:
-            fastqpp_dict["replaced_with_N"] = fastqs
+            delete_intermediate_files = False  # don't delete intermediate file if I don't do the step above, as the intermediate file would be either the fastp output file or the original fastq, either of which I don't want to delete
 
-    if split_reads_by_Ns:  # seqtk install is checked internally, as it only applies to the bulk condition and the code can still run with the same output without it (albeit slower)
-        # check if any file in fastq_split_by_N_all_files does not exist
-        if not all(os.path.exists(f) for f in fastq_split_by_N_all_files) or overwrite:
+        # check if any file in split_by_Ns_and_low_quality_bases_all_files does not exist
+        if not all(os.path.exists(f) for f in split_by_Ns_and_low_quality_bases_all_files) or overwrite:
             logger.info("Splitting reads by Ns")
-            fastqs = split_reads_by_N_list(fastqs, minimum_sequence_length=min_read_len, delete_original_files=delete_intermediate_files, out_dir=out, logger=logger, suffix=split_by_N_out_suffix, seqtk=seqtk)
+            fastqs = split_reads_by_N_list(fastqs, minimum_sequence_length=min_read_len, delete_original_files=delete_intermediate_files, out_dir=out, logger=logger, suffix=split_by_Ns_and_low_quality_bases_out_suffix, seqtk=seqtk)
         else:
             logger.warning("Fastq files with reads split by N already exist. Skipping this step. Use overwrite=True to overwrite existing files.")
         if not delete_intermediate_files:
-            fastqpp_dict["split_by_N"] = fastqs
+            fastqpp_dict["split_by_N_and_low_quality"] = fastqs
+
+        delete_intermediate_files = delete_intermediate_files_original
+    else:
+        delete_intermediate_files = False  # if I skip this step, then I don't want to delete the intermediate files during the concatenation step
 
     if concatenate_paired_fastqs:
         # check if any file in fastq_concatenated_all_files does not exist
