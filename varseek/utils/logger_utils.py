@@ -63,7 +63,8 @@ def set_up_logger(logger, logging_level=None, save_logs=False, log_dir=None):
                 os.makedirs(log_dir)
 
             function_name = inspect.stack()[1].function  # gets the name of the function that called it (eg build, info, filter, etc)
-            log_file = os.path.join(log_dir, f"logs_{function_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+            dt = datetime.now()
+            log_file = os.path.join(log_dir, f"logs_{function_name}_date_{dt:%Y_%m_%d}_time_{dt:%H_%M_%S}.txt")
 
             file_handler = logging.FileHandler(log_file)
             file_handler.setFormatter(formatter)

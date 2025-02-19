@@ -372,6 +372,7 @@ def sim(
             input_dir=".",
             variants_updated_vk_info_csv=variants,
             filters=filters,
+            out=out,
             return_variants_updated_filtered_csv_df=True,
             save_vcrs_filtered_fasta_and_t2g=False,
         )  # filter to include only rows not already in variant and whatever condition I would like

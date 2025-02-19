@@ -42,7 +42,7 @@ def temporary_output_files():
         
         yield temp_files  # Provide paths to test
 
-def test_basic_sim(toy_mutation_metadata_df_with_read_parents_path, temporary_output_files):
+def test_basic_sim(toy_mutation_metadata_df_with_read_parents_path, temporary_output_files, out_dir):
     filters = []
 
     strand = "f"
@@ -71,6 +71,7 @@ def test_basic_sim(toy_mutation_metadata_df_with_read_parents_path, temporary_ou
         var_column="mutation",
         reference_out_dir=None,
         vk_build_out_dir=None,
+        out=out_dir,
         reads_fastq_out = reads_fastq_out,
         reads_csv_out=reads_csv_out,
         variants_updated_csv_out=variants_updated_csv_out,
