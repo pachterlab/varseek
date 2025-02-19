@@ -33,10 +33,10 @@ def apply_filters(df, filters, filtering_report_text_out=None):
     filtering_report_dict = make_filtering_report(df, filtering_report_text_out=filtering_report_text_out)
     initial_filtering_report_dict = filtering_report_dict.copy()
 
-    for filter in filters:
-        column = filter["column"]
-        rule = filter["rule"]
-        value = filter["value"]
+    for individual_filter in filters:
+        column = individual_filter["column"]
+        rule = individual_filter["rule"]
+        value = individual_filter["value"]
 
         if column not in df.columns:
             # skip this iteration
@@ -48,7 +48,7 @@ def apply_filters(df, filters, filtering_report_text_out=None):
 
         if rule == "greater_than":
             df = df.loc[(df[column].astype(float) > float(value)) | (df[column].isnull())]
-        if rule == "greater_or_equal":
+        elif rule == "greater_or_equal":
             df = df.loc[(df[column].astype(float) >= float(value)) | (df[column].isnull())]
         elif rule == "less_than":
             df = df.loc[(df[column].astype(float) < float(value)) | (df[column].isnull())]
@@ -82,7 +82,7 @@ def apply_filters(df, filters, filtering_report_text_out=None):
             else:
                 try:
                     value = ast.literal_eval(value)
-                    if not isinstance(value, set) or not isinstance(value, list) or not isinstance(value, tuple):
+                    if not isinstance(value, (set, list, tuple)):
                         raise ValueError("Value must be a set, list, tuple, or path to text file")
                 except ValueError as exc:
                     raise ValueError("Value must be a set, list, tuple, or path to text file") from exc
@@ -108,11 +108,11 @@ def apply_filters(df, filters, filtering_report_text_out=None):
         filtering_report_dict = make_filtering_report(df, filtering_report_text_out=filtering_report_text_out, prior_filtering_report_dict=filtering_report_dict)
 
     number_of_variants_total_difference = initial_filtering_report_dict["number_of_variants_total"] - filtering_report_dict["number_of_variants_total"]
-    number_of_vcrss_total_difference = initial_filtering_report_dict["number_of_vcrss_total"] - filtering_report_dict["number_of_vcrss_total"]
+    number_of_vcrss_difference = initial_filtering_report_dict["number_of_vcrss"] - filtering_report_dict["number_of_vcrss"]
     number_of_unique_variants_difference = initial_filtering_report_dict["number_of_unique_variants"] - filtering_report_dict["number_of_unique_variants"]
     number_of_merged_variants_difference = initial_filtering_report_dict["number_of_merged_variants"] - filtering_report_dict["number_of_merged_variants"]
 
-    message = f"Total variants filtered: {number_of_variants_total_difference}; total VCRSs filtered: {number_of_vcrss_total_difference}; unique variants filtered: {number_of_unique_variants_difference}; merged variants filtered: {number_of_merged_variants_difference}"
+    message = f"Total variants filtered: {number_of_variants_total_difference}; total VCRSs filtered: {number_of_vcrss_difference}; unique variants filtered: {number_of_unique_variants_difference}; merged variants filtered: {number_of_merged_variants_difference}"
     logger.info(message)
 
     return df
@@ -161,19 +161,21 @@ def prepare_filters_list(filters):
         elif rule in filter_rules_that_expect_string_value:  # expects string
             pass
         elif rule in filter_rules_that_expect_text_file_or_list_value:  # expects text file or list
-            if not value.endswith(".txt"):
-                raise ValueError(f"Filter format invalid: {f}. Expected a text file path or list for rule {rule}. 'COLUMN:RULE=VALUE'")
+            if value.endswith(".txt"):
+                pass
+            elif (value[0] == "[" and value[-1] == "]") or (value[0] == "{" and value[-1] == "}") or (value[0] == "(" and value[-1] == ")"):
+                pass
+            elif isinstance(value, (list, set, tuple)):
+                pass
             else:
-                # test for list in a lightweight way
-                if (value[0] == "[" and value[-1] == "]") or (value[0] == "{" and value[-1] == "}") or (value[0] == "(" and value[-1] == ")"):
-                    raise ValueError(f"Filter format invalid: {f}. Expected a text file path or list for rule {rule}. 'COLUMN:RULE=VALUE'")
-                # test for list in a more thorough way
-                # try:
-                #     value = ast.literal_eval(value)
-                # except ValueError:
-                #     raise ValueError(f"Filter format invalid: {f}. Expected a text file path or list for rule {rule}. 'COLUMN:RULE=VALUE'")
+                raise ValueError(f"Filter format invalid: {f}. Expected a text file path or list for rule {rule}. 'COLUMN:RULE=VALUE'")
+            # test for list in a more thorough way (could replace the conditional above with the "[" etc checks)
+            # try:
+            #     value = ast.literal_eval(value)
+            # except ValueError:
+            #     raise ValueError(f"Filter format invalid: {f}. Expected a text file path or list for rule {rule}. 'COLUMN:RULE=VALUE'")
         elif rule in filter_rules_that_expect_no_value:  # expects no value
-            pass
+            pass  # lack of "=" checked earlier
         else:
             raise ValueError(f"Filter format invalid: {f}. Invalid rule: {rule}.")  # redundant with the above but keep anyways
 
@@ -184,7 +186,7 @@ def prepare_filters_list(filters):
 
         filter_list.append({"column": column, "rule": rule, "value": value})  # put filter_list into a list of dicts, where each dict is {"column": column, "rule": rule, "value": value}
 
-    return column
+    return filter_list
 
 
 def convert_txt_to_list(txt_path):
@@ -253,12 +255,11 @@ def print_list_filter_rules():
 def validate_input_filter(params_dict):
     # directories
     input_dir = params_dict["input_dir"]
-    out = params_dict["out"]
     # Type-checking for paths
     if not isinstance(input_dir, (str, Path)) or not os.path.isdir(input_dir):
         raise ValueError(f"Invalid input directory: {input_dir}")
-    if not isinstance(out, (str, Path)) or not os.path.isdir(out):
-        raise ValueError(f"Invalid input directory: {out}")
+    if params_dict.get("out") is not None and not isinstance(params_dict.get("out"), (str, Path)):
+        raise ValueError(f"Invalid input directory: {params_dict.get('out')}")
 
     # filters
     filters = params_dict["filters"]
@@ -287,7 +288,7 @@ def validate_input_filter(params_dict):
         check_file_path_is_string_with_valid_extension(params_dict.get(param_name), param_name, file_type)
 
     # boolean
-    for param_name in ["save_wt_vcrs_fasta_and_t2g", "save_variants_updated_filtered_csvs", "return_variants_updated_filtered_csv_df", "dry_run", "overwrite", "verbose", "list_filter_rules"]:
+    for param_name in ["save_wt_vcrs_fasta_and_t2g", "save_variants_updated_filtered_csvs", "return_variants_updated_filtered_csv_df", "dry_run", "overwrite", "list_filter_rules"]:
         param_value = params_dict.get(param_name)
         if not isinstance(param_value, bool):
             raise ValueError(f"{param_name} must be a boolean. Got {param_value} of type {type(param_value)}.")
@@ -345,12 +346,14 @@ def filter(
     - dlist_fasta                                  (str) Path to the dlist fasta file. Default: None (will find it in `input_dir` if it exists).
 
     # Optional headers generated from earlier steps:
-    vcrs_id_column                                 (str) Column name in the variant metadata dataframe containing the VCRS IDs. Generated in varseek build. Default: "vcrs_id".
-    vcrs_header_column                             (str) Column name in the variant metadata dataframe containing the VCRS headers. Generated in varseek info. Default: "vcrs_header".
+    - vcrs_id_column                                 (str) Column name in the variant metadata dataframe containing the VCRS IDs. Generated in varseek build. Default: "vcrs_id".
+    - vcrs_header_column                             (str) Column name in the variant metadata dataframe containing the VCRS headers. Generated in varseek info. Default: "vcrs_header".
+    - vcrs_sequence_column                           (str) Column name in the variant metadata dataframe containing the VCRS sequences. Generated in varseek info. Default: "vcrs_sequence".
 
     # Optional output file paths: (only needed if changing/customizing file names or locations):
-    - variants_updated_filtered_csv_out           (str) Path to the filtered variant metadata dataframe. Default: None (will be saved in `out`).
-    - variants_updated_exploded_filtered_csv_out  (str) Path to the filtered exploded variant metadata dataframe. Default: None (will be saved in `out`).
+    - out                                          (str) Path to the directory where the output files will be saved. Default: `input_dir`.
+    - variants_updated_filtered_csv_out            (str) Path to the filtered variant metadata dataframe. Default: None (will be saved in `out`).
+    - variants_updated_exploded_filtered_csv_out   (str) Path to the filtered exploded variant metadata dataframe. Default: None (will be saved in `out`).
     - id_to_header_filtered_csv_out                (str) Path to the filtered id to header csv. Default: None (will be saved in `out`).
     - dlist_filtered_fasta_out                     (str) Path to the filtered dlist fasta file. Default: None (will be saved in `out`).
     - vcrs_filtered_fasta_out                      (str) Path to the filtered vcrs fasta file. Default: None (will be saved in `out`).
@@ -439,9 +442,9 @@ def filter(
                 os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
     # define input file names if not provided
-    if not variants_updated_vk_info_csv:
+    if variants_updated_vk_info_csv is None:
         variants_updated_vk_info_csv = os.path.join(input_dir, "variants_updated_vk_info.csv")
-    if not variants_updated_exploded_vk_info_csv:
+    if not variants_updated_exploded_vk_info_csv is None:
         variants_updated_exploded_vk_info_csv = os.path.join(input_dir, "variants_updated_exploded_vk_info.csv")
     if not dlist_fasta:
         dlist_fasta = os.path.join(input_dir, "dlist.fa")
@@ -449,10 +452,10 @@ def filter(
         id_to_header_csv = os.path.join(input_dir, "id_to_header.csv")
 
     # set input file names to None if they do not exist
-    if not os.path.isfile(variants_updated_vk_info_csv) and not isinstance(variants_updated_vk_info_csv, pd.DataFrame):
+    if not ((isinstance(variants_updated_vk_info_csv, str) and os.path.isfile(variants_updated_vk_info_csv)) or isinstance(variants_updated_vk_info_csv, pd.DataFrame)):
         raise FileNotFoundError(f"Variant metadata file not found at {variants_updated_vk_info_csv}.")
-    if not os.path.isfile(variants_updated_exploded_vk_info_csv):
-        logger.warning(f"Exploded variant metadata file not found at {variants_updated_exploded_vk_info_csv}. Skipping filtering of exploded variant metadata.")
+    if not ((isinstance(variants_updated_exploded_vk_info_csv, str) and os.path.isfile(variants_updated_exploded_vk_info_csv)) or isinstance(variants_updated_exploded_vk_info_csv, pd.DataFrame)):
+        logger.info(f"Exploded variant metadata file not found at {variants_updated_exploded_vk_info_csv}. Skipping filtering of exploded variant metadata.")
         variants_updated_exploded_vk_info_csv = None
     if not os.path.isfile(dlist_fasta):
         logger.warning(f"d-list file not found at {dlist_fasta}. Skipping filtering of d-list.")
@@ -471,11 +474,11 @@ def filter(
     # define output file names if not provided
     if not variants_updated_filtered_csv_out:  # variants_updated_vk_info_csv must exist or else an exception will be raised from earlier
         variants_updated_filtered_csv_out = os.path.join(out, "variants_updated_filtered.csv")
-    if (variants_updated_exploded_vk_info_csv and os.path.isfile(variants_updated_exploded_vk_info_csv)) and not variants_updated_exploded_filtered_csv_out:
+    if not variants_updated_exploded_filtered_csv_out:
         variants_updated_exploded_filtered_csv_out = os.path.join(out, "variants_updated_exploded_filtered.csv")
-    if (id_to_header_csv and os.path.isfile(id_to_header_csv)) and not id_to_header_filtered_csv_out:
+    if not id_to_header_filtered_csv_out:
         id_to_header_filtered_csv_out = os.path.join(out, "id_to_header_mapping_filtered.csv")
-    if (dlist_fasta and os.path.isfile(dlist_fasta)) and not dlist_filtered_fasta_out:
+    if not dlist_filtered_fasta_out:
         dlist_filtered_fasta_out = os.path.join(out, "dlist_filtered.fa")
     if not vcrs_filtered_fasta_out:  # this file must be created
         vcrs_filtered_fasta_out = os.path.join(out, "vcrs_filtered.fa")
@@ -528,8 +531,8 @@ def filter(
     filtered_df = apply_filters(variant_metadata_df, filters, filtering_report_text_out=filtering_report_text_out)
     filtered_df = filtered_df.copy()  # here to avoid pandas warning about assigning to a slice rather than a copy
 
-    if "semicolon_count" in variant_metadata_df.columns:
-        variant_metadata_df = variant_metadata_df.drop(columns=["semicolon_count"])
+    if "semicolon_count" in filtered_df.columns:
+        filtered_df = filtered_df.drop(columns=["semicolon_count"])
 
     if save_variants_updated_filtered_csvs:
         filtered_df.to_csv(variants_updated_filtered_csv_out, index=False)

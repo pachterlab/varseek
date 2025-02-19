@@ -117,7 +117,7 @@ def validate_input_info(params_dict):
     # Directories
     if not isinstance(params_dict.get("input_dir"), (str, Path)) or not os.path.isdir(params_dict.get("input_dir")):  # only use os.path.isdir when I require that a directory already exists
         raise ValueError(f"Invalid value for input_dir: {params_dict.get('input_dir')}")
-    if not isinstance(params_dict.get("out"), (str, Path)):
+    if params_dict.get("out") is not None and not isinstance(params_dict.get("out"), (str, Path)):
         raise ValueError(f"Invalid value for out: {params_dict.get('out')}")
     if params_dict.get("reference_out_dir") and (not isinstance(params_dict.get("reference_out_dir"), (str, Path)) or not os.path.isdir(params_dict.get("reference_out_dir"))):
         raise ValueError(f"Invalid value for reference_out_dir: {params_dict.get('reference_out_dir')}")
@@ -303,7 +303,7 @@ def info(
 
     # Optional input file paths: (only needed if changing/customizing file names or locations):
     - vcrs_fasta                         (str) Path to the VCRS fasta file generated from varseek build. Corresponds to `vcrs_fasta_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir`).
-    - variants_updated_csv              (str) Path to the updated dataframe containing the VCRS headers and sequences. Corresponds to `variants_updated_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).
+    - variants_updated_csv               (str) Path to the updated dataframe containing the VCRS headers and sequences. Corresponds to `variants_updated_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).
     - id_to_header_csv                   (str) Path to the csv file containing the mapping of IDs to headers generated from varseek build corresponding to vcrs_fasta. Corresponds to `id_to_header_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).
     - gtf                                (str) Path to the GTF file containing the gene annotations for the reference genome. Corresponds to `gtf` in the varseek build function. Must align to genome coordinates used in the annotation of variants. Only used by the following columns: 'distance_to_nearest_splice_junction'. Default: None.
     - dlist_reference_genome_fasta       (str) Path to the reference genome fasta file for the d-list. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome', 'pseudoaligned_to_reference', 'pseudoaligned_to_reference_despite_not_truly_aligning'. Default: `dlist_reference_source`.

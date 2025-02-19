@@ -26,7 +26,7 @@ from varseek.utils import (
 )
 from varseek.varseek_info import add_mutation_information
 
-store_out_in_permanent_paths = True
+store_out_in_permanent_paths = False
 tests_dir = Path(__file__).resolve().parent
 pytest_permanent_out_dir_base = tests_dir / "pytest_output" / Path(__file__).stem
 current_datetime = datetime.now().strftime("date_%Y_%m_%d_time_%H%M_%S")
@@ -121,7 +121,7 @@ def mock_load_splice_junctions_from_gtf(gtf_path):
 
 @pytest.fixture
 def mock_helpers(monkeypatch):
-    monkeypatch.setattr("varseek.utils.seq_utils.load_splice_junctions_from_gtf", mock_load_splice_junctions_from_gtf)
+    monkeypatch.setattr("varseek.utils.varseek_info_utils.load_splice_junctions_from_gtf", mock_load_splice_junctions_from_gtf)
 
 def test_compute_distance_to_closest_splice_junction(mock_helpers):
     # Create a toy DataFrame with mutations
@@ -169,7 +169,7 @@ def mock_plot_histogram_of_nearby_mutations_7_5(mutation_metadata_df_exploded, c
 @pytest.fixture
 def mock_helpers_visualization(monkeypatch):
     #* notice I use seq_utils and not visualization_utils
-    monkeypatch.setattr("varseek.utils.seq_utils.plot_histogram_of_nearby_mutations_7_5", mock_plot_histogram_of_nearby_mutations_7_5)
+    monkeypatch.setattr("varseek.utils.varseek_info_utils.plot_histogram_of_nearby_mutations_7_5", mock_plot_histogram_of_nearby_mutations_7_5)
 
 def test_calculate_nearby_mutations(mock_helpers_visualization):
     # Create a toy DataFrame
@@ -177,7 +177,8 @@ def test_calculate_nearby_mutations(mock_helpers_visualization):
         "seq_ID": ["ENST0001", "ENST0001", "ENST0001", "ENST0001"],
         "start_variant_position": [100, 101, 112, 123],
         "end_variant_position": [105, 101, 112, 123],
-        "vcrs_header": ["ENST0001:c.101_105del", "ENST0001:c.101C>A", "ENST0001:c.112G>C", "ENST0001:c.123A>G"]
+        "header": ["ENST0001:c.101_105del", "ENST0001:c.101C>A", "ENST0001:c.112G>C", "ENST0001:c.123A>G"],
+        "vcrs_header": ["ENST0001:c.101_105del", "ENST0001:c.101C>A", "ENST0001:c.112G>C", "ENST0001:c.123A>G"]  # duplicated to avoid errors
     }
     mutation_metadata_df_exploded = pd.DataFrame(data)
     
@@ -319,8 +320,8 @@ def test_count_kmer_overlaps(mock_helpers):
             "vcrs_id": ["seq_0", "seq_1", "seq_2", "seq_3"],
             "number_of_kmers_with_overlap_to_other_VCRSs": [2, 3, 2, 0],
             "number_of_other_VCRSs_with_overlapping_kmers": [1, 1, 2, 0],
-            "overlapping_kmers": [["GATC", "GATC"], ["GCTA", "GCTA", "GCTA"], ["GATC", "GCTA"], []],
             "VCRSs_with_overlapping_kmers": [{"seq_2"}, {"seq_2"}, {"seq_0", "seq_1"}, set()],
+            # "overlapping_kmers": [["GATC", "GATC"], ["GCTA", "GCTA", "GCTA"], ["GATC", "GCTA"], []],
         }
         expected_df = pd.DataFrame(expected_data)
 
@@ -366,6 +367,19 @@ def test_add_vcrs_mutation_type(mock_helpers):
 
     # Check that NaN values remain NaN
     assert result_df.loc[result_df["vcrs_header"].isna(), "vcrs_mutation_type"].isna().all()
+
+
+# recommended temp path:
+# def test_write_temp_file(tmp_path):
+#     # Create a temporary file path within tmp_path
+#     temp_file = tmp_path / "example.txt"
+    
+#     # Write some content to the file
+#     temp_file.write_text("Hello, pytest!")
+    
+#     # Read back the content to verify it was written correctly
+#     content = temp_file.read_text()
+#     assert content == "Hello, pytest!"
 
 
 

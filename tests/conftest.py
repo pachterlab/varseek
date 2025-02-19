@@ -4,6 +4,7 @@ import tempfile
 
 import numpy as np
 import pandas as pd
+import sys
 import pytest
 
 import varseek as vk
@@ -13,6 +14,10 @@ from varseek.utils import (
     make_mapping_dict,
     reverse_complement
 )
+
+def pytest_ignore_collect(path, config):  # skip test_bustools.py on Mac due to kb python issues
+    if sys.platform == "darwin" and "test_bustools.py" in str(path):
+        return True
 
 
 def compare_two_dataframes_without_regard_for_order_of_rows_or_columns(df1_path, df2_path, columns_to_drop=None, head=False):

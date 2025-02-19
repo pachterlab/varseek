@@ -1,6 +1,7 @@
 import os
 import re
 import subprocess
+from pathlib import Path
 
 import anndata as ad
 import numpy as np
@@ -312,8 +313,8 @@ def make_bus_df(kallisto_out, fastq_file_list, t2g_file, mm=False, union=False, 
     if parity == "paired":
         fastq_header_df["fastq_header_pair"] = None
 
-    if isinstance(fastq_file_list, str):
-        fastq_file_list = [fastq_file_list]
+    if isinstance(fastq_file_list, (str, Path)):
+        fastq_file_list = [str(fastq_file_list)]
 
     skip_upcoming_fastq = False
 

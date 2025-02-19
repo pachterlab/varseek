@@ -24,6 +24,7 @@ from varseek.utils.seq_utils import (
     make_mapping_dict,
     reverse_complement,
     safe_literal_eval,
+    get_header_set_from_fastq
 )
 from varseek.utils.visualization_utils import (
     plot_basic_bar_plot_from_dict,
@@ -40,46 +41,59 @@ def remove_dlist_duplicates(input_file, output_file=None):
     if output_file is None:
         output_file = input_file + ".tmp"  # Write to a temporary file
 
+    # TODO: replace with pyfastx (and don't forget to erase the `header = header[1:]` line when I do)
     # TODO: make header fasta from id fasta with id:header dict
 
-    sequence_to_headers_dict = {}
-    with open(input_file, "r", encoding="utf-8") as file:
-        while True:
-            header = file.readline().strip()
-            sequence = file.readline().strip()
+    try:
+        sequence_to_headers_dict = {}
+        with open(input_file, "r", encoding="utf-8") as file:
+            while True:
+                header = file.readline().strip()
+                sequence = file.readline().strip()
 
-            if not header:
-                break
+                if not header:
+                    break
 
-            if sequence in sequence_to_headers_dict:
-                header = header[1:]  # Remove '>' character
-                if header not in sequence_to_headers_dict[sequence]:
-                    sequence_to_headers_dict[sequence] += f"~{header}"
-            else:
-                sequence_to_headers_dict[sequence] = header
+                if sequence in sequence_to_headers_dict:
+                    header = header[1:]  # Remove '>' character
+                    if header not in sequence_to_headers_dict[sequence]:
+                        sequence_to_headers_dict[sequence] += f"~{header}"
+                else:
+                    sequence_to_headers_dict[sequence] = header
 
-    with open(output_file, "w", encoding="utf-8") as file:
-        for sequence, header in sequence_to_headers_dict.items():
-            file.write(f"{header}\n{sequence}\n")
+        with open(output_file, "w", encoding="utf-8") as file:
+            for sequence, header in sequence_to_headers_dict.items():
+                file.write(f"{header}\n{sequence}\n")
+
+        if output_file == input_file + ".tmp":
+            os.replace(output_file, input_file)
 
     # TODO: make id fasta from header fasta with id:header dict
 
-    if output_file == input_file + ".tmp":
-        os.replace(output_file, input_file)
+    except Exception as e:
+        if os.path.exists(output_file):
+            os.remove(output_file)
+        raise e
+        
 
 
 def capitalize_sequences(input_file, output_file=None):
     if output_file is None:
         output_file = input_file + ".tmp"  # Write to a temporary file
-    with open(input_file, "r", encoding="utf-8") as infile, open(output_file, "w", encoding="utf-8") as outfile:
-        for line in infile:
-            if line.startswith(">"):
-                outfile.write(line)
-            else:
-                outfile.write(line.upper())
-
-    if output_file == input_file + ".tmp":
-        os.replace(output_file, input_file)
+    try:
+        with open(input_file, "r", encoding="utf-8") as infile, open(output_file, "w", encoding="utf-8") as outfile:
+            for line in infile:
+                if line.startswith(">"):
+                    outfile.write(line)
+                else:
+                    outfile.write(line.upper())
+        if output_file == input_file + ".tmp":
+            os.replace(output_file, input_file)
+    except Exception as e:
+        if os.path.exists(output_file):
+            os.remove(output_file)
+        raise e
+            
 
 
 def parse_sam_and_extract_sequences(
@@ -95,25 +109,7 @@ def parse_sam_and_extract_sequences(
     if dfk_length is None:
         dfk_length = k + 2
 
-    def read_reference_genome(ref_genome_file):
-        genome = {}
-        with open(ref_genome_file, "r", encoding="utf-8") as f:
-            current_chrom = None
-            current_seq = []
-            for line in f:
-                if line.startswith(">"):
-                    if current_chrom:
-                        genome[current_chrom] = "".join(current_seq)
-                    current_chrom = line[1:].split()[0]
-                    current_seq = []
-                else:
-                    current_seq.append(line.strip())
-            if current_chrom:
-                genome[current_chrom] = "".join(current_seq)
-
-        return genome
-
-    ref_genome = read_reference_genome(ref_genome_file)
+    ref_genome = {header: sequence for header, sequence in pyfastx.Fastx(ref_genome_file)}
 
     with open(sam_file, "r", encoding="utf-8") as f, open(output_fasta_file, "w", encoding="utf-8") as dlist_fasta:
         bad_cigar = 0
@@ -248,39 +244,48 @@ def remove_mutations_which_are_a_perfect_substring_of_wt_reference_genome(
     if output_dlist is None:
         output_dlist = dlist_fasta_file + ".tmp"
 
-    i = 0
-    for dlist_header, dlist_sequence in pyfastx.Fastx(dlist_fasta_file):
-        dlist_header_shortened = dlist_header.rsplit("_", 1)[0]
-        if dlist_header_shortened in mutant_reference:
-            if sequence_match(
-                mutant_reference[dlist_header_shortened],
-                dlist_sequence,
-                strandedness=strandedness,
-            ):
-                # if mutant_reference[dlist_header_shortened] in dlist_sequence or mutant_reference[dlist_header_shortened] in reverse_complement(dlist_sequence):
-                del mutant_reference[dlist_header_shortened]
-                headers_NOT_to_put_in_dlist.add(dlist_header_shortened)
-                semicolon_separated_headers = dlist_header_shortened.split(";")
-                i += len(semicolon_separated_headers)
-
-    with open(output_dlist, "w", encoding="utf-8") as file:
+    try:
+        i = 0
         for dlist_header, dlist_sequence in pyfastx.Fastx(dlist_fasta_file):
-            if not dlist_header.rsplit("_", 1)[0] in headers_NOT_to_put_in_dlist:
-                file.write(f">{dlist_header}\n{dlist_sequence}\n")
+            dlist_header_shortened = dlist_header.rsplit("_", 1)[0]
+            if dlist_header_shortened in mutant_reference:
+                if sequence_match(
+                    mutant_reference[dlist_header_shortened],
+                    dlist_sequence,
+                    strandedness=strandedness,
+                ):
+                    # if mutant_reference[dlist_header_shortened] in dlist_sequence or mutant_reference[dlist_header_shortened] in reverse_complement(dlist_sequence):
+                    del mutant_reference[dlist_header_shortened]
+                    headers_NOT_to_put_in_dlist.add(dlist_header_shortened)
+                    semicolon_separated_headers = dlist_header_shortened.split(";")
+                    i += len(semicolon_separated_headers)
 
-    with open(output_fasta, "w", encoding="utf-8") as file:
-        for header, sequence in mutant_reference.items():
-            file.write(f">{header}\n{sequence}\n")
+        with open(output_dlist, "w", encoding="utf-8") as file:
+            for dlist_header, dlist_sequence in pyfastx.Fastx(dlist_fasta_file):
+                if not dlist_header.rsplit("_", 1)[0] in headers_NOT_to_put_in_dlist:
+                    file.write(f">{dlist_header}\n{dlist_sequence}\n")
 
-    # TODO: make id fasta from header fasta with id:header dict
+        with open(output_fasta, "w", encoding="utf-8") as file:
+            for header, sequence in mutant_reference.items():
+                file.write(f">{header}\n{sequence}\n")
 
-    if output_fasta == mutation_reference_file_fasta + ".tmp":
-        os.replace(output_fasta, mutation_reference_file_fasta)
+        if output_fasta == mutation_reference_file_fasta + ".tmp":
+            os.replace(output_fasta, mutation_reference_file_fasta)
 
-    if output_dlist == dlist_fasta_file + ".tmp":
-        os.replace(output_dlist, dlist_fasta_file)
+        if output_dlist == dlist_fasta_file + ".tmp":
+            os.replace(output_dlist, dlist_fasta_file)
 
-    print(f"Removed {i} mutations which are a perfect substring of the wildtype reference genome")
+        print(f"Removed {i} mutations which are a perfect substring of the wildtype reference genome")
+
+        # TODO: make id fasta from header fasta with id:header dict
+    except Exception as e:
+        if os.path.exists(output_fasta):
+            os.remove(output_fasta)
+
+        if os.path.exists(output_dlist):
+            os.remove(output_dlist)
+
+        raise e
 
 
 def select_contiguous_substring(sequence, kmer, read_length=150):
@@ -307,22 +312,26 @@ def select_contiguous_substring(sequence, kmer, read_length=150):
 
 def remove_Ns_fasta(fasta_file, max_ambiguous_reference=0):
     fasta_file_temp = fasta_file + ".tmp"
-    i = 0
-    if max_ambiguous_reference == 0:  # no Ns allowed
-        condition = lambda sequence: "N" not in sequence.upper()
-    else:  # at most max_ambiguous_reference Ns
-        condition = lambda sequence: sequence.upper().count("N") <= max_ambiguous_reference
-    with open(fasta_file, "r", encoding="utf-8") as infile, open(fasta_file_temp, "w", encoding="utf-8") as outfile:
-        for header, sequence in pyfastx.Fastx(infile):
-            if condition(sequence):
-                outfile.write(f">{header}\n{sequence}\n")
-            else:
-                i += 1
-
-    os.replace(fasta_file_temp, fasta_file)
-    print(f"Removed {i} sequences with Ns from {fasta_file}")
-
-
+    try:
+        i = 0
+        if max_ambiguous_reference == 0:  # no Ns allowed
+            condition = lambda sequence: "N" not in sequence.upper()
+        else:  # at most max_ambiguous_reference Ns
+            condition = lambda sequence: sequence.upper().count("N") <= max_ambiguous_reference
+        with open(fasta_file, "r", encoding="utf-8") as infile, open(fasta_file_temp, "w", encoding="utf-8") as outfile:
+            for header, sequence in pyfastx.Fastx(infile):
+                if condition(sequence):
+                    outfile.write(f">{header}\n{sequence}\n")
+                else:
+                    i += 1
+        
+        os.replace(fasta_file_temp, fasta_file)
+        print(f"Removed {i} sequences with Ns from {fasta_file}")
+    except Exception as e:
+        if os.path.exists(fasta_file_temp):
+            os.remove(fasta_file_temp)
+        raise e
+    
 def count_nearby_mutations_efficient(df, k, fasta_entry_column, start_column, end_column, header_column=None):
     # Ensure 'seq_ID' is in the DataFrame
     if "seq_ID" not in df.columns:
@@ -807,7 +816,8 @@ def hash_kmer(kmer):
     return hashlib.md5(kmer.encode("utf-8")).hexdigest()
 
 
-def count_kmer_overlaps_new(fasta_file, k=31, strandedness=False, vcrs_id_column="vcrs_id"):
+# using hash has the upside of less memory when k > 32 (because hashes are fixed 32 length), but introduce the chance of collisions
+def count_kmer_overlaps_new(fasta_file, k=31, strandedness=False, vcrs_id_column="vcrs_id", use_hash=False):
     """Count k-mer overlaps between sequences in the FASTA file."""
     # Parse the FASTA file and store sequences
     fasta_read_only = pyfastx.Fastx(fasta_file)  # new Feb 2025
@@ -821,12 +831,12 @@ def count_kmer_overlaps_new(fasta_file, k=31, strandedness=False, vcrs_id_column
     kmer_to_seqids = defaultdict(set)
     for seq_id, sequence in tqdm(fasta_read_only, desc="Generating k-mers", unit="sequence"):
         for kmer in generate_kmers(sequence, k, strandedness=strandedness):
-            # kmer_to_seqids[kmer].add(seq_id)
-            # TODO: erase the line above and try storing hashes of k-mers instead
-            kmer_hash = hash_kmer_function(kmer)  # Hash the k-mer
-            kmer_to_seqids[kmer_hash].add(seq_id)
+            if use_hash:
+                kmer = hash_kmer_function(kmer)  # Hash the k-mer
+            kmer_to_seqids[kmer].add(seq_id)
 
     # Process forward sequences only, checking overlaps with both forward and reverse complement k-mers
+    fasta_read_only = pyfastx.Fastx(fasta_file)  # new Feb 2025 - repeated because the previous loop has already exhausted the generator
     results = []
     for seq_id, sequence in tqdm(fasta_read_only, desc="Checking overlaps", unit="sequence"):
         kmers = generate_kmers(sequence, k)
@@ -835,20 +845,23 @@ def count_kmer_overlaps_new(fasta_file, k=31, strandedness=False, vcrs_id_column
         overlapping_kmers_set = set()
 
         for kmer in kmers:
-            kmer_hash = hash_kmer(kmer)
+            kmer_original = kmer  # only necessary because of the possibility of using hash
+            if use_hash:
+                kmer = hash_kmer(kmer)
             if strandedness:
-                if len(kmer_to_seqids[kmer_hash]) > 1:
+                if len(kmer_to_seqids[kmer]) > 1:
                     overlapping_kmers += 1
-                    overlapping_kmers_set.add(kmer)
-                    distinct_sequences_set.update(kmer_to_seqids[kmer_hash])
+                    overlapping_kmers_set.add(kmer_original)
+                    distinct_sequences_set.update(kmer_to_seqids[kmer])
             else:
                 kmer_rc = reverse_complement(kmer)
-                kmer_rc_hash = hash_kmer(kmer_rc)
-                if len(kmer_to_seqids[kmer_rc_hash]) > 1 or len(kmer_to_seqids[kmer_hash]) > 1:
+                if use_hash:
+                    kmer_rc = hash_kmer(kmer_rc)
+                if len(kmer_to_seqids[kmer_rc]) > 1 or len(kmer_to_seqids[kmer]) > 1:
                     overlapping_kmers += 1
-                    overlapping_kmers_set.add(kmer)
-                    distinct_sequences_set.update(kmer_to_seqids[kmer_hash])
-                    distinct_sequences_set.update(kmer_to_seqids[kmer_rc_hash])
+                    overlapping_kmers_set.add(kmer_original)
+                    distinct_sequences_set.update(kmer_to_seqids[kmer])
+                    distinct_sequences_set.update(kmer_to_seqids[kmer_rc])
 
         # Remove the current sequence from the distinct sequences count
         distinct_sequences_set.discard(seq_id)
@@ -940,23 +953,6 @@ def triplet_stats(sequence):
     triplet_complexity = len(distinct_triplets) / total_triplets if total_triplets > 0 else 0
 
     return len(distinct_triplets), total_triplets, triplet_complexity
-
-
-def parse_fastq(file_path):
-    problematic_mutations = []
-    with gzip.open(file_path, "rt", encoding="utf-8") as file:  # 'rt' mode is for reading text
-        while True:
-            header = file.readline().strip()
-            sequence = file.readline().strip()
-            plus_line = file.readline().strip()
-            quality = file.readline().strip()
-
-            if not header:
-                break
-
-            problematic_mutations.append(header[1:])  # Remove '@' character
-
-    return problematic_mutations
 
 
 def get_vcrss_that_pseudoalign_but_arent_dlisted(
@@ -1063,7 +1059,7 @@ def get_vcrss_that_pseudoalign_but_arent_dlisted(
 
         kb_extract_output_fastq_file = f"{kb_extract_out_dir_bowtie_filtered}/all/1.fastq.gz"
 
-        problematic_mutations_total = parse_fastq(kb_extract_output_fastq_file)
+        problematic_mutations_total = get_header_set_from_fastq(kb_extract_output_fastq_file, "list")
 
         df = pd.DataFrame(problematic_mutations_total, columns=[header_column_name]).drop_duplicates()
 

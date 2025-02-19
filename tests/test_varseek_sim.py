@@ -9,7 +9,7 @@ from pathlib import Path
 
 import varseek as vk
 
-store_out_in_permanent_paths = True
+store_out_in_permanent_paths = False
 tests_dir = Path(__file__).resolve().parent
 pytest_permanent_out_dir_base = tests_dir / "pytest_output" / Path(__file__).stem
 current_datetime = datetime.now().strftime("date_%Y_%m_%d_time_%H%M_%S")
@@ -56,13 +56,12 @@ def test_basic_sim(toy_mutation_metadata_df_with_read_parents_path, temporary_ou
     variants_updated_csv_out, reads_csv_out, reads_fastq_out = temporary_output_files["variants_updated_csv_out"], temporary_output_files["reads_csv_out"], temporary_output_files["reads_fastq_out"]
 
     simulated_df_dict_from_test = vk.sim(
-        mutations = toy_mutation_metadata_df_with_read_parents_path,
-        reads_fastq_out = reads_fastq_out,
+        variants = toy_mutation_metadata_df_with_read_parents_path,
         number_of_variants_to_sample=number_of_variants_to_sample,
-        strand=strand,
         number_of_reads_per_variant_alt="all",
+        strand=strand,
         read_length=read_length,
-        seed=seed,
+        filters=filters,
         add_noise=add_noise,
         error_rate=error_rate,
         max_errors=max_errors,
@@ -72,12 +71,13 @@ def test_basic_sim(toy_mutation_metadata_df_with_read_parents_path, temporary_ou
         var_column="mutation",
         reference_out_dir=None,
         vk_build_out_dir=None,
-        filters=filters,
+        reads_fastq_out = reads_fastq_out,
         reads_csv_out=reads_csv_out,
         variants_updated_csv_out=variants_updated_csv_out,
+        seed=seed,
     )
 
-    read_df_from_test, mutation_metadata_df_from_test = simulated_df_dict_from_test["read_df"], simulated_df_dict_from_test["mutations"]
+    read_df_from_test, mutation_metadata_df_from_test = simulated_df_dict_from_test["read_df"], simulated_df_dict_from_test["variants"]
     
     output_metadata_df_expected = pd.read_csv(toy_mutation_metadata_df_with_read_parents_path)
 

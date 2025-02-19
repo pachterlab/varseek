@@ -82,11 +82,11 @@ from pdb import set_trace as st
 
 def test_bustools_df_bulk(temp_fastq_file, temp_fasta_file, temp_index_file, temp_t2g_file, temp_kb_count_out_folder, tmp_path_factory):
     k = "31"
-    kb_ref_command = ["kb", "ref", "--workflow", "custom", "-t", "16", "-i", temp_index_file, "--d-list", "None", "-k", k, temp_fasta_file]
+    kb_ref_command = ["kb", "ref", "--workflow", "custom", "-t", "2", "-i", str(temp_index_file), "--d-list", "None", "-k", k, str(temp_fasta_file)]
     subprocess.run(kb_ref_command, check=True)
     create_identity_t2g(temp_fasta_file, temp_t2g_file)
     
-    kb_count_command = ["kb", "count", "-t", "16", "-k", str(k), "-i", temp_index_file, "-g", temp_t2g_file, "-x", "bulk", "--strand", "forward", "--num", "--h5ad", "--parity", "single", "-o", temp_kb_count_out_folder, temp_fastq_file]
+    kb_count_command = ["kb", "count", "-t", "2", "-k", str(k), "-i", str(temp_index_file), "-g", str(temp_t2g_file), "-x", "bulk", "--strand", "forward", "--num", "--h5ad", "--parity", "single", "-o", str(temp_kb_count_out_folder), str(temp_fastq_file)]
     subprocess.run(kb_count_command, check=True)
 
     bustools = None

@@ -289,7 +289,6 @@ def split_fastq_reads_by_N(input_fastq_file, out_dir=".", minimum_sequence_lengt
 
         with open_func(output_fastq_file, "wt") as out_file:
             for header, sequence, quality in input_fastq_read_only:
-                header = header[1:]  # Remove '@' character
                 if technology != "bulk" and contains_barcodes_or_umis:
                     if technology == "smartseq3":
                         sc_read_has_index_and_umi = check_if_read_has_index_and_umi_smartseq3(sequence)  # TODO: write this

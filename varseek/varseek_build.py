@@ -1254,11 +1254,14 @@ def build(
 
     mutations["inserted_nucleotide_length"] = None
 
+    number_of_mutations_greater_than_insertion_size_limit = 0
     if insertion_and_delins_and_dup_and_inversion_mask.any():
         mutations.loc[insertion_and_delins_and_dup_and_inversion_mask, "inserted_nucleotide_length"] = mutations.loc[insertion_and_delins_and_dup_and_inversion_mask, "mut_nucleotides"].str.len()
 
+        mutations_len = len(mutations)
         if insertion_size_limit is not None:
-            mutations = mutations[(mutations["inserted_nucleotide_length"].isna()) | (mutations["inserted_nucleotide_length"] <= insertion_size_limit)]  # Keep rows where it is None/NaN  # Keep rows where it's <= insertion_size_limit
+            mutations = mutations[(mutations["inserted_nucleotide_length"].isna()) | (mutations["inserted_nucleotide_length"] <= insertion_size_limit)]  # # Keep rows where it's <= insertion_size_limit
+        number_of_mutations_greater_than_insertion_size_limit = mutations_len - len(mutations)
 
     mutations["beginning_mutation_overlap_with_right_flank"] = 0
     mutations["end_mutation_overlap_with_left_flank"] = 0
@@ -1417,11 +1420,15 @@ def build(
         """
 
     if min_seq_len:
-        report += f"""  {rows_less_than_minimum} variants with fragment length < min_seq_len found ({rows_less_than_minimum/total_mutations*100:.3f}%)
+        report += f"""  {rows_less_than_minimum} variants with fragment length < min_seq_len removed ({rows_less_than_minimum/total_mutations*100:.3f}%)
         """
 
     if max_ambiguous is not None:
         report += f"""  {num_rows_with_N} variants with Ns found ({num_rows_with_N/total_mutations*100:.3f}%)
+        """
+
+    if number_of_mutations_greater_than_insertion_size_limit > 0:
+        report += f"""  {number_of_mutations_greater_than_insertion_size_limit} variants with inserted nucleotide length > insertion_size_limit removed ({number_of_mutations_greater_than_insertion_size_limit/total_mutations*100:.3f}%)
         """
 
     if good_mutations != total_mutations:

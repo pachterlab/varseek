@@ -13,9 +13,11 @@ import subprocess
 import sys
 import time
 from collections import OrderedDict
-from datetime import datetime
-import shlex
+from datetime import datetime, date
+import pandas as pd
+import anndata as ad
 import pathlib
+import numpy as np
 
 import requests
 from gget.gget_cosmic import is_valid_email
@@ -89,24 +91,30 @@ def check_file_path_is_string_with_valid_extension(file_path, variable_name, fil
         "index": {".idx"},
         "h5ad": {".h5ad", ".h5"},
     }
-    if file_path:  # skip if None or empty string, as I will provide the default path in this case
-        # check if file_path is a string
-        if not isinstance(file_path, (str, Path)):
-            raise ValueError(f"{variable_name} must be a string, got {type(file_path)}")
-
-        # check if file_type is a single value or list of values
-        if isinstance(file_type, str):
-            valid_extensions_for_file_type = valid_extensions.get(file_type)
-        elif isinstance(file_type, (list, set, tuple)):
-            valid_extensions_for_file_type = set()
-            for ft in file_type:
-                valid_extensions_for_file_type.update(valid_extensions.get(ft))
+    if file_path is not None:  # skip if None or empty string, as I will provide the default path in this case
+        # check if file_path is a dataframe or AnnData with the correct extension
+        if isinstance(file_path, pd.DataFrame) and file_type in {"csv", "tsv"}:
+            pass
+        elif isinstance(file_path, ad.AnnData) and file_type in {"h5ad"}:
+            pass
         else:
-            raise ValueError(f"file_type must be a string or a list, got {type(file_type)}")
+            # check if file_path is a string
+            if not isinstance(file_path, (str, Path)):
+                raise ValueError(f"{variable_name} must be a string, got {type(file_path)}")
 
-        # check if file has valid extension
-        if not any(file_path.lower().endswith((ext, f"{ext}.zip", f"{ext}.gz")) for ext in valid_extensions_for_file_type):
-            raise ValueError(f"Invalid file extension for {variable_name}. Must be one of {valid_extensions_for_file_type}")
+            # check if file_type is a single value or list of values
+            if isinstance(file_type, str):
+                valid_extensions_for_file_type = valid_extensions.get(file_type)
+            elif isinstance(file_type, (list, set, tuple)):
+                valid_extensions_for_file_type = set()
+                for ft in file_type:
+                    valid_extensions_for_file_type.update(valid_extensions.get(ft))
+            else:
+                raise ValueError(f"file_type must be a string or a list, got {type(file_type)}")
+
+            # check if file has valid extension
+            if not any(file_path.lower().endswith((ext, f"{ext}.zip", f"{ext}.gz")) for ext in valid_extensions_for_file_type):
+                raise ValueError(f"Invalid file extension for {variable_name}. Must be one of {valid_extensions_for_file_type}")
     else:
         if required:
             raise ValueError(f"{file_type} file path is required")
@@ -165,6 +173,30 @@ def report_time_elapsed(start_time, logger=None, function_name=None):
     else:
         print(time_elapsed_message)
 
+def convert_value_for_json(value):
+    if isinstance(value, Path):
+        return str(value)
+    elif isinstance(value, pd.DataFrame):
+        return "DataFrame Object"
+    elif isinstance(value, pd.Series):
+        return "Series Object"
+    elif isinstance(value, ad.AnnData):
+        return "AnnData Object"
+    elif isinstance(value, np.ndarray):
+        return value.tolist()
+    elif isinstance(value, (np.int64, np.int32)):
+        return int(value)
+    elif isinstance(value, (np.float64, np.float32)):
+        return float(value)
+    elif isinstance(value, (datetime, date)):
+        return value.isoformat()
+    elif isinstance(value, (set, frozenset)):
+        return list(value)
+    elif isinstance(value, bytes):
+        return value.decode('utf-8', errors='replace')
+    # Add more conversions as needed
+    else:
+        return value
 
 def save_params_to_config_file(params=None, out_file="run_config.json", remove_passwords=True):
     out_file_directory = os.path.dirname(out_file)
@@ -182,7 +214,7 @@ def save_params_to_config_file(params=None, out_file="run_config.json", remove_p
             if "password" in key.lower():
                 params[key] = "********"
 
-    params = {k: str(v) if isinstance(v, Path) else v for k, v in params.items()}  # converts Path to str to avoid json serialization error
+    params = {key: convert_value_for_json(value) for key, value in params.items()}  # avoid json serialization errors
 
     # Write to JSON
     with open(out_file, "w", encoding="utf-8") as file:

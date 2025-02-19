@@ -99,11 +99,9 @@ def get_header_set_from_fasta(synthetic_read_fa):
 
 def create_identity_t2g(mutation_reference_file_fasta, out="./cancer_mutant_reference_t2g.txt"):
     if not os.path.exists(out):
-        with open(mutation_reference_file_fasta, "r", encoding="utf-8") as fasta, open(out, "w", encoding="utf-8") as t2g:
-            for line in fasta:
-                if line.startswith(">"):
-                    header = line[1:].strip()
-                    t2g.write(f"{header}\t{header}\n")
+        with open(out, "w", encoding="utf-8") as t2g:
+            for header, _ in pyfastx.Fastx(mutation_reference_file_fasta):
+                t2g.write(f"{header}\t{header}\n")
     else:
         print(f"{out} already exists")
 
@@ -191,26 +189,23 @@ def filter_fasta(input_fasta, output_fasta=None, sequence_names_set=None, keep="
     else:
         raise ValueError("Invalid value for 'keep' parameter")
 
-    if keep == "not_in_list" and not sequence_names_set:
-        print("No sequences to filter out")
-        shutil.copyfile(input_fasta, output_fasta)
-    else:
-        with open(input_fasta, "r", encoding="utf-8") as infile, open(output_fasta, "w", encoding="utf-8") as outfile:
-            write_entry = False
-            for line in infile:
-                if line.startswith(">"):
-                    # Extract the header without the '>'
-                    header = line[1:].strip()
+    try:
+        if keep == "not_in_list" and not sequence_names_set:
+            print("No sequences to filter out")
+            shutil.copyfile(input_fasta, output_fasta)
+        else:
+            with open(output_fasta, "w", encoding="utf-8") as outfile:
+                for header, sequence in pyfastx.Fastx(input_fasta):
                     if condition(header):
-                        write_entry = True
-                        outfile.write(line)
-                    else:
-                        write_entry = False
-                elif write_entry:
-                    outfile.write(line)
+                        outfile.write(f">{header}\n{sequence}\n")
 
-    if output_fasta == input_fasta + ".tmp":
-        os.replace(output_fasta, input_fasta)
+
+        if output_fasta == input_fasta + ".tmp":
+            os.replace(output_fasta, input_fasta)
+    except Exception as e:
+        if os.path.exists(output_fasta):
+            os.remove(output_fasta)
+        raise RuntimeError(f"Error filtering FASTA file '{input_fasta}': {e}") from e
 
 
 def find_genes_with_aligned_reads_for_kb_extract(adata_path, number_genes=None):
@@ -342,9 +337,9 @@ def safe_literal_eval(val):
 
 def get_header_set_from_fastq(fastq_file, output_format="set"):
     if output_format == "set":
-        headers = {header[1:].strip() for header, _, _ in pyfastx.Fastx(fastq_file)}
+        headers = {header.strip() for header, _, _ in pyfastx.Fastx(fastq_file)}
     elif output_format == "list":
-        headers = [header[1:].strip() for header, _, _ in pyfastx.Fastx(fastq_file)]
+        headers = [header.strip() for header, _, _ in pyfastx.Fastx(fastq_file)]
     else:
         raise ValueError(f"Invalid output_format: {output_format}")
     return headers
@@ -580,6 +575,7 @@ def compare_dicts(dict1, dict2):
 
 
 def download_t2t_reference_files(reference_out_dir_sequences_dlist):
+    os.makedirs(reference_out_dir_sequences_dlist, exist_ok=True)
     ref_dlist_fa_genome = f"{reference_out_dir_sequences_dlist}/GCF_009914755.1_T2T-CHM13v2.0_genomic.fna"
     ref_dlist_fa_cdna = f"{reference_out_dir_sequences_dlist}/rna.fna"
     ref_dlist_gtf = f"{reference_out_dir_sequences_dlist}/genomic.gtf"
@@ -611,12 +607,27 @@ def download_t2t_reference_files(reference_out_dir_sequences_dlist):
 
     return ref_dlist_fa_genome, ref_dlist_fa_cdna, ref_dlist_gtf
 
+def get_gtf_release(true_release, ensembl_grch37_true_release_to_gtf_release_dict):
+    for (low, high), mapped_release in ensembl_grch37_true_release_to_gtf_release_dict.items():
+        if low <= int(true_release) <= high:
+            return mapped_release
+    print(f"No gtf mapping found for release {true_release}. Using the true release.")
+    return true_release
 
 def download_ensembl_reference_files(reference_out_dir_sequences_dlist, grch="37", ensembl_release="93"):
+    ensembl_grch37_true_release_to_gtf_release_dict = {
+        (75, 81): 75,
+        (82, 84): 82,
+        (85, 86): 85,
+        (87, float("inf")): 87,  # Use infinity for ">= 87"
+    }
+
+    get_gtf_release(ensembl_release, ensembl_grch37_true_release_to_gtf_release_dict)
+    
     grch = str(grch)
     ensembl_release = str(ensembl_release)
-    ensembl_grch_gget = "human_grch37" if grch == "37" else grch
-    ensembl_release_gtf = "87" if (grch == "37" and ensembl_release == "93") else ensembl_release
+    ensembl_species_gget = "human_grch37" if grch == "37" else "human"
+    ensembl_release_gtf = get_gtf_release(ensembl_release, ensembl_grch37_true_release_to_gtf_release_dict) if str(grch) == "37" else ensembl_release
 
     ref_dlist_fa_genome = f"{reference_out_dir_sequences_dlist}/Homo_sapiens.GRCh{grch}.dna.primary_assembly.fa"
     ref_dlist_fa_cdna = f"{reference_out_dir_sequences_dlist}/Homo_sapiens.GRCh{grch}.cdna.all.fa"
@@ -645,7 +656,7 @@ def download_ensembl_reference_files(reference_out_dir_sequences_dlist, grch="37
             "--out_dir",
             reference_out_dir_sequences_dlist,
             "-d",
-            ensembl_grch_gget,
+            ensembl_species_gget,
         ]
 
         subprocess.run(gget_ref_command_dlist, check=True)

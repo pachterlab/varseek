@@ -70,7 +70,6 @@ def validate_input_sim(params_dict):
         ("w", 1, False),
         ("k", 1, False),
         ("number_of_variants_to_sample", 1, False),
-        ("insertion_size_limit", 1, False),
         ("seed", 0, True),
     ]:
         param_value = params_dict.get(param_name)
