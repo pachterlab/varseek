@@ -55,3 +55,101 @@ Number of total variants: 4 (9 filtered); VCRSs: 4 (4 filtered); unique variants
 Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
 Number of total variants: 17 (0 filtered); VCRSs: 11 (0 filtered); unique variants: 8 (0 filtered); merged variants: 9 (0 filtered)
 Number of total variants: 17 (0 filtered); VCRSs: 11 (0 filtered); unique variants: 8 (0 filtered); merged variants: 9 (0 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 13 (4 filtered); VCRSs: 8 (3 filtered); unique variants: 6 (2 filtered); merged variants: 7 (2 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 13 (4 filtered); VCRSs: 8 (3 filtered); unique variants: 6 (2 filtered); merged variants: 7 (2 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 13 (4 filtered); VCRSs: 8 (3 filtered); unique variants: 6 (2 filtered); merged variants: 7 (2 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 13 (4 filtered); VCRSs: 8 (3 filtered); unique variants: 6 (2 filtered); merged variants: 7 (2 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 13 (4 filtered); VCRSs: 8 (3 filtered); unique variants: 6 (2 filtered); merged variants: 7 (2 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 13 (4 filtered); VCRSs: 8 (3 filtered); unique variants: 6 (2 filtered); merged variants: 7 (2 filtered)
+Number of total variants: 6 (7 filtered); VCRSs: 5 (3 filtered); unique variants: 4 (2 filtered); merged variants: 2 (5 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 7 (10 filtered); VCRSs: 6 (5 filtered); unique variants: 5 (3 filtered); merged variants: 2 (7 filtered)
+Number of total variants: 3 (4 filtered); VCRSs: 3 (3 filtered); unique variants: 3 (2 filtered); merged variants: 0 (2 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 5 (12 filtered); VCRSs: 5 (6 filtered); unique variants: 5 (3 filtered); merged variants: 0 (9 filtered)
+Number of total variants: 4 (1 filtered); VCRSs: 4 (1 filtered); unique variants: 4 (1 filtered); merged variants: 0 (0 filtered)
+Number of total variants: 2 (2 filtered); VCRSs: 2 (2 filtered); unique variants: 2 (2 filtered); merged variants: 0 (0 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 13 (4 filtered); VCRSs: 8 (3 filtered); unique variants: 6 (2 filtered); merged variants: 7 (2 filtered)
+Number of total variants: 4 (9 filtered); VCRSs: 4 (4 filtered); unique variants: 4 (2 filtered); merged variants: 0 (7 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 13 (4 filtered); VCRSs: 8 (3 filtered); unique variants: 6 (2 filtered); merged variants: 7 (2 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 13 (4 filtered); VCRSs: 8 (3 filtered); unique variants: 6 (2 filtered); merged variants: 7 (2 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 13 (4 filtered); VCRSs: 8 (3 filtered); unique variants: 6 (2 filtered); merged variants: 7 (2 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 13 (4 filtered); VCRSs: 8 (3 filtered); unique variants: 6 (2 filtered); merged variants: 7 (2 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 13 (4 filtered); VCRSs: 8 (3 filtered); unique variants: 6 (2 filtered); merged variants: 7 (2 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 13 (4 filtered); VCRSs: 8 (3 filtered); unique variants: 6 (2 filtered); merged variants: 7 (2 filtered)
+Number of total variants: 6 (7 filtered); VCRSs: 5 (3 filtered); unique variants: 4 (2 filtered); merged variants: 2 (5 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 7 (10 filtered); VCRSs: 6 (5 filtered); unique variants: 5 (3 filtered); merged variants: 2 (7 filtered)
+Number of total variants: 3 (4 filtered); VCRSs: 3 (3 filtered); unique variants: 3 (2 filtered); merged variants: 0 (2 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 5 (12 filtered); VCRSs: 5 (6 filtered); unique variants: 5 (3 filtered); merged variants: 0 (9 filtered)
+Number of total variants: 4 (1 filtered); VCRSs: 4 (1 filtered); unique variants: 4 (1 filtered); merged variants: 0 (0 filtered)
+Number of total variants: 2 (2 filtered); VCRSs: 2 (2 filtered); unique variants: 2 (2 filtered); merged variants: 0 (0 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 13 (4 filtered); VCRSs: 8 (3 filtered); unique variants: 6 (2 filtered); merged variants: 7 (2 filtered)
+Number of total variants: 4 (9 filtered); VCRSs: 4 (4 filtered); unique variants: 4 (2 filtered); merged variants: 0 (7 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 13 (4 filtered); VCRSs: 8 (3 filtered); unique variants: 6 (2 filtered); merged variants: 7 (2 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 13 (4 filtered); VCRSs: 8 (3 filtered); unique variants: 6 (2 filtered); merged variants: 7 (2 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 13 (4 filtered); VCRSs: 8 (3 filtered); unique variants: 6 (2 filtered); merged variants: 7 (2 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 13 (4 filtered); VCRSs: 8 (3 filtered); unique variants: 6 (2 filtered); merged variants: 7 (2 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 13 (4 filtered); VCRSs: 8 (3 filtered); unique variants: 6 (2 filtered); merged variants: 7 (2 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 13 (4 filtered); VCRSs: 8 (3 filtered); unique variants: 6 (2 filtered); merged variants: 7 (2 filtered)
+Number of total variants: 6 (7 filtered); VCRSs: 5 (3 filtered); unique variants: 4 (2 filtered); merged variants: 2 (5 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 7 (10 filtered); VCRSs: 6 (5 filtered); unique variants: 5 (3 filtered); merged variants: 2 (7 filtered)
+Number of total variants: 3 (4 filtered); VCRSs: 3 (3 filtered); unique variants: 3 (2 filtered); merged variants: 0 (2 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 5 (12 filtered); VCRSs: 5 (6 filtered); unique variants: 5 (3 filtered); merged variants: 0 (9 filtered)
+Number of total variants: 4 (1 filtered); VCRSs: 4 (1 filtered); unique variants: 4 (1 filtered); merged variants: 0 (0 filtered)
+Number of total variants: 2 (2 filtered); VCRSs: 2 (2 filtered); unique variants: 2 (2 filtered); merged variants: 0 (0 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 13 (4 filtered); VCRSs: 8 (3 filtered); unique variants: 6 (2 filtered); merged variants: 7 (2 filtered)
+Number of total variants: 4 (9 filtered); VCRSs: 4 (4 filtered); unique variants: 4 (2 filtered); merged variants: 0 (7 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 17 (0 filtered); VCRSs: 11 (0 filtered); unique variants: 8 (0 filtered); merged variants: 9 (0 filtered)
+Number of total variants: 17 (0 filtered); VCRSs: 11 (0 filtered); unique variants: 8 (0 filtered); merged variants: 9 (0 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 13 (4 filtered); VCRSs: 8 (3 filtered); unique variants: 6 (2 filtered); merged variants: 7 (2 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 13 (4 filtered); VCRSs: 8 (3 filtered); unique variants: 6 (2 filtered); merged variants: 7 (2 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 13 (4 filtered); VCRSs: 8 (3 filtered); unique variants: 6 (2 filtered); merged variants: 7 (2 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 13 (4 filtered); VCRSs: 8 (3 filtered); unique variants: 6 (2 filtered); merged variants: 7 (2 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 13 (4 filtered); VCRSs: 8 (3 filtered); unique variants: 6 (2 filtered); merged variants: 7 (2 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 13 (4 filtered); VCRSs: 8 (3 filtered); unique variants: 6 (2 filtered); merged variants: 7 (2 filtered)
+Number of total variants: 6 (7 filtered); VCRSs: 5 (3 filtered); unique variants: 4 (2 filtered); merged variants: 2 (5 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 7 (10 filtered); VCRSs: 6 (5 filtered); unique variants: 5 (3 filtered); merged variants: 2 (7 filtered)
+Number of total variants: 3 (4 filtered); VCRSs: 3 (3 filtered); unique variants: 3 (2 filtered); merged variants: 0 (2 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 5 (12 filtered); VCRSs: 5 (6 filtered); unique variants: 5 (3 filtered); merged variants: 0 (9 filtered)
+Number of total variants: 4 (1 filtered); VCRSs: 4 (1 filtered); unique variants: 4 (1 filtered); merged variants: 0 (0 filtered)
+Number of total variants: 2 (2 filtered); VCRSs: 2 (2 filtered); unique variants: 2 (2 filtered); merged variants: 0 (0 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 13 (4 filtered); VCRSs: 8 (3 filtered); unique variants: 6 (2 filtered); merged variants: 7 (2 filtered)
+Number of total variants: 4 (9 filtered); VCRSs: 4 (4 filtered); unique variants: 4 (2 filtered); merged variants: 0 (7 filtered)
+Number of total variants: 17; VCRSs: 11; unique variants: 8; merged variants: 9
+Number of total variants: 17 (0 filtered); VCRSs: 11 (0 filtered); unique variants: 8 (0 filtered); merged variants: 9 (0 filtered)
+Number of total variants: 17 (0 filtered); VCRSs: 11 (0 filtered); unique variants: 8 (0 filtered); merged variants: 9 (0 filtered)

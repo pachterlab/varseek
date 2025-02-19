@@ -7,12 +7,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.patches import Rectangle
 from matplotlib.ticker import MaxNLocator, MultipleLocator
-from matplotlib_venn import venn2
-from rich.console import Console
-from rich.table import Table
 from scipy import stats
-
-console = Console()
 
 # Set global settings
 plt.rcParams.update(
@@ -419,6 +414,7 @@ def create_stratified_metric_bar_plot(
 
 
 def create_venn_diagram(true_set, positive_set, TN=None, mm=None, out_path=None):
+    from matplotlib_venn import venn2
     venn = venn2(
         [true_set, positive_set],
         set_labels=("Present in reads", "Detected by alignment"),
@@ -694,6 +690,10 @@ def draw_confusion_matrix(metric_dictionary_reads, title="Confusion Matrix", tit
 
 
 def draw_confusion_matrix_rich(metric_dictionary_reads, title="Confusion Matrix", suffix="", additional_fp_key=""):
+    from rich.console import Console
+    from rich.table import Table
+    console = Console()
+    
     # Sample dictionary with confusion matrix values
     confusion_matrix = {
         "TP": metric_dictionary_reads[f"TP{suffix}"],  # True Positive

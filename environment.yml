@@ -13,4 +13,4 @@ dependencies:
   - bowtie2>=2.5.4
   - seqtk>=1.4
   - pip:
-      - -r requirements.txt  # or use `pyproject.toml` for Python packages
+      - .  # . installs varseek and dependencies from pyproject.toml  # -r requirements.txt

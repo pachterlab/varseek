@@ -64,6 +64,33 @@ def temporary_output_files():
 
         # Temporary files are automatically cleaned up after `yield`
 
+def test_parameter_values(toy_mutation_metadata_df_path):
+    input_dir = os.path.dirname(toy_mutation_metadata_df_path)
+
+    good_parameter_values_list_of_dicts = [
+        {"input_dir": input_dir, "filters": "numeric_value:greater_or_equal=3", "variants_updated_vk_info_csv": toy_mutation_metadata_df_path},  # single string filter
+        {"input_dir": input_dir, "filters": ["numeric_value:greater_or_equal=3"], "variants_updated_vk_info_csv": toy_mutation_metadata_df_path},  # list filter
+        {"input_dir": input_dir, "filters": {"numeric_value:greater_or_equal=3"}, "variants_updated_vk_info_csv": toy_mutation_metadata_df_path},  # set filter
+        {"input_dir": input_dir, "filters": ("numeric_value:greater_or_equal=3", ), "variants_updated_vk_info_csv": toy_mutation_metadata_df_path},  # tuple filter
+    ]
+    
+    
+    bad_parameter_values_list_of_dicts = [
+        {"input_dir": input_dir, "filters": "numeric_value-greater_or_equal=3", "variants_updated_vk_info_csv": toy_mutation_metadata_df_path},  # dash instead of colon
+        {"input_dir": input_dir, "filters": "numeric_value:greater_or_equal", "variants_updated_vk_info_csv": toy_mutation_metadata_df_path},  # no equals value
+        {"input_dir": input_dir, "filters": "numeric_value", "variants_updated_vk_info_csv": toy_mutation_metadata_df_path},  # no rule and value
+        {"input_dir": ".", "filters": "numeric_value", "variants_updated_vk_info_csv": toy_mutation_metadata_df_path},  # variants_updated_vk_info_csv is not found at input_dir
+        {"input_dir": None, "filters": "numeric_value:greater_or_equal=3", "variants_updated_vk_info_csv": toy_mutation_metadata_df_path},  # None input_dir
+    ]
+    
+    for parameter_dict in good_parameter_values_list_of_dicts:
+        vk.filter(**parameter_dict, overwrite=True)
+
+    for parameter_dict in bad_parameter_values_list_of_dicts:
+        with pytest.raises(ValueError):
+            vk.filter(**parameter_dict, overwrite=True)
+    
+
 def test_no_filters(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_vcrs_fa_path, temporary_output_files):
     output_metadata_df, output_vcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_vcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
 

@@ -16,7 +16,6 @@ import numpy as np
 import pandas as pd
 import pyfastx
 import requests
-from Bio.Seq import Seq
 from tqdm import tqdm
 
 from varseek.constants import (
@@ -391,7 +390,7 @@ def check_for_read_kmer_in_vcrs(read_df, unique_vcrs_df, k, subset=None, strand=
 
         if strand != "f":
             vcrs_sequence_rc = vcrs_sequence_dict_rc.get(row["vcrs_header"], "")
-            contains_kmer_in_vcrs_r = contains_kmer_in_vcrs(Seq(read_sequence).reverse_complement(), vcrs_sequence_rc, k)
+            contains_kmer_in_vcrs_r = contains_kmer_in_vcrs(reverse_complement(read_sequence), vcrs_sequence_rc, k)
             if strand == "r":
                 return contains_kmer_in_vcrs_r
 

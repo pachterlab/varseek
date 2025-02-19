@@ -7,7 +7,6 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 import pyfastx
-import pysam
 import anndata as ad
 import scipy.sparse as sp
 from scipy.sparse import csr_matrix
@@ -726,6 +725,7 @@ def make_vaf_matrix(adata_mutant_vcrs_path, adata_wt_vcrs_path, adata_vaf_output
 
 # convert gatk output vcf to pandas df
 def vcf_to_dataframe(vcf_file, additional_columns=True, explode_alt=True, filter_empty_alt=True):
+    import pysam
     """Convert a VCF file to a Pandas DataFrame."""
     vcf = pysam.VariantFile(vcf_file)
 
@@ -776,6 +776,7 @@ def vcf_to_dataframe(vcf_file, additional_columns=True, explode_alt=True, filter
 
 
 def add_vcf_info_to_cosmic_tsv(cosmic_tsv, reference_genome_fasta, cosmic_df_out=None, cosmic_cdna_info_csv=None, mutation_source="cds"):
+    import pysam
     # load in COSMIC tsv with columns CHROM, POS, ID, REF, ALT
     cosmic_df = pd.read_csv(cosmic_tsv, sep="\t", usecols=["Mutation genome position GRCh37", "GENOMIC_WT_ALLELE_SEQ", "GENOMIC_MUT_ALLELE_SEQ", "ACCESSION_NUMBER", "Mutation CDS", "MUTATION_URL"])
 

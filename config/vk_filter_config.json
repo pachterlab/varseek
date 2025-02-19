@@ -1,8 +1,8 @@
 {
     "input_dir": ".",
     "filters": [
-        "wt_sequence_read_parent:is_not_null",
-        "mutant_sequence_read_parent:is_not_null"
+        "mutant_sequence_read_parent:is_not_null",
+        "wt_sequence_read_parent:is_not_null"
     ],
     "variants_updated_vk_info_csv": "DataFrame Object",
     "variants_updated_exploded_vk_info_csv": null,
