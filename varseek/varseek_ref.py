@@ -406,6 +406,16 @@ def ref(
         logger.info("Using COSMIC password from COSMIC_PASSWORD environment variable")
         params_dict["cosmic_password"] = cosmic_password
 
+    # ensure that max_ambiguous (build) and max_ambiguous_vcrs (info) are the same if only one is provided
+    if params_dict.get("max_ambiguous") and not params_dict.get("max_ambiguous_vcrs"):
+        params_dict['max_ambiguous_vcrs'] = params_dict['max_ambiguous']
+    if params_dict.get("max_ambiguous_vcrs") and not params_dict.get("max_ambiguous"):
+        params_dict['max_ambiguous'] = params_dict['max_ambiguous_vcrs']
+
+    if params_dict.get("columns_to_include") is not None:
+        logger.info("columns_to_include is not None, so minimum_info_columns will be set to False")
+        minimum_info_columns = False
+
     # decide whether to skip vk info and vk filter
     # filters_column_names = list({filter.split('-')[0] for filter in filters})
     skip_filter = not bool(params_dict.get("filters"))  # skip filtering if no filters provided

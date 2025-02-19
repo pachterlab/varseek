@@ -598,7 +598,7 @@ def build(
     - original_order                     (True/False) Whether to keep the original order of the sequences in the output fasta file. Default: True.
 
     # # specific databases
-    - cosmic_version                     (str) COSMIC release version to download. Default: "100".
+    - cosmic_version                     (str) COSMIC release version to download. Default: "101".
     - cosmic_grch                        (str) COSMIC genome reference version to download. Default: "37".
     - cosmic_email                       (str) Email address for COSMIC download. Default: None.
     - cosmic_password                    (str) Password for COSMIC download. Default: None.
@@ -691,7 +691,7 @@ def build(
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
     # * 7. Define kwargs defaults
-    cosmic_version = kwargs.get("cosmic_version", None)
+    cosmic_version = kwargs.get("cosmic_version", "101")
     cosmic_grch = kwargs.get("cosmic_grch", None)
     cosmic_email = kwargs.get("cosmic_email", None)
     cosmic_password = kwargs.get("cosmic_password", None)
@@ -729,8 +729,6 @@ def build(
 
     if isinstance(mutations, str):
         if mutations in supported_databases_and_corresponding_reference_sequence_type and "cosmic" in mutations:
-            if not cosmic_version:
-                cosmic_version = "100"
             if not cosmic_grch:
                 grch_dict = supported_databases_and_corresponding_reference_sequence_type[mutations]["database_version_to_reference_assembly_build"]
                 largest_key = max(int(k) for k in grch_dict.keys())
