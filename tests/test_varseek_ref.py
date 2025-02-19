@@ -2,6 +2,7 @@ import os
 import shutil
 from pathlib import Path
 import sys
+from datetime import datetime
 
 import pandas as pd
 import pytest
@@ -16,21 +17,34 @@ from .conftest import (
     compare_two_t2gs,
 )
 
-test_directory = os.path.dirname(os.path.abspath(__file__))
+sample_size=12_000  # 2,000 each for each of the 6 mutation types
+columns_to_drop_info_filter = None  # drops columns for info and filter df - will not throw an error if the column does not exist in the df   # ["nearby_variants", "number_of_kmers_with_overlap_to_other_VCRSs", "number_of_other_VCRSs_with_overlapping_kmers", "overlapping_kmers", "VCRSs_with_overlapping_kmers", "kmer_overlap_with_other_VCRSs"]
+make_new_gt = True
+store_out_in_permanent_paths = False
+
+test_directory = Path(__file__).resolve().parent
 ground_truth_folder = os.path.join(test_directory, "pytest_ground_truth")
 reference_folder_parent = os.path.join(os.path.dirname(test_directory), "data", "reference")
 ensembl_grch37_release93_folder = os.path.join(reference_folder_parent, "ensembl_grch37_release93")
 cosmic_csv_path_starting = os.path.join(reference_folder_parent, "cosmic", "CancerMutationCensus_AllData_Tsv_v100_GRCh37_v2", "CancerMutationCensus_AllData_v100_GRCh37_mutation_workflow.csv")
-
-sample_size=12_000  # 2,000 each for each of the 6 mutation types
-columns_to_drop_info_filter = None  # drops columns for info and filter df - will not throw an error if the column does not exist in the df   # ["nearby_variants", "number_of_kmers_with_overlap_to_other_VCRSs", "number_of_other_VCRSs_with_overlapping_kmers", "overlapping_kmers", "VCRSs_with_overlapping_kmers", "kmer_overlap_with_other_VCRSs"]
-make_new_gt = False
-
+pytest_permanent_out_dir_base = test_directory / "pytest_output" / Path(__file__).stem
+current_datetime = datetime.now().strftime("date_%Y_%m_%d_time_%H%M_%S")
 
 # If "tests/test_ref.py" is not explicitly in the command line arguments, skip this module.
 if not any("tests/test_ref.py" in arg for arg in sys.argv):
     pytest.skip("Skipping test_ref.py due to its slow nature; run this file by explicity including the file i.e., 'pytest tests/test_ref.py'", allow_module_level=True)
 
+@pytest.fixture
+def out_dir(tmp_path, request):
+    """Fixture that returns the appropriate output directory for each test."""
+    if store_out_in_permanent_paths:
+        current_test_function_name = request.node.name
+        out = Path(f"{pytest_permanent_out_dir_base}/{current_datetime}/{current_test_function_name}")
+    else:
+        out = tmp_path / "out_vk_build"
+
+    out.mkdir(parents=True, exist_ok=True)  # Ensure the directory exists
+    return out
 
 @pytest.fixture
 def cosmic_csv_path():
@@ -85,7 +99,7 @@ def apply_file_comparison(test_path, ground_truth_path, file_type, columns_to_dr
         raise ValueError(f"File type {file_type} is not supported.")
 
 #* note: temp files will be deleted upon completion of the test or running into an error - to debug with a temp file, place a breakpoint before the error occurs
-def test_vk_ref(cosmic_csv_path, tmp_path):
+def test_vk_ref(cosmic_csv_path, out_dir):
     # global ground_truth_folder, reference_folder_parent, make_new_gt, ensembl_grch37_release93_folder
 
     cosmic_cdna_path = os.path.join(ensembl_grch37_release93_folder, "Homo_sapiens.GRCh37.cds.all.fa")
@@ -104,14 +118,17 @@ def test_vk_ref(cosmic_csv_path, tmp_path):
     var_column = "mutation_cdna"
     w = 54
     k = 55
-    dlist_reference_source = "T2T"
     columns_to_include = "all"
     threads = 2
+    filters=(
+        "alignment_to_reference:equal=none",
+        # "substring_alignment_to_reference:equal=none",  # filter out variants that are a substring of the reference genome  #* uncomment this and erase the line above when implementing d-list
+        "pseudoaligned_to_reference_despite_not_truly_aligning:is_not_true",  # filter out variants that pseudoaligned to human genome despite not truly aligning
+        "num_distinct_triplets:greater_than=2",  # filters out VCRSs with <= 2 unique triplets
+    )
 
     if make_new_gt:
         os.makedirs(ground_truth_folder, exist_ok=True)
-
-    out_dir = tmp_path
 
     vk.ref(
         variants = cosmic_csv_path,  # build args
@@ -122,7 +139,6 @@ def test_vk_ref(cosmic_csv_path, tmp_path):
         k = k,
         save_variants_updated_csv = True,
         columns_to_include = columns_to_include,  # info args
-        dlist_reference_source = dlist_reference_source,
         reference_folder = reference_folder_parent,
         dlist_reference_genome_fasta = cosmic_genome_path,  # for d-listing
         dlist_reference_cdna_fasta = cosmic_cdna_path,  # for d-listing

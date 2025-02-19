@@ -64,142 +64,72 @@ def temporary_output_files():
 
         # Temporary files are automatically cleaned up after `yield`
 
-def test_no_filters_metadata_df(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_vcrs_fa_path, temporary_output_files):
-    filters = []
-
+def test_no_filters(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_vcrs_fa_path, temporary_output_files):
     output_metadata_df, output_vcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_vcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
 
-    output_metadata_df_from_test = vk.filter(
-        input_dir = ".",
-        filters=filters,
-        variants_updated_vk_info_csv=toy_mutation_metadata_df_path,
-        dlist_fasta=dlist_file_small_path,
-        id_to_header_csv=toy_id_to_header_mapping_csv_path,
-        variants_updated_filtered_csv_out=output_metadata_df,
-        vcrs_filtered_fasta_out=output_vcrs_fasta,
-        dlist_filtered_fasta_out=output_dlist_fasta,
-        id_to_header_filtered_csv_out=output_id_to_header_csv,
-        vcrs_t2g_filtered_out=output_t2g,
-        return_variants_updated_filtered_csv_df=True,
-        overwrite=True
-    )
-    
-    output_metadata_df_expected = pd.read_csv(toy_mutation_metadata_df_path)
+    with pytest.raises(ValueError, match="No filters provided"):
+        output_metadata_df_from_test = vk.filter(
+            input_dir = ".",
+            filters=[],
+            variants_updated_vk_info_csv=toy_mutation_metadata_df_path,
+            dlist_fasta=dlist_file_small_path,
+            id_to_header_csv=toy_id_to_header_mapping_csv_path,
+            variants_updated_filtered_csv_out=output_metadata_df,
+            vcrs_filtered_fasta_out=output_vcrs_fasta,
+            dlist_filtered_fasta_out=output_dlist_fasta,
+            id_to_header_filtered_csv_out=output_id_to_header_csv,
+            vcrs_t2g_filtered_out=output_t2g,
+            return_variants_updated_filtered_csv_df=True,
+            overwrite=True
+        )
 
-    pd.testing.assert_frame_equal(output_metadata_df_from_test, output_metadata_df_expected)
+    with pytest.raises(ValueError, match="No filters provided"):
+        output_metadata_df_from_test = vk.filter(
+            input_dir = ".",
+            filters="",
+            variants_updated_vk_info_csv=toy_mutation_metadata_df_path,
+            dlist_fasta=dlist_file_small_path,
+            id_to_header_csv=toy_id_to_header_mapping_csv_path,
+            variants_updated_filtered_csv_out=output_metadata_df,
+            vcrs_filtered_fasta_out=output_vcrs_fasta,
+            dlist_filtered_fasta_out=output_dlist_fasta,
+            id_to_header_filtered_csv_out=output_id_to_header_csv,
+            vcrs_t2g_filtered_out=output_t2g,
+            return_variants_updated_filtered_csv_df=True,
+            overwrite=True
+        )
 
+    with pytest.raises(ValueError, match="No filters provided"):
+        output_metadata_df_from_test = vk.filter(
+            input_dir = ".",
+            filters=None,
+            variants_updated_vk_info_csv=toy_mutation_metadata_df_path,
+            dlist_fasta=dlist_file_small_path,
+            id_to_header_csv=toy_id_to_header_mapping_csv_path,
+            variants_updated_filtered_csv_out=output_metadata_df,
+            vcrs_filtered_fasta_out=output_vcrs_fasta,
+            dlist_filtered_fasta_out=output_dlist_fasta,
+            id_to_header_filtered_csv_out=output_id_to_header_csv,
+            vcrs_t2g_filtered_out=output_t2g,
+            return_variants_updated_filtered_csv_df=True,
+            overwrite=True
+        )
 
-def test_no_filters_vcrs_fa(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_vcrs_fa_path, temporary_output_files):
-    filters = []
-    
-    output_metadata_df, output_vcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_vcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
-
-    output_metadata_df_from_test = vk.filter(
-        input_dir = ".",
-        filters=filters,
-        variants_updated_vk_info_csv=toy_mutation_metadata_df_path,
-        dlist_fasta=dlist_file_small_path,
-        id_to_header_csv=toy_id_to_header_mapping_csv_path,
-        variants_updated_filtered_csv_out=output_metadata_df,
-        vcrs_filtered_fasta_out=output_vcrs_fasta,
-        dlist_filtered_fasta_out=output_dlist_fasta,
-        id_to_header_filtered_csv_out=output_id_to_header_csv,
-        vcrs_t2g_filtered_out=output_t2g,
-        return_variants_updated_filtered_csv_df=True,
-        overwrite=True
-    )
-
-    vcrs_fasta_header_to_sequence_dict_from_test = create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(output_vcrs_fasta)
-
-    # vcrs_fasta_header_to_sequence_dict_expected = create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(toy_vcrs_fa_path)
-
-    mutation_metadata_df_prefiltering = pd.read_csv(toy_mutation_metadata_df_path)
-
-    # mutation_metadata_df_prefiltering['vcrs_id'] = mutation_metadata_df_prefiltering['vcrs_id'].astype(str)
-
-    vcrs_fasta_header_to_sequence_dict_expected = mutation_metadata_df_prefiltering.set_index('vcrs_header')['vcrs_sequence'].to_dict()
-
-    assert dict(vcrs_fasta_header_to_sequence_dict_from_test) == dict(vcrs_fasta_header_to_sequence_dict_expected)
-
-def test_no_filters_dlist_fa(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_vcrs_fa_path, temporary_output_files):
-    filters = []
-    
-    output_metadata_df, output_vcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_vcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
-
-    output_metadata_df_from_test = vk.filter(
-        input_dir = ".",
-        filters=filters,
-        variants_updated_vk_info_csv=toy_mutation_metadata_df_path,
-        dlist_fasta=dlist_file_small_path,
-        id_to_header_csv=toy_id_to_header_mapping_csv_path,
-        variants_updated_filtered_csv_out=output_metadata_df,
-        vcrs_filtered_fasta_out=output_vcrs_fasta,
-        dlist_filtered_fasta_out=output_dlist_fasta,
-        id_to_header_filtered_csv_out=output_id_to_header_csv,
-        vcrs_t2g_filtered_out=output_t2g,
-        return_variants_updated_filtered_csv_df=True,
-        overwrite=True
-    )
-
-    dlist_fasta_header_to_sequence_dict_from_test = create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(output_dlist_fasta)
-
-    dlist_fasta_header_to_sequence_dict_expected = create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(dlist_file_small_path)
-
-    assert dict(dlist_fasta_header_to_sequence_dict_from_test) == dict(dlist_fasta_header_to_sequence_dict_expected)
-
-
-def test_no_filters_id_to_header_mapping_csv(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_vcrs_fa_path, temporary_output_files):
-    filters = []
-    
-    output_metadata_df, output_vcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_vcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
-
-    output_metadata_df_from_test = vk.filter(
-        input_dir = ".",
-        filters=filters,
-        variants_updated_vk_info_csv=toy_mutation_metadata_df_path,
-        dlist_fasta=dlist_file_small_path,
-        id_to_header_csv=toy_id_to_header_mapping_csv_path,
-        variants_updated_filtered_csv_out=output_metadata_df,
-        vcrs_filtered_fasta_out=output_vcrs_fasta,
-        dlist_filtered_fasta_out=output_dlist_fasta,
-        id_to_header_filtered_csv_out=output_id_to_header_csv,
-        vcrs_t2g_filtered_out=output_t2g,
-        return_variants_updated_filtered_csv_df=True,
-        overwrite=True
-    )
-
-    id_to_header_dict_from_test = make_mapping_dict(output_id_to_header_csv, dict_key="id")
-
-    id_to_header_dict_from_expected = make_mapping_dict(toy_id_to_header_mapping_csv_path, dict_key="id")
-
-    dict(id_to_header_dict_from_test) == dict(id_to_header_dict_from_expected)
-
-
-def test_no_filters_id_to_header_mapping_t2g(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_vcrs_fa_path, temporary_output_files):
-    filters = []
-    
-    output_metadata_df, output_vcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_vcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
-
-    output_metadata_df_from_test = vk.filter(
-        input_dir = ".",
-        filters=filters,
-        variants_updated_vk_info_csv=toy_mutation_metadata_df_path,
-        dlist_fasta=dlist_file_small_path,
-        id_to_header_csv=toy_id_to_header_mapping_csv_path,
-        variants_updated_filtered_csv_out=output_metadata_df,
-        vcrs_filtered_fasta_out=output_vcrs_fasta,
-        dlist_filtered_fasta_out=output_dlist_fasta,
-        id_to_header_filtered_csv_out=output_id_to_header_csv,
-        vcrs_t2g_filtered_out=output_t2g,
-        return_variants_updated_filtered_csv_df=True,
-        overwrite=True
-    )
-
-    t2g_from_test = load_t2g_as_dict(output_t2g)
-
-    t2g_from_expected = load_t2g_as_dict(toy_t2g_path)
-
-    dict(t2g_from_test) == dict(t2g_from_expected)
+    with pytest.raises(ValueError, match="No filters provided"):
+        output_metadata_df_from_test = vk.filter(
+            input_dir = ".",
+            filters="None",
+            variants_updated_vk_info_csv=toy_mutation_metadata_df_path,
+            dlist_fasta=dlist_file_small_path,
+            id_to_header_csv=toy_id_to_header_mapping_csv_path,
+            variants_updated_filtered_csv_out=output_metadata_df,
+            vcrs_filtered_fasta_out=output_vcrs_fasta,
+            dlist_filtered_fasta_out=output_dlist_fasta,
+            id_to_header_filtered_csv_out=output_id_to_header_csv,
+            vcrs_t2g_filtered_out=output_t2g,
+            return_variants_updated_filtered_csv_df=True,
+            overwrite=True
+        )
 
 def test_single_filter_min_metadata_df(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_vcrs_fa_path, temporary_output_files):
     filters = ['numeric_value:greater_or_equal=3']

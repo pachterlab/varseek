@@ -1,0 +1,5 @@
+Time of execution: 2025-02-19 12:22:03
+
+varseek version: 0.1.0
+
+/Users/joeyrich/miniconda3/envs/varseek/bin/pytest .

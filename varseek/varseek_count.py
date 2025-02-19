@@ -104,6 +104,8 @@ def validate_input_count(params_dict):
         species = params_dict.get("species", None)
         if not isinstance(species, str) and species not in supported_downloadable_normal_reference_genomes_with_kb_ref:
             raise ValueError(f"Species {species} is not supported. Supported values are {supported_downloadable_normal_reference_genomes_with_kb_ref}. See more details at https://github.com/pachterlab/kallisto-transcriptome-indices/")
+        if params_dict.get("mm") != params_dict.get("union"):  # mm must be equal to union if qc_against_gene_matrix=True - because qc_against_gene_matrix=True will automatically add mm and union to vcrs's kb count (which is a good thing because the normal gene matrix can resolve some of the ambiguities introduced here, and the whole premise of what I'm doing is that I want a single k-mer match to indicate reasonable confidence in alignment), and once I am looping through BUS file, it will be impossible to distinguish between multimap and union cases (both will appear as 2+ EC's for 1 read)
+            raise ValueError("If qc_against_gene_matrix=True, then mm and union must be the same")
 
     # kb count stuff
     for argument_type, argument_set in varseek_count_only_allowable_kb_count_arguments.items():
@@ -313,8 +315,6 @@ def count(
 
     # * 6.5 Just to make the unused parameter coloration go away in VSCode
     min_read_len = min_read_len
-    mm = mm
-    union = union
 
     # * 7. Define kwargs defaults
     use_num = params_dict.get("use_num", False)
@@ -413,6 +413,11 @@ def count(
         if params_dict.get("qc_against_gene_matrix") or params_dict.get("apply_split_reads_by_Ns_correction") or params_dict.get("apply_dlist_correction") or use_num:
             kb_count_command.extend(["--num"])
 
+        if mm and "--mm" not in kb_count_command:
+            kb_count_command.append("--mm")
+        if union and "--union" not in kb_count_command:
+            kb_count_command.append("--union")
+
         # assumes any argument in varseek count matches kb count identically, except dashes replaced with underscores
         for dict_key, arguments in varseek_count_only_allowable_kb_count_arguments.items():
             for argument in list(arguments):
@@ -492,6 +497,9 @@ def count(
             "-o",
             kb_count_reference_genome_out_dir,
         ]
+
+        if params_dict.get("qc_against_gene_matrix"):
+            kb_count_standard_index_command.extend(["--num"])
 
         # assumes any argument in varseek count matches kb count identically, except dashes replaced with underscores
         for dict_key, arguments in varseek_count_only_allowable_kb_count_arguments.items():

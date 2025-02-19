@@ -7,9 +7,14 @@ import numpy as np
 import pandas as pd
 import pytest
 import anndata as ad
+import sys
 
 import varseek as vk
 from varseek.utils import create_identity_t2g, make_bus_df
+
+# If "tests/test_bustools.py" is not explicitly in the command line arguments, skip this module.
+if not any("tests/test_bustools.py" in arg for arg in sys.argv):
+    pytest.skip("Skipping test_bustools.py due issues with kallisto compiling in some environments (e.g., GitHub actions, some MacOS systems); run this file by explicity including the file i.e., 'pytest tests/test_bustools.py'", allow_module_level=True)
 
 
 @pytest.fixture

@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import time
 import logging
+import re
 
 import pandas as pd
 
@@ -26,7 +27,6 @@ from .utils import (
 )
 
 logger = logging.getLogger(__name__)
-
 
 def apply_filters(df, filters, filtering_report_text_out=None):
     logger.info("Initial variant report")
@@ -123,6 +123,8 @@ def prepare_filters_list(filters):
 
     if isinstance(filters, str) and filters.endswith(".txt"):
         filters = convert_txt_to_list(filters)
+    elif isinstance(filters, str) and not filters.endswith(".txt"):
+        filters = [filters]
 
     for f in filters:
         f_split_by_equal = f.split("=")
@@ -263,12 +265,22 @@ def validate_input_filter(params_dict):
 
     # filters
     filters = params_dict["filters"]
-    # if isinstance(filters, str):  # commented out because I want to leave open the possibility of a single string filter
-    #     if not os.path.isfile(filters) or not filters.endswith(".txt"):
-    #         raise ValueError(f"Invalid filters: {filters}")
 
-    if not (isinstance(filters, dict) or isinstance(filters, str) or isinstance(filters, list) or isinstance(filters, tuple) or isinstance(filters, set)):
+    if not isinstance(filters, (str, list, tuple, set, Path)) and filters:  # also checks boolean - having filters empty (empty string, None, etc) is valid due to the check in vk ref - but if someone actually tries running vk filter directly with empty filters, then they will get an exception in section 0 before they even get this far
         raise ValueError(f"Invalid filters: {filters}")
+    
+    if filters and filters != "None":
+        if isinstance(filters, (str, Path)):
+            if os.path.isfile(filters):
+                if not filters.endswith(".txt"):
+                    raise ValueError(f"Invalid filters: {filters}")
+            else:
+                filters = [str(filters)]
+        
+        for individual_filter in filters:  # more thorough parsing provided in prepare_filters_list
+            match = re.match(filter_regex, individual_filter)
+            if not match:
+                raise ValueError(f"Invalid filter: {individual_filter}")
 
     # file paths
     for param_name, file_type in {
@@ -300,7 +312,8 @@ filter_rules_that_expect_comma_separated_pair_of_numerics_value = {"between_incl
 filter_rules_that_expect_string_value = {"equal", "not_equal"}
 filter_rules_that_expect_text_file_or_list_value = {"is_in", "is_not_in"}
 filter_rules_that_expect_no_value = {"is_true", "is_false", "is_not_true", "is_not_false", "is_null", "is_not_null"}
-
+all_possible_filter_rules_regex = "|".join(map(re.escape, all_possible_filter_rules))
+filter_regex = rf"^(?P<column>\w+):(?P<rule>(?:{all_possible_filter_rules_regex}))(?:=(?P<value>.+))?$"
 
 def filter(
     input_dir,
@@ -387,6 +400,9 @@ def filter(
     if list_filter_rules:
         print_list_filter_rules()
         return
+    
+    if not filters or filters == "None":
+        raise ValueError("No filters provided. Please provide filters to apply.")
 
     # * 1. Start timer
     start_time = time.perf_counter()
@@ -502,7 +518,7 @@ def filter(
 
     # * 8. Start the actual function
     # filters must either be a dict (as described in docs) or a path to a JSON file
-    if isinstance(filters, list) or isinstance(filters, tuple) or isinstance(filters, set) or (isinstance(filters, str) and filters.endswith(".txt")):
+    if isinstance(filters, (list, tuple, set, str)):
         filters = prepare_filters_list(filters)
     elif isinstance(filters, dict):
         pass  # filters is already a dict from argparse
