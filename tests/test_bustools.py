@@ -108,18 +108,3 @@ def test_bustools_df_bulk(temp_fastq_file, temp_fasta_file, temp_index_file, tem
     adata = ad.read_h5ad(adata_path)
 
     assert np.array_equal(adata.X.toarray(), np.array([[0., 1., 0., 0., 0., 0.]]))
-
-    # # manually remove basetemp
-    # try:
-    #     shutil.rmtree(tmp_path_factory.getbasetemp())
-    # except Exception as e:
-    #     pass
-
-# @pytest.fixture(scope="session", autouse=True)
-# def notify_basetemp_location(tmp_path_factory):
-#     # Run all tests first
-#     yield
-
-#     # Print the message at the end of the test session
-#     basetemp = tmp_path_factory.getbasetemp()
-#     print(f"\nRemove temp dir with `rm -rf {basetemp}`")
