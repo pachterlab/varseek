@@ -122,7 +122,7 @@ def summarize(
     # * 5. Set up default folder/file input paths, and make sure the necessary ones exist
     # all input files for vk summarize are required in the varseek workflow, so this is skipped
 
-    # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
+    # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True   
     stats_file = os.path.join(out, "varseek_summarize_stats.txt") if not kwargs.get("stats_file") else kwargs["stats_file"]
     specific_stats_folder = os.path.join(out, "specific_stats") if not kwargs.get("specific_stats_folder") else kwargs["specific_stats_folder"]
     plots_folder = os.path.join(out, "plots") if not kwargs.get("plots_folder") else kwargs["plots_folder"]
@@ -138,6 +138,9 @@ def summarize(
 
     # * 7. Define kwargs defaults
     # no kwargs
+
+    # * 7.5 make sure ints are ints
+    top_values = int(top_values)
 
     # * 8. Start the actual function
     if isinstance(adata, anndata.AnnData):

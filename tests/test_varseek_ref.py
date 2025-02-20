@@ -7,6 +7,8 @@ from datetime import datetime
 import pandas as pd
 import pytest
 
+from pdb import set_trace as st
+
 import varseek as vk
 from varseek.utils import add_mutation_type
 
@@ -20,7 +22,7 @@ from .conftest import (
 sample_size=12_000  # 2,000 each for each of the 6 mutation types
 columns_to_drop_info_filter = None  # drops columns for info and filter df - will not throw an error if the column does not exist in the df   # ["nearby_variants", "number_of_kmers_with_overlap_to_other_VCRSs", "number_of_other_VCRSs_with_overlapping_kmers", "overlapping_kmers", "VCRSs_with_overlapping_kmers", "kmer_overlap_with_other_VCRSs"]
 make_new_gt = True
-store_out_in_permanent_paths = False
+store_out_in_permanent_paths = True
 
 test_directory = Path(__file__).resolve().parent
 ground_truth_folder = os.path.join(test_directory, "pytest_ground_truth")
@@ -30,9 +32,9 @@ cosmic_csv_path_starting = os.path.join(reference_folder_parent, "cosmic", "Canc
 pytest_permanent_out_dir_base = test_directory / "pytest_output" / Path(__file__).stem
 current_datetime = datetime.now().strftime("date_%Y_%m_%d_time_%H%M_%S")
 
-# If "tests/test_ref.py" is not explicitly in the command line arguments, skip this module.
-if not any("tests/test_ref.py" in arg for arg in sys.argv):
-    pytest.skip("Skipping test_ref.py due to its slow nature; run this file by explicity including the file i.e., 'pytest tests/test_ref.py'", allow_module_level=True)
+# # If "tests/test_ref.py" is not explicitly in the command line arguments, skip this module. - notice that uncommenting this will hide it from vscode such that I can't press the debug button
+# if not any("test_varseek_ref.py" in arg for arg in sys.argv):
+#     pytest.skip("Skipping test_varseek_ref.py due to its slow nature; run this file by explicity including the file i.e., 'pytest tests/test_varseek_ref.py'", allow_module_level=True)
 
 @pytest.fixture
 def out_dir(tmp_path, request):
@@ -47,7 +49,7 @@ def out_dir(tmp_path, request):
     return out
 
 @pytest.fixture
-def cosmic_csv_path():
+def cosmic_csv_path(out_dir):
     global cosmic_csv_path_starting, sample_size, make_new_gt, ground_truth_folder
 
     if (not os.path.exists(ground_truth_folder) or not os.listdir(ground_truth_folder)):
@@ -57,6 +59,8 @@ def cosmic_csv_path():
     if not os.path.exists(cosmic_csv_path_starting):
         pytest.skip("cosmic_csv_path_starting not found. Please download it to continue")
 
+    cosmic_csv_path_starting = Path(cosmic_csv_path_starting)
+    # subsampled_cosmic_csv_path = out_dir / f"{cosmic_csv_path_starting.stem}_subsampled_pytest.csv"  # if I want to have it save in out_dir instead of the reference directory
     subsampled_cosmic_csv_path = Path(str(cosmic_csv_path_starting).replace(".csv", "_subsampled_pytest.csv"))
     if not os.path.exists(subsampled_cosmic_csv_path):
 
@@ -102,9 +106,12 @@ def apply_file_comparison(test_path, ground_truth_path, file_type, columns_to_dr
 def test_vk_ref(cosmic_csv_path, out_dir):
     # global ground_truth_folder, reference_folder_parent, make_new_gt, ensembl_grch37_release93_folder
 
-    cosmic_cdna_path = os.path.join(ensembl_grch37_release93_folder, "Homo_sapiens.GRCh37.cds.all.fa")
+    cosmic_cdna_path = os.path.join(ensembl_grch37_release93_folder, "Homo_sapiens.GRCh37.cdna.all.fa")
     cosmic_genome_path = os.path.join(ensembl_grch37_release93_folder, "Homo_sapiens.GRCh37.dna.primary_assembly.fa")
     cosmic_gtf_path = os.path.join(ensembl_grch37_release93_folder, "Homo_sapiens.GRCh37.87.gtf")
+
+    bowtie2_reference_genome_folder = os.path.join(reference_folder_parent, "bowtie_index_genome")
+    bowtie2_reference_transcriptome_folder = os.path.join(reference_folder_parent, "bowtie_index_transcriptome")
 
     # skip this run if you don't have the ground truth and are not making it
     if not os.path.exists(ground_truth_folder) or not os.listdir(ground_truth_folder):
@@ -114,6 +121,10 @@ def test_vk_ref(cosmic_csv_path, out_dir):
     for path in [cosmic_csv_path, cosmic_cdna_path, cosmic_genome_path, cosmic_gtf_path]:
         if not os.path.isfile(path):
             pytest.skip(f"{path} not found. Please download it to continue")
+
+    for directory in [bowtie2_reference_genome_folder, bowtie2_reference_transcriptome_folder]:
+        if not os.path.isdir(directory) or len(os.listdir(directory) == 0):
+            pytest.skip(f"{directory} not found. Please make this bowtie2 index to continue")
 
     var_column = "mutation_cdna"
     w = 54
@@ -174,3 +185,34 @@ def test_vk_ref(cosmic_csv_path, out_dir):
         if make_new_gt:
             shutil.copy(test_path, ground_truth_path)
         apply_file_comparison(test_path, ground_truth_path, file_type, columns_to_drop_info_filter)
+
+
+def test_parameter_values(toy_sequences_fasta_for_vk_ref, toy_variants_csv_for_vk_ref, out_dir):
+    good_parameter_values_list_of_dicts = [
+        {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir},
+        {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "w": 27, "k": "31", "dlist_reference_source": "grch37", "minimum_info_columns": True},
+    ]
+    
+    bad_parameter_values_list_of_dicts = [
+        {"sequences": "fake_path.fa", "variants": toy_variants_csv_for_vk_ref, "out": out_dir},  # invalid sequences path
+        {"sequences": toy_sequences_fasta_for_vk_ref, "variants": "fake_variants.fa", "out": out_dir},  # invalid variants path
+        {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": 123},  # invalid out path
+        {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "w": 54.1},  # float w
+        {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "k": 55.1},  # float k
+        {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "k": 56},  # even k
+        {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "w": 59, "k": 55},  # w > k
+        {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "filters": ["alignment_to_reference:equal=none", "num_distinct_triplets:greater_than"]},  # bad filter rule (greater_than needs a VALUE)
+        {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "dlist_reference_source": "invalid"},  # invalid dlist_reference_source
+        {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "index_out": "index.fasta"},  # bad ext for index_out (expects .idx)
+        {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "t2g_out": "t2g.fasta"},  # bad ext for t2g_out (expects .txt)
+        {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "download": "yes"},  # download should be a boolean
+        {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "threads": 0},  # threads should be a positive integer
+
+    ]
+    
+    for parameter_dict in good_parameter_values_list_of_dicts:
+        vk.ref(**parameter_dict, overwrite=True)
+
+    for parameter_dict in bad_parameter_values_list_of_dicts:
+        with pytest.raises(ValueError):
+            vk.ref(**parameter_dict, overwrite=True)

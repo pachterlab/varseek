@@ -266,7 +266,7 @@ def main():  # noqa: C901
 
     # NEW PARSER
     # build parser arguments
-    build_desc = "Build a mutation-containing reference sequence (VCRS) file."
+    build_desc = "Build a variant-containing reference sequence (VCRS) file."
 
     parser_build = parent_subparsers.add_parser(
         "build",
@@ -534,14 +534,12 @@ def main():  # noqa: C901
     # Additional kwargs arguments that I still want as command-line options
     parser_build.add_argument(
         "--insertion_size_limit",
-        default=lambda x: int(x) if x is not None else None,
-        type=int,
         required=False,
         help=extract_help_from_doc(build, "insertion_size_limit"),
     )
     parser_build.add_argument(
         "--min_seq_len",
-        default=0,
+        default=1,
         type=int,
         required=False,
         help=extract_help_from_doc(build, "min_seq_len"),
@@ -614,7 +612,7 @@ def main():  # noqa: C901
     )
 
     # NEW PARSER
-    info_desc = "Takes in the input directory containing with the VCRS fasta file generated from varseek build, and returns a dataframe with additional columns containing information about the mutations."
+    info_desc = "Takes in the input directory containing with the VCRS fasta file generated from varseek build, and returns a dataframe with additional columns containing information about the variants."
     parser_info = parent_subparsers.add_parser(
         "info",
         parents=[parent],
@@ -734,6 +732,7 @@ def main():  # noqa: C901
         help=extract_help_from_doc(info, "vcrs_source_column"),
     )
     parser_info.add_argument(
+        "-vc",
         "--var_column",
         type=str,
         required=False,
@@ -920,11 +919,11 @@ def main():  # noqa: C901
     parser_info.add_argument(
         "--variants_csv",
         required=False,
-        help=extract_help_from_doc(info, "mutations_csv"),
+        help=extract_help_from_doc(info, "variants_csv"),
     )
 
     # NEW PARSER
-    filter_desc = "Filter mutations based on the provided filters and save the filtered mutations to a fasta file."
+    filter_desc = "Filter variants based on the provided filters and save the filtered variants to a fasta file."
     parser_filter = parent_subparsers.add_parser(
         "filter",
         parents=[parent],
@@ -1125,7 +1124,7 @@ def main():  # noqa: C901
     )
 
     # NEW PARSER
-    sim_desc = "Create synthetic RNA-seq dataset with mutation reads."
+    sim_desc = "Create synthetic RNA-seq dataset with variant-containing reads."
     parser_sim = parent_subparsers.add_parser(
         "sim",
         parents=[parent],
@@ -1593,7 +1592,7 @@ def main():  # noqa: C901
     )
 
     # NEW PARSER
-    clean_desc = "Run standard processing on the mutation count matrix."
+    clean_desc = "Run standard processing on the VCRS count matrix."
     parser_clean = parent_subparsers.add_parser(
         "clean",
         parents=[parent],
@@ -1932,7 +1931,7 @@ def main():  # noqa: C901
     )
 
     # NEW PARSER
-    summarize_desc = "Analyze the mutation count matrix results."
+    summarize_desc = "Analyze the VCRS count matrix results."
     parser_summarize = parent_subparsers.add_parser(
         "summarize",
         parents=[parent],
@@ -2420,7 +2419,7 @@ def main():  # noqa: C901
         sys.exit(1)
 
     # Load params from config if provided
-    if args.config:
+    if "config" in args and args.config:
         # Assert that, if `--config` is passed, that no other arguments are passed
         assert_only_config(args, parent_parser)
 
@@ -2437,15 +2436,15 @@ def main():  # noqa: C901
         else:
             seqs = args.sequences
 
-        if isinstance(args.mutations, list) and len(args.mutations) == 1:
-            muts = args.mutations[0]
+        if isinstance(args.variants, list) and len(args.variants) == 1:
+            variants = args.variants[0]
         else:
-            muts = args.mutations
+            variants = args.variants
 
         # Run build_desc function (automatically saves output)
         build_results = build(
             sequences=seqs,
-            variants=muts,
+            variants=variants,
             w=args.w,
             k=args.k,
             max_ambiguous=args.max_ambiguous,
@@ -2544,7 +2543,7 @@ def main():  # noqa: C901
             near_splice_junction_threshold=args.near_splice_junction_threshold,
             reference_cdna_fasta=args.reference_cdna_fasta,
             reference_genome_fasta=args.reference_genome_fasta,
-            mutations_csv=args.mutations_csv,
+            variants_csv=args.variants_csv,
             **kwargs,
         )
 
@@ -2763,7 +2762,7 @@ def main():  # noqa: C901
     if args.command == "ref":
         ref_results = ref(
             sequences=args.sequences,
-            mutations=args.mutations,
+            variants=args.variants,
             filters=args.filters,
             mode=args.mode,
             dlist=args.dlist,

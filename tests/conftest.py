@@ -146,9 +146,9 @@ def extract_seq_ids_and_mutations(vcrs_header_list):
 
 
 @pytest.fixture
-def toy_mutation_metadata_df_path(vcrs_id_and_header_and_sequence_standard_lists):
+def toy_mutation_metadata_df_path(vcrs_id_and_header_and_sequence_standard_lists, tmp_path):
     # Create a temporary CSV file
-    temp_csv_file = tempfile.NamedTemporaryFile(delete=False, suffix='.csv')
+    temp_csv_file = tmp_path / "toy_mutation_metadata.csv"
     
     # Data to write to CSV
     vcrs_id_list = vcrs_id_and_header_and_sequence_standard_lists['vcrs_id_list']
@@ -174,16 +174,14 @@ def toy_mutation_metadata_df_path(vcrs_id_and_header_and_sequence_standard_lists
     df = vk.varseek_build.add_mutation_type(df, var_column = "mutation")
     df["variant_sequence_rc"] = df["vcrs_sequence"].apply(reverse_complement)
 
-    df.to_csv(temp_csv_file.name, index=False)
+    df.to_csv(str(temp_csv_file), index=False)
     
-    yield temp_csv_file.name
-    
-    # Cleanup
-    os.remove(temp_csv_file.name)
+    return str(temp_csv_file)
 
 @pytest.fixture
-def toy_mutation_metadata_df_with_read_parents_path(toy_mutation_metadata_df_path):
-    temp_csv_file = tempfile.NamedTemporaryFile(delete=False, suffix='.csv')
+def toy_mutation_metadata_df_with_read_parents_path(toy_mutation_metadata_df_path, tmp_path):
+    temp_csv_file = tmp_path / "toy_mutation_metadata_with_read_parents.csv"
+    
     nucleotides = ['A', 'T', 'C', 'G']
 
     df = pd.read_csv(toy_mutation_metadata_df_path)
@@ -201,36 +199,32 @@ def toy_mutation_metadata_df_with_read_parents_path(toy_mutation_metadata_df_pat
     df["wt_sequence_read_parent_rc"] = df["wt_sequence_read_parent"].apply(reverse_complement)
     df["wt_sequence_read_parent_length"] = df["wt_sequence_read_parent"].apply(len)
 
-    df.to_csv(temp_csv_file.name, index=False)
+    df.to_csv(str(temp_csv_file), index=False)
 
-    yield temp_csv_file.name
-
-    os.remove(temp_csv_file.name)
+    return str(temp_csv_file)
 
 
 @pytest.fixture
-def toy_vcrs_fa_path(vcrs_id_and_header_and_sequence_standard_lists):
+def toy_vcrs_fa_path(vcrs_id_and_header_and_sequence_standard_lists, tmp_path):
     # Create a temporary FASTA file
-    temp_fasta_file = tempfile.NamedTemporaryFile(delete=False, suffix='.fasta')
+    temp_fasta_file = tmp_path / "toy_vcrs.fasta"
 
     vcrs_id_list = vcrs_id_and_header_and_sequence_standard_lists['vcrs_id_list']
     vcrs_sequence_list = vcrs_id_and_header_and_sequence_standard_lists['vcrs_sequence_list']
 
-    with open(temp_fasta_file.name, 'w', encoding="utf-8") as fasta_file:
+    with open(str(temp_fasta_file), 'w', encoding="utf-8") as fasta_file:
         for i in range(len(vcrs_id_list)):
             fasta_file.write(f">{vcrs_id_list[i]}\n")
             fasta_file.write(f"{vcrs_sequence_list[i]}\n")
         
-    yield temp_fasta_file.name
-    
-    # Cleanup
-    os.remove(temp_fasta_file.name)
+    return str(temp_fasta_file)
 
 
 @pytest.fixture
-def dlist_file_small_path(vcrs_id_and_header_and_sequence_standard_lists):
+def dlist_file_small_path(vcrs_id_and_header_and_sequence_standard_lists, tmp_path):
 
-    temp_dlist_fasta_file = tempfile.NamedTemporaryFile(delete=False, suffix='.fasta')
+    temp_dlist_fasta_file = tmp_path / "toy_dlist.fasta"
+    temp_dlist_fasta_file = str(temp_dlist_fasta_file)
     
     vcrs_id_list = vcrs_id_and_header_and_sequence_standard_lists['vcrs_id_list']
     vcrs_sequence_list = vcrs_id_and_header_and_sequence_standard_lists['vcrs_sequence_list']
@@ -246,7 +240,7 @@ def dlist_file_small_path(vcrs_id_and_header_and_sequence_standard_lists):
     k = 55
     dfk_length = k + 2
     intended_dlist_entry_length = k + 2*dfk_length
-    with open(temp_dlist_fasta_file.name, 'a', encoding="utf-8") as fasta_file:
+    with open(temp_dlist_fasta_file, 'a', encoding="utf-8") as fasta_file:
         for dlist_entry in dlist_information:
             if dlist_entry["vcrs_dlist_end"] == "end":
                 dlist_entry["vcrs_dlist_end"] = len(dlist_entry['vcrs_sequence'][dlist_entry["vcrs_dlist_start"]:])
@@ -270,39 +264,30 @@ def dlist_file_small_path(vcrs_id_and_header_and_sequence_standard_lists):
             fasta_file.write(f">{dlist_entry['vcrs_id']}_{dlist_entry['vcrs_dlist_start']}\n")
             fasta_file.write(f"{dlist_sequence}\n")
 
-    yield temp_dlist_fasta_file.name
-
-    # Cleanup
-    os.remove(temp_dlist_fasta_file.name)
+    return temp_dlist_fasta_file
 
 
 @pytest.fixture
-def toy_id_to_header_mapping_csv_path(vcrs_id_and_header_and_sequence_standard_lists):
+def toy_id_to_header_mapping_csv_path(vcrs_id_and_header_and_sequence_standard_lists, tmp_path):
     vcrs_id_list = vcrs_id_and_header_and_sequence_standard_lists['vcrs_id_list']
     vcrs_header_list = vcrs_id_and_header_and_sequence_standard_lists['vcrs_header_list']
 
-    temp_id_to_header_mapping_csv = tempfile.NamedTemporaryFile(delete=False, suffix='.csv')
+    temp_id_to_header_mapping_csv = tmp_path / "toy_id_to_header_mapping.csv"
 
     # write csv
-    with open(temp_id_to_header_mapping_csv.name, 'w', encoding="utf-8") as id_to_header_mapping_out:
+    with open(str(temp_id_to_header_mapping_csv), 'w', encoding="utf-8") as id_to_header_mapping_out:
         for i in range(len(vcrs_id_list)):
             id_to_header_mapping_out.write(f"{vcrs_id_list[i]},{vcrs_header_list[i]}\n")
 
-    yield temp_id_to_header_mapping_csv.name
-
-    # Cleanup
-    os.remove(temp_id_to_header_mapping_csv.name)
+    return str(temp_id_to_header_mapping_csv)
 
 @pytest.fixture
-def toy_t2g_path(toy_vcrs_fa_path):
-    temp_t2g = tempfile.NamedTemporaryFile(delete=False, suffix='.txt')
+def toy_t2g_path(toy_vcrs_fa_path, tmp_path):
+    temp_t2g = tmp_path / "toy_t2g.txt"
 
-    create_identity_t2g(toy_vcrs_fa_path, out=temp_t2g.name)
+    create_identity_t2g(toy_vcrs_fa_path, out=str(temp_t2g))
 
-    yield temp_t2g.name
-
-    # Cleanup
-    os.remove(temp_t2g.name)
+    return str(temp_t2g)
 
 
 @pytest.fixture
@@ -334,7 +319,7 @@ def toy_mutation_metadata_df_exploded():
     mutation_metadata_df["header"] = mutation_metadata_df["header_list"]
     mutation_metadata_df["order"] = mutation_metadata_df["order_list"]
 
-    yield mutation_metadata_df
+    return mutation_metadata_df
 
 
 @pytest.fixture
@@ -358,4 +343,29 @@ def toy_mutation_metadata_df_collapsed():
 
     mutation_metadata_df = pd.DataFrame(data)
 
-    yield mutation_metadata_df
+    return mutation_metadata_df
+
+
+@pytest.fixture
+def toy_sequences_fasta_for_vk_ref(tmp_path):
+    fasta_path = tmp_path / "toy_reference.fasta"
+    fasta_content = """>seq1
+GCATGCTAGCGCGCGCCCTCTCTTAGAGCATCGAGCTACGAGCGAGTCCAGATGCCTGATGTACGCGCGAGCGAGAGAGGAGAGAAAAGACTCGCA
+>seq2
+GCGCGCGCGCATCGATCGCACTGCGCAGAAAGAGAGCGGGCCCCGCTACGAGCATCGACGAGCGACTGCGGGGGCCGCAACACGCGCGCGCAGAGC
+"""
+    fasta_path.write_text(fasta_content)
+    return fasta_path
+
+@pytest.fixture
+def toy_variants_csv_for_vk_ref(tmp_path):
+    csv_path = tmp_path / "toy_variants.csv"
+    
+    data = {
+        "seq_ID": ["seq1", "seq1", "seq2"],
+        "mutation": ["c.21T>A", "c.30_31insGG", "c.48A>C"],
+    }
+
+    df = pd.DataFrame(data)
+    df.to_csv(csv_path, index=False)
+    return csv_path

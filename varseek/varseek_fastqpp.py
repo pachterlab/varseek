@@ -249,6 +249,9 @@ def fastqpp(
     multiqc = kwargs.get("multiqc_path", "multiqc")
     delete_intermediate_files = kwargs.get("delete_intermediate_files", True)
 
+    # * 7.5 make sure ints are ints
+    cut_mean_quality, cut_window_size, qualified_quality_phred, unqualified_percent_limit, max_ambiguous, min_read_len, threads = int(cut_mean_quality), int(cut_window_size), int(qualified_quality_phred), int(unqualified_percent_limit), int(max_ambiguous), int(min_read_len), int(threads)
+
     # * 8. Start the actual function
     fastqs = sort_fastq_files_for_kb_count(fastqs, technology=technology, multiplexed=multiplexed, logger=logger, check_only=(not sort_fastqs))
 

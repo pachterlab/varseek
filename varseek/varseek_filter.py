@@ -57,10 +57,14 @@ def apply_filters(df, filters, filtering_report_text_out=None):
         elif rule == "between_inclusive":
             value_min, value_max = value.split(",")
             value_min, value_max = float(value_min), float(value_max)
+            if value_min >= value_max:
+                raise ValueError(f"Invalid range: {value}. Minimum value must be less than maximum value.")
             df = df.loc[((df[column] >= value_min) & (df[column] <= value_max) | (df[column].isnull()))]
         elif rule == "between_exclusive":
             value_min, value_max = value.split(",")
             value_min, value_max = float(value_min), float(value_max)
+            if value_min >= value_max:
+                raise ValueError(f"Invalid range: {value}. Minimum value must be less than maximum value.")
             df = df.loc[((df[column] > value_min) & (df[column] < value_max) | (df[column].isnull()))]
         elif rule == "top_percent":
             # Calculate the cutoff for the top percent

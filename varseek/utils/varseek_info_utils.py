@@ -16,7 +16,7 @@ import pandas as pd
 import pyfastx
 from tqdm import tqdm
 
-from varseek.utils.logger_utils import splitext_custom
+from varseek.utils.logger_utils import splitext_custom, get_file_name_without_extensions_or_full_path
 from varseek.utils.seq_utils import (
     create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting,
     fasta_to_fastq,
@@ -1776,9 +1776,9 @@ def align_to_normal_genome_and_build_dlist(
     if max_ambiguous_reference < 9999:  #! be careful of changing this number - it is related to the condition in varseek info - max_ambiguous_reference = 99999
         remove_Ns_fasta(dlist_fasta_file_genome_full, max_ambiguous_reference=max_ambiguous_reference)
 
-    ref_folder_cdna_bowtie = f"{reference_out}/bowtie_index_cdna"
+    ref_folder_cdna_bowtie = f"{reference_out}/bowtie_index_transcriptome"
     ref_prefix_cdna_full = f"{ref_folder_cdna_bowtie}/{ref_prefix}"
-    output_sam_file_cdna = f"{out_dir_notebook}/bowtie_vcrs_kmers_to_cdna/alignment.sam"
+    output_sam_file_cdna = f"{out_dir_notebook}/bowtie_vcrs_kmers_to_transcriptome/alignment.sam"
 
     if not os.path.exists(ref_folder_cdna_bowtie) or not os.listdir(ref_folder_cdna_bowtie):
         run_bowtie_build_dlist(

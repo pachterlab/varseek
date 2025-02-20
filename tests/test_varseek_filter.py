@@ -72,15 +72,21 @@ def test_parameter_values(toy_mutation_metadata_df_path):
         {"input_dir": input_dir, "filters": ["numeric_value:greater_or_equal=3"], "variants_updated_vk_info_csv": toy_mutation_metadata_df_path},  # list filter
         {"input_dir": input_dir, "filters": {"numeric_value:greater_or_equal=3"}, "variants_updated_vk_info_csv": toy_mutation_metadata_df_path},  # set filter
         {"input_dir": input_dir, "filters": ("numeric_value:greater_or_equal=3", ), "variants_updated_vk_info_csv": toy_mutation_metadata_df_path},  # tuple filter
+        {"input_dir": input_dir, "filters": ("numeric_value:greater_or_equal=3", "numeric_value2:greater_than=4", "numeric_value4:less_than=4.2", "numeric_value4:less_or_equal=-110", "numeric_value5:is_in=[1, 2, 3, 4, 5]", "numeric_value6:is_not_in={1, 2, 3, 4, 5}", "n7:between_exclusive=9,12", "n8:equal=cdna", "n9:is_null"), "variants_updated_vk_info_csv": toy_mutation_metadata_df_path},  # tuple filter
     ]
-    
     
     bad_parameter_values_list_of_dicts = [
         {"input_dir": input_dir, "filters": "numeric_value-greater_or_equal=3", "variants_updated_vk_info_csv": toy_mutation_metadata_df_path},  # dash instead of colon
         {"input_dir": input_dir, "filters": "numeric_value:greater_or_equal", "variants_updated_vk_info_csv": toy_mutation_metadata_df_path},  # no equals value
         {"input_dir": input_dir, "filters": "numeric_value", "variants_updated_vk_info_csv": toy_mutation_metadata_df_path},  # no rule and value
+        {"input_dir": input_dir, "filters": ["numeric_value:greater_or_equal=3", "numeric_value2:less_than"], "variants_updated_vk_info_csv": toy_mutation_metadata_df_path},  # one item in the list is not valid
+        {"input_dir": input_dir, "filters": ["numeric_value:greater_or_equal_invalid_rule=3", "numeric_value2:less_than"], "variants_updated_vk_info_csv": toy_mutation_metadata_df_path},  # invalid rule
         {"input_dir": ".", "filters": "numeric_value", "variants_updated_vk_info_csv": toy_mutation_metadata_df_path},  # variants_updated_vk_info_csv is not found at input_dir
         {"input_dir": None, "filters": "numeric_value:greater_or_equal=3", "variants_updated_vk_info_csv": toy_mutation_metadata_df_path},  # None input_dir
+        {"input_dir": input_dir, "filters": "numeric_value:greater_or_equal=3", "variants_updated_vk_info_csv": toy_mutation_metadata_df_path, "id_to_header_csv": "bogus_path"},  # id_to_header_csv specified path is wrong
+        {"input_dir": input_dir, "filters": "numeric_value:greater_or_equal=3", "variants_updated_vk_info_csv": toy_mutation_metadata_df_path, "out": 34},  # out is not a string
+        {"input_dir": input_dir, "filters": "numeric_value:greater_or_equal=3", "variants_updated_vk_info_csv": toy_mutation_metadata_df_path, "dry_run": None},  # dry_run is not bool
+        # {"input_dir": input_dir, "filters": "numeric_value:greater_or_equal=3", "variants_updated_vk_info_csv": toy_mutation_metadata_df_path, "logging_level": 70},  # outside of range  # commented out because this just defaults to info, not raises an error
     ]
     
     for parameter_dict in good_parameter_values_list_of_dicts:

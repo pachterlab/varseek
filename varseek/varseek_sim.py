@@ -282,6 +282,12 @@ def sim(
 
     os.makedirs(out, exist_ok=True)
 
+    # * 7. Define kwargs defaults
+
+    # * 7.5 make sure ints are ints
+    number_of_variants_to_sample, read_length, k, w = int(number_of_variants_to_sample), int(read_length), int(k), int(w)
+    # don't account for number_of_reads_per_variant_alt (can be all), number_of_reads_per_variant_ref (can be all), error_rate (float), max_errors (can be float("inf"))
+
     # * 8. Start the function
     if isinstance(variants, str) and os.path.exists(variants):
         variants = pd.read_csv(variants)

@@ -29,13 +29,13 @@ if not os.path.isfile(sequences_fasta_path):
     cds_file = "Homo_sapiens.GRCh37.cds.all.fa"
     
     if grch == "37":
-        gget_ref_grch = "human_grch37"
+        gget_ref_species = "human_grch37"
     elif grch == "38":
-        gget_ref_grch = "human"
+        gget_ref_species = "human"
     else:
-        gget_ref_grch = grch
+        gget_ref_species = grch
 
-    ref_sequence_download_command = f"gget ref -w cds -r 93 --out_dir {reference_out} -d {gget_ref_grch}"
+    ref_sequence_download_command = f"gget ref -w cds -r 93 --out_dir {reference_out} -d {gget_ref_species}"
 
     sequences_download_command_list = ref_sequence_download_command.split(" ")
 

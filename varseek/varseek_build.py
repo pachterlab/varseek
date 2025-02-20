@@ -380,6 +380,8 @@ def validate_input_build(params_dict):
         logger.warning("If running a workflow with vk ref or kb ref, k should be an odd number between 1 and 63. Got k=%s.", k)
     if int(w) >= int(k):
         raise ValueError(f"w should be less than k. Got w={w}, k={k}.")
+    if int(k) > 2*int(w):
+        raise ValueError("k must be less than or equal to 2*w")
 
     # required_insertion_overlap_length
     if params_dict.get("required_insertion_overlap_length") is not None and not is_valid_int(params_dict.get("required_insertion_overlap_length"), ">=", 1) and params_dict.get("required_insertion_overlap_length") != "all":
@@ -708,9 +710,17 @@ def build(
     mutations = variants
     del variants
 
-    # * 8. Start the actual function
+    # * 7.5 make sure ints are ints
     if not k:
         k = w + 1
+    
+    w, k, max_ambiguous, min_seq_len = int(w), int(k), int(max_ambiguous), int(min_seq_len)
+
+    # * 8. Start the actual function
+    if isinstance(mutations, Path):
+        mutations = str(mutations)
+    if isinstance(sequences, Path):
+        sequences = str(sequences)
 
     merge_identical_rc = not vcrs_strandedness
 
@@ -738,11 +748,11 @@ def build(
                 if grch not in supported_databases_and_corresponding_reference_sequence_type[mutations]["database_version_to_reference_assembly_build"]:
                     raise ValueError(f"Invalid value for cosmic_grch: {cosmic_grch}. Supported values are {', '.join(supported_databases_and_corresponding_reference_sequence_type[mutations]['database_version_to_reference_assembly_build'].keys())}.")
             if grch == "37":
-                gget_ref_grch = "human_grch37"
+                gget_ref_species = "human_grch37"
             elif grch == "38":
-                gget_ref_grch = "human"
+                gget_ref_species = "human"
             else:
-                gget_ref_grch = grch
+                gget_ref_species = grch
 
     # Load input sequences and their identifiers from fasta file
     if isinstance(sequences, str) and ("." in sequences or (mutations in supported_databases_and_corresponding_reference_sequence_type and sequences in supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_download_commands"])):
@@ -755,7 +765,7 @@ def build(
                 sequences_download_command = supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_download_commands"][sequences]
                 sequences_download_command = sequences_download_command.replace("OUT_DIR", reference_out_sequences)
                 sequences_download_command = sequences_download_command.replace("ENSEMBL_VERSION", ensembl_version)
-                sequences_download_command = sequences_download_command.replace("GRCH_NUMBER", gget_ref_grch)
+                sequences_download_command = sequences_download_command.replace("SPECIES", gget_ref_species)
                 
                 genome_file = supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_file_names"]["genome"]
                 genome_file = genome_file.replace("GRCH_NUMBER", grch)
@@ -979,12 +989,12 @@ def build(
     else:
         raise ValueError(
             """
-            Format of the input to the 'mutations' argument not recognized.
-            'mutations' must be one of the following:
-            - Path to comma-separated csv file (e.g. 'mutations.csv')
+            Format of the input to the 'variants' argument not recognized.
+            'variants' must be one of the following:
+            - Path to comma-separated csv file (e.g. 'variants.csv')
             - A pandas DataFrame object
             - A single mutation to be applied to all input sequences (e.g. 'c.2C>T')
-            - A list of mutations (the number of mutations must equal the number of input sequences) (e.g. ['c.2C>T', 'c.1A>C'])
+            - A list of variants (the number of variants must equal the number of input sequences) (e.g. ['c.2C>T', 'c.1A>C'])
             """
         )
 

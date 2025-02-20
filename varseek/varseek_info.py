@@ -190,10 +190,14 @@ def validate_input_info(params_dict):
         logger.warning(f"If running a workflow with vk ref or kb ref, k should be an odd number between 1 and 63. Got k={k}.")
 
     # boolean
-    for param_name in ["vcrs_strandedness", "save_variants_updated_exploded_vk_info_csv", "make_pyfastx_summary_file", "make_kat_histogram", "dry_run", "list_columns", "overwrite", "threads"]:
+    for param_name in ["save_variants_updated_exploded_vk_info_csv", "make_pyfastx_summary_file", "make_kat_histogram", "dry_run", "list_columns", "overwrite"]:
         param_value = params_dict.get(param_name)
         if not isinstance(param_value, bool):
             raise ValueError(f"{param_name} must be a boolean. Got {param_value} of type {type(param_value)}.")
+        
+    # Optional boolean
+    if params_dict.get("vcrs_strandedness") is not None and not isinstance(params_dict.get("vcrs_strandedness"), bool):
+        raise ValueError(f"vcrs_strandedness must be a boolean. Got {params_dict.get('vcrs_strandedness')} of type {type(params_dict.get('vcrs_strandedness'))}.")
 
 
 supported_dlist_reference_values = {"T2T", "grch37", "grch38"}
@@ -394,7 +398,7 @@ def info(
     run_info_file = os.path.join(out, "config", "vk_info_run_info.txt")
     save_run_info(run_info_file)
 
-    # * 5. Set up default folder/file input paths, and make sure the necessary ones exist
+    # * 5. Set up default folder/file input paths, and make sure the necessary ones exist    
     if not vcrs_fasta:
         vcrs_fasta = os.path.join(input_dir, "vcrs.fa")
     if not os.path.isfile(vcrs_fasta):
@@ -451,6 +455,9 @@ def info(
     reference_genome_fasta = kwargs.get("reference_genome_fasta", None)
     mutations_csv = kwargs.get("variants", None)
 
+    # * 7.5 make sure ints are ints
+    k, max_ambiguous_vcrs, max_ambiguous_reference, dlist_reference_ensembl_release, threads = int(k), int(max_ambiguous_vcrs), int(max_ambiguous_reference), int(dlist_reference_ensembl_release), int(threads)
+
     # * 8. Start the actual function
     if columns_to_include == "all":
         make_pyfastx_summary_file = True
@@ -465,14 +472,14 @@ def info(
             dlist_reference_gtf = dlist_reference_source
 
     if dlist_reference_genome_fasta == "T2T" or dlist_reference_cdna_fasta == "T2T" or dlist_reference_gtf == "T2T":
-        t2t_reference_dir = os.path.join(reference_out_dir, "t2t")
-        dlist_reference_genome_fasta, dlist_reference_cdna_fasta, dlist_reference_gtf = download_t2t_reference_files(t2t_reference_dir)
+        dlist_reference_dir = os.path.join(reference_out_dir, "T2T")
+        dlist_reference_genome_fasta, dlist_reference_cdna_fasta, dlist_reference_gtf = download_t2t_reference_files(dlist_reference_dir)
     elif dlist_reference_genome_fasta == "grch37" or dlist_reference_cdna_fasta == "grch37" or dlist_reference_gtf == "grch37":
-        grch37_reference_dir = os.path.join(reference_out_dir, f"ensembl_grch37_release{dlist_reference_ensembl_release}")  # matches vk build
-        dlist_reference_genome_fasta, dlist_reference_cdna_fasta, dlist_reference_gtf = download_ensembl_reference_files(grch37_reference_dir, grch=37, ensembl_release=dlist_reference_ensembl_release)
+        dlist_reference_dir = os.path.join(reference_out_dir, f"ensembl_grch37_release{dlist_reference_ensembl_release}")  # matches vk build
+        dlist_reference_genome_fasta, dlist_reference_cdna_fasta, dlist_reference_gtf = download_ensembl_reference_files(dlist_reference_dir, grch=37, ensembl_release=dlist_reference_ensembl_release)
     elif dlist_reference_genome_fasta == "grch38" or dlist_reference_cdna_fasta == "grch38" or dlist_reference_gtf == "grch38":
-        grch38_reference_dir = os.path.join(reference_out_dir, f"ensembl_grch38_release{dlist_reference_ensembl_release}")
-        dlist_reference_genome_fasta, dlist_reference_cdna_fasta, dlist_reference_gtf = download_ensembl_reference_files(grch38_reference_dir, grch=38, ensembl_release=dlist_reference_ensembl_release)
+        dlist_reference_dir = os.path.join(reference_out_dir, f"ensembl_grch38_release{dlist_reference_ensembl_release}")
+        dlist_reference_genome_fasta, dlist_reference_cdna_fasta, dlist_reference_gtf = download_ensembl_reference_files(dlist_reference_dir, grch=38, ensembl_release=dlist_reference_ensembl_release)
 
     columns_to_explode = ["header", "order"]
     columns_not_successfully_added = []
@@ -835,7 +842,7 @@ def info(
                 mutations=vcrs_fasta,
                 vcrs_id_column=vcrs_id_column,
                 out_dir_notebook=out,
-                reference_out=reference_out_dir,
+                reference_out=dlist_reference_dir,
                 dlist_fasta_file_genome_full=dlist_genome_fasta_out,
                 dlist_fasta_file_cdna_full=dlist_cdna_fasta_out,
                 dlist_fasta_file=dlist_combined_fasta_out,

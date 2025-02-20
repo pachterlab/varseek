@@ -648,3 +648,26 @@ def test_semicolon_merging(long_sequence, out_dir):
 #     assert result[0] == "APPRPSPPHPTPPRPTPPLP"  #* translate is not returned by vk build; only stored in update_df
 
 #     assert_global_variables_zero()
+
+def test_parameter_values(toy_sequences_fasta_for_vk_ref, toy_variants_csv_for_vk_ref, out_dir):
+    good_parameter_values_list_of_dicts = [
+        {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir},
+        {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "w": 27, "k": "31", "dlist_reference_source": "grch37", "minimum_info_columns": True},
+    ]
+    
+    bad_parameter_values_list_of_dicts = [
+        {"sequences": "fake_path.fa", "variants": toy_variants_csv_for_vk_ref, "out": out_dir},  # invalid sequences path
+        {"sequences": toy_sequences_fasta_for_vk_ref, "variants": "fake_variants.fa", "out": out_dir},  # invalid variants path
+        {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": 123},  # invalid out path
+        {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "w": 54.1},  # float w
+        {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "k": 55.1},  # float k
+        {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "w": 59, "k": 55},  # w > k
+
+    ]
+    
+    for parameter_dict in good_parameter_values_list_of_dicts:
+        vk.build(**parameter_dict, overwrite=True)
+
+    for parameter_dict in bad_parameter_values_list_of_dicts:
+        with pytest.raises(ValueError):
+            vk.build(**parameter_dict, overwrite=True)

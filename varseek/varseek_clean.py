@@ -392,6 +392,9 @@ def clean(
     # * 7. Define kwargs defaults
     # id_to_header_csv is currently the only kwargs and was defined in step 5
 
+    # * 7.5 make sure ints are ints
+    min_counts, threads = int(min_counts), int(threads)
+
     # * 8. Start the actual function
     if remove_doublets and not doublet_detection:
         logger.warning("remove_doublets is True, but doublet_detection is False. Setting doublet_detection to True.")

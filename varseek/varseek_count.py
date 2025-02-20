@@ -5,12 +5,13 @@ from pathlib import Path
 import os
 import subprocess
 import time
+import copy
 import logging
 
 import varseek as vk
 from varseek.utils import (
     check_file_path_is_string_with_valid_extension,
-    check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal,
+    check_that_two_paths_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal,
     is_valid_int,
     load_in_fastqs,
     make_function_parameter_to_value_dict,
@@ -237,12 +238,24 @@ def count(
 
     # * 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
-    vk.varseek_fastqpp.validate_input_fastqpp(params_dict)  # this passes all vk ref parameters to the function - I could only pass in the vk build parameters here if desired (and likewise below), but there should be no naming conflicts anyways
-    vk.varseek_clean.validate_input_clean(params_dict)
-    vk.varseek_summarize.validate_input_summarize(params_dict)
-    validate_input_count(params_dict)
-    params_dict["fastqs"] = fastqs_original  # for config file - reversed later
     params_dict['logger'] = logger
+
+    params_dict_for_type_checking = copy.deepcopy(params_dict)  # make a copy of the params_dict for type checking, so that I can modify it without affecting the original params_dict
+    params_dict_for_type_checking['adata_vcrs'] = 'placeholder/adata.h5ad'  # this is just a placeholder, but it is needed for type checking
+    params_dict_for_type_checking['adata'] = 'placeholder/adata_cleaned.h5ad'  # this is just a placeholder, but it is needed for type checking
+
+    # Set params_dict_for_type_checking to default values of children functions - important so type checking works properly
+    count_signature = inspect.signature(count)
+    for function in (vk.varseek_fastqpp.fastqpp, vk.varseek_clean.clean, vk.varseek_summarize.summarize):
+        signature = inspect.signature(function)
+        for key in signature.parameters.keys():
+            if key not in params_dict_for_type_checking and key not in count_signature.parameters.keys():
+                params_dict_for_type_checking[key] = signature.parameters[key].default
+
+    vk.varseek_fastqpp.validate_input_fastqpp(params_dict_for_type_checking)  # this passes all vk ref parameters to the function - I could only pass in the vk build parameters here if desired (and likewise below), but there should be no naming conflicts anyways
+    vk.varseek_clean.validate_input_clean(params_dict_for_type_checking)
+    vk.varseek_summarize.validate_input_summarize(params_dict_for_type_checking)
+    validate_input_count(params_dict_for_type_checking)
 
     # * 3. Dry-run
     # handled within child functions
@@ -262,6 +275,7 @@ def count(
 
     # * 4. Save params to config file and run info file
     # Save parameters to config file
+    params_dict["fastqs"] = fastqs_original  # for config file - reversed right after
     config_file = os.path.join(out, "config", "vk_count_config.json")
     save_params_to_config_file(params_dict, config_file)
     params_dict["fastqs"] = fastqs
@@ -291,8 +305,8 @@ def count(
     os.makedirs(vk_summarize_out_dir, exist_ok=True)
 
     # for vk clean arguments - generalizes the params_dict["kb_count_vcrs_dir"] = kb_count_vcrs_out_dir and params_dict["kb_count_reference_genome_dir"] = kb_count_reference_genome_out_dir calls
-    params_dict = check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "kb_count_vcrs_dir", "kb_count_vcrs_out_dir")  # check that, if kb_count_vcrs_dir and kb_count_vcrs_out_dir are both provided, they are the same directory; otherwise, if only one is provided, then make them equal to each other
-    params_dict = check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "kb_count_reference_genome_dir", "kb_count_reference_genome_out_dir")  # same story as above but for kb_count_reference_genome and kb_count_reference_genome_out_dir
+    params_dict = check_that_two_paths_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "kb_count_vcrs_dir", "kb_count_vcrs_out_dir")  # check that, if kb_count_vcrs_dir and kb_count_vcrs_out_dir are both provided, they are the same directory; otherwise, if only one is provided, then make them equal to each other
+    params_dict = check_that_two_paths_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "kb_count_reference_genome_dir", "kb_count_reference_genome_out_dir")  # same story as above but for kb_count_reference_genome and kb_count_reference_genome_out_dir
 
     adata_vcrs = f"{kb_count_vcrs_out_dir}/counts_unfiltered/adata.h5ad"
     adata_reference_genome = f"{kb_count_reference_genome_out_dir}/counts_unfiltered/adata.h5ad" if not params_dict.get("adata_reference_genome") else params_dict.get("adata_reference_genome")
@@ -314,11 +328,13 @@ def count(
     overwrite_original = params_dict.get("overwrite_original", False)
 
     # * 6.5 Just to make the unused parameter coloration go away in VSCode
-    min_read_len = min_read_len
 
     # * 7. Define kwargs defaults
     use_num = params_dict.get("use_num", False)
     kb_count_parity = params_dict.get("kb_count_parity", "single")
+
+    # * 7.5 make sure ints are ints
+    k, threads = int(k), int(threads)
 
     # * 8. Start the actual function
     fastqs_unsorted = fastqs.copy()
@@ -404,8 +420,7 @@ def count(
             strand,
             "-o",
             kb_count_vcrs_out_dir,
-            "--overwrite",
-            True,  # set to True here regardless of the overwrite argument because I would only even enter this block if kb count was only partially run (as seen by the lack of existing of file_signifying_successful_kb_count_vcrs_completion), in which case I should overwrite anyways
+            "--overwrite",   # set overwrite here regardless of the overwrite argument because I would only even enter this block if kb count was only partially run (as seen by the lack of existing of file_signifying_successful_kb_count_vcrs_completion), in which case I should overwrite anyways
         ]
 
         if params_dict.get("qc_against_gene_matrix"):
@@ -445,13 +460,13 @@ def count(
         logger.warning(f"Skipping kb count because file {file_signifying_successful_kb_count_vcrs_completion} already exists and overwrite=False")
 
     if ((not os.path.exists(file_signifying_successful_kb_count_reference_genome_completion)) and (technology not in non_single_cell_technologies) and any(params_dict.get(value, False) for value in needs_for_normal_genome_matrix)) or (params_dict.get("qc_against_gene_matrix") and len(os.listdir(kb_count_reference_genome_out_dir)) == 0):  # align to this genome if either (1) adata doesn't exist and I do downstream analysis with the normal gene count matrix for scRNA-seq data (ie not bulk) or (2) [qc_against_gene_matrix=True and kb_count_reference_genome_out_dir is empty (because I need the BUS file for this)]  # purposely omitted overwrite because it is reasonable to expect that someone has pre-computed this matrix and doesn't want it recomputed under any circumstances (and if they did, then simply point to a different directory)
-        if not isinstance(species, str) and species not in supported_downloadable_normal_reference_genomes_with_kb_ref:
-            raise ValueError(f"Species {species} is not supported. Supported values are {supported_downloadable_normal_reference_genomes_with_kb_ref}. See more details at https://github.com/pachterlab/kallisto-transcriptome-indices/")
-
         reference_genome_index = params_dict.get("reference_genome_index", os.path.join(out, "reference_genome_index.idx"))
         reference_genome_t2g = params_dict.get("reference_genome_t2g", os.path.join(out, "reference_genome_t2g.t2g"))
 
         if not os.path.exists(reference_genome_index) or not os.path.exists(reference_genome_t2g):  # download reference if does not exist
+            if not isinstance(species, str) and species not in supported_downloadable_normal_reference_genomes_with_kb_ref:
+                raise ValueError(f"Species {species} is not supported. Supported values are {supported_downloadable_normal_reference_genomes_with_kb_ref}. See more details at https://github.com/pachterlab/kallisto-transcriptome-indices/")
+            
             # kb ref, reference genome
             kb_ref_command = [
                 "kb",
@@ -529,7 +544,7 @@ def count(
         logger.warning(f"Skipping kb count for reference genome because file {file_signifying_successful_kb_count_reference_genome_completion} already exists. Note that even setting overwrite=True will still not overwrite this particular directory")
 
     params_dict["adata_vcrs"] = adata_vcrs if not params_dict.get("adata_vcrs") else params_dict.get("adata_vcrs")  # for vk clean
-    # kb_count_vcrs_dir already set to kb_count_vcrs_out_dir by check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal
+    # kb_count_vcrs_dir already set to kb_count_vcrs_out_dir by check_that_two_paths_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal
     params_dict["adata_reference_genome"] = adata_reference_genome  # for vk clean - the conditional part already handled in section 6
 
     # vk clean

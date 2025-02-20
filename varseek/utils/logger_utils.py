@@ -47,11 +47,12 @@ def set_up_logger(logger, logging_level=None, save_logs=False, log_dir=None):
     # logger = logging.getLogger(__name__)  # leave commented out and run in each module individually
     logger.setLevel(logging_level)
 
-    if not logger.hasHandlers():
+    if not logger.handlers:
         formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s", "%H:%M:%S")
 
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(formatter)
+        # console_handler.setLevel(logging_level)  # redundant
         logger.addHandler(console_handler)
 
         if save_logs:
@@ -101,7 +102,7 @@ def check_file_path_is_string_with_valid_extension(file_path, variable_name, fil
         else:
             # check if file_path is a string
             if not isinstance(file_path, (str, Path)):
-                raise ValueError(f"{variable_name} must be a string, got {type(file_path)}")
+                raise ValueError(f"{variable_name} must be a string or Path, got {type(file_path)}")
 
             # check if file_type is a single value or list of values
             if isinstance(file_type, str):
@@ -114,6 +115,7 @@ def check_file_path_is_string_with_valid_extension(file_path, variable_name, fil
                 raise ValueError(f"file_type must be a string or a list, got {type(file_type)}")
 
             # check if file has valid extension
+            file_path = str(file_path)
             if not any(file_path.lower().endswith((ext, f"{ext}.zip", f"{ext}.gz")) for ext in valid_extensions_for_file_type):
                 raise ValueError(f"Invalid file extension for {variable_name}. Must be one of {valid_extensions_for_file_type}")
     else:
@@ -195,6 +197,8 @@ def convert_value_for_json(value):
         return list(value)
     elif isinstance(value, bytes):
         return value.decode('utf-8', errors='replace')
+    elif isinstance(value, logging.Logger):
+        return f"Logger Object with name {value.name}"
     # Add more conversions as needed
     else:
         return value
@@ -884,13 +888,13 @@ def save_run_info(out_file="run_info.txt", remove_passwords=True):
         f.write(function_call + "\n")  # Write the function call
 
 
-def check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, dir1, dir2):
-    if params_dict.get(dir1) is not None and params_dict.get(dir2) is not None and params_dict.get(dir1) != params_dict.get(dir2):
-        raise ValueError(f"{dir1} and {dir2} must be the same directory")
-    elif params_dict.get(dir1) is not None and params_dict.get(dir2) is None:
-        params_dict[dir2] = params_dict.get(dir1)
-    elif params_dict.get(dir1) is None and params_dict.get(dir2) is not None:
-        params_dict[dir1] = params_dict.get(dir2)
+def check_that_two_paths_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, path1, path2):
+    if params_dict.get(path1) is not None and params_dict.get(path2) is not None and params_dict.get(path1) != params_dict.get(path2):
+        raise ValueError(f"{path1} and {path2} must be the same path")
+    elif params_dict.get(path1) is not None and params_dict.get(path2) is None:
+        params_dict[path2] = params_dict.get(path1)
+    elif params_dict.get(path1) is None and params_dict.get(path2) is not None:
+        params_dict[path1] = params_dict.get(path2)
     return params_dict
 
 
@@ -909,3 +913,6 @@ def splitext_custom(file_path):
     base = str(file_path).replace("".join(file_path.suffixes), "")
     ext = "".join(file_path.suffixes)
     return base, ext
+
+def get_file_name_without_extensions_or_full_path(file_path):
+    return str(file_path).split("/")[-1].split(".")[0]

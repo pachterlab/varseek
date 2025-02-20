@@ -127,9 +127,9 @@ prebuilt_vk_ref_files = {"cosmic_cmc": {"cdna": {"index": "COSMIC", "t2g": "COSM
 supported_databases_and_corresponding_reference_sequence_type = {
     "cosmic_cmc": {
         "sequence_download_commands": {
-            "genome": "gget ref -w FILES_TO_DOWNLOAD -r ENSEMBL_VERSION --out_dir OUT_DIR -d GRCH_NUMBER",  # dna,gtf
-            "cdna": "gget ref -w FILES_TO_DOWNLOAD -r ENSEMBL_VERSION --out_dir OUT_DIR -d GRCH_NUMBER",  # cdna,cds
-            "cds": "gget ref -w FILES_TO_DOWNLOAD -r ENSEMBL_VERSION --out_dir OUT_DIR -d GRCH_NUMBER",  # cds
+            "genome": "gget ref -w FILES_TO_DOWNLOAD -r ENSEMBL_VERSION --out_dir OUT_DIR -d SPECIES",  # dna,gtf
+            "cdna": "gget ref -w FILES_TO_DOWNLOAD -r ENSEMBL_VERSION --out_dir OUT_DIR -d SPECIES",  # cdna,cds
+            "cds": "gget ref -w FILES_TO_DOWNLOAD -r ENSEMBL_VERSION --out_dir OUT_DIR -d SPECIES",  # cds
         },
         "sequence_file_names": {
             "genome": "Homo_sapiens.GRChGRCH_NUMBER.dna.primary_assembly.fa",

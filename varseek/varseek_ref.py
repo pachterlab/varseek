@@ -5,6 +5,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
+import copy
 import logging
 
 import requests
@@ -12,7 +13,7 @@ import requests
 import varseek as vk
 from varseek.utils import (
     check_file_path_is_string_with_valid_extension,
-    check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal,
+    check_that_two_paths_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal,
     download_varseek_files,
     get_python_or_cli_function_call,
     is_valid_int,
@@ -63,12 +64,17 @@ def validate_input_ref(params_dict):
     if w is None:
         w = build_signature.parameters["w"].default
 
+    k, w = int(k), int(w)
+
     # make sure k is odd and <= 63
     if not isinstance(k, int) or k % 2 == 0 or k < 1 or k > 63:
         raise ValueError("k must be odd, positive, integer, and less than or equal to 63")
 
     if k < w + 1:
         raise ValueError("k must be greater than or equal to w + 1")
+    
+    if k > 2*w:
+        raise ValueError("k must be less than or equal to 2*w")
 
     dlist_valid_values = {"genome", "transcriptome", "genome_and_transcriptome", "None", None}
     if dlist not in dlist_valid_values:
@@ -92,10 +98,12 @@ def validate_input_ref(params_dict):
     variants = params_dict["variants"]
     sequences = params_dict["sequences"]
     # more on download
-    if variants not in prebuilt_vk_ref_files:
-        raise ValueError(f"When downloading prebuilt reference, `variants` must be one of {prebuilt_vk_ref_files.keys()}. variants={variants} not recognized.")
-    if sequences not in prebuilt_vk_ref_files[variants]:
-        raise ValueError(f"When downloading prebuilt reference, `sequences` must be one of {prebuilt_vk_ref_files[variants].keys()}. sequences={sequences} not recognized.")
+
+    if params_dict.get("download"):
+        if variants not in prebuilt_vk_ref_files:
+            raise ValueError(f"When downloading prebuilt reference, `variants` must be one of {prebuilt_vk_ref_files.keys()}. variants={variants} not recognized.")
+        if sequences not in prebuilt_vk_ref_files[variants]:
+            raise ValueError(f"When downloading prebuilt reference, `sequences` must be one of {prebuilt_vk_ref_files[variants].keys()}. sequences={sequences} not recognized.")
 
     # kb ref stuff
     for argument_type, argument_set in varseek_ref_only_allowable_kb_ref_arguments.items():
@@ -136,6 +144,9 @@ def ref(
     dlist=None,
     dlist_reference_source="T2T",
     config=None,
+    var_column="mutation",
+    seq_id_column="seq_ID",
+    var_id_column=None,
     out=".",
     reference_out_dir=None,
     index_out=None,
@@ -281,21 +292,34 @@ def ref(
 
     # * 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
-    vk.varseek_build.validate_input_build(params_dict)  # this passes all vk ref parameters to the function - I could only pass in the vk build parameters here if desired (and likewise below), but there should be no naming conflicts anyways
-    vk.varseek_info.validate_input_info(params_dict)
-    vk.varseek_filter.validate_input_filter(params_dict)
-    validate_input_ref(params_dict)
     params_dict['logger'] = logger
 
-    # * 3. Dry-run
-    # handled within child functions
+    params_dict_for_type_checking = copy.deepcopy(params_dict)  # make a copy of the params_dict for type checking, so that I can modify it without affecting the original params_dict
+    params_dict_for_type_checking = check_that_two_paths_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict_for_type_checking, "out", "input_dir")  # because input_dir is a required argument, it does not have a default, and so I should enforce this default manually
 
-    # * 3.75 Pop out any unallowable arguments
+    # Set params_dict_for_type_checking to default values of children functions - important so type checking works properly
+    ref_signature = inspect.signature(ref)
+    for function in (vk.varseek_build.build, vk.varseek_info.info, vk.varseek_filter.filter):
+        signature = inspect.signature(function)
+        for key in signature.parameters.keys():
+            if key not in params_dict_for_type_checking and key not in ref_signature.parameters.keys():
+                params_dict_for_type_checking[key] = signature.parameters[key].default
+    
+    vk.varseek_build.validate_input_build(params_dict_for_type_checking)  # this passes all vk ref parameters to the function - I could only pass in the vk build parameters here if desired (and likewise below), but there should be no naming conflicts anyways
+    vk.varseek_info.validate_input_info(params_dict_for_type_checking)
+    vk.varseek_filter.validate_input_filter(params_dict_for_type_checking)
+    validate_input_ref(params_dict_for_type_checking)
+
+    # * 3. Dry-run
+    # handled within child functions   
+
+    # * 3.5. pop out any unallowable arguments
     for key, unallowable_set in varseek_ref_unallowable_arguments.items():
         for unallowable_key in unallowable_set:
             params_dict.pop(unallowable_key, None)
 
     # * 3.8 Set params_dict to default values of children functions (not strictly necessary, as if these arguments are not in params_dict then it will use the default values anyways, but important if I need to rely on these default values within vk ref)
+    # Set params_dict to default values of children functions (not strictly necessary, as if these arguments are not in params_dict then it will use the default values anyways, but important if I need to rely on these default values within vk ref)
     # ref_signature = inspect.signature(ref)
     # for function in (vk.varseek_build.build, vk.varseek_info.info, vk.varseek_filter.filter):
     #     signature = inspect.signature(function)
@@ -319,7 +343,7 @@ def ref(
     #     for key in mode_parameters[mode]:
     #         params_dict[key] = mode_parameters[mode][key]
 
-    # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
+    # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True    
     # Make directories
     os.makedirs(out, exist_ok=True)
 
@@ -351,12 +375,12 @@ def ref(
 
     overwrite_original = params_dict.get("overwrite_original", False)
 
-    params_dict = check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "out", "input_dir")  # check that, if out and input_dir are both provided, they are the same directory; otherwise, if only one is provided, then make them equal to each other
-    params_dict = check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "vcrs_fasta_out", "vcrs_fasta")  # build --> info
-    params_dict = check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "id_to_header_csv_out", "id_to_header_csv")  # build --> info/filter
-    params_dict = check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "variants_updated_csv_out", "variants_updated_csv")  # build --> info
-    params_dict = check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "variants_updated_vk_info_csv_out", "variants_updated_vk_info_csv")  # info --> filter
-    params_dict = check_that_two_directories_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "variants_updated_exploded_vk_info_csv_out", "variants_updated_exploded_vk_info_csv")  # info --> filter
+    params_dict = check_that_two_paths_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "out", "input_dir")  # check that, if out and input_dir are both provided, they are the same directory; otherwise, if only one is provided, then make them equal to each other
+    params_dict = check_that_two_paths_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "vcrs_fasta_out", "vcrs_fasta")  # build --> info
+    params_dict = check_that_two_paths_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "id_to_header_csv_out", "id_to_header_csv")  # build --> info/filter
+    params_dict = check_that_two_paths_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "variants_updated_csv_out", "variants_updated_csv")  # build --> info
+    params_dict = check_that_two_paths_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "variants_updated_vk_info_csv_out", "variants_updated_vk_info_csv")  # info --> filter
+    params_dict = check_that_two_paths_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "variants_updated_exploded_vk_info_csv_out", "variants_updated_exploded_vk_info_csv")  # info --> filter
     # dlist handled below - see the comment "set d-list argument"
 
     # * 6.5 Just to make the unused parameter coloration go away in VSCode
@@ -366,9 +390,15 @@ def ref(
     verbose = verbose
     dlist_reference_source = dlist_reference_source
     reference_out_dir = reference_out_dir
+    var_column = var_column
+    seq_id_column = seq_id_column
+    var_id_column = var_id_column
 
     # * 7. Define kwargs defaults
     # Nothing to see here
+
+    # * 7.5. make sure ints are ints
+    w, k, threads = int(w), int(k), int(threads)
 
     # * 8. Start the actual function
     # some copy-paste from vk build to ensure correct column names if using the cosmic_cmc database
