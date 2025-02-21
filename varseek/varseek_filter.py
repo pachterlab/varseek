@@ -265,7 +265,7 @@ def validate_input_filter(params_dict):
     if not isinstance(params_dict.get("input_dir"), (str, Path)):  # I will enforce that input_dir exists later, as otherwise it will throw an error when I call this through vk ref before vk build's out exists
         raise ValueError(f"Invalid value for input_dir: {params_dict.get('input_dir')}")
     if params_dict.get("out") is not None and not isinstance(params_dict.get("out"), (str, Path)):
-        raise ValueError(f"Invalid input directory: {params_dict.get('out')}")
+        raise ValueError(f"Invalid output directory: {params_dict.get('out')}")
 
     # filters
     filters = params_dict["filters"]

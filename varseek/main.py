@@ -1581,12 +1581,6 @@ def main():  # noqa: C901
         help=extract_help_from_doc(fastqpp, "out"),
     )
     parser_fastqpp.add_argument(
-        "--delete_intermediate_files",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(fastqpp, "delete_intermediate_files"),
-    )
-    parser_fastqpp.add_argument(
         "--dry_run",
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
@@ -1910,12 +1904,6 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "vcrs_fasta"),
     )
     parser_clean.add_argument(
-        "--id_to_header_csv",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "id_to_header_csv"),
-    )
-    parser_clean.add_argument(
         "--dlist_fasta",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
@@ -2020,18 +2008,6 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "threads"),
     )
     parser_clean.add_argument(
-        "--kallisto",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "kallisto"),
-    )
-    parser_clean.add_argument(
-        "--bustools",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "bustools"),
-    )
-    parser_clean.add_argument(
         "--logging_level",
         choices=["NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "0", "10", "20", "30", "40", "50", "60", None],
         required=False,
@@ -2049,6 +2025,25 @@ def main():  # noqa: C901
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provideds
         help=extract_help_from_doc(clean, "log_out_dir"),
+    )
+    # kwargs
+    parser_clean.add_argument(
+        "--id_to_header_csv",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "id_to_header_csv"),
+    )
+    parser_clean.add_argument(
+        "--kallisto",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "kallisto"),
+    )
+    parser_clean.add_argument(
+        "--bustools",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "bustools"),
     )
 
     # NEW PARSER
@@ -2788,6 +2783,7 @@ def main():  # noqa: C901
         #* ensure that all keys in params_dict correspond to the python parameters, and the values correspond to the command line values - see the vk build section in main for more details
 
         # (1) modify variable outside of args
+        fastqs = params_dict.pop('fastqs')
         
         # combine with kwargs (if both params_dict and kwargs have the same key, params_dict takes precedence)
         params_dict = {**kwargs, **params_dict}
@@ -2796,7 +2792,7 @@ def main():  # noqa: C901
         if os.getenv("TESTING") == "true":
             return params_dict
 
-        count_results = count(**params_dict)
+        count_results = count(*fastqs, **params_dict)
 
         # * optionally do something with count_results (e.g., save, or print to console)
 

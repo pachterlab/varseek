@@ -332,12 +332,13 @@ def ref(
     #             params_dict[key] = signature.parameters[key].default
 
     # * 4. Save params to config file and run info file
-    # Save parameters to config file
-    config_file = os.path.join(out, "config", "vk_ref_config.json")
-    save_params_to_config_file(params_dict, config_file)
+    if not params_dict.get("dry_run"):
+        # Save parameters to config file
+        config_file = os.path.join(out, "config", "vk_ref_config.json")
+        save_params_to_config_file(params_dict, config_file)
 
-    run_info_file = os.path.join(out, "config", "vk_ref_run_info.txt")
-    save_run_info(run_info_file)
+        run_info_file = os.path.join(out, "config", "vk_ref_run_info.txt")
+        save_run_info(run_info_file)
 
     # * 5. Set up default folder/file input paths, and make sure the necessary ones exist
     # all input files for vk ref are required in the varseek workflow, so this is skipped
@@ -527,15 +528,15 @@ def ref(
     all_parameter_names_set_vk_info = explicit_parameters_vk_info | allowable_kwargs_vk_info
     all_parameter_names_set_vk_filter = explicit_parameters_vk_filter | allowable_kwargs_vk_filter
 
-    params_dict_vk_build = {key: value for key, value in params_dict.items() if key in all_parameter_names_set_vk_build}
-    params_dict_vk_info = {key: value for key, value in params_dict.items() if key in all_parameter_names_set_vk_info}
-    params_dict_vk_filter = {key: value for key, value in params_dict.items() if key in all_parameter_names_set_vk_filter}
-
     # vk build
     if not os.path.exists(file_signifying_successful_vk_build_completion) or overwrite:  # the reason I do it like this, rather than if overwrite or not os.path.exists(MYPATH), is because I would like vk ref/count to automatically overwrite partially-completed function outputs even when overwrite=False; but when overwrite=True, then run from scratch regardless
-        params_dict["overwrite"], params_dict_vk_build["overwrite"] = True, True
+        params_dict["overwrite"] = True
+
+        params_dict_vk_build = {key: value for key, value in params_dict.items() if key in all_parameter_names_set_vk_build}  # only pass in the parameters that are in the vk build function signature for dry run
+        
         logger.info("Running vk build")
         _ = vk.build(**params_dict) if not params_dict.get("dry_run", False) else vk.build(**params_dict_vk_build)  # best of both worlds - will only pass in defined arguments if dry run is True (which is good so that I don't show each function with a bunch of args it never uses), but will pass in all arguments if dry run is False (which is good if I run vk ref with a new parameter that I have not included in docstrings yet, as I only get usable kwargs list from docstrings)
+        
         params_dict["overwrite"], params_dict_vk_build["overwrite"] = overwrite_original, overwrite_original
     else:
         logger.warning(f"Skipping vk build because {file_signifying_successful_vk_build_completion} already exists and overwrite=False")
@@ -545,9 +546,13 @@ def ref(
         if params_dict.get("use_IDs", None) is False:
             logger.warning("use_IDs=False is not recommended for vk info, as the headers output by vk build can break some programs that read fasta files due to the inclusion of '>' symbols in substitutions and the potentially long length of the headers (with multiple combined headers and/or long insertions). Consider setting use_IDs=True (use IDs throughout the workflow) or leaving this parameter blank (will use IDs in vk build so that vk info runs properly [unless vk info/filter will not be run, in which case it will use headers], and will use headers in vk filter so that the output is more readable).")
         if not os.path.exists(file_signifying_successful_vk_info_completion) or overwrite:
-            params_dict["overwrite"], params_dict_vk_info["overwrite"] = True, True
+            params_dict["overwrite"] = True
+
+            params_dict_vk_info = {key: value for key, value in params_dict.items() if key in all_parameter_names_set_vk_info}    # only pass in the parameters that are in the vk info function signature for dry run
+            
             logger.info("Running vk info")
             _ = vk.info(**params_dict) if not params_dict.get("dry_run", False) else vk.info(**params_dict_vk_info)
+
             params_dict["overwrite"], params_dict_vk_info["overwrite"] = overwrite_original, overwrite_original
         else:
             logger.warning(f"Skipping vk info because {file_signifying_successful_vk_info_completion} already exists and overwrite=False")
@@ -555,9 +560,13 @@ def ref(
     # vk filter
     if not skip_filter:
         if not all(os.path.exists(f) for f in files_signifying_successful_vk_filter_completion) or overwrite:
-            params_dict["overwrite"], params_dict_vk_filter["overwrite"] = True, True
+            params_dict["overwrite"] = True
+
+            params_dict_vk_filter = {key: value for key, value in params_dict.items() if key in all_parameter_names_set_vk_filter}  # only pass in the parameters that are in the vk filter function signature for dry run
+            
             logger.info("Running vk filter")
             _ = vk.filter(**params_dict) if not params_dict.get("dry_run", False) else vk.filter(**params_dict_vk_filter)
+
             params_dict["overwrite"], params_dict_vk_filter["overwrite"] = overwrite_original, overwrite_original
         else:
             logger.warning(f"Skipping vk filter because {files_signifying_successful_vk_filter_completion} already exist and overwrite=False")
@@ -576,8 +585,7 @@ def ref(
         dlist_kb_argument,
         "-k",
         str(k),
-        "--overwrite",
-        True,  # set to True here regardless of the overwrite argument because I would only even enter this block if kb count was only partially run (as seen by the lack of existing of file_signifying_successful_kb_ref_completion), in which case I should overwrite anyways
+        "--overwrite",  # set overwrite here regardless of the overwrite argument because I would only even enter this block if kb count was only partially run (as seen by the lack of existing of file_signifying_successful_kb_ref_completion), in which case I should overwrite anyways
     ]
 
     # assumes any argument in varseek ref matches kb ref identically, except dashes replaced with underscores
@@ -598,16 +606,14 @@ def ref(
 
     kb_ref_command.append(vcrs_fasta_for_index)
 
-    if dry_run:
-        print(kb_ref_command)
-        index_out = None
-        vcrs_t2g_for_alignment = None
-    else:
-        if not os.path.exists(file_signifying_successful_kb_ref_completion) or overwrite:
-            logger.info(f"Running kb ref with command: {' '.join(kb_ref_command)}")
-            subprocess.run(kb_ref_command, check=True)
+    if not os.path.exists(file_signifying_successful_kb_ref_completion) or overwrite:
+        logger.info(f"Running kb ref with command: {' '.join(kb_ref_command)}")
+        if dry_run:
+            print(" ".join(kb_ref_command))
         else:
-            logger.warning(f"Skipping kb ref because {file_signifying_successful_kb_ref_completion} already exists and overwrite=False")
+            subprocess.run(kb_ref_command, check=True)
+    else:
+        logger.warning(f"Skipping kb ref because {file_signifying_successful_kb_ref_completion} already exists and overwrite=False")
 
     #!!! erase if removing wt vcrs feature
     wt_vcrs_fasta_out = params_dict.get("vcrs_fasta_out", os.path.join(out, "wt_vcrs.fa"))  # make sure this matches vk build
@@ -616,24 +622,29 @@ def ref(
     wt_vcrs_index_out = params_dict.get("wt_vcrs_index_out", os.path.join(out, "wt_vcrs_index.idx"))
     file_signifying_successful_wt_vcrs_kb_ref_completion = wt_vcrs_index_out
 
-    kb_ref_wt_vcrs_command = ["kb", "ref", "--workflow", "custom", "-t", str(threads), "-i", wt_vcrs_index_out, "--d-list", "None", "-k", str(k), "--overwrite", True, vcrs_wt_fasta_for_index]  # set to True here regardless of the overwrite argument because I would only even enter this block if kb count was only partially run (as seen by the lack of existing of file_signifying_successful_wt_vcrs_kb_ref_completion), in which case I should overwrite anyways
-
-    if dry_run:
-        print(kb_ref_wt_vcrs_command)
-    else:
-        if not os.path.exists(file_signifying_successful_wt_vcrs_kb_ref_completion) or overwrite:
-            logger.info(f"Running kb ref for wt vcrs index with command: {' '.join(kb_ref_wt_vcrs_command)}")
-            subprocess.run(kb_ref_wt_vcrs_command, check=True)
+    if os.path.exists(vcrs_wt_fasta_for_index):
+        if (not os.path.exists(file_signifying_successful_wt_vcrs_kb_ref_completion) or overwrite):
+            kb_ref_wt_vcrs_command = ["kb", "ref", "--workflow", "custom", "-t", str(threads), "-i", wt_vcrs_index_out, "--d-list", "None", "-k", str(k), "--overwrite", True, vcrs_wt_fasta_for_index]  # set to True here regardless of the overwrite argument because I would only even enter this block if kb count was only partially run (as seen by the lack of existing of file_signifying_successful_wt_vcrs_kb_ref_completion), in which case I should overwrite anyways
+            if dry_run:
+                print(" ".join(kb_ref_wt_vcrs_command))
+            else:
+                logger.info(f"Running kb ref for wt vcrs index with command: {' '.join(kb_ref_wt_vcrs_command)}")
+                subprocess.run(kb_ref_wt_vcrs_command, check=True)
         else:
             logger.warning(f"Skipping kb ref for wt vcrs because {file_signifying_successful_wt_vcrs_kb_ref_completion} already exists and overwrite=False")
     #!!! erase if removing wt vcrs feature
+
+    if dry_run:
+        index_out = None
+        vcrs_t2g_for_alignment = None
 
     vk_ref_output_dict = {}
     vk_ref_output_dict["index"] = index_out
     vk_ref_output_dict["t2g"] = vcrs_t2g_for_alignment
 
     # Report time
-    report_time_elapsed(start_time, logger=logger, function_name="ref")
+    if not dry_run:
+        report_time_elapsed(start_time, logger=logger, function_name="ref")
 
     return vk_ref_output_dict
 

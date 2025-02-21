@@ -65,10 +65,10 @@ scanpy_conditions = ['filter_cells_by_min_counts', 'filter_cells_by_min_genes', 
 def validate_input_clean(params_dict):
     # check if adata_vcrs is of type Anndata
     adata_vcrs = params_dict["adata_vcrs"]
-    if not isinstance(adata_vcrs, anndata.AnnData) or (not isinstance(adata_vcrs, (str, Path)) and not adata_vcrs.endswith(".h5ad")):
+    if not isinstance(adata_vcrs, (str, Path, anndata.AnnData)):  # I will enforce that adata_vcrs exists later, as otherwise it will throw an error when I call this through vk count before kb count can run
         raise ValueError("adata_vcrs must be an AnnData object or a file path to an h5ad object.")
-    if isinstance(adata_vcrs, (str, Path)) and not os.path.isfile(adata_vcrs):
-        raise ValueError(f"adata_vcrs file path {adata_vcrs} does not exist.")
+    if isinstance(adata_vcrs, (str, Path)):
+        check_file_path_is_string_with_valid_extension(adata_vcrs, "adata_vcrs", "h5ad")
 
     # technology
     technology = params_dict.get("technology", None)
@@ -121,9 +121,11 @@ def validate_input_clean(params_dict):
         raise ValueError(f"filter_cells_by_max_mt_content must be an integer between 0 and 100, or None. Got {params_dict.get('filter_cells_by_max_mt_content')}.")
 
     # boolean
-    for param_name in ["use_binary_matrix", "drop_empty_columns", "apply_single_end_mode_on_paired_end_data_correction", "split_reads_by_Ns_and_low_quality_bases", "apply_dlist_correction", "qc_against_gene_matrix", "doublet_detection", "remove_doublets", "cpm_normalization", "sum_rows", "mm", "union", "multiplexed", "save_vcf", "dry_run", "overwrite"]:
+    for param_name in ["use_binary_matrix", "drop_empty_columns", "apply_single_end_mode_on_paired_end_data_correction", "split_reads_by_Ns_and_low_quality_bases", "apply_dlist_correction", "qc_against_gene_matrix", "doublet_detection", "remove_doublets", "cpm_normalization", "sum_rows", "mm", "union", "save_vcf", "dry_run", "overwrite"]:
         if not isinstance(params_dict.get(param_name), bool):
             raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
+    if not isinstance(params_dict.get("multiplexed"), bool) and params_dict.get("multiplexed") is not None:
+        raise ValueError(f"multiplexed must be a boolean pr None. Got {params_dict.get('multiplexed')} of type {type(params_dict.get('multiplexed'))}.")
 
     # sets
     for param_name in ["vcrs_id_set_to_exclusively_keep", "vcrs_id_set_to_exclude", "transcript_set_to_exclusively_keep", "transcript_set_to_exclude", "gene_set_to_exclusively_keep", "gene_set_to_exclude"]:
@@ -135,8 +137,8 @@ def validate_input_clean(params_dict):
     k = params_dict.get("k", None)
     if not isinstance(k, int) or int(k) < 1:
         raise ValueError(f"k must be a positive integer. Got {k} of type {type(k)}.")
-    if int(k) % 2 != 0 or int(k) > 63:
-        logger.warning(f"If running a workflow with vk count or kb count, k should be an odd number between 1 and 63. Got {k}.")
+    if int(k) % 2 == 0 or int(k) > 63:
+        logger.warning("If running a workflow with vk ref or kb ref, k should be an odd number between 1 and 63. Got k=%s.", k)
 
     # fastqs
     fastqs = params_dict["fastqs"]  # tuple
@@ -161,19 +163,21 @@ def validate_input_clean(params_dict):
         "vcrs_t2g": "t2g",
         "vcrs_fasta": "fasta",
         "dlist_fasta": "fasta",
-        "adata_reference_genome": "adata",
-        "adata_vcrs_clean_out": "adata",
-        "adata_reference_genome_clean_out": "adata",
+        "adata_reference_genome": "h5ad",
+        "adata_vcrs_clean_out": "h5ad",
+        "adata_reference_genome_clean_out": "h5ad",
         "vcf_out": "vcf",
     }.items():
         check_file_path_is_string_with_valid_extension(params_dict.get(param_name), param_name, file_type)
 
     # directories
-    for param_name in ["vk_ref_dir", "kb_count_vcrs_dir", "kb_count_reference_genome_dir", "out"]:
-        if not isinstance(params_dict.get(param_name), (str, Path)):
-            raise ValueError(f"Directory {params_dict.get(param_name)} is not a string")
-    if params_dict.get("vk_ref_dir") and not os.path.isdir(params_dict.get("vk_ref_dir")):
-        raise ValueError(f"Directory {params_dict.get('vk_ref_dir')} does not exist")
+    for param_name in ["vk_ref_dir", "kb_count_vcrs_dir", "kb_count_reference_genome_dir"]:
+        if not isinstance(params_dict.get(param_name), (str, Path)) and params_dict.get(param_name) is not None:
+            raise ValueError(f"Directory {param_name} {params_dict.get(param_name)} is not a string or None")
+        if params_dict.get(param_name) and not os.path.isdir(params_dict.get(param_name)):
+            raise ValueError(f"Directory {params_dict.get(param_name)} does not exist")
+    if not isinstance(params_dict.get("out"), (str, Path)):
+        raise ValueError(f"Out directory {params_dict.get('out')} is not a string")
 
 
 needs_for_normal_genome_matrix = ["filter_cells_by_min_counts", "filter_cells_by_min_genes", "filter_genes_by_min_cells", "filter_cells_by_max_mt_content", "doublet_detection", "cpm_normalization"]
@@ -207,7 +211,7 @@ def clean(
     mm=False,
     union=False,
     parity="single",
-    multiplexed=False,
+    multiplexed=None,
     sort_fastqs=True,
     adata_reference_genome=None,
     fastqs=None,  # optional inputs
@@ -231,8 +235,6 @@ def clean(
     dry_run=False,  # general
     overwrite=False,
     threads=2,
-    kallisto=None,
-    bustools=None,
     logging_level=None,
     save_logs=False,
     log_out_dir=None,
@@ -303,14 +305,14 @@ def clean(
     - dry_run                               (bool): Whether to run in dry run mode. Default: False.
     - overwrite                             (bool): Whether to overwrite existing files. Default: False.
     - threads                               (int): Number of threads to use. Default: 2.
-    - kallisto                              (str): Path to the kallisto binary. Default: None.
-    - bustools                              (str): Path to the bustools binary. Default: None.
     - logging_level                         (str) Logging level. Can also be set with the environment variable VARSEEK_LOGGING_LEVEL. Default: INFO.
     - save_logs                             (True/False) Whether to save logs to a file. Default: False.
     - log_out_dir                           (str) Directory to save logs. Default: `out`/logs
 
     # Hidden arguments
     - id_to_header_csv                      (str): Path to the VCRS id to header csv file. Default: None.
+    - kallisto                              (str): Path to the kallisto binary. Default: None.
+    - bustools                              (str): Path to the bustools binary. Default: None.
     """
     # * 1. Start timer
     start_time = time.perf_counter()
@@ -332,6 +334,9 @@ def clean(
     params_dict = make_function_parameter_to_value_dict(1)
     validate_input_clean(params_dict)
     params_dict["fastqs"] = fastqs_original  # change back for dry run and config_file
+
+    if isinstance(adata_vcrs, (str, Path)) and not os.path.isfile(adata_vcrs) and not dry_run:  # only use os.path.isfile when I require that a directory already exists; checked outside validate_input_clean to avoid raising issue when type-checking within vk count
+        raise ValueError(f"adata_vcrs file path {adata_vcrs} does not exist.")
 
     # * 3. Dry-run and set out folder (must to it up here or else config will save in the wrong place)
     if dry_run:
@@ -390,7 +395,9 @@ def clean(
     os.makedirs(output_figures_dir, exist_ok=True)
 
     # * 7. Define kwargs defaults
-    # id_to_header_csv is currently the only kwargs and was defined in step 5
+    # id_to_header_csv was defined in step 5
+    kallisto = kwargs.get("kallisto", "kallisto")
+    bustools = kwargs.get("bustools", "bustools")
 
     # * 7.5 make sure ints are ints
     min_counts, threads = int(min_counts), int(threads)
@@ -409,7 +416,8 @@ def clean(
     try:
         fastqs = sort_fastq_files_for_kb_count(fastqs, technology=technology, multiplexed=multiplexed, logger=logger, check_only=(not sort_fastqs))
     except Exception:
-        pass
+        if sort_fastqs:
+            logger.warning(f"Automatic FASTQ argument order sorting for kb count could not recognize FASTQ file name format. Skipping argument order sorting.")
 
     if not kallisto:
         kallisto_binary_path_command = "kb info | grep 'kallisto:' | awk '{print $3}' | sed 's/[()]//g'"

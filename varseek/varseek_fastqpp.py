@@ -86,7 +86,7 @@ def validate_input_fastqpp(params_dict):
         raise ValueError(f"min_read_len must be an integer >= 1 or None. Got {params_dict.get('threads')}.")
 
     # boolean
-    for param_name in ["quality_control_fastqs", "fastqc_and_multiqc", "split_reads_by_Ns_and_low_quality_bases", "concatenate_paired_fastqs", "delete_intermediate_files", "dry_run", "overwrite", "sort_fastqs"]:
+    for param_name in ["quality_control_fastqs", "fastqc_and_multiqc", "split_reads_by_Ns_and_low_quality_bases", "concatenate_paired_fastqs", "dry_run", "overwrite", "sort_fastqs"]:
         if not isinstance(params_dict.get(param_name), bool):
             raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
 
@@ -145,7 +145,6 @@ def fastqpp(
     - min_base_quality_for_splitting    (int) The minimum acceptable base quality for split_reads_by_Ns_and_low_quality_bases. Bases below this quality will split. Only used if split_reads_by_Ns_and_low_quality_bases=True. Range: 0-93. Default: 13
     - concatenate_paired_fastqs         (bool) If True, concatenate paired fastq files. Default: False
     - out                               (str) Output directory. Default: "."
-    - delete_intermediate_files         (bool) If True, delete intermediate files. Default: False
     - dry_run                           (bool) If True, print the commands that would be run without actually running them. Default: False
     - overwrite                         (True/False) Whether to overwrite existing output files. Will return if any output file already exists. Default: False.
     - sort_fastqs                       (bool) If True, sort fastq files by kb count. If False, then still check the order but do not change anything. Default: True
@@ -197,7 +196,8 @@ def fastqpp(
     # * 3. Dry-run
     if dry_run:
         print_varseek_dry_run(params_dict, function_name="fastqpp")
-        return None
+        fastqpp_dict = {"original": fastqs, "final": fastqs}
+        return fastqpp_dict
 
     # * 4. Save params to config file and run info file
     config_file = os.path.join(out, "config", "vk_fastqpp_config.json")
@@ -257,7 +257,11 @@ def fastqpp(
     cut_mean_quality, cut_window_size, qualified_quality_phred, unqualified_percent_limit, max_ambiguous, min_read_len, threads = int(cut_mean_quality), int(cut_window_size), int(qualified_quality_phred), int(unqualified_percent_limit), int(max_ambiguous), int(min_read_len), int(threads)
 
     # * 8. Start the actual function
-    fastqs = sort_fastq_files_for_kb_count(fastqs, technology=technology, multiplexed=multiplexed, logger=logger, check_only=(not sort_fastqs))
+    try:
+        fastqs = sort_fastq_files_for_kb_count(fastqs, technology=technology, multiplexed=multiplexed, logger=logger, check_only=(not sort_fastqs))
+    except ValueError as e:
+        if sort_fastqs:
+            logger.warning(f"Automatic FASTQ argument order sorting for kb count could not recognize FASTQ file name format. Skipping argument order sorting.")
 
     if technology.lower() != "bulk" and "smartseq" not in technology.lower():
         parity = "single"

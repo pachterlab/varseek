@@ -1,0 +1,7 @@
+sequences: "cdna"
+variants: "cosmic_cmc"
+w: 44
+k: 49
+mode: "normal"
+unknown_arg: True
+dry_run: True

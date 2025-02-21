@@ -188,8 +188,8 @@ def validate_input_info(params_dict):
     if w and k:
         if not int(k) > int(w):
             raise ValueError(f"k must be an integer > w. Got k={k}, w={w}.")
-    if int(k) % 2 != 0 or int(k) > 63:
-        logger.warning(f"If running a workflow with vk ref or kb ref, k should be an odd number between 1 and 63. Got k={k}.")
+    if int(k) % 2 == 0 or int(k) > 63:
+        logger.warning("If running a workflow with vk ref or kb ref, k should be an odd number between 1 and 63. Got k=%s.", k)
 
     # boolean
     for param_name in ["save_variants_updated_exploded_vk_info_csv", "make_pyfastx_summary_file", "make_kat_histogram", "dry_run", "list_columns", "overwrite"]:

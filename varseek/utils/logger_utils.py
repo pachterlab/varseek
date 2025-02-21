@@ -95,6 +95,7 @@ def check_file_path_is_string_with_valid_extension(file_path, variable_name, fil
         "t2g": {".txt"},
         "index": {".idx"},
         "h5ad": {".h5ad", ".h5"},
+        "adata": {".h5ad", ".h5"},
     }
     if file_path is not None:  # skip if None or empty string, as I will provide the default path in this case
         # check if file_path is a dataframe or AnnData with the correct extension
@@ -286,9 +287,10 @@ def print_varseek_dry_run(params, function_name=None):
     if function_name:
         if function_name not in {"build", "info", "filter", "fastqpp", "clean", "summarize", "ref", "count"}:
             raise ValueError(f"function_name must be one of build, info, filter, fastqpp, clean, summarize, ref, count. Got {function_name}")
-        end = "\n  "
-        print(f"varseek.varseek_{function_name}.{function_name}(", end=end)
-    for param_key, param_value in params.items():
+        print(f"varseek.varseek_{function_name}.{function_name}(", end="\n  ")
+    len_params = len(params)
+    for i, (param_key, param_value) in enumerate(params.items()):
+        end = "\n  " if i < len_params - 1 else "\n"  # Normal newline for last entry
         print(f"{param_key} = {param_value}", end=end)
     if function_name:
         print(")")

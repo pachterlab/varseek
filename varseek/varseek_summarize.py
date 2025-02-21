@@ -27,12 +27,10 @@ logger = logging.getLogger(__name__)
 
 def validate_input_summarize(params_dict):
     adata = params_dict["adata"]
-    if not isinstance(adata, (str, anndata.AnnData)):
+    if not isinstance(adata, (str, Path, anndata.AnnData)):
         raise TypeError("adata must be a string (file path) or an AnnData object.")
-    if isinstance(adata, str):
-        check_file_path_is_string_with_valid_extension(adata, adata, "h5ad")
-        if not os.path.isfile(adata):  # ensure that all fastq files exist
-            raise ValueError(f"File {adata} does not exist")
+    if isinstance(adata, (str, Path)):
+        check_file_path_is_string_with_valid_extension(adata, "adata", "h5ad")    # I will enforce that adata exists later, as otherwise it will throw an error when I call this through vk count before kb count/vk clean can run
 
     if not is_valid_int(params_dict["top_values"], ">=", 1):
         raise ValueError(f"top_values must be an positive integer. Got {params_dict.get('top_values')}.")
@@ -46,8 +44,8 @@ def validate_input_summarize(params_dict):
     if not isinstance(params_dict["out"], (str, Path)):
         raise ValueError("out must be a string or Path object.")
 
-    if not isinstance(params_dict["vcrs_id"], str):
-        raise ValueError("vcrs_id must be a string.")
+    if not isinstance(params_dict["vcrs_id_column"], str):
+        raise ValueError("vcrs_id_column must be a string.")
 
     for param_name in ["dry_run", "overwrite"]:
         if not isinstance(params_dict.get(param_name), bool):
@@ -106,6 +104,9 @@ def summarize(
     # * 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
     validate_input_summarize(params_dict)
+
+    if isinstance(adata, (str, Path)) and not os.path.isfile(adata) and not dry_run:  # only use os.path.isfile when I require that a directory already exists; checked outside validate_input_summarize to avoid raising issue when type-checking within vk count
+        raise ValueError(f"adata file path {adata} does not exist.")
 
     # * 3. Dry-run
     if dry_run:
