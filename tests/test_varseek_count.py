@@ -3,7 +3,7 @@ import sys
 import importlib
 
 
-def test_varseek_ref_on_command_line(monkeypatch):
+def test_varseek_count_on_command_line(monkeypatch):
     import varseek.main as main_module
 
     test_args = [

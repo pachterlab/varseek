@@ -173,63 +173,7 @@ varseek_ref_only_allowable_kb_ref_arguments = {
 
 varseek_count_only_allowable_kb_count_arguments = {
     "zero_arguments": {"--keep-tmp", "--verbose", "--tcc", "--cellranger", "--gene-names", "--report", "--long", "--opt-off", "--matrix-to-files", "--matrix-to-directories"},
-    "one_argument": {"--tmp", "--kallisto", "--bustools", "-w", "-r", "-m", "--inleaved", "--filter", "filter-threshold", "-N", "--threshold", "--platform"},
+    "one_argument": {"--tmp", "--kallisto", "--bustools", "-w", "-r", "-m", "--inleaved", "--filter", "--filter-threshold", "-N", "--threshold", "--platform"},
     "multiple_arguments": set(),
 }  # don't include d-list, t, i, k, workflow here because I do it myself later
 
-
-
-
-# for main - different command line and python parameter names (to ensure that params_dict gets unpacked correctly when using argparse)
-python_arg_to_cli_arg_dict_build = {
-    "save_removed_variants_text": "disable_save_removed_variants_text",
-    "save_filtering_report_text": "disable_save_filtering_report_text",
-    "verbose": "quiet",
-    "optimize_flanking_regions": "disable_optimize_flanking_regions",
-    "remove_seqs_with_wt_kmers": "disable_remove_seqs_with_wt_kmers",
-    "merge_identical": "disable_merge_identical",
-    "use_IDs": "disable_use_IDs",
-    "save_files": "disable_save_files",
-}
-
-python_arg_to_cli_arg_dict_info = {}
-
-python_arg_to_cli_arg_dict_filter = {
-    "save_vcrs_filtered_fasta_and_t2g": "disable_save_vcrs_filtered_fasta_and_t2g",
-    "use_IDs": "disable_use_IDs",
-}
-
-python_arg_to_cli_arg_dict_fastqpp = {
-    "sort_fastqs": "disable_sort_fastqs",
-}
-
-python_arg_to_cli_arg_dict_clean = {}
-
-python_arg_to_cli_arg_dict_summarize = {}
-
-python_arg_to_cli_arg_dict_ref = {
-    "minimum_info_columns": "disable_minimum_info_columns",  # only use ref-specific args - I combine build, info filter below (although there's no harm in repeating)
-}
-
-python_arg_to_cli_arg_dict_count = {}  # only use count-specific args - I combine fastqpp, clean, summarize below (although there's no harm in repeating)
-
-python_arg_to_cli_arg_dict_sim = {
-    "save_variants_updated_csv": "disable_save_variants_updated_csv",
-    "save_reads_csv": "disable_save_reads_csv",
-}
-
-
-# leave this as-is - it just combines the args for the wrapper functions (ref and count)
-python_arg_to_cli_arg_dict_ref = {
-    **python_arg_to_cli_arg_dict_build,
-    **python_arg_to_cli_arg_dict_info,
-    **python_arg_to_cli_arg_dict_filter,
-    **python_arg_to_cli_arg_dict_ref,
-}
-
-python_arg_to_cli_arg_dict_count = {
-    **python_arg_to_cli_arg_dict_fastqpp,
-    **python_arg_to_cli_arg_dict_clean,
-    **python_arg_to_cli_arg_dict_summarize,
-    **python_arg_to_cli_arg_dict_count,
-}

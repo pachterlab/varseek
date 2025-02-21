@@ -7,17 +7,18 @@ import os
 import re
 import sys
 from datetime import datetime
+from pdb import set_trace as st
 
 import pandas as pd
 
 from .__init__ import __version__
-from .constants import python_arg_to_cli_arg_dict_build, python_arg_to_cli_arg_dict_info, python_arg_to_cli_arg_dict_filter, python_arg_to_cli_arg_dict_fastqpp, python_arg_to_cli_arg_dict_clean, python_arg_to_cli_arg_dict_summarize, python_arg_to_cli_arg_dict_ref, python_arg_to_cli_arg_dict_count, python_arg_to_cli_arg_dict_sim, varseek_ref_only_allowable_kb_ref_arguments, varseek_count_only_allowable_kb_count_arguments
+from .constants import varseek_ref_only_allowable_kb_ref_arguments, varseek_count_only_allowable_kb_count_arguments
 from .utils import load_params, set_up_logger
 from .varseek_build import build
 from .varseek_clean import clean
 from .varseek_count import count
 from .varseek_fastqpp import fastqpp
-from .varseek_filter import filter, prepare_filters_list
+from .varseek_filter import filter
 from .varseek_info import info
 from .varseek_ref import ref
 from .varseek_sim import sim
@@ -149,43 +150,6 @@ def assert_only_config(args, parser):
             # Check if the argument value differs from its default
             if value != parser.get_default(key):
                 raise ValueError(f"If '--config' is passed, no other arguments (like '{key}') can be set.")
-
-
-def copy_parser_arguments(parser_list, parser_target):
-    for parser in parser_list:
-        # Dynamically copy arguments from parser_build to parser_target
-        for action in parser._actions:
-            # Skip help action (default argparse behavior)
-            if isinstance(action, argparse._HelpAction):
-                continue
-
-            # Check if any option string already exists in parser_target (eg already contains --technology or -x)
-            if any(opt in parser_target._option_string_actions for opt in action.option_strings):
-                continue  # Skip adding this argument if there's an overlap
-
-            # Extract all option strings and argument attributes
-            option_strings = action.option_strings
-            kwargs = {
-                "default": action.default,
-                "type": action.type,
-                "required": action.required,
-                "help": action.help,
-                "choices": action.choices,
-                "metavar": action.metavar,
-                "dest": action.dest,
-                "action": action.__class__,  # Retain the action type
-            }
-
-            if not isinstance(action, (argparse._StoreTrueAction, argparse._StoreFalseAction)):
-                kwargs["nargs"] = action.nargs  # Only include nargs for compatible actions
-
-            # Filter out None values to avoid redundant keyword arguments
-            kwargs = {key: value for key, value in kwargs.items() if value is not None}
-
-            # Add the argument to the target parser
-            parser_target.add_argument(*option_strings, **kwargs)
-
-            return parser_target
 
 
 # Custom formatter for help messages that preserved the text formatting and adds the default value to the end of the help message
@@ -505,12 +469,14 @@ def main():  # noqa: C901
     )
     parser_build.add_argument(
         "--disable_save_removed_variants_text",
+        dest="save_removed_variants_text",
         action="store_false",
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(build, "save_removed_variants_text"),
     )
     parser_build.add_argument(
         "--disable_save_filtering_report_text",
+        dest="save_filtering_report_text",
         action="store_false",
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(build, "save_filtering_report_text"),
@@ -582,6 +548,7 @@ def main():  # noqa: C901
     parser_build.add_argument(
         "-q",
         "--quiet",
+        dest="verbose",
         action="store_false",
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help="Do not print progress information.",
@@ -603,12 +570,14 @@ def main():  # noqa: C901
     )
     parser_build.add_argument(
         "--disable_optimize_flanking_regions",
+        dest="optimize_flanking_regions",
         action="store_false",
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(build, "optimize_flanking_regions", disable=True),
     )
     parser_build.add_argument(
         "--disable_remove_seqs_with_wt_kmers",
+        dest="remove_seqs_with_wt_kmers",
         action="store_false",
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(build, "remove_seqs_with_wt_kmers", disable=True),
@@ -622,6 +591,7 @@ def main():  # noqa: C901
     )
     parser_build.add_argument(
         "--disable_merge_identical",
+        dest="merge_identical",
         action="store_false",
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(build, "merge_identical", disable=True),
@@ -635,6 +605,7 @@ def main():  # noqa: C901
     )
     parser_build.add_argument(
         "--disable_use_IDs",
+        dest="use_IDs",
         action="store_false",
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(build, "use_IDs", disable=True),
@@ -662,12 +633,6 @@ def main():  # noqa: C901
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(build, "cosmic_password"),
-    )
-    parser_build.add_argument(
-        "--disable_save_files",
-        action="store_false",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "save_files", disable=True),
     )
 
     # NEW PARSER
@@ -1213,12 +1178,14 @@ def main():  # noqa: C901
     )
     parser_filter.add_argument(
         "--disable_save_vcrs_filtered_fasta_and_t2g",
+        dest="save_vcrs_filtered_fasta_and_t2g",
         action="store_false",
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(filter, "save_vcrs_filtered_fasta_and_t2g", disable=True),
     )
     parser_filter.add_argument(
         "--disable_use_IDs",
+        dest="use_IDs",
         action="store_false",
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(filter, "use_IDs", disable=True),
@@ -1389,13 +1356,15 @@ def main():  # noqa: C901
     )
     parser_sim.add_argument(
         "--disable_save_variants_updated_csv",
-        action="store_true",
+        dest="save_variants_updated_csv",
+        action="store_false",
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(sim, "save_variants_updated_csv", disable=True),
     )
     parser_sim.add_argument(
         "--disable_save_reads_csv",
-        action="store_true",
+        dest="save_reads_csv",
+        action="store_false",
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(sim, "save_reads_csv", disable=True),
     )
@@ -1631,9 +1600,10 @@ def main():  # noqa: C901
     )
     parser_fastqpp.add_argument(
         "--disable_sort_fastqs",
+        dest="sort_fastqs",
         action="store_false",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(fastqpp, "dry_run", disable=True),
+        help=extract_help_from_doc(fastqpp, "sort_fastqs", disable=True),
     )
     parser_fastqpp.add_argument(
         "-t",
@@ -1903,10 +1873,11 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "multiplexed"),
     )
     parser_clean.add_argument(
-        "--sort_fastqs",
-        action="store_true",
+        "--disable_sort_fastqs",
+        dest="sort_fastqs",
+        action="store_false",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "sort_fastqs"),
+        help=extract_help_from_doc(clean, "sort_fastqs", disable=True),
     )
     parser_clean.add_argument(
         "--fastqs",
@@ -2236,7 +2207,6 @@ def main():  # noqa: C901
     parser_ref.add_argument(
         "--mode",
         required=False,
-        dest="LALALA",
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(ref, "mode"),
     )
@@ -2304,6 +2274,7 @@ def main():  # noqa: C901
     parser_ref.add_argument(
         "-dmic",
         "--disable_minimum_info_columns",
+        dest="minimum_info_columns",
         action="store_false",
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(ref, "minimum_info_columns", disable=True),
@@ -2498,10 +2469,11 @@ def main():  # noqa: C901
         help=extract_help_from_doc(count, "overwrite"),
     )
     parser_count.add_argument(
-        "--sort_fastqs",
-        action="store_true",
+        "--disable_sort_fastqs",
+        dest="sort_fastqs",
+        action="store_false",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(count, "sort_fastqs"),
+        help=extract_help_from_doc(count, "sort_fastqs", disable=True),
     )
     parser_count.add_argument(
         "-t",
@@ -2547,11 +2519,14 @@ def main():  # noqa: C901
         if flag not in parser_count._option_string_actions:  # Skip if already present
             parser_count.add_argument(
                 flag,
+                required=False,
                 default=argparse.SUPPRESS,  # Remove from args if not provided
                 help=argparse.SUPPRESS,  # don't show help
             )
     
-    # add any non-standard flags from kb ref/count to varseek ref/count here (e.g., store_false)
+    #$ to continue adding support for future kb ref/count args, simply update the dicts varseek_ref_only_allowable_kb_ref_arguments and varseek_count_only_allowable_kb_count_arguments, and ensure that they follow the current rules (0 args is store_true as handled by kwargs, 1 arg is a single string, 2+ args is a list of strings) - and if anything differs from here, then in addition to adding to the dict, then also add the logic custom here
+    # manually add any non-standard flags from kb ref/count to varseek ref/count here (e.g., store_false)
+    
 
 
     # * Define return values
@@ -2640,7 +2615,7 @@ def main():  # noqa: C901
     for special_key in ["command", "help", "version"]:
         params_dict.pop(special_key, None)
 
-    from pdb import set_trace; set_trace()  # for debugging
+    # st()
 
     # * build return
     if args.command == "build":
@@ -2655,21 +2630,19 @@ def main():  # noqa: C901
             variants = args.variants
 
         #* ensure that all keys in params_dict correspond to the python parameters, and the values correspond to the command line values - the default is to pull from args
-        #* the cases that I have to override are:
-            #* (1) when I modify a variable outside of args (e.g., how I set sequences and variants above)
-            #* (2) when a command line parameter name differs from a python parameter name, e.g., disable_optimize_flanking_regions on command line and optimize_flanking_regions in python
-                #* specifically for the disable example, I want to pass in optimize_flanking_regions=disable_optimize_flanking_regions - don't negate here even though it looks funny (because disable_optimize_flanking_regions is a store_false, it defaults to True - when someone specifies --disable_optimize_flanking_regions on the command line, it will store the value False, which is exactly the value I want to pass into python's optimize_flanking_regions)
-        #* make sure that, I only add in a key if it was originally in args - if not, then do not pass anything - this applies for both kwargs and non-kwargs (if someone doesn't specify an argument, then just go with the python default)
+        #* I must override cases where I modify a variable outside of args (e.g., how I set sequences and variants above):
+        #* I used to call replace_old_arg_names_with_new_arg_names_in_params_dict_and_combine_with_kwargs to update command line name with python name, but now I just have dest handle this for each argument (dest is the python argument name)
+        #* I also use default=argparse.SUPPRESS to remove the argument from the args if not provided
         
-        # (1) modify variable outside of args
+        # modify variable outside of args
         params_dict['sequences'] = sequences
         params_dict['variants'] = variants
-        
-        # (2) different command line and python parameter names - see constants.py
 
-        # replaces old arg names with new arg names in params dict (e.g., params_dict will get the key "optimize_flanking_regions" instead of "disable_optimize_flanking_regions") and combines with kwargs (if both params_dict and kwargs have the same key, params_dict takes precedence)
-        params_dict = replace_old_arg_names_with_new_arg_names_in_params_dict_and_combine_with_kwargs(params_dict, python_arg_to_cli_arg_dict_build, kwargs)
-        if os.getenv("TESTING") == "true":  # for pytest
+        # combine with kwargs (if both params_dict and kwargs have the same key, params_dict takes precedence)
+        params_dict = {**kwargs, **params_dict}
+
+        # for pytest
+        if os.getenv("TESTING") == "true":
             return params_dict
 
         build_results = build(**params_dict)
@@ -2685,11 +2658,11 @@ def main():  # noqa: C901
 
         # (1) modify variable outside of args
         
-        # (2) different command line and python parameter names - see constants.py
+        # combine with kwargs (if both params_dict and kwargs have the same key, params_dict takes precedence)
+        params_dict = {**kwargs, **params_dict}
 
-        # replaces old arg names with new arg names in params dict (e.g., params_dict will get the key "optimize_flanking_regions" instead of "disable_optimize_flanking_regions") and combines with kwargs (if both prams_dict and kwargs have the same key, params_dict takes precedence)
-        params_dict = replace_old_arg_names_with_new_arg_names_in_params_dict_and_combine_with_kwargs(params_dict, python_arg_to_cli_arg_dict_info, kwargs)
-        if os.getenv("TESTING") == "true":  # for pytest
+        # for pytest
+        if os.getenv("TESTING") == "true":
             return params_dict
 
         info_results = info(**params_dict)
@@ -2702,11 +2675,11 @@ def main():  # noqa: C901
 
         # (1) modify variable outside of args
         
-        # (2) different command line and python parameter names - see constants.py
+        # combine with kwargs (if both params_dict and kwargs have the same key, params_dict takes precedence)
+        params_dict = {**kwargs, **params_dict}
 
-        # replaces old arg names with new arg names in params dict (e.g., params_dict will get the key "optimize_flanking_regions" instead of "disable_optimize_flanking_regions") and combines with kwargs (if both prams_dict and kwargs have the same key, params_dict takes precedence)
-        params_dict = replace_old_arg_names_with_new_arg_names_in_params_dict_and_combine_with_kwargs(params_dict, python_arg_to_cli_arg_dict_filter, kwargs)
-        if os.getenv("TESTING") == "true":  # for pytest
+        # for pytest
+        if os.getenv("TESTING") == "true":
             return params_dict
 
         filter_results = filter(**params_dict)
@@ -2719,11 +2692,11 @@ def main():  # noqa: C901
 
         # (1) modify variable outside of args
         
-        # (2) different command line and python parameter names - see constants.py
+        # combine with kwargs (if both params_dict and kwargs have the same key, params_dict takes precedence)
+        params_dict = {**kwargs, **params_dict}
 
-        # replaces old arg names with new arg names in params dict (e.g., params_dict will get the key "optimize_flanking_regions" instead of "disable_optimize_flanking_regions") and combines with kwargs (if both prams_dict and kwargs have the same key, params_dict takes precedence)
-        params_dict = replace_old_arg_names_with_new_arg_names_in_params_dict_and_combine_with_kwargs(params_dict, python_arg_to_cli_arg_dict_sim, kwargs)
-        if os.getenv("TESTING") == "true":  # for pytest
+        # for pytest
+        if os.getenv("TESTING") == "true":
             return params_dict
 
         simulated_df_dict = sim(**params_dict)
@@ -2736,11 +2709,11 @@ def main():  # noqa: C901
 
         # (1) modify variable outside of args
         
-        # (2) different command line and python parameter names - see constants.py
+        # combine with kwargs (if both params_dict and kwargs have the same key, params_dict takes precedence)
+        params_dict = {**kwargs, **params_dict}
 
-        # replaces old arg names with new arg names in params dict (e.g., params_dict will get the key "optimize_flanking_regions" instead of "disable_optimize_flanking_regions") and combines with kwargs (if both prams_dict and kwargs have the same key, params_dict takes precedence)
-        params_dict = replace_old_arg_names_with_new_arg_names_in_params_dict_and_combine_with_kwargs(params_dict, python_arg_to_cli_arg_dict_fastqpp, kwargs)
-        if os.getenv("TESTING") == "true":  # for pytest
+        # for pytest
+        if os.getenv("TESTING") == "true":
             return params_dict
 
         fastqpp_results = fastqpp(**params_dict)
@@ -2753,11 +2726,11 @@ def main():  # noqa: C901
 
         # (1) modify variable outside of args
         
-        # (2) different command line and python parameter names - see constants.py
+        # combine with kwargs (if both params_dict and kwargs have the same key, params_dict takes precedence)
+        params_dict = {**kwargs, **params_dict}
 
-        # replaces old arg names with new arg names in params dict (e.g., params_dict will get the key "optimize_flanking_regions" instead of "disable_optimize_flanking_regions") and combines with kwargs (if both prams_dict and kwargs have the same key, params_dict takes precedence)
-        params_dict = replace_old_arg_names_with_new_arg_names_in_params_dict_and_combine_with_kwargs(params_dict, python_arg_to_cli_arg_dict_clean, kwargs)
-        if os.getenv("TESTING") == "true":  # for pytest
+        # for pytest
+        if os.getenv("TESTING") == "true":
             return params_dict
 
         clean_results = clean(**params_dict)
@@ -2770,11 +2743,11 @@ def main():  # noqa: C901
 
         # (1) modify variable outside of args
         
-        # (2) different command line and python parameter names - see constants.py
-        
-        # replaces old arg names with new arg names in params dict (e.g., params_dict will get the key "optimize_flanking_regions" instead of "disable_optimize_flanking_regions") and combines with kwargs (if both prams_dict and kwargs have the same key, params_dict takes precedence)
-        params_dict = replace_old_arg_names_with_new_arg_names_in_params_dict_and_combine_with_kwargs(params_dict, python_arg_to_cli_arg_dict_summarize, kwargs)
-        if os.getenv("TESTING") == "true":  # for pytest
+        # combine with kwargs (if both params_dict and kwargs have the same key, params_dict takes precedence)
+        params_dict = {**kwargs, **params_dict}
+
+        # for pytest
+        if os.getenv("TESTING") == "true":
             return params_dict
 
         summarize_results = summarize(**params_dict)
@@ -2799,11 +2772,11 @@ def main():  # noqa: C901
         params_dict['sequences'] = sequences
         params_dict['variants'] = variants
         
-        # (2) different command line and python parameter names - see constants.py - #* for vk ref, this should be a combination of the vk build, vk info, and vk filter arguments, plus the things unique to ref
-        
-        # replaces old arg names with new arg names in params dict (e.g., params_dict will get the key "optimize_flanking_regions" instead of "disable_optimize_flanking_regions") and combines with kwargs (if both prams_dict and kwargs have the same key, params_dict takes precedence)
-        params_dict = replace_old_arg_names_with_new_arg_names_in_params_dict_and_combine_with_kwargs(params_dict, python_arg_to_cli_arg_dict_ref, kwargs)
-        if os.getenv("TESTING") == "true":  # for pytest
+        # combine with kwargs (if both params_dict and kwargs have the same key, params_dict takes precedence)
+        params_dict = {**kwargs, **params_dict}
+
+        # for pytest
+        if os.getenv("TESTING") == "true":
             return params_dict
 
         ref_results = ref(**params_dict)
@@ -2816,14 +2789,12 @@ def main():  # noqa: C901
 
         # (1) modify variable outside of args
         
-        # (2) different command line and python parameter names - see constants.py - #* for vk count, this should be a combination of the vk fastqpp, vk clean, and vk summarize arguments, plus the things unique to count
+        # combine with kwargs (if both params_dict and kwargs have the same key, params_dict takes precedence)
+        params_dict = {**kwargs, **params_dict}
 
-        # replaces old arg names with new arg names in params dict (e.g., params_dict will get the key "optimize_flanking_regions" instead of "disable_optimize_flanking_regions") and combines with kwargs (if both prams_dict and kwargs have the same key, params_dict takes precedence)
-        params_dict = replace_old_arg_names_with_new_arg_names_in_params_dict_and_combine_with_kwargs(params_dict, python_arg_to_cli_arg_dict_count, kwargs)
-        if os.getenv("TESTING") == "true":  # for pytest
+        # for pytest
+        if os.getenv("TESTING") == "true":
             return params_dict
-        
-        # from pdb import set_trace; set_trace()
 
         count_results = count(**params_dict)
 

@@ -893,3 +893,29 @@ def load_in_fastqs(fastqs):
         else:
             raise ValueError(f"File {fastqs} is not a fastq file, text file, or directory")
     return files
+
+
+def calculate_end_position(pos, cigar):
+    """
+    Calculate the end position of a read alignment based on POS and CIGAR string.
+
+    Parameters:
+    - pos (int): 1-based start position (POS) from BAM file.
+    - cigar (str): CIGAR string from BAM file.
+
+    Returns:
+    - int: 1-based end position of alignment.
+    """
+    # CIGAR operations that consume the reference
+    consume_ref = {"M", "D", "N", "EQ", "X"}
+
+    # Parse CIGAR string
+    operations = re.findall(r'(\d+)([MIDNSHP=X])', cigar)
+
+    # Compute alignment length
+    alignment_length = sum(int(length) for length, op in operations if op in consume_ref)
+
+    # Compute end position
+    end_pos = pos + alignment_length - 1
+
+    return end_pos
