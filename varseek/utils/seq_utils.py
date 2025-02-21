@@ -868,7 +868,9 @@ def sort_fastq_files_for_kb_count(fastq_files, technology=None, multiplexed=None
 
 
 def load_in_fastqs(fastqs):
-    if len(fastqs) != 1:
+    if not isinstance(fastqs, (str, list, tuple)):
+        raise ValueError(f"fastqs must be a string, list, or tuple, not {type(fastqs)}")
+    if isinstance(fastqs, (list, tuple)) and len(fastqs) > 1:
         return fastqs
     fastqs = fastqs[0]
     if not os.path.exists(fastqs):

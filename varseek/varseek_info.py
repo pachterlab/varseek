@@ -115,19 +115,22 @@ def print_list_columns():
 
 def validate_input_info(params_dict):
     # Directories
-    if not isinstance(params_dict.get("input_dir"), (str, Path)) or not os.path.isdir(params_dict.get("input_dir")):  # only use os.path.isdir when I require that a directory already exists
+    if not isinstance(params_dict.get("input_dir"), (str, Path)):  # I will enforce that input_dir exists later, as otherwise it will throw an error when I call this through vk ref before vk build's out exists
         raise ValueError(f"Invalid value for input_dir: {params_dict.get('input_dir')}")
     if params_dict.get("out") is not None and not isinstance(params_dict.get("out"), (str, Path)):
         raise ValueError(f"Invalid value for out: {params_dict.get('out')}")
     if params_dict.get("reference_out_dir") and (not isinstance(params_dict.get("reference_out_dir"), (str, Path)) or not os.path.isdir(params_dict.get("reference_out_dir"))):
         raise ValueError(f"Invalid value for reference_out_dir: {params_dict.get('reference_out_dir')}")
+    
+    gtf = params_dict.get("gtf")  # gtf gets special treatment because it can be a bool - and check for {"True", "False"} because of CLI passing
+    if gtf is not None and not isinstance(gtf, bool) and gtf not in {"True", "False"} and not gtf.lower().endswith(("gtf", "gtf.zip", "gtf.gz")):
+        raise ValueError(f"Invalid value for gtf: {gtf}. Expected gtf filepath string, bool, or None.")
 
     # file paths
     for param_name, file_type in {
         "vcrs_fasta": "fasta",
         "variants_updated_csv": "csv",
         "id_to_header_csv": "csv",
-        "gtf": "gtf",
         "variants_updated_vk_info_csv_out": "csv",
         "variants_updated_exploded_vk_info_csv_out": "csv",
         "dlist_genome_fasta_out": "fasta",
@@ -135,7 +138,6 @@ def validate_input_info(params_dict):
         "dlist_combined_fasta_out": "fasta",
         "reference_cdna_fasta": "fasta",
         "reference_genome_fasta": "fasta",
-        "variants": "csv",
     }.items():
         check_file_path_is_string_with_valid_extension(params_dict.get(param_name), param_name, file_type)
 
@@ -380,9 +382,15 @@ def info(
             log_out_dir = os.path.join(out, "logs")
         logger = set_up_logger(logger, logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
 
+    if isinstance(columns_to_include, (list, tuple)) and len(columns_to_include) == 1:
+        columns_to_include = columns_to_include[0]
+
     # * 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
     validate_input_info(params_dict)
+
+    if not os.path.isdir(input_dir):  # only use os.path.isdir when I require that a directory already exists; checked outside validate_input_info to avoid raising issue when type-checking within vk ref
+        raise ValueError(f"Input directory '{input_dir}' does not exist. Please provide a valid directory.")
 
     # * 3. Dry-run and set out folder (must to it up here or else config will save in the wrong place)
     if dry_run:

@@ -262,8 +262,8 @@ def validate_input_filter(params_dict):
     # directories
     input_dir = params_dict["input_dir"]
     # Type-checking for paths
-    if not isinstance(input_dir, (str, Path)) or not os.path.isdir(input_dir):
-        raise ValueError(f"Invalid input directory: {input_dir}")
+    if not isinstance(params_dict.get("input_dir"), (str, Path)):  # I will enforce that input_dir exists later, as otherwise it will throw an error when I call this through vk ref before vk build's out exists
+        raise ValueError(f"Invalid value for input_dir: {params_dict.get('input_dir')}")
     if params_dict.get("out") is not None and not isinstance(params_dict.get("out"), (str, Path)):
         raise ValueError(f"Invalid input directory: {params_dict.get('out')}")
 
@@ -420,9 +420,15 @@ def filter(
             log_out_dir = os.path.join(out, "logs")
         logger = set_up_logger(logger, logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
 
+    if isinstance(filters, (list, tuple)) and len(filters) == 1:
+        filters = filters[0]
+
     # * 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
     validate_input_filter(params_dict)
+
+    if not os.path.isdir(input_dir):  # only use os.path.isdir when I require that a directory already exists; checked outside validate_input_info to avoid raising issue when type-checking within vk ref
+        raise ValueError(f"Input directory '{input_dir}' does not exist. Please provide a valid directory.")
 
     # * 3. Dry-run
     if dry_run:

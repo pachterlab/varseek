@@ -181,7 +181,11 @@ def fastqpp(
             log_out_dir = os.path.join(out, "logs")
         logger = set_up_logger(logger, logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
 
-    # * 1.5 load in fastqs
+    # * 1.5. For the nargs="+" arguments, convert any list of length 1 to a string
+    if isinstance(fastqs, (list, tuple)) and len(fastqs) == 1:
+        fastqs = fastqs[0]
+
+    # * 1.75 load in fastqs
     fastqs_original = fastqs
     fastqs = load_in_fastqs(fastqs)  # this will make it in params_dict
 

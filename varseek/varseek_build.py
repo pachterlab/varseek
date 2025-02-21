@@ -305,9 +305,9 @@ def validate_input_build(params_dict):
     sequences = params_dict.get("sequences")
     mutations = params_dict.get("variants")  # apologies for the naming confusion
 
-    if not isinstance(sequences, (list, str, Path)):
+    if not isinstance(sequences, (list, tuple, str, Path)):
         raise ValueError(f"sequences must be a nucleotide string, a list of nucleotide strings, a path to a reference genome, or a string specifying a reference genome supported by varseek. Got {type(sequences)}\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
-    if isinstance(sequences, list) and not all(isinstance(seq, str) for seq in sequences):
+    if isinstance(sequences, (list, tuple)) and not all(isinstance(seq, str) for seq in sequences):
         raise ValueError("All elements in sequences must be nucleotide strings.")
     if isinstance(sequences, str):
         if all(c in "ACGTNU-.*" for c in sequences.upper()):  # a single reference sequence
@@ -341,8 +341,8 @@ def validate_input_build(params_dict):
     if params_dict.get("reference_out_dir", None) and not isinstance(params_dict.get("reference_out_dir", None), (str, Path)):
         raise ValueError(f"Invalid value for reference_out_dir: {params_dict.get('reference_out_dir', None)}")
     
-    gtf = params_dict.get("gtf")  # gtf gets special treatment because it can be a bool
-    if gtf is not None and not isinstance(gtf, bool) and not gtf.lower().endswith(("gtf", "gtf.zip", "gtf.gz")):
+    gtf = params_dict.get("gtf")  # gtf gets special treatment because it can be a bool - and check for {"True", "False"} because of CLI passing
+    if gtf is not None and not isinstance(gtf, bool) and gtf not in {"True", "False"} and not gtf.lower().endswith(("gtf", "gtf.zip", "gtf.gz")):
         raise ValueError(f"Invalid value for gtf: {gtf}. Expected gtf filepath string, bool, or None.")
 
     # file paths
@@ -631,6 +631,12 @@ def build(
             log_out_dir = os.path.join(out, "logs")
         logger = set_up_logger(logger, logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
 
+    # * 1.75. For the nargs="+" arguments, convert any list of length 1 to a string
+    if isinstance(sequences, (list, tuple)) and len(sequences) == 1:
+        sequences = sequences[0]
+    if isinstance(variants, (list, tuple)) and len(variants) == 1:
+        variants = variants[0]
+
     # * 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
     validate_input_build(params_dict)
@@ -739,14 +745,16 @@ def build(
 
     if isinstance(mutations, str):
         if mutations in supported_databases_and_corresponding_reference_sequence_type and "cosmic" in mutations:
+            if cosmic_version not in supported_databases_and_corresponding_reference_sequence_type[mutations]["database_version_to_reference_assembly_build"]:
+                logger.warning(f"cosmic_version {cosmic_version} not explicitely supported internally. Using default value for reference genome build of Ensembl release 93")
             if not cosmic_grch:
-                grch_dict = supported_databases_and_corresponding_reference_sequence_type[mutations]["database_version_to_reference_assembly_build"]
-                largest_key = max(int(k) for k in grch_dict.keys())
-                grch = grch_dict[str(largest_key)]
+                grch_supported_values_tuple = supported_databases_and_corresponding_reference_sequence_type[mutations]["database_version_to_reference_assembly_build"][cosmic_version]
+                grch_supported_values_tuple = [int(grch) for grch in grch_supported_values_tuple]
+                grch = str(max(grch_supported_values_tuple))
             else:
+                if cosmic_grch not in supported_databases_and_corresponding_reference_sequence_type[mutations]["database_version_to_reference_assembly_build"][cosmic_version]:
+                    raise ValueError(f"Invalid value for cosmic_grch: {cosmic_grch} for cosmic version {cosmic_version}. Supported values are {supported_databases_and_corresponding_reference_sequence_type[mutations]['database_version_to_reference_assembly_build'][cosmic_version]}.")
                 grch = cosmic_grch
-                if grch not in supported_databases_and_corresponding_reference_sequence_type[mutations]["database_version_to_reference_assembly_build"]:
-                    raise ValueError(f"Invalid value for cosmic_grch: {cosmic_grch}. Supported values are {', '.join(supported_databases_and_corresponding_reference_sequence_type[mutations]['database_version_to_reference_assembly_build'].keys())}.")
             if grch == "37":
                 gget_ref_species = "human_grch37"
             elif grch == "38":

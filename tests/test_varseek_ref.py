@@ -3,6 +3,7 @@ import shutil
 from pathlib import Path
 import sys
 from datetime import datetime
+import importlib
 
 import pandas as pd
 import pytest
@@ -32,9 +33,9 @@ cosmic_csv_path_starting = os.path.join(reference_folder_parent, "cosmic", "Canc
 pytest_permanent_out_dir_base = test_directory / "pytest_output" / Path(__file__).stem
 current_datetime = datetime.now().strftime("date_%Y_%m_%d_time_%H%M_%S")
 
-# If "tests/test_ref.py" is not explicitly in the command line arguments, skip this module. - notice that uncommenting this will hide it from vscode such that I can't press the debug button
-if not any("test_varseek_ref.py" in arg for arg in sys.argv):
-    pytest.skip("Skipping test_varseek_ref.py due to its slow nature; run this file by explicity including the file i.e., 'pytest tests/test_varseek_ref.py'", allow_module_level=True)
+# # If "tests/test_ref.py" is not explicitly in the command line arguments, skip this module. - notice that uncommenting this will hide it from vscode such that I can't press the debug button
+# if not any("test_varseek_ref.py" in arg for arg in sys.argv):
+#     pytest.skip("Skipping test_varseek_ref.py due to its slow nature; run this file by explicity including the file i.e., 'pytest tests/test_varseek_ref.py'", allow_module_level=True)
 
 @pytest.fixture
 def out_dir(tmp_path, request):
@@ -216,3 +217,40 @@ def test_parameter_values(toy_sequences_fasta_for_vk_ref, toy_variants_csv_for_v
     for parameter_dict in bad_parameter_values_list_of_dicts:
         with pytest.raises(ValueError):
             vk.ref(**parameter_dict, overwrite=True)
+
+def test_varseek_ref_on_command_line(monkeypatch):
+    import varseek.main as main_module
+
+    test_args = [
+        "vk", "ref", 
+        "-v", "cosmic_cmc",
+        "-s", "cdna",
+        "-k", "11",
+        "--make_kat_histogram",
+        "--dlist_cdna_fasta_out", "pretend_dlist_cdna_fasta_out_path",
+        "--columns_to_include", "col1", "col2", "col3",
+        "--save_logs",
+        "--cosmic_version", "100",
+        "--logging_level", "20",
+        "--disable_optimize_flanking_regions",
+    ]
+    monkeypatch.setattr(sys, "argv", test_args)
+    monkeypatch.setenv("TESTING", "true")  # so that main returns params_dict (there is a conditional in main to look for this environment variable)
+    
+    importlib.reload(main_module)
+    params_dict = main_module.main()  # now returns params_dict because TESTING is set
+
+    expected_dict = {
+        'sequences': 'cdna',
+        'variants': 'cosmic_cmc',
+        'k': 11,
+        'make_kat_histogram': True,
+        'dlist_cdna_fasta_out': 'pretend_dlist_cdna_fasta_out_path',
+        'columns_to_include': ['col1', 'col2', 'col3'],
+        'save_logs': True,
+        'cosmic_version': '100',
+        'logging_level': '20',
+        'optimize_flanking_regions': False
+    }
+    
+    assert params_dict == expected_dict

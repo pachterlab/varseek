@@ -1,5 +1,7 @@
 """varseek constant values."""
 
+from collections import defaultdict
+
 # allowable_kwargs = {
 #     "varseek_build": {"insertion_size_limit", "min_seq_len", "optimize_flanking_regions", "remove_seqs_with_wt_kmers", "required_insertion_overlap_length", "merge_identical", "merge_identical_strandedness", "use_IDs", "cosmic_version", "cosmic_grch", "cosmic_email", "cosmic_password", "save_files"},
 #     "varseek_info": {"bowtie_path"},
@@ -137,8 +139,8 @@ supported_databases_and_corresponding_reference_sequence_type = {
             "cdna": "Homo_sapiens.GRChGRCH_NUMBER.cdna.all.fa",
             "cds": "Homo_sapiens.GRChGRCH_NUMBER.cds.all.fa",
         },
-        "database_version_to_reference_release": {"100": "93"},
-        "database_version_to_reference_assembly_build": {"100": "37"},
+        "database_version_to_reference_release": defaultdict(lambda: "93", {"100": "93", "101": "93"}),  # sets default to 93
+        "database_version_to_reference_assembly_build": defaultdict(lambda: ("37",), {"100": ("37",), "101": ("37",)}),  # sets default to ("37",)
         "variant_file_name": "CancerMutationCensus_AllData_Tsv_vCOSMIC_RELEASE_GRChGRCH_NUMBER/CancerMutationCensus_AllData_vCOSMIC_RELEASE_GRChGRCH_NUMBER_mutation_workflow.csv",
     }
 }
@@ -149,7 +151,7 @@ supported_databases_and_corresponding_reference_sequence_type = {
 # supported_databases_and_corresponding_reference_sequence_type = defaultdict(recursive_defaultdict, supported_databases_and_corresponding_reference_sequence_type)  # can unexpectedly add keys when indexing
 
 
-seqID_pattern = r"(ENST\d+|(?:[1-9]|1[0-9]|2[0-3]|X|Y|MT)\d+)"
+# seqID_pattern = r"(ENST\d+|(?:[1-9]|1[0-9]|2[0-3]|X|Y|MT)\d+)"
 mutation_pattern = r"(?:c|g)\.([0-9_\-\+\*\(\)\?]+)([a-zA-Z>]+)"  # more complex: r'c\.([0-9_\-\+\*\(\)\?]+)([a-zA-Z>\(\)0-9]+)'
 
 # None means no barcode/umi
@@ -163,35 +165,71 @@ technology_barcode_and_umi_dict = {
 }
 
 
-# entex tissue, ccle primary_disease
-entex_to_ccle_map = {
-    # "Peyer's patch": xxxxxxx,
-    # "adrenal gland": xxxxxxx,
-    # "ascending aorta": xxxxxxx,
-    "body of pancreas": "Pancreatic Cancer",
-    "breast epithelium": "Breast Cancer",
-    "esophagus muscularis mucosa": "Esophageal Cancer",
-    "esophagus squamous epithelium": "Esophageal Cancer",
-    # "gastrocnemius medialis": xxxxxxx,
-    "gastroesophageal sphincter": "Gastric Cancer",  # possibly esophageal
-    # "heart left ventricle": xxxxxxx,
-    "lower leg skin": "Skin Cancer",
-    # "omental fat pad": xxxxxxx,
-    "ovary": "Ovarian Cancer",
-    "prostate gland": "Prostate Cancer",
-    # "right atrium auricular region": xxxxxxx,
-    "right lobe of liver": "Liver Cancer",
-    "sigmoid colon": "Colon/Colorectal Cancer",
-    # "spleen": xxxxxxx,
-    "stomach": "Gastric Cancer",
-    # "subcutaneous adipose tissue": xxxxxxx,
-    "suprapubic skin": "Skin Cancer",
-    # "testis": xxxxxxx,
-    # "thoracic aorta": xxxxxxx,
-    "thyroid gland": "Thyroid Cancer",
-    # "tibial nerve": xxxxxxx,
-    "transverse colon": "Colon/Colorectal Cancer",
-    "upper lobe of left lung": "Lung Cancer",
-    "uterus": "Endometrial/Uterine Cancer",
-    # "vagina": xxxxxxx,
+varseek_ref_only_allowable_kb_ref_arguments = {
+    "zero_arguments": {"--keep-tmp", "--verbose", "--aa"},
+    "one_argument": {"--tmp", "--kallisto", "--bustools"},
+    "multiple_arguments": set()
+}  # don't include d-list, t, i, k, workflow, overwrite here because I do it myself later
+
+varseek_count_only_allowable_kb_count_arguments = {
+    "zero_arguments": {"--keep-tmp", "--verbose", "--tcc", "--cellranger", "--gene-names", "--report", "--long", "--opt-off", "--matrix-to-files", "--matrix-to-directories"},
+    "one_argument": {"--tmp", "--kallisto", "--bustools", "-w", "-r", "-m", "--inleaved", "--filter", "filter-threshold", "-N", "--threshold", "--platform"},
+    "multiple_arguments": set(),
+}  # don't include d-list, t, i, k, workflow here because I do it myself later
+
+
+
+
+# for main - different command line and python parameter names (to ensure that params_dict gets unpacked correctly when using argparse)
+python_arg_to_cli_arg_dict_build = {
+    "save_removed_variants_text": "disable_save_removed_variants_text",
+    "save_filtering_report_text": "disable_save_filtering_report_text",
+    "verbose": "quiet",
+    "optimize_flanking_regions": "disable_optimize_flanking_regions",
+    "remove_seqs_with_wt_kmers": "disable_remove_seqs_with_wt_kmers",
+    "merge_identical": "disable_merge_identical",
+    "use_IDs": "disable_use_IDs",
+    "save_files": "disable_save_files",
+}
+
+python_arg_to_cli_arg_dict_info = {}
+
+python_arg_to_cli_arg_dict_filter = {
+    "save_vcrs_filtered_fasta_and_t2g": "disable_save_vcrs_filtered_fasta_and_t2g",
+    "use_IDs": "disable_use_IDs",
+}
+
+python_arg_to_cli_arg_dict_fastqpp = {
+    "sort_fastqs": "disable_sort_fastqs",
+}
+
+python_arg_to_cli_arg_dict_clean = {}
+
+python_arg_to_cli_arg_dict_summarize = {}
+
+python_arg_to_cli_arg_dict_ref = {
+    "minimum_info_columns": "disable_minimum_info_columns",  # only use ref-specific args - I combine build, info filter below (although there's no harm in repeating)
+}
+
+python_arg_to_cli_arg_dict_count = {}  # only use count-specific args - I combine fastqpp, clean, summarize below (although there's no harm in repeating)
+
+python_arg_to_cli_arg_dict_sim = {
+    "save_variants_updated_csv": "disable_save_variants_updated_csv",
+    "save_reads_csv": "disable_save_reads_csv",
+}
+
+
+# leave this as-is - it just combines the args for the wrapper functions (ref and count)
+python_arg_to_cli_arg_dict_ref = {
+    **python_arg_to_cli_arg_dict_build,
+    **python_arg_to_cli_arg_dict_info,
+    **python_arg_to_cli_arg_dict_filter,
+    **python_arg_to_cli_arg_dict_ref,
+}
+
+python_arg_to_cli_arg_dict_count = {
+    **python_arg_to_cli_arg_dict_fastqpp,
+    **python_arg_to_cli_arg_dict_clean,
+    **python_arg_to_cli_arg_dict_summarize,
+    **python_arg_to_cli_arg_dict_count,
 }

@@ -26,6 +26,7 @@ from varseek.varseek_clean import needs_for_normal_genome_matrix
 from .constants import (
     non_single_cell_technologies,
     supported_downloadable_normal_reference_genomes_with_kb_ref,
+    varseek_count_only_allowable_kb_count_arguments
 )
 
 logger = logging.getLogger(__name__)
@@ -44,13 +45,6 @@ varseek_count_unallowable_arguments = {
     "varseek_clean": set(),
     "varseek_summarize": set(),
 }
-
-
-varseek_count_only_allowable_kb_count_arguments = {
-    "zero_arguments": {"--keep-tmp", "--verbose", "--tcc", "--cellranger", "--gene-names", "--report", "--long", "--opt-off", "--matrix-to-files", "--matrix-to-directories"},
-    "one_argument": {"--tmp", "--kallisto", "--bustools", "-w", "-r", "-m", "--inleaved", "--filter", "filter-threshold", "-N", "--threshold", "--platform"},
-    "multiple_arguments": set(),
-}  # don't include d-list, t, i, k, workflow here because I do it myself later
 
 
 def validate_input_count(params_dict):
@@ -199,7 +193,7 @@ def count(
     - log_out_dir                           (str) Directory to save logs. Default: None (do not save logs).
 
     # Hidden arguments (part of kwargs):
-    - use_num                              (bool) If True, use the --num argument in kb count. Default: False.
+    - num                              (bool) If True, use the --num argument in kb count. Default: False.
     - kb_count_parity                      (str) The parity of the reads for kb count. Default: "single".
 
     For a complete list of supported parameters, see the documentation for varseek fastqpp, kb count, varseek clean, and varseek summarize. Note that any shared parameter names between functions are meant to have identical purposes.
@@ -231,6 +225,10 @@ def count(
                 exec("%s = %s" % (key, value))  # assign the value to the variable name
             else:
                 kwargs[key] = value  # if the variable is not in the function signature, then add it to kwargs
+
+    # * 1.6. For the nargs="+" arguments, convert any list of length 1 to a string
+    if isinstance(fastqs, (list, tuple)) and len(fastqs) == 1:
+        fastqs = fastqs[0]
 
     # * 1.75 load in fastqs
     fastqs_original = fastqs
@@ -330,7 +328,7 @@ def count(
     # * 6.5 Just to make the unused parameter coloration go away in VSCode
 
     # * 7. Define kwargs defaults
-    use_num = params_dict.get("use_num", False)
+    num = params_dict.get("num", False)
     kb_count_parity = params_dict.get("kb_count_parity", "single")
 
     # * 7.5 make sure ints are ints
@@ -425,7 +423,7 @@ def count(
 
         if params_dict.get("qc_against_gene_matrix"):
             kb_count_command.extend(["--union", "--mm"])
-        if params_dict.get("qc_against_gene_matrix") or params_dict.get("apply_split_reads_by_Ns_correction") or params_dict.get("apply_dlist_correction") or use_num:
+        if params_dict.get("qc_against_gene_matrix") or params_dict.get("apply_split_reads_by_Ns_correction") or params_dict.get("apply_dlist_correction") or num:
             kb_count_command.extend(["--num"])
 
         if mm and "--mm" not in kb_count_command:

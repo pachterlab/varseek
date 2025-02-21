@@ -24,7 +24,7 @@ from varseek.utils import (
     set_up_logger,
 )
 
-from .constants import prebuilt_vk_ref_files, supported_databases_and_corresponding_reference_sequence_type
+from .constants import prebuilt_vk_ref_files, supported_databases_and_corresponding_reference_sequence_type, varseek_ref_only_allowable_kb_ref_arguments
 
 logger = logging.getLogger(__name__)
 COSMIC_CREDENTIAL_VALIDATION_URL = "https://varseek-server-3relpk35fa-wl.a.run.app"
@@ -43,8 +43,6 @@ varseek_ref_unallowable_arguments = {
     "varseek_filter": set(),
     "kb_ref": set(),
 }
-
-varseek_ref_only_allowable_kb_ref_arguments = {"zero_arguments": {"--keep-tmp", "--verbose", "--aa"}, "one_argument": {"--tmp", "--kallisto", "--bustools"}, "multiple_arguments": set()}  # don't include d-list, t, i, k, workflow, overwrite here because I do it myself later
 
 
 # covers both varseek ref AND kb ref, but nothing else (i.e., all of the arguments that are not contained in varseek build, info, or filter)
@@ -289,6 +287,12 @@ def ref(
                 exec("%s = %s" % (key, value))  # assign the value to the variable name
             else:
                 kwargs[key] = value  # if the variable is not in the function signature, then add it to kwargs
+
+    # * 1.75. For the nargs="+" arguments, convert any list of length 1 to a string
+    if isinstance(sequences, (list, tuple)) and len(sequences) == 1:
+        sequences = sequences[0]
+    if isinstance(variants, (list, tuple)) and len(variants) == 1:
+        variants = variants[0]
 
     # * 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)

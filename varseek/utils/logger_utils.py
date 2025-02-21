@@ -40,9 +40,12 @@ def set_up_logger(logger, logging_level=None, save_logs=False, log_dir=None):
     # retrieve logging_level and check value
     if logging_level is None:
         logging_level = os.getenv("VARSEEK_LOGGING_LEVEL", "INFO")
-    if logging_level not in {"NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", 0, 10, 20, 30, 40, 50, 60}:  # unknown log level
+    if str(logging_level) not in {"NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", '0', '10', '20', '30', '40', '50', '60'}:  # unknown log level
         print(f"Unknown log level: {logging_level}. Defaulting to INFO.")
         logging_level = logging.INFO
+
+    if logging_level in {'0', '10', '20', '30', '40', '50', '60'}:
+        logging_level = int(logging_level)
     
     # logger = logging.getLogger(__name__)  # leave commented out and run in each module individually
     logger.setLevel(logging_level)
