@@ -137,21 +137,6 @@ def copy_arguments(src_parser_list, dest_parser):
                 # Add the argument to the destination parser
                 dest_parser.add_argument(*option_strings, action=action.__class__, **kwargs)
 
-# Check that if `--config` is passed, no other arguments are set
-def assert_only_config(args, parser):
-    if args.config:
-        vk_commands = {"build", "info", "filter", "sim", "clean", "summarize", "fastqpp", "ref", "count"}
-        additional_acceptable_commands = {"dry_run"}
-        additional_acceptable_commands_final = vk_commands.union(additional_acceptable_commands)
-        for key, value in vars(args).items():
-            # Ignore `config` itself
-            if key == "config" or key in additional_acceptable_commands_final:
-                continue
-            # Check if the argument value differs from its default
-            if value != parser.get_default(key):
-                raise ValueError(f"If '--config' is passed, no other arguments (like '{key}') can be set.")
-
-
 # Custom formatter for help messages that preserved the text formatting and adds the default value to the end of the help message
 class CustomHelpFormatter(argparse.RawTextHelpFormatter):
     def _get_help_string(self, action):
@@ -2200,23 +2185,10 @@ def main():  # noqa: C901
         help=extract_help_from_doc(ref, "filters"),
     )
     parser_ref.add_argument(
-        "--mode",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(ref, "mode"),
-    )
-    parser_ref.add_argument(
         "--dlist",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(ref, "dlist"),
-    )
-    parser_ref.add_argument(
-        "-c",
-        "--config",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(ref, "config"),
     )
     parser_ref.add_argument(
         "-o",
@@ -2382,13 +2354,6 @@ def main():  # noqa: C901
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(count, "species"),
-    )
-    parser_count.add_argument(
-        "-c",
-        "--config",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(count, "config"),
     )
     parser_count.add_argument(
         "--reference_genome_index",
@@ -2594,17 +2559,6 @@ def main():  # noqa: C901
         else:
             parent_parser.print_help(sys.stderr)
         sys.exit(1)
-
-    # Load params from config if provided
-    if "config" in args and args.config:
-        # # Assert that, if `--config` is passed, that no other arguments are passed - no need for this
-        # assert_only_config(args, parent_parser)
-
-        params = load_params(file=args.config)
-
-        # Update args with params if not already set
-        for key, value in params.items():
-            setattr(args, key, value)
 
     params_dict = vars(args).copy()
     # remove special keys i.e., command, help, version

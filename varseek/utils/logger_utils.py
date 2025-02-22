@@ -126,22 +126,7 @@ def check_file_path_is_string_with_valid_extension(file_path, variable_name, fil
         if required:
             raise ValueError(f"{file_type} file path is required")
 
-
-def load_params(file):
-    if file.endswith(".json"):
-        with open(file, "r", encoding="utf-8") as f:
-            return json.load(f)
-    elif file.endswith(".yaml") or file.endswith(".yml"):
-        import yaml
-
-        with open(file, "r", encoding="utf-8") as f:
-            return yaml.safe_load(f)
-    else:
-        print("config file format not recognized. currently supported are json and yaml.")
-        return {}
-
-
-def make_function_parameter_to_value_dict(levels_up=1):
+def make_function_parameter_to_value_dict(levels_up=1, explicit_only=False):
     # Collect parameters in a dictionary
     params = OrderedDict()
 
@@ -159,14 +144,15 @@ def make_function_parameter_to_value_dict(levels_up=1):
     for arg in function_args:
         params[arg] = values[arg]
 
-    # handle *args
-    if varargs:
-        params[varargs] = values[varargs]
+    if not explicit_only:
+        # handle *args
+        if varargs:
+            params[varargs] = values[varargs]
 
-    # handle **kwargs
-    if varkw:
-        for key, value in values[varkw].items():
-            params[key] = value
+        # handle **kwargs
+        if varkw:
+            for key, value in values[varkw].items():
+                params[key] = value
 
     return params
 
@@ -893,14 +879,14 @@ def save_run_info(out_file="run_info.txt", remove_passwords=True):
         f.write(function_call + "\n")  # Write the function call
 
 
-def check_that_two_paths_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, path1, path2):
-    if params_dict.get(path1) is not None and params_dict.get(path2) is not None and params_dict.get(path1) != params_dict.get(path2):
+def check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(path1, path2):
+    if path1 is not None and path2 is not None and path1 != path2:
         raise ValueError(f"{path1} and {path2} must be the same path")
-    elif params_dict.get(path1) is not None and params_dict.get(path2) is None:
-        params_dict[path2] = params_dict.get(path1)
-    elif params_dict.get(path1) is None and params_dict.get(path2) is not None:
-        params_dict[path1] = params_dict.get(path2)
-    return params_dict
+    elif path1 is not None and path2 is None:
+        path2 = path1
+    elif path1 is None and path2 is not None:
+        path1 = path2
+    return path1, path2
 
 
 def get_printlog(verbose=True, logger=None):

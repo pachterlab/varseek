@@ -60,7 +60,6 @@ def validate_input_count(params_dict):
             raise ValueError(f"File {params_dict[param_name]} does not exist")
 
     # file paths
-    check_file_path_is_string_with_valid_extension(params_dict.get("config", None), "config", ["json", "yaml"])
     check_file_path_is_string_with_valid_extension(params_dict.get("reference_genome_index", None), "reference_genome_index", "index")
     check_file_path_is_string_with_valid_extension(params_dict.get("reference_genome_t2g", None), "reference_genome_t2g", "t2g")
     check_file_path_is_string_with_valid_extension(params_dict.get("adata_reference_genome", None), "adata_reference_genome", "adata")
@@ -132,7 +131,6 @@ def count(
     union=False,
     parity="single",
     species=None,
-    config=None,  # optional inputs
     reference_genome_index=None,
     reference_genome_t2g=None,
     adata_reference_genome=None,
@@ -170,7 +168,6 @@ def count(
     - species                               (str)  The species of the reference genome. Only used if qc_against_gene_matrix=True (see vk clean --help). Default: None.
 
     # Optional input arguments
-    - config                                (str) Path to config file. Default: None.
     - reference_genome_index                (str) Path to index file for the "normal" reference genome. Created if not provided. Only used if qc_against_gene_matrix=True (see vk clean --help). Default: None.
     - reference_genome_t2g                  (str) Path to t2g file for the "normal" reference genome. Created if not provided. Only used if qc_against_gene_matrix=True (see vk clean --help). Default: None.
     - adata_reference_genome                (str) Path to adata file for the "normal" reference genome. Created if not provided. Only used if qc_against_gene_matrix=True or performing gene-level normalization on the VCRS count matrix (see vk clean --help). Default: None.
@@ -227,14 +224,6 @@ def count(
     params_dict = make_function_parameter_to_value_dict(1)
     params_dict['logger'] = logger
 
-    # Load in parameters from a config file if provided
-    if isinstance(config, str) and os.path.isfile(config):
-        vk_count_config_file_input = vk.utils.load_params(config)
-
-        # overwrite any parameters passed in with those from the config file
-        for key, value in vk_count_config_file_input.items():
-            params_dict[key] = value  # overwrite the parameter in params_dict with the value from the config file
-
     params_dict_for_type_checking = copy.deepcopy(params_dict)  # make a copy of the params_dict for type checking, so that I can modify it without affecting the original params_dict
     params_dict_for_type_checking['adata_vcrs'] = 'placeholder/adata.h5ad'  # this is just a placeholder, but it is needed for type checking
     params_dict_for_type_checking['adata'] = 'placeholder/adata_cleaned.h5ad'  # this is just a placeholder, but it is needed for type checking
@@ -281,11 +270,6 @@ def count(
 
     # * 5. Set up default folder/file input paths, and make sure the necessary ones exist
     # all input files for vk count are required in the varseek workflow, so this is skipped
-
-    # * 5.5 Setting up modes
-    # if mode:  #* uncomment once I have modes
-    #     for key in mode_parameters[mode]:
-    #         params_dict[key] = mode_parameters[mode][key]
 
     # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
     if not kb_count_vcrs_out_dir:

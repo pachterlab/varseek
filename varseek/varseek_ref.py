@@ -13,7 +13,7 @@ import requests
 import varseek as vk
 from varseek.utils import (
     check_file_path_is_string_with_valid_extension,
-    check_that_two_paths_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal,
+    check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal,
     download_varseek_files,
     get_python_or_cli_function_call,
     is_valid_int,
@@ -29,14 +29,6 @@ from .constants import prebuilt_vk_ref_files, supported_databases_and_correspond
 logger = logging.getLogger(__name__)
 COSMIC_CREDENTIAL_VALIDATION_URL = "https://varseek-server-3relpk35fa-wl.a.run.app"
 
-mode_parameters = {
-    "very_sensitive": {},
-    "sensitive": {},
-    "balanced": {},
-    "specific": {},
-    "very_specific": {},
-}
-
 varseek_ref_unallowable_arguments = {
     "varseek_build": {"return_variant_output"},
     "varseek_info": set(),
@@ -48,19 +40,11 @@ varseek_ref_unallowable_arguments = {
 # covers both varseek ref AND kb ref, but nothing else (i.e., all of the arguments that are not contained in varseek build, info, or filter)
 def validate_input_ref(params_dict):
     dlist = params_dict.get("dlist", None)
-    mode = params_dict.get("mode", None)
     threads = params_dict.get("threads", None)
     index_out = params_dict.get("index_out", None)
-    config = params_dict.get("config", None)
 
-    build_signature = inspect.signature(vk.varseek_build.build)
     k = params_dict.get("k", None)
     w = params_dict.get("w", None)
-
-    if k is None:
-        k = build_signature.parameters["k"].default
-    if w is None:
-        w = build_signature.parameters["w"].default
 
     k, w = int(k), int(w)
 
@@ -78,13 +62,9 @@ def validate_input_ref(params_dict):
     if dlist not in dlist_valid_values:
         raise ValueError(f"dlist must be one of {dlist_valid_values}")
 
-    if mode is not None and mode not in mode_parameters:
-        raise ValueError(f"mode must be one of {mode_parameters.keys()}")
-
     # sequences, variants, out handled by vk build
 
     check_file_path_is_string_with_valid_extension(index_out, "index_out", "index")
-    check_file_path_is_string_with_valid_extension(config, "config", ["json", "yaml"])
 
     if not is_valid_int(threads, threshold_type=">=", threshold_value=1):
         raise ValueError(f"Threads must be a positive integer, got {threads}")
@@ -139,10 +119,8 @@ def ref(
         "pseudoaligned_to_reference_despite_not_truly_aligning:is_not_true",  # filter out variants that pseudoaligned to human genome despite not truly aligning
         "num_distinct_triplets:greater_than=2",  # filters out VCRSs with <= 2 unique triplets
     ),
-    mode=None,
     dlist=None,
     dlist_reference_source="T2T",
-    config=None,
     var_column="mutation",
     seq_id_column="seq_ID",
     var_id_column=None,
@@ -220,10 +198,8 @@ def ref(
     - w             (int) Length of sequence windows flanking the variant. Default: 30. If w > total length of the sequence, the entire sequence will be kept.
     - k             (int) The length of each k-mer in the kallisto reference index construction. Accordingly corresponds to the length of the k-mers to be considered in vk build's remove_seqs_with_wt_kmers, and the default minimum value for vk build's minimum sequence length (which can be changed with 'min_seq_len'). Must be greater than the value passed in for w. Default: 59.
     - filters       (str or list[str]) List of filters to apply to the variants. See varseek filter documentation for more information.
-    - mode          (str) Mode to use for kb ref. Currently not implemented. Default: None.
     - dlist         (str) Specifies whether ones wants to d-list against the genome, transcriptome, or both. Possible values are "genome", "transcriptome", "genome_and_transcriptome", or None. Default: None.
     - dlist_reference_source (str) Specifies whether to use the T2T, grch37, or grch38 reference genome during alignment of VCRS k-mers to the reference genome/transcriptome and any possible d-list construction. However, no d-list is used during the creation of the VCRS reference index unless `dlist` is not None. Default: "T2T".
-    - config        (str) Path to config file. Default: None.
 
     # Optional output file paths: (only needed if changing/customizing file names or locations):
     - out           (str) Output directory. Default: ".".
@@ -285,65 +261,48 @@ def ref(
 
     # * 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
-    params_dict['logger'] = logger
+    params_dict["out"], params_dict["input_dir"] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict.get("out"), params_dict.get("input_dir"))  # because input_dir is a required argument, it does not have a default, and so I should enforce this default manually
 
-    # Load in parameters from a config file if provided
-    if isinstance(config, str) and os.path.isfile(config):
-        vk_ref_config_file_input = vk.utils.load_params(config)
-
-        # overwrite any parameters passed in with those from the config file
-        for key, value in vk_ref_config_file_input.items():
-            params_dict[key] = value  # overwrite the parameter in params_dict with the value from the config file
-
-    params_dict_for_type_checking = copy.deepcopy(params_dict)  # make a copy of the params_dict for type checking, so that I can modify it without affecting the original params_dict
-    params_dict_for_type_checking = check_that_two_paths_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict_for_type_checking, "out", "input_dir")  # because input_dir is a required argument, it does not have a default, and so I should enforce this default manually
-
-    # Set params_dict_for_type_checking to default values of children functions - important so type checking works properly
+    # Set params_dict to default values of children functions - important so type checking works properly
     ref_signature = inspect.signature(ref)
     for function in (vk.varseek_build.build, vk.varseek_info.info, vk.varseek_filter.filter):
         signature = inspect.signature(function)
         for key in signature.parameters.keys():
-            if key not in params_dict_for_type_checking and key not in ref_signature.parameters.keys():
-                params_dict_for_type_checking[key] = signature.parameters[key].default
+            if key not in params_dict and key not in ref_signature.parameters.keys():
+                params_dict[key] = signature.parameters[key].default
     
-    vk.varseek_build.validate_input_build(params_dict_for_type_checking)  # this passes all vk ref parameters to the function - I could only pass in the vk build parameters here if desired (and likewise below), but there should be no naming conflicts anyways
-    vk.varseek_info.validate_input_info(params_dict_for_type_checking)
-    vk.varseek_filter.validate_input_filter(params_dict_for_type_checking)
-    validate_input_ref(params_dict_for_type_checking)
+    vk.varseek_build.validate_input_build(params_dict)  # this passes all vk ref parameters to the function - I could only pass in the vk build parameters here if desired (and likewise below), but there should be no naming conflicts anyways
+    vk.varseek_info.validate_input_info(params_dict)
+    vk.varseek_filter.validate_input_filter(params_dict)
+    validate_input_ref(params_dict)
 
     # * 3. Dry-run
     # handled within child functions   
 
-    # * 3.5. pop out any unallowable arguments
-    for key, unallowable_set in varseek_ref_unallowable_arguments.items():
-        for unallowable_key in unallowable_set:
-            params_dict.pop(unallowable_key, None)
-
-    # * 3.8 Set params_dict to default values of children functions (not strictly necessary, as if these arguments are not in params_dict then it will use the default values anyways, but important if I need to rely on these default values within vk ref)
-    # Set params_dict to default values of children functions (not strictly necessary, as if these arguments are not in params_dict then it will use the default values anyways, but important if I need to rely on these default values within vk ref)
-    # ref_signature = inspect.signature(ref)
-    # for function in (vk.varseek_build.build, vk.varseek_info.info, vk.varseek_filter.filter):
-    #     signature = inspect.signature(function)
-    #     for key in signature.parameters.keys():
-    #         if key not in params_dict and key not in ref_signature.parameters.keys():
-    #             params_dict[key] = signature.parameters[key].default
-
     # * 4. Save params to config file and run info file
-    if not params_dict.get("dry_run"):
+    if not dry_run:
         # Save parameters to config file
         config_file = os.path.join(out, "config", "vk_ref_config.json")
-        save_params_to_config_file(params_dict, config_file)
+        save_params_to_config_file(params_dict, config_file)  #$ Now I am done with params_dict, besides 
 
         run_info_file = os.path.join(out, "config", "vk_ref_run_info.txt")
         save_run_info(run_info_file)
 
+    # * 4.5. Pop out any unallowable arguments
+    for key, unallowable_set in varseek_ref_unallowable_arguments.items():
+        for unallowable_key in unallowable_set:
+            kwargs.pop(unallowable_key, None)
+
+    # * 4.8 Set kwargs to default values of children functions (not strictly necessary, as if these arguments are not in kwargs then it will use the default values anyways, but important if I need to rely on these default values within vk ref)
+    # ref_signature = inspect.signature(ref)
+    # for function in (vk.varseek_build.build, vk.varseek_info.info, vk.varseek_filter.filter):
+    #     signature = inspect.signature(function)
+    #     for key in signature.parameters.keys():
+    #         if key not in kwargs and key not in ref_signature.parameters.keys():
+    #             kwargs[key] = signature.parameters[key].default
+
     # * 5. Set up default folder/file input paths, and make sure the necessary ones exist
     # all input files for vk ref are required in the varseek workflow, so this is skipped
-
-    # * 5.5 Setting up modes
-    # if mode:  #* uncomment once I have modes
-    #     for key in mode_parameters[mode]:
-    #         params_dict[key] = mode_parameters[mode][key]
 
     # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True    
     # Make directories
@@ -354,19 +313,19 @@ def ref(
         index_out = os.path.join(out, "vcrs_index.idx")
     os.makedirs(os.path.dirname(index_out), exist_ok=True)
 
-    vcrs_fasta_out = params_dict.get("vcrs_fasta_out", os.path.join(out, "vcrs.fa"))  # make sure this matches vk build
-    vcrs_filtered_fasta_out = params_dict.get("vcrs_filtered_fasta_out", os.path.join(out, "vcrs_filtered.fa"))  # make sure this matches vk filter
-    vcrs_t2g_out = params_dict.get("vcrs_t2g_out", os.path.join(out, "vcrs_t2g.txt"))  # make sure this matches vk build
-    vcrs_t2g_filtered_out = params_dict.get("vcrs_t2g_filtered_out", os.path.join(out, "vcrs_t2g_filtered.txt"))  # make sure this matches vk filter
-    dlist_genome_fasta_out = params_dict.get("dlist_genome_fasta_out", os.path.join(out, "dlist_genome.fa"))  # make sure this matches vk info
-    dlist_cdna_fasta_out = params_dict.get("dlist_cdna_fasta_out", os.path.join(out, "dlist_cdna.fa"))  # make sure this matches vk info
-    dlist_combined_fasta_out = params_dict.get("dlist_combined_fasta_out", os.path.join(out, "dlist.fa"))  # make sure this matches vk info
+    vcrs_fasta_out = kwargs.get("vcrs_fasta_out", os.path.join(out, "vcrs.fa"))  # make sure this matches vk build
+    vcrs_filtered_fasta_out = kwargs.get("vcrs_filtered_fasta_out", os.path.join(out, "vcrs_filtered.fa"))  # make sure this matches vk filter
+    vcrs_t2g_out = kwargs.get("vcrs_t2g_out", os.path.join(out, "vcrs_t2g.txt"))  # make sure this matches vk build
+    vcrs_t2g_filtered_out = kwargs.get("vcrs_t2g_filtered_out", os.path.join(out, "vcrs_t2g_filtered.txt"))  # make sure this matches vk filter
+    dlist_genome_fasta_out = kwargs.get("dlist_genome_fasta_out", os.path.join(out, "dlist_genome.fa"))  # make sure this matches vk info
+    dlist_cdna_fasta_out = kwargs.get("dlist_cdna_fasta_out", os.path.join(out, "dlist_cdna.fa"))  # make sure this matches vk info
+    dlist_combined_fasta_out = kwargs.get("dlist_combined_fasta_out", os.path.join(out, "dlist.fa"))  # make sure this matches vk info
 
     for file in [index_out]:  # purposely exluding vcrs_fasta_out, vcrs_filtered_fasta_out, vcrs_t2g_out, vcrs_t2g_filtered_out because - let's say someone runs vk ref and they get an error write in the kb ref step because of a bad argument that doesn't affect the prior steps - it would be nice for someone to be able to rerun the command with the changed argument without having to rerun vk build, info, filter from scratch when overwrite=False - and if they do want to rerun those steps, they can just delete the files or set overwrite=True
         if os.path.isfile(file) and not overwrite:
             raise FileExistsError(f"Output file {file} already exists. Please delete it or specify a different output directory or set overwrite=True.")
 
-    variants_updated_vk_info_csv_out = params_dict.get("variants_updated_vk_info_csv_out", None)
+    variants_updated_vk_info_csv_out = kwargs.get("variants_updated_vk_info_csv_out", None)
     if not variants_updated_vk_info_csv_out:
         variants_updated_vk_info_csv_out = os.path.join(out, "variants_updated_vk_info.csv")  # make sure this matches vk info
 
@@ -375,96 +334,85 @@ def ref(
     files_signifying_successful_vk_filter_completion = (vcrs_filtered_fasta_out, vcrs_t2g_filtered_out)
     file_signifying_successful_kb_ref_completion = index_out
 
-    overwrite_original = params_dict.get("overwrite_original", False)
-
-    params_dict = check_that_two_paths_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "out", "input_dir")  # check that, if out and input_dir are both provided, they are the same directory; otherwise, if only one is provided, then make them equal to each other
-    params_dict = check_that_two_paths_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "vcrs_fasta_out", "vcrs_fasta")  # build --> info
-    params_dict = check_that_two_paths_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "id_to_header_csv_out", "id_to_header_csv")  # build --> info/filter
-    params_dict = check_that_two_paths_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "variants_updated_csv_out", "variants_updated_csv")  # build --> info
-    params_dict = check_that_two_paths_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "variants_updated_vk_info_csv_out", "variants_updated_vk_info_csv")  # info --> filter
-    params_dict = check_that_two_paths_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "variants_updated_exploded_vk_info_csv_out", "variants_updated_exploded_vk_info_csv")  # info --> filter
+    overwrite_original = overwrite
+    
+    out, kwargs["input_dir"] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(out, kwargs.get("input_dir"))  # check that, if out and input_dir are both provided, they are the same directory; otherwise, if only one is provided, then make them equal to each other
+    kwargs["vcrs_fasta_out"], kwargs["vcrs_fasta"] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(kwargs.get("vcrs_fasta_out"), kwargs.get("vcrs_fasta"))  # build --> info
+    kwargs["id_to_header_csv_out"], kwargs["id_to_header_csv"] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(kwargs.get("id_to_header_csv_out"), kwargs.get("id_to_header_csv"))  # build --> info/filter
+    kwargs["variants_updated_csv_out"], kwargs["variants_updated_csv"] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(kwargs.get("variants_updated_csv_out"), kwargs.get("variants_updated_csv"))  # build --> info
+    kwargs["variants_updated_vk_info_csv_out"], kwargs["variants_updated_vk_info_csv"] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(kwargs.get("variants_updated_vk_info_csv_out"), kwargs.get("variants_updated_vk_info_csv"))  # info --> filter
+    kwargs["variants_updated_exploded_vk_info_csv_out"], kwargs["variants_updated_exploded_vk_info_csv"] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(kwargs.get("variants_updated_exploded_vk_info_csv_out"), kwargs.get("variants_updated_exploded_vk_info_csv"))  # info --> filter
     # dlist handled below - see the comment "set d-list argument"
-
-    # * 6.5 Just to make the unused parameter coloration go away in VSCode
-    # filters = filters
-    # w = w
-    # mode = mode
-    # verbose = verbose
-    # dlist_reference_source = dlist_reference_source
-    # reference_out_dir = reference_out_dir
-    # var_column = var_column
-    # seq_id_column = seq_id_column
-    # var_id_column = var_id_column
 
     # * 7. Define kwargs defaults
     # Nothing to see here
 
     # * 7.5. make sure ints are ints
-    # w, k, threads = int(w), int(k), int(threads)
+    w, k, threads = int(w), int(k), int(threads)
 
     # * 8. Start the actual function
     # some copy-paste from vk build to ensure correct column names if using the cosmic_cmc database
     if variants == "cosmic_cmc":
-        if not params_dict.get("cosmic_grch"):
+        if not kwargs.get("cosmic_grch"):
             grch_dict = supported_databases_and_corresponding_reference_sequence_type[variants]["database_version_to_reference_assembly_build"]
             largest_key = max(int(k) for k in grch_dict.keys())
             grch = grch_dict[str(largest_key)]
         else:
-            grch = params_dict.get("cosmic_grch")
+            grch = kwargs.get("cosmic_grch")
         if sequences == "cdna" or sequences.endswith(supported_databases_and_corresponding_reference_sequence_type[variants]["sequence_file_names"]["cdna"].replace("GRCH_NUMBER", grch)):  # covers whether sequences == "cdna" or sequences == "PATH/TO/Homo_sapiens.GRCh37.cdna.all.fa"
-            params_dict["seq_id_column"] = "seq_ID"
-            params_dict["var_column"] = "mutation_cdna"
+            seq_id_column = "seq_ID"
+            var_column = "mutation_cdna"
         elif sequences == "genome" or sequences.endswith(supported_databases_and_corresponding_reference_sequence_type[variants]["sequence_file_names"]["genome"].replace("GRCH_NUMBER", grch)):  # covers whether sequences == "genome" or sequences == "PATH/TO/Homo_sapiens.GRCh37.dna.primary_assembly.fa"
-            params_dict["seq_id_column"] = "chromosome"
-            params_dict["var_column"] = "mutation_genome"
+            seq_id_column = "chromosome"
+            var_column = "mutation_genome"
         elif sequences == "cds" or sequences.endswith(supported_databases_and_corresponding_reference_sequence_type[variants]["sequence_file_names"]["cds"].replace("GRCH_NUMBER", grch)):  # covers whether sequences == "cds" or sequences == "PATH/TO/Homo_sapiens.GRCh37.cds.all.fa"
-            params_dict["seq_id_column"] = "seq_ID"
-            params_dict["var_column"] = "mutation"
-        params_dict["var_id_column"] = "mutation_id" if params_dict.get("var_id_column") is not None else None
+            seq_id_column = "seq_ID"
+            var_column = "mutation"
+        var_id_column = "mutation_id" if var_id_column is not None else None
 
 
     # get COSMIC info
-    cosmic_email = params_dict.get("cosmic_email", None)
+    cosmic_email = kwargs.get("cosmic_email", None)
     if not cosmic_email:
         cosmic_email = os.getenv("COSMIC_EMAIL")
     if cosmic_email:
         logger.info(f"Using COSMIC email from COSMIC_EMAIL environment variable: {cosmic_email}")
-        params_dict["cosmic_email"] = cosmic_email
+        kwargs["cosmic_email"] = cosmic_email
 
-    cosmic_password = params_dict.get("cosmic_password", None)
+    cosmic_password = kwargs.get("cosmic_password", None)
     if not cosmic_password:
         cosmic_password = os.getenv("COSMIC_PASSWORD")
     if cosmic_password:
         logger.info("Using COSMIC password from COSMIC_PASSWORD environment variable")
-        params_dict["cosmic_password"] = cosmic_password
+        kwargs["cosmic_password"] = cosmic_password
 
     # ensure that max_ambiguous (build) and max_ambiguous_vcrs (info) are the same if only one is provided
-    if params_dict.get("max_ambiguous") and not params_dict.get("max_ambiguous_vcrs"):
-        params_dict['max_ambiguous_vcrs'] = params_dict['max_ambiguous']
-    if params_dict.get("max_ambiguous_vcrs") and not params_dict.get("max_ambiguous"):
-        params_dict['max_ambiguous'] = params_dict['max_ambiguous_vcrs']
+    if kwargs.get("max_ambiguous") and not kwargs.get("max_ambiguous_vcrs"):
+        kwargs['max_ambiguous_vcrs'] = kwargs['max_ambiguous']
+    if kwargs.get("max_ambiguous_vcrs") and not kwargs.get("max_ambiguous"):
+        kwargs['max_ambiguous'] = kwargs['max_ambiguous_vcrs']
 
-    if params_dict.get("columns_to_include") is not None:
+    if kwargs.get("columns_to_include") is not None:
         logger.info("columns_to_include is not None, so minimum_info_columns will be set to False")
         minimum_info_columns = False
 
     # decide whether to skip vk info and vk filter
     # filters_column_names = list({filter.split('-')[0] for filter in filters})
-    skip_filter = not bool(params_dict.get("filters"))  # skip filtering if no filters provided
+    skip_filter = not bool(filters)  # skip filtering if no filters provided
     skip_info = minimum_info_columns and skip_filter  # skip vk info if no filtering will be performed and one specifies minimum info columns
 
     if skip_filter:
         vcrs_fasta_for_index = vcrs_fasta_out
         if t2g_out:
-            params_dict["vcrs_t2g_out"] = t2g_out  # pass this custom path into vk build
+            kwargs["vcrs_t2g_out"] = t2g_out  # pass this custom path into vk build
             vcrs_t2g_out = t2g_out  # pass this custom path into the output dict of vk ref
         vcrs_t2g_for_alignment = vcrs_t2g_out
-        if params_dict.get("use_IDs") is None:  # if someone has a strong preference, then who am I to tell them otherwise - but otherwise, I will want to override the default to False for vk build
-            params_dict["use_IDs"] = False
+        if kwargs.get("use_IDs") is None:  # if someone has a strong preference, then who am I to tell them otherwise - but otherwise, I will want to override the default to False for vk build
+            kwargs["use_IDs"] = False
     else:
         vcrs_fasta_for_index = vcrs_filtered_fasta_out
         if t2g_out:
-            params_dict["vcrs_t2g_filtered_out"] = t2g_out
+            kwargs["vcrs_t2g_filtered_out"] = t2g_out
             vcrs_t2g_filtered_out = t2g_out
         vcrs_t2g_for_alignment = vcrs_t2g_filtered_out
         # don't touch use_IDs - if not provided, then will resort to defaults (True for vk build, False for vk filter); if provided, then will be passed into vk build and vk filter
@@ -472,7 +420,7 @@ def ref(
     # download if download argument is True
     if download:
         # $ I opt to keep it like this rather than converting the keys of prebuilt_vk_ref_files to a tuple of many arguments for user simplicity - simply document the uploaded references, but no need to differentiate - but if I do end up having multiple reference documents with the same values for variants and sequences, then switch over to this approach where the dict keys are tuples
-        file_dict = prebuilt_vk_ref_files.get(variants, {}).get(sequences, {})  # when I add mode: file_dict = prebuilt_vk_ref_files.get(variants, {}).get(sequences, {}).get(mode, {})
+        file_dict = prebuilt_vk_ref_files.get(variants, {}).get(sequences, {})
         if file_dict:
             if file_dict["index"] == "COSMIC":
                 response = requests.post(COSMIC_CREDENTIAL_VALIDATION_URL, json={"email": cosmic_email, "password": cosmic_password, "variants": variants, "sequences": sequences})
@@ -494,18 +442,18 @@ def ref(
 
             return vk_ref_output_dict
         else:
-            raise ValueError(f"No prebuilt files found for the given arguments:\nvariants: {variants}\nsequences: {sequences}")  # \nmode: {mode}"
+            raise ValueError(f"No prebuilt files found for the given arguments:\nvariants: {variants}\nsequences: {sequences}")
 
     # set d-list argument
     if dlist == "genome":
         dlist_kb_argument = dlist_genome_fasta_out  # for kb ref
-        params_dict["dlist_fasta"] = dlist_genome_fasta_out  # for vk filter
+        kwargs["dlist_fasta"] = dlist_genome_fasta_out  # for vk filter
     elif dlist == "transcriptome":
         dlist_kb_argument = dlist_cdna_fasta_out
-        params_dict["dlist_fasta"] = dlist_cdna_fasta_out
+        kwargs["dlist_fasta"] = dlist_cdna_fasta_out
     elif dlist == "genome_and_transcriptome":
         dlist_kb_argument = dlist_combined_fasta_out
-        params_dict["dlist_fasta"] = dlist_combined_fasta_out
+        kwargs["dlist_fasta"] = dlist_combined_fasta_out
     elif dlist == "None" or dlist is None:
         dlist_kb_argument = "None"
     else:
@@ -525,46 +473,74 @@ def ref(
     all_parameter_names_set_vk_info = explicit_parameters_vk_info | allowable_kwargs_vk_info
     all_parameter_names_set_vk_filter = explicit_parameters_vk_filter | allowable_kwargs_vk_filter
 
-    # vk build
+    #* vk build
     if not os.path.exists(file_signifying_successful_vk_build_completion) or overwrite:  # the reason I do it like this, rather than if overwrite or not os.path.exists(MYPATH), is because I would like vk ref/count to automatically overwrite partially-completed function outputs even when overwrite=False; but when overwrite=True, then run from scratch regardless
-        params_dict["overwrite"] = True
+        kwargs_vk_build = {key: value for key, value in kwargs.items() if ((key in all_parameter_names_set_vk_build) and (key not in ref_signature.parameters.keys()))}
+        kwargs_vk_build["logger"] = logger  # set any variables in here that are variables in vk ref and that I want to pass in as a kwarg to vk build
 
-        params_dict_vk_build = {key: value for key, value in params_dict.items() if key in all_parameter_names_set_vk_build}  # only pass in the parameters that are in the vk build function signature for dry run
-        
         logger.info("Running vk build")
-        _ = vk.build(**params_dict) if not params_dict.get("dry_run", False) else vk.build(**params_dict_vk_build)  # best of both worlds - will only pass in defined arguments if dry run is True (which is good so that I don't show each function with a bunch of args it never uses), but will pass in all arguments if dry run is False (which is good if I run vk ref with a new parameter that I have not included in docstrings yet, as I only get usable kwargs list from docstrings)
-        
-        params_dict["overwrite"], params_dict_vk_build["overwrite"] = overwrite_original, overwrite_original
+        _ = vk.build(sequences=sequences,
+                variants=variants,
+                seq_id_column=seq_id_column,
+                var_column=var_column,
+                var_id_column=var_id_column,
+                w=w,
+                k=k,
+                out=out,
+                reference_out_dir=reference_out_dir,
+                dry_run=dry_run,
+                overwrite=True,  # overwrite=True rather than overwrite=overwrite because I only enter this condition if the file signifying success does not exist and/or overwrite is True anyways - this allows me to overwrite half-completed functions
+                logging_level=logging_level,
+                save_logs=save_logs,
+                log_out_dir=log_out_dir,
+                verbose=verbose,
+                **kwargs_vk_build
+        )
     else:
         logger.warning(f"Skipping vk build because {file_signifying_successful_vk_build_completion} already exists and overwrite=False")
 
-    # vk info
+    #* vk info
     if not skip_info:
-        if params_dict.get("use_IDs", None) is False:
+        if kwargs.get("use_IDs", None) is False:
             logger.warning("use_IDs=False is not recommended for vk info, as the headers output by vk build can break some programs that read fasta files due to the inclusion of '>' symbols in substitutions and the potentially long length of the headers (with multiple combined headers and/or long insertions). Consider setting use_IDs=True (use IDs throughout the workflow) or leaving this parameter blank (will use IDs in vk build so that vk info runs properly [unless vk info/filter will not be run, in which case it will use headers], and will use headers in vk filter so that the output is more readable).")
         if not os.path.exists(file_signifying_successful_vk_info_completion) or overwrite:
-            params_dict["overwrite"] = True
-
-            params_dict_vk_info = {key: value for key, value in params_dict.items() if key in all_parameter_names_set_vk_info}    # only pass in the parameters that are in the vk info function signature for dry run
+            kwargs_vk_info = {key: value for key, value in kwargs.items() if ((key in all_parameter_names_set_vk_info) and (key not in ref_signature.parameters.keys()))}
+            kwargs_vk_info["logger"] = logger  # set any variables in here that are variables in vk ref and that I want to pass in as a kwarg to vk build
             
             logger.info("Running vk info")
-            _ = vk.info(**params_dict) if not params_dict.get("dry_run", False) else vk.info(**params_dict_vk_info)
-
-            params_dict["overwrite"], params_dict_vk_info["overwrite"] = overwrite_original, overwrite_original
+            _ = vk.info(seq_id_column=seq_id_column,
+                var_column=var_column,
+                k=k,
+                out=out,
+                reference_out_dir=reference_out_dir,
+                dry_run=dry_run,
+                overwrite=True,  # overwrite=True rather than overwrite=overwrite because I only enter this condition if the file signifying success does not exist and/or overwrite is True anyways - this allows me to overwrite half-completed functions
+                logging_level=logging_level,
+                save_logs=save_logs,
+                log_out_dir=log_out_dir,
+                threads=threads,
+                **kwargs_vk_info
+        )
         else:
             logger.warning(f"Skipping vk info because {file_signifying_successful_vk_info_completion} already exists and overwrite=False")
 
     # vk filter
     if not skip_filter:
         if not all(os.path.exists(f) for f in files_signifying_successful_vk_filter_completion) or overwrite:
-            params_dict["overwrite"] = True
-
-            params_dict_vk_filter = {key: value for key, value in params_dict.items() if key in all_parameter_names_set_vk_filter}  # only pass in the parameters that are in the vk filter function signature for dry run
+            kwargs_vk_filter = {key: value for key, value in kwargs.items() if ((key in all_parameter_names_set_vk_filter) and (key not in ref_signature.parameters.keys()))}
+            kwargs_vk_filter["logger"] = logger  # set any variables in here that are variables in vk ref and that I want to pass in as a kwarg to vk build
             
             logger.info("Running vk filter")
-            _ = vk.filter(**params_dict) if not params_dict.get("dry_run", False) else vk.filter(**params_dict_vk_filter)
-
-            params_dict["overwrite"], params_dict_vk_filter["overwrite"] = overwrite_original, overwrite_original
+            _ = vk.filter(filters=filters,
+                out=out,
+                reference_out_dir=reference_out_dir,
+                dry_run=dry_run,
+                overwrite=True,  # overwrite=True rather than overwrite=overwrite because I only enter this condition if the file signifying success does not exist and/or overwrite is True anyways - this allows me to overwrite half-completed functions
+                logging_level=logging_level,
+                save_logs=save_logs,
+                log_out_dir=log_out_dir,
+                **kwargs_vk_filter
+        )
         else:
             logger.warning(f"Skipping vk filter because {files_signifying_successful_vk_filter_completion} already exist and overwrite=False")
 
@@ -586,13 +562,14 @@ def ref(
     ]
 
     # assumes any argument in varseek ref matches kb ref identically, except dashes replaced with underscores
+    params_dict_kb_ref = make_function_parameter_to_value_dict(1)  # will reflect any updated values to variables found in kb ref signature and anything in kwargs
     for dict_key, arguments in varseek_ref_only_allowable_kb_ref_arguments.items():
         for argument in list(arguments):
             dash_count = len(argument) - len(argument.lstrip("-"))
             leading_dashes = "-" * dash_count
             argument = argument.lstrip("-").replace("-", "_")
-            if argument in params_dict:
-                value = params_dict[argument]
+            if argument in params_dict_kb_ref:
+                value = params_dict_kb_ref[argument]
                 if dict_key == "zero_arguments":
                     if value:  # only add if value is True
                         kb_ref_command.append(f"{leading_dashes}{argument}")
@@ -613,10 +590,10 @@ def ref(
         logger.warning(f"Skipping kb ref because {file_signifying_successful_kb_ref_completion} already exists and overwrite=False")
 
     #!!! erase if removing wt vcrs feature
-    wt_vcrs_fasta_out = params_dict.get("vcrs_fasta_out", os.path.join(out, "wt_vcrs.fa"))  # make sure this matches vk build
-    wt_vcrs_filtered_fasta_out = params_dict.get("vcrs_filtered_fasta_out", os.path.join(out, "wt_vcrs_filtered.fa"))  # make sure this matches vk filter
+    wt_vcrs_fasta_out = kwargs.get("wt_vcrs_fasta_out", os.path.join(out, "wt_vcrs.fa"))  # make sure this matches vk build
+    wt_vcrs_filtered_fasta_out = kwargs.get("wt_vcrs_filtered_fasta_out", os.path.join(out, "wt_vcrs_filtered.fa"))  # make sure this matches vk filter
     vcrs_wt_fasta_for_index = wt_vcrs_fasta_out if skip_filter else wt_vcrs_filtered_fasta_out
-    wt_vcrs_index_out = params_dict.get("wt_vcrs_index_out", os.path.join(out, "wt_vcrs_index.idx"))
+    wt_vcrs_index_out = kwargs.get("wt_vcrs_index_out", os.path.join(out, "wt_vcrs_index.idx"))
     file_signifying_successful_wt_vcrs_kb_ref_completion = wt_vcrs_index_out
 
     if os.path.exists(vcrs_wt_fasta_for_index):
@@ -639,15 +616,9 @@ def ref(
     vk_ref_output_dict["index"] = index_out
     vk_ref_output_dict["t2g"] = vcrs_t2g_for_alignment
 
-    for var_name, var_value in locals().items():
-        if var_name in params_dict and params_dict[var_name] != var_value:
-            logger.warning("Disagreement in parameter values between for variable %s between function and params_dict: %s != %s" % (var_name, var_value, params_dict[var_name]))
-
     # Report time
     if not dry_run:
         report_time_elapsed(start_time, logger=logger, function_name="ref")
 
     return vk_ref_output_dict
 
-
-# ref.__doc__ = ref.__doc__ + "\n================================\n\n" + "varseek build parameters" + vk.varseek_build.build.__doc__ + "\n================================\n\n" + vk.varseek_info.info.__doc__ + "\n================================\n\n" + vk.varseek_filter.filter.__doc__ + "\n================================\n\n" + "Run `kb ref --help` for more information on kb ref arguments"
