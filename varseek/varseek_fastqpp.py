@@ -163,6 +163,7 @@ def fastqpp(
     - split_by_Ns_and_low_quality_bases_out_suffix            (str) Suffix to add to fastq files after splitting by Ns (preceded by underscore). Default: "splitNs"
     - concatenate_paired_fastqs_out_suffix (str) Suffix to add to fastq files after concatenating paired fastq files (preceded by underscore). Default: "concatenated"
     - delete_intermediate_files        (bool) If True, delete intermediate files. Default: True
+    - logger                           (logging.Logger) Logger to use. Default: None
     """
 
     # * 0. Informational arguments that exit early

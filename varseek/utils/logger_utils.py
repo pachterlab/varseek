@@ -276,7 +276,9 @@ def print_varseek_dry_run(params, function_name=None):
         print(f"varseek.varseek_{function_name}.{function_name}(", end="\n  ")
     len_params = len(params)
     for i, (param_key, param_value) in enumerate(params.items()):
-        end = "\n  " if i < len_params - 1 else "\n"  # Normal newline for last entry
+        if isinstance(param_value, str):
+            param_value = f'"{param_value}"'
+        end = ",\n  " if i < len_params - 1 else "\n"  # Normal newline for last entry
         print(f"{param_key} = {param_value}", end=end)
     if function_name:
         print(")")

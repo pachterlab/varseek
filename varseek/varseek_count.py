@@ -11,7 +11,7 @@ import logging
 import varseek as vk
 from varseek.utils import (
     check_file_path_is_string_with_valid_extension,
-    check_that_two_paths_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal,
+    check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal,
     is_valid_int,
     load_in_fastqs,
     make_function_parameter_to_value_dict,
@@ -87,13 +87,16 @@ def validate_input_count(params_dict):
     
     if params_dict.get("parity_kb_count") == "paired" and params_dict["parity"] == "single":
         raise ValueError("If parity_kb_count is 'paired', then parity must be 'paired' as well")
+    
+    if params_dict.get("parity_kb_count") == "single" and params_dict["parity"] == "paired":
+        logger.info("parity='paired' and parity_kb_count='single'. This means that kb count will run in single-end mode on this paired-end data, which will enable different pairs to be processed independently and thus potentially detect different variants. To turn this feature off, set parity_kb_count='paired'.")
 
     strand_valid_values = {"unstranded", "forward", "reverse"}
     if params_dict["strand"] not in strand_valid_values:
         raise ValueError(f"Strand must be one of {strand_valid_values}")
 
     out = params_dict.get("out", ".")
-    kb_count_reference_genome_out_dir = params_dict.get("kb_count_reference_genome_out_dir", f"{out}/kb_count_out_reference_genome")
+    kb_count_reference_genome_out_dir = params_dict.get("kb_count_reference_genome_out_dir") if params_dict.get("kb_count_reference_genome_out_dir") else f"{out}/kb_count_out_reference_genome"
     if params_dict.get("qc_against_gene_matrix") and not os.path.exists(kb_count_reference_genome_out_dir):  # align to this genome if (1) adata doesn't exist and (2) qc_against_gene_matrix=True (because I need the BUS file for this)  # purposely omitted overwrite because it is reasonable to expect that someone has pre-computed this matrix and doesn't want it recomputed under any circumstances (and if they did, then simply point to a different directory)
         species = params_dict.get("species", None)
         if not isinstance(species, str) and species not in supported_downloadable_normal_reference_genomes_with_kb_ref:
@@ -117,21 +120,20 @@ def validate_input_count(params_dict):
                     pass
 
 
-# don't worry if it says an argument is unused, as they will all get put in params_dict and passed to the child functions - in fact, be careful about the arguments that are used here AND passed in through params_dict (e.g., sequences, variants, w, k, out, etc), as the argument lives in vk ref but the params_dict value lives only in params_dict and the child functions it gets passed to
-# so, in other words, if I modify one of these arguments, I should also modify it in params_dict, and vice-versa
+# don't worry if it says an argument is unused, as they will all get put in params_dict for each respective function and passed to the child functions
 def count(
     *fastqs,
     index,
     t2g,
     technology,  # params
     k=59,
-    min_read_len=None,
+    qc_against_gene_matrix=False,
     strand="unstranded",
     mm=False,
     union=False,
     parity="single",
     species=None,
-    reference_genome_index=None,
+    reference_genome_index=None,  # optional inputs
     reference_genome_t2g=None,
     adata_reference_genome=None,
     out=".",  # optional outputs
@@ -148,7 +150,7 @@ def count(
     logging_level=None,
     save_logs=False,
     log_out_dir=None,
-    **kwargs,  # * including all arguments for vk build, info, and filter
+    **kwargs,  # * including all arguments for vk fastqpp, clean, summarize, and kb count
 ):
     """
     Perform variant screening on sequencing data. Wraps around varseek fastqpp, kb count, varseek clean, and kb summarize.
@@ -162,6 +164,7 @@ def count(
     # Additional parameters
     - k                                     (int) The length of each k-mer in the kallisto reference index construction. Corresponds to `k` used in the earlier varseek commands (i.e., varseek ref). If using a downloaded index from varseek ref -d, then check the description for the k value used to construct this index with varseek ref --list_downloadable_references. Default: 59.
     - strand                                (str)  The strandedness of the data. Either "unstranded", "forward", or "reverse". Default: "unstranded".
+    - qc_against_gene_matrix                (bool): Whether to apply correction for qc against gene matrix. If a read maps to 2+ VCRSs that belong to different genes, then cross-reference with the reference genome to determine which gene the read belongs to, and set all VCRSs that do not correspond to this gene to 0 for that read. Also, cross-reference all reads that map to 1 VCRS and ensure that the reads maps to the gene corresponding to this VCRS, or else set this value to 0 in the count matrix. Default: True.
     - mm                                    (bool)  If True, use the multi-mapping reads. Default: False.
     - union                                 (bool)  If True, use the union of the read mappings. Default: False.
     - parity                                (str)  The parity of the reads for vk fastqpp. Either "single" or "paired". Only used if technology is bulk or a smart-seq. For parity in kb count, see parity_kb_count. Default: "single".
@@ -191,8 +194,8 @@ def count(
     - log_out_dir                           (str) Directory to save logs. Default: None (do not save logs).
 
     # Hidden arguments (part of kwargs):
-    - num                              (bool) If True, use the --num argument in kb count. Default: False.
-    - kb_count_parity                      (str) The parity of the reads for kb count. Default: "single".
+    - num                                  (bool) If True, use the --num argument in kb count. Default: False.
+    - parity_kb_count                      (str) The parity of the reads for kb count. Always recommended to run in single. Default: "single".
 
     For a complete list of supported parameters, see the documentation for varseek fastqpp, kb count, varseek clean, and varseek summarize. Note that any shared parameter names between functions are meant to have identical purposes.
     """
@@ -222,51 +225,47 @@ def count(
 
     # * 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
-    params_dict['logger'] = logger
-
-    params_dict_for_type_checking = copy.deepcopy(params_dict)  # make a copy of the params_dict for type checking, so that I can modify it without affecting the original params_dict
-    params_dict_for_type_checking['adata_vcrs'] = 'placeholder/adata.h5ad'  # this is just a placeholder, but it is needed for type checking
-    params_dict_for_type_checking['adata'] = 'placeholder/adata_cleaned.h5ad'  # this is just a placeholder, but it is needed for type checking
-
+    params_dict['adata_vcrs'] = 'placeholder/adata.h5ad'  # this is just a placeholder, but it is needed for type checking
+    params_dict['adata'] = 'placeholder/adata_cleaned.h5ad'  # this is just a placeholder, but it is needed for type checking
+    
     # Set params_dict_for_type_checking to default values of children functions - important so type checking works properly
     count_signature = inspect.signature(count)
     for function in (vk.varseek_fastqpp.fastqpp, vk.varseek_clean.clean, vk.varseek_summarize.summarize):
         signature = inspect.signature(function)
         for key in signature.parameters.keys():
-            if key not in params_dict_for_type_checking and key not in count_signature.parameters.keys():
-                params_dict_for_type_checking[key] = signature.parameters[key].default
+            if key not in params_dict and key not in count_signature.parameters.keys():
+                params_dict[key] = signature.parameters[key].default
 
-    vk.varseek_fastqpp.validate_input_fastqpp(params_dict_for_type_checking)  # this passes all vk ref parameters to the function - I could only pass in the vk build parameters here if desired (and likewise below), but there should be no naming conflicts anyways
-    vk.varseek_clean.validate_input_clean(params_dict_for_type_checking)
-    vk.varseek_summarize.validate_input_summarize(params_dict_for_type_checking)
-    validate_input_count(params_dict_for_type_checking)
+    vk.varseek_fastqpp.validate_input_fastqpp(params_dict)  # this passes all vk count parameters to the function - I could only pass in the vk fastqpp parameters here if desired (and likewise below), but there should be no naming conflicts anyways
+    vk.varseek_clean.validate_input_clean(params_dict)
+    vk.varseek_summarize.validate_input_summarize(params_dict)
+    validate_input_count(params_dict)
 
     # * 3. Dry-run
     # handled within child functions
 
-    # * 3.75 Pop out any unallowable arguments
+    # * 4. Save params to config file and run info file
+    if not dry_run:
+        # Save parameters to config file
+        params_dict["fastqs"] = fastqs_original  # for config file
+        config_file = os.path.join(out, "config", "vk_count_config.json")
+        save_params_to_config_file(params_dict, config_file)  #$ Now I am done with params_dict
+
+        run_info_file = os.path.join(out, "config", "vk_count_run_info.txt")
+        save_run_info(run_info_file)
+
+    # * 4.5 Pop out any unallowable arguments
     for key, unallowable_set in varseek_count_unallowable_arguments.items():
         for unallowable_key in unallowable_set:
-            params_dict.pop(unallowable_key, None)
+            kwargs.pop(unallowable_key, None)
 
-    # * 3.8 Set params_dict to default values of children functions (not strictly necessary, as if these arguments are not in params_dict then it will use the default values anyways, but important if I need to rely on these default values within vk count)
+    # * 4.8 Set kwargs to default values of children functions (not strictly necessary, as if these arguments are not in kwargs then it will use the default values anyways, but important if I need to rely on these default values within vk count)
     # count_signature = inspect.signature(count)
     # for function in (vk.varseek_fastqpp.fastqpp, vk.varseek_clean.clean, vk.varseek_summarize.summarize):
     #     signature = inspect.signature(function)
     #     for key in signature.parameters.keys():
-    #         if key not in params_dict and key not in count_signature.parameters.keys():
-    #             params_dict[key] = signature.parameters[key].default
-
-    # * 4. Save params to config file and run info file
-    if not params_dict.get("dry_run"):
-        # Save parameters to config file
-        params_dict["fastqs"] = fastqs_original  # for config file - reversed right after
-        config_file = os.path.join(out, "config", "vk_count_config.json")
-        save_params_to_config_file(params_dict, config_file)
-        params_dict["fastqs"] = fastqs
-
-        run_info_file = os.path.join(out, "config", "vk_count_run_info.txt")
-        save_run_info(run_info_file)
+    #         if key not in kwargs and key not in count_signature.parameters.keys():
+    #             kwargs[key] = signature.parameters[key].default
 
     # * 5. Set up default folder/file input paths, and make sure the necessary ones exist
     # all input files for vk count are required in the varseek workflow, so this is skipped
@@ -279,21 +278,23 @@ def count(
     if not vk_summarize_out_dir:
         vk_summarize_out_dir = f"{out}/vk_summarize"
 
-    os.makedirs(out, exist_ok=True)
-    os.makedirs(kb_count_vcrs_out_dir, exist_ok=True)
-    os.makedirs(kb_count_reference_genome_out_dir, exist_ok=True)
-    os.makedirs(vk_summarize_out_dir, exist_ok=True)
+    if not dry_run:
+        os.makedirs(out, exist_ok=True)
+        os.makedirs(kb_count_vcrs_out_dir, exist_ok=True)
+        os.makedirs(kb_count_reference_genome_out_dir, exist_ok=True)
+        os.makedirs(vk_summarize_out_dir, exist_ok=True)
 
-    # for vk clean arguments - generalizes the params_dict["kb_count_vcrs_dir"] = kb_count_vcrs_out_dir and params_dict["kb_count_reference_genome_dir"] = kb_count_reference_genome_out_dir calls
-    params_dict = check_that_two_paths_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "kb_count_vcrs_dir", "kb_count_vcrs_out_dir")  # check that, if kb_count_vcrs_dir and kb_count_vcrs_out_dir are both provided, they are the same directory; otherwise, if only one is provided, then make them equal to each other
-    params_dict = check_that_two_paths_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict, "kb_count_reference_genome_dir", "kb_count_reference_genome_out_dir")  # same story as above but for kb_count_reference_genome and kb_count_reference_genome_out_dir
+    # for kb count --> vk clean
+    kb_count_vcrs_out_dir, kwargs['kb_count_vcrs_dir'] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(kb_count_vcrs_out_dir, kwargs.get("kb_count_vcrs_dir"))
+    kb_count_vcrs_out_dir, kwargs['kb_count_vcrs_dir'] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(kb_count_vcrs_out_dir, kwargs.get("kb_count_vcrs_dir"))  # check that, if kb_count_vcrs_dir and kb_count_vcrs_out_dir are both provided, they are the same directory; otherwise, if only one is provided, then make them equal to each other
+    kb_count_reference_genome_out_dir, kwargs['kb_count_reference_genome_dir'] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(kb_count_reference_genome_out_dir, kwargs.get('kb_count_reference_genome_dir'))  # same story as above but for kb_count_reference_genome and kb_count_reference_genome_out_dir
 
-    adata_vcrs = f"{kb_count_vcrs_out_dir}/counts_unfiltered/adata.h5ad"
-    adata_reference_genome = f"{kb_count_reference_genome_out_dir}/counts_unfiltered/adata.h5ad" if not params_dict.get("adata_reference_genome") else params_dict.get("adata_reference_genome")
-    adata_vcrs_clean_out = f"{out}/adata_cleaned.h5ad" if not params_dict.get("adata_vcrs_clean_out") else params_dict.get("adata_vcrs_clean_out")  # from vk clean
-    adata_reference_genome_clean_out = f"{out}/adata_cleaned.h5ad" if not params_dict.get("adata_reference_genome_clean_out") else params_dict.get("adata_reference_genome_clean_out")  # from vk clean
-    vcf_out = os.path.join(out, "vcf") if not params_dict.get("vcf_out") else params_dict["vcf_out"]
-    stats_file = os.path.join(vk_summarize_out_dir, "varseek_summarize_stats.txt") if not params_dict.get("stats_file") else params_dict["stats_file"]  # from vk summarize
+    adata_vcrs = f"{kb_count_vcrs_out_dir}/counts_unfiltered/adata.h5ad" if not kwargs.get("adata_vcrs") else kwargs.get("adata_vcrs")  # from vk clean
+    adata_reference_genome = f"{kb_count_reference_genome_out_dir}/counts_unfiltered/adata.h5ad" if not adata_reference_genome else adata_reference_genome  # from vk clean
+    adata_vcrs_clean_out = f"{out}/adata_cleaned.h5ad" if not kwargs.get("adata_vcrs_clean_out") else kwargs.get("adata_vcrs_clean_out")  # from vk clean
+    adata_reference_genome_clean_out = f"{out}/adata_cleaned.h5ad" if not kwargs.get("adata_reference_genome_clean_out") else kwargs.get("adata_reference_genome_clean_out")  # from vk clean
+    vcf_out = os.path.join(out, "vcf") if not kwargs.get("vcf_out") else kwargs["vcf_out"]  # from vk clean
+    stats_file = os.path.join(vk_summarize_out_dir, "varseek_summarize_stats.txt") if not kwargs.get("stats_file") else kwargs["stats_file"]  # from vk summarize
 
     for file in [stats_file]:  # purposely excluded adata_reference_genome because it is fine if someone provides this as input even if overwrite=False; and purposely excluded adata_vcrs, adata_vcrs_clean_out, adata_reference_genome_clean_out, kb_count_vcrs_out_dir, kb_count_reference_genome_out_dir for the reasons provided in vk ref
         if os.path.isfile(file) and not overwrite:
@@ -305,41 +306,33 @@ def count(
     file_signifying_successful_vk_clean_completion = adata_vcrs_clean_out
     file_signifying_successful_vk_summarize_completion = stats_file
 
-    overwrite_original = params_dict.get("overwrite_original", False)
-
-    # * 6.5 Just to make the unused parameter coloration go away in VSCode
-
     # * 7. Define kwargs defaults
-    num = params_dict.get("num", False)
-    kb_count_parity = params_dict.get("kb_count_parity", "single")
+    kwargs["parity_kb_count"] = kwargs.get("parity_kb_count", "single")
 
     # * 7.5 make sure ints are ints
     k, threads = int(k), int(threads)
 
     # * 8. Start the actual function
-    params_dict["vcrs_index"] = index
-    params_dict["vcrs_t2g"] = t2g
-    params_dict["fastqs"] = fastqs
+    kwargs["vcrs_index"] = index
+    kwargs["vcrs_t2g"] = t2g
     
     if isinstance(fastqs, list):
         fastqs = tuple(fastqs)
     
     fastqs_unsorted = fastqs
     try:
-        fastqs = sort_fastq_files_for_kb_count(fastqs, technology=technology, multiplexed=params_dict.get("multiplexed"), logger=logger, check_only=(not sort_fastqs))
+        fastqs = sort_fastq_files_for_kb_count(fastqs, technology=technology, multiplexed=kwargs.get("multiplexed"), logger=logger, check_only=(not sort_fastqs))
     except ValueError as e:
         if sort_fastqs:
             logger.warning(f"Automatic FASTQ argument order sorting for kb count could not recognize FASTQ file name format. Skipping argument order sorting.")
-    # params_dict["fastqs"] = fastqs  # no need because I do this later
 
-    parity = params_dict.get("parity", "single")
     if technology.lower() != "bulk" and "smartseq" not in technology.lower():
+        logger.info("Technology %s does not support paired end data. Setting parity to 'single'.", technology)
         parity = "single"
-        params_dict["parity"] = parity
 
     # so parity_vcrs is set correctly - copied from fastqpp
-    concatenate_paired_fastqs = params_dict.get("concatenate_paired_fastqs", False)
-    split_reads_by_Ns_and_low_quality_bases = params_dict.get("split_reads_by_Ns_and_low_quality_bases", False)
+    concatenate_paired_fastqs = kwargs.get("concatenate_paired_fastqs", False)
+    split_reads_by_Ns_and_low_quality_bases = kwargs.get("split_reads_by_Ns_and_low_quality_bases", False)
     if (concatenate_paired_fastqs or split_reads_by_Ns_and_low_quality_bases) and parity == "paired":
         if not concatenate_paired_fastqs:
             logger.info("Setting concatenate_paired_fastqs=True")
@@ -348,14 +341,14 @@ def count(
         if concatenate_paired_fastqs:
             logger.info("Setting concatenate_paired_fastqs=False")
         concatenate_paired_fastqs = False
-    params_dict["concatenate_paired_fastqs"] = concatenate_paired_fastqs
+    kwargs["concatenate_paired_fastqs"] = concatenate_paired_fastqs
 
-    if not params_dict.get("min_read_len"):
-        min_read_len = k
-        params_dict["min_read_len"] = min_read_len
+    
+    if not kwargs.get("min_read_len"):
+        kwargs["min_read_len"] = k
 
     # define the vk fastqpp, clean, and summarize arguments (explicit arguments and allowable kwargs)
-    explicit_parameters_vk_fastqpp = vk.utils.get_set_of_parameters_from_function_signature(vk.varseek_fastqpp.fastqpp)
+    explicit_parameters_vk_fastqpp = vk.utils.get_set_of_parameters_from_function_signature(vk.varseek_fastqpp.fastqpp)  # does not include *fastqs due to asterisk
     allowable_kwargs_vk_fastqpp = vk.utils.get_set_of_allowable_kwargs(vk.varseek_fastqpp.fastqpp)
 
     explicit_parameters_vk_clean = vk.utils.get_set_of_parameters_from_function_signature(vk.varseek_clean.clean)
@@ -370,10 +363,14 @@ def count(
 
     # vk fastqpp
     if not disable_fastqpp:  # don't do the whole overwrite thing here because it is the first function, and a user should know if they are overwriting their fastqs
-        params_dict_vk_fastqpp = {key: value for key, value in params_dict.items() if key in all_parameter_names_set_vk_fastqpp}  # only pass in the parameters that are in the vk fastqpp function signature for dry run
+        params_dict_vk_fastqpp = make_function_parameter_to_value_dict(1)  # will reflect any updated values to variables found in vk count signature and anything in kwargs
+        params_dict_vk_fastqpp = {key: value for key, value in params_dict_vk_fastqpp.items() if key in all_parameter_names_set_vk_fastqpp}  # only pass in the parameters that are in the vk fastqpp function signature for dry run
+        params_dict_vk_fastqpp["logger"] = logger  # set any variables in here that are variables in vk count (not passed in as an argument to vk count) and that I want to pass in as a kwarg to vk fastqpp
+        #$ intentionally do not set params_dict_vk_fastqpp["overwrite"] = True here because it is the first function, and a user should know if they are overwriting their fastqs
+        # do not need params_dict_vk_fastqpp.pop("fastqs", None) because it is not in the vk fastqpp function signature (because it is *fastqs)
 
         logger.info("Running vk fastqpp")
-        fastqpp_dict = vk.fastqpp(params_dict['fastqs'], **params_dict) if not params_dict.get("dry_run", False) else vk.fastqpp(params_dict['fastqs'], **params_dict_vk_fastqpp)  # best of both worlds - will only pass in defined arguments if dry run is True (which is good so that I don't show each function with a bunch of args it never uses), but will pass in all arguments if dry run is False (which is good if I run vk ref with a new parameter that I have not included in docstrings yet, as I only get usable kwargs list from docstrings)
+        fastqpp_dict = vk.fastqpp(fastqs, **params_dict_vk_fastqpp)
 
         fastqs_vcrs = fastqpp_dict["final"]
         fastqs_reference_genome = fastqpp_dict["quality_controlled"] if "quality_controlled" in fastqpp_dict else fastqs
@@ -381,14 +378,14 @@ def count(
         logger.warning("Skipping vk fastqpp because disable_fastqpp=True")
         fastqs_vcrs = fastqs
         fastqs_reference_genome = fastqs
-    params_dict["fastqs"] = fastqs_vcrs  # so that the correct fastqs get passed into vk clean
+    fastqs = fastqs_vcrs  # so that the correct fastqs get passed into vk clean
 
     # # kb count, VCRS
     if not os.path.exists(file_signifying_successful_kb_count_vcrs_completion) or overwrite:
-        if params_dict.get("concatenate_paired_fastqs"):
+        if kwargs.get("concatenate_paired_fastqs"):
             parity_vcrs = "single"
         else:
-            parity_vcrs = kb_count_parity
+            parity_vcrs = kwargs["parity_kb_count"]  # I set the default value earlier, so I don't need to use the .get method
 
         kb_count_command = [
             "kb",
@@ -413,9 +410,9 @@ def count(
             "--overwrite",   # set overwrite here regardless of the overwrite argument because I would only even enter this block if kb count was only partially run (as seen by the lack of existing of file_signifying_successful_kb_count_vcrs_completion), in which case I should overwrite anyways
         ]
 
-        if params_dict.get("qc_against_gene_matrix"):
+        if qc_against_gene_matrix:
             kb_count_command.extend(["--union", "--mm"])
-        if params_dict.get("qc_against_gene_matrix") or params_dict.get("apply_split_reads_by_Ns_correction") or params_dict.get("apply_dlist_correction") or num:
+        if qc_against_gene_matrix or kwargs.get("apply_split_reads_by_Ns_correction") or kwargs.get("apply_dlist_correction") or kwargs.get("num"):
             kb_count_command.extend(["--num"])
 
         if mm and "--mm" not in kb_count_command:
@@ -424,13 +421,14 @@ def count(
             kb_count_command.append("--union")
 
         # assumes any argument in varseek count matches kb count identically, except dashes replaced with underscores
+        params_dict_kb_count_vcrs = make_function_parameter_to_value_dict(1)  # will reflect any updated values to variables found in vk count signature and anything in kwargs
         for dict_key, arguments in varseek_count_only_allowable_kb_count_arguments.items():
             for argument in list(arguments):
                 dash_count = len(argument) - len(argument.lstrip("-"))
                 leading_dashes = "-" * dash_count
                 argument = argument.lstrip("-").replace("-", "_")
-                if argument in params_dict:
-                    value = params_dict[argument]
+                if argument in params_dict_kb_count_vcrs:
+                    value = params_dict_kb_count_vcrs[argument]
                     if dict_key == "zero_arguments":
                         if value:  # only add if value is True
                             kb_count_command.append(f"{leading_dashes}{argument}")
@@ -449,9 +447,9 @@ def count(
     else:
         logger.warning(f"Skipping kb count because file {file_signifying_successful_kb_count_vcrs_completion} already exists and overwrite=False")
 
-    if ((not os.path.exists(file_signifying_successful_kb_count_reference_genome_completion)) and (technology not in non_single_cell_technologies) and any(params_dict.get(value, False) for value in needs_for_normal_genome_matrix)) or (params_dict.get("qc_against_gene_matrix") and len(os.listdir(kb_count_reference_genome_out_dir)) == 0):  # align to this genome if either (1) adata doesn't exist and I do downstream analysis with the normal gene count matrix for scRNA-seq data (ie not bulk) or (2) [qc_against_gene_matrix=True and kb_count_reference_genome_out_dir is empty (because I need the BUS file for this)]  # purposely omitted overwrite because it is reasonable to expect that someone has pre-computed this matrix and doesn't want it recomputed under any circumstances (and if they did, then simply point to a different directory)
-        reference_genome_index = params_dict.get("reference_genome_index", os.path.join(out, "reference_genome_index.idx"))
-        reference_genome_t2g = params_dict.get("reference_genome_t2g", os.path.join(out, "reference_genome_t2g.t2g"))
+    if ((not os.path.exists(file_signifying_successful_kb_count_reference_genome_completion)) and (technology not in non_single_cell_technologies) and any(params_dict_kb_count_vcrs.get(value, False) for value in needs_for_normal_genome_matrix)) or (qc_against_gene_matrix and len(os.listdir(kb_count_reference_genome_out_dir)) == 0):  # align to this genome if either (1) adata doesn't exist and I do downstream analysis with the normal gene count matrix for scRNA-seq data (ie not bulk) or (2) [qc_against_gene_matrix=True and kb_count_reference_genome_out_dir is empty (because I need the BUS file for this)]  # purposely omitted overwrite because it is reasonable to expect that someone has pre-computed this matrix and doesn't want it recomputed under any circumstances (and if they did, then simply point to a different directory)
+        reference_genome_index = reference_genome_index if reference_genome_index else os.path.join(out, "reference_genome_index.idx")
+        reference_genome_t2g = reference_genome_t2g if reference_genome_t2g else os.path.join(out, "reference_genome_t2g.t2g")
 
         if not os.path.exists(reference_genome_index) or not os.path.exists(reference_genome_t2g):  # download reference if does not exist
             if not isinstance(species, str) and species not in supported_downloadable_normal_reference_genomes_with_kb_ref:
@@ -503,17 +501,18 @@ def count(
             kb_count_reference_genome_out_dir,
         ]
 
-        if params_dict.get("qc_against_gene_matrix"):
+        if qc_against_gene_matrix or kwargs.get("num"):
             kb_count_standard_index_command.extend(["--num"])
 
         # assumes any argument in varseek count matches kb count identically, except dashes replaced with underscores
+        params_dict_kb_count_standard = make_function_parameter_to_value_dict(1)  # will reflect any updated values to variables found in vk count signature and anything in kwargs
         for dict_key, arguments in varseek_count_only_allowable_kb_count_arguments.items():
             for argument in list(arguments):
                 dash_count = len(argument) - len(argument.lstrip("-"))
                 leading_dashes = "-" * dash_count
                 argument = argument.lstrip("-").replace("-", "_")
-                if argument in params_dict:
-                    value = params_dict[argument]
+                if argument in params_dict_kb_count_standard:
+                    value = params_dict_kb_count_standard[argument]
                     if dict_key == "zero_arguments":
                         if value:  # only add if value is True
                             kb_count_standard_index_command.append(f"{leading_dashes}{argument}")
@@ -530,46 +529,39 @@ def count(
         else:
             subprocess.run(kb_count_standard_index_command, check=True)
 
-    elif os.path.exists(file_signifying_successful_kb_count_reference_genome_completion) and params_dict.get("qc_against_gene_matrix"):
-        logger.warning(f"Skipping kb count for reference genome because file {file_signifying_successful_kb_count_reference_genome_completion} already exists. Note that even setting overwrite=True will still not overwrite this particular directory")
-
-    params_dict["adata_vcrs"] = adata_vcrs if not params_dict.get("adata_vcrs") else params_dict.get("adata_vcrs")  # for vk clean
-    # kb_count_vcrs_dir already set to kb_count_vcrs_out_dir by check_that_two_paths_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal
-    params_dict["adata_reference_genome"] = adata_reference_genome  # for vk clean - the conditional part already handled in section 6
+    else:
+        logger.info(f"Skipping kb count for reference genome because the reference genome adata object was not needed and/or the file '{file_signifying_successful_kb_count_reference_genome_completion}' already exists. Note that even setting overwrite=True will still not overwrite this particular directory")
 
     # vk clean
     if not disable_clean:
         if not os.path.exists(file_signifying_successful_vk_clean_completion) or overwrite:
-            params_dict["overwrite"] = True
-
-            params_dict_vk_clean = {key: value for key, value in params_dict.items() if key in all_parameter_names_set_vk_clean}  # only pass in the parameters that are in the vk clean function signature for dry run
+            params_dict_vk_clean = make_function_parameter_to_value_dict(1)  # will reflect any updated values to variables found in vk count signature and anything in kwargs
+            params_dict_vk_clean = {key: value for key, value in params_dict_vk_clean.items() if key in all_parameter_names_set_vk_clean}
+            params_dict_vk_clean["logger"] = logger  # set any variables in here that are variables in vk count (not passed in as an argument to vk count) and that I want to pass in as a kwarg to vk clean
+            params_dict_vk_clean["overwrite"] = True
+            params_dict_vk_clean["adata_vcrs"] = adata_vcrs
 
             logger.info("Running vk clean")
-            _ = vk.clean(**params_dict) if not params_dict.get("dry_run", False) else vk.clean(**params_dict_vk_clean)
-
-            params_dict["overwrite"], params_dict_vk_clean["overwrite"] = overwrite_original, overwrite_original
+            _ = vk.clean(**params_dict_vk_clean)
         else:
             logger.warning(f"Skipping vk clean because file {file_signifying_successful_vk_clean_completion} already exists and overwrite=False")
-        adata_for_summarize = adata_vcrs_clean_out
+        adata = adata_vcrs_clean_out  # for vk summarize
     else:
         logger.warning("Skipping vk clean because disable_clean=True")
-        adata_for_summarize = adata_vcrs
-    params_dict["adata"] = adata_for_summarize  # so that the correct adata gets passed into vk summarize
+        adata = adata_vcrs  # for vk summarize
 
     # # vk summarize
     if not disable_summarize:
-        out_original = params_dict.get("out")
         if not os.path.exists(file_signifying_successful_vk_summarize_completion) or overwrite:
-            params_dict["out"] = vk_summarize_out_dir
-            params_dict["overwrite"] = True
-
-            params_dict_vk_summarize = {key: value for key, value in params_dict.items() if key in all_parameter_names_set_vk_summarize}  # only pass in the parameters that are in the vk summarize function signature for dry run
+            params_dict_vk_summarize = make_function_parameter_to_value_dict(1)  # will reflect any updated values to variables found in vk count signature and anything in kwargs
+            params_dict_vk_summarize = {key: value for key, value in params_dict_vk_summarize.items() if key in all_parameter_names_set_vk_summarize}
+            params_dict_vk_summarize["logger"] = logger  # set any variables in here that are variables in vk count (not passed in as an argument to vk count) and that I want to pass in as a kwarg to vk summarize
+            params_dict_vk_summarize["overwrite"] = True
+            params_dict_vk_summarize["out"] = vk_summarize_out_dir
+            params_dict_vk_summarize["adata"] = adata
 
             logger.info("Running vk summarize")
-            _ = vk.summarize(**params_dict) if not params_dict.get("dry_run", False) else vk.summarize(**params_dict_vk_summarize)
-
-            params_dict["overwrite"], params_dict_vk_summarize["overwrite"] = overwrite_original, overwrite_original
-            params_dict["out"], params_dict_vk_summarize["out"] = out_original, out_original
+            _ = vk.summarize(**params_dict_vk_summarize)
         else:
             logger.warning(f"Skipping vk summarize because file {file_signifying_successful_vk_summarize_completion} already exists and overwrite=False")
     else:
@@ -583,10 +575,6 @@ def count(
 
     vk_count_output_dict["vcf"] = vcf_out
     vk_count_output_dict["vk_summarize_output_dir"] = vk_summarize_out_dir
-
-    for var_name, var_value in locals().items():
-        if var_name in params_dict and params_dict[var_name] != var_value:
-            logger.debug("Disagreement in parameter values between for variable %s between function and params_dict: %s != %s" % (var_name, var_value, params_dict[var_name]))
 
     if not dry_run:
         report_time_elapsed(start_time, logger=logger, function_name="count")

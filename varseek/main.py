@@ -13,7 +13,7 @@ import pandas as pd
 
 from .__init__ import __version__
 from .constants import varseek_ref_only_allowable_kb_ref_arguments, varseek_count_only_allowable_kb_count_arguments
-from .utils import load_params, set_up_logger
+from .utils import set_up_logger
 from .varseek_build import build
 from .varseek_clean import clean
 from .varseek_count import count
@@ -1722,10 +1722,11 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "apply_dlist_correction"),
     )
     parser_clean.add_argument(
-        "--qc_against_gene_matrix",
-        action="store_true",
+        "--disable_qc_against_gene_matrix",
+        dest="qc_against_gene_matrix",
+        action="store_false",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "qc_against_gene_matrix"),
+        help=extract_help_from_doc(clean, "disable_qc_against_gene_matrix", disable=True),
     )
     parser_clean.add_argument(
         "--filter_cells_by_min_counts",
@@ -2030,6 +2031,14 @@ def main():  # noqa: C901
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(clean, "bustools"),
     )
+    parser_clean.add_argument(
+        "--parity_kb_count",
+        type=str,
+        choices=["single", "paired"],
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "parity_kb_count"),
+    )
 
     # NEW PARSER
     summarize_desc = "Analyze the VCRS count matrix results."
@@ -2323,6 +2332,13 @@ def main():  # noqa: C901
         help=extract_help_from_doc(count, "k"),
     )
     parser_count.add_argument(
+        "--disable_qc_against_gene_matrix",
+        dest="qc_against_gene_matrix",
+        action="store_false",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(count, "disable_qc_against_gene_matrix", disable=True),
+    )
+    parser_count.add_argument(
         "--strand",
         type=str,
         required=False,
@@ -2470,6 +2486,14 @@ def main():  # noqa: C901
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(count, "num"),
+    )
+    parser_count.add_argument(
+        "--parity_kb_count",
+        type=str,
+        choices=["single", "paired"],
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(count, "parity_kb_count"),
     )
     
     copy_arguments([parser_build, parser_info, parser_filter], parser_ref)  # allows parser_ref to accept all arguments from parser_build, parser_info, and parser_filter - if parser_ref does not already contain the argument, then it will inherent from the other functions, notably with positional args converted into keyword args, required False (since vk ref will necessarily handle this internally), and no help message displayed

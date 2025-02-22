@@ -390,6 +390,7 @@ def filter(
     - logging_level                                (str) Logging level. Can also be set with the environment variable VARSEEK_LOGGING_LEVEL. Default: INFO.
     - save_logs                                    (True/False) Whether to save logs to a file. Default: False.
     - log_out_dir                                  (str) Directory to save logs. Default: None (do not save logs).
+    - logger                                       (logging.Logger) Logger object. Default: None (use default logger).
 
     # Hidden arguments:
     filter_all_dlists (bool) If True, filter all dlists. Default: False.

@@ -87,6 +87,7 @@ def summarize(
     - stats_file                        (str) Path to the stats file. Default: `out`/varseek_summarize_stats.txt
     - specific_stats_folder             (str) Path to the specific stats folder. Default: `out`/specific_stats
     - plots_folder                      (str) Path to the plots folder. Default: `out`/plots
+    - logger                            (logging.Logger) Logger object. Default: None (use the default logger).
     """
 
     # * 1. Start timer

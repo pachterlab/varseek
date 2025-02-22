@@ -359,6 +359,7 @@ def info(
     - reference_cdna_fasta               (str) Path to the reference cDNA fasta file. Only utilized for the column 'cdna_and_genome_same'. Default: None.
     - reference_genome_fasta             (str) Path to the reference genome fasta file. Only utilized for the column 'cdna_and_genome_same'. Default: None.
     - variants                           (str) Path to the variants csv file. Only utilized for the column 'cdna_and_genome_same'. Corresponds to `variants` in the varseek build function. Default: None.
+    - logger                             (logging.Logger) Logger object. Default: None.
     """
     # CELL
     # * 0. Informational arguments that exit early
