@@ -118,7 +118,8 @@ def validate_input_count(params_dict):
                     pass
 
 
-# don't worry if it says an argument is unused - they will all get put in params_dict
+# don't worry if it says an argument is unused, as they will all get put in params_dict and passed to the child functions - in fact, be careful about the arguments that are used here AND passed in through params_dict (e.g., sequences, variants, w, k, out, etc), as the argument lives in vk ref but the params_dict value lives only in params_dict and the child functions it gets passed to
+# so, in other words, if I modify one of these arguments, I should also modify it in params_dict, and vice-versa
 def count(
     *fastqs,
     index,
@@ -214,19 +215,7 @@ def count(
             log_out_dir = os.path.join(out, "logs")
         logger = set_up_logger(logger, logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
 
-    # * 1.5. Load in parameters from a config file if provided
-    if isinstance(config, str) and os.path.isfile(config):
-        vk_count_config_file_input = vk.utils.load_params(config)
-
-        # overwrite any parameters passed in with those from the config file
-        count_signature = inspect.signature(count)
-        for key, value in vk_count_config_file_input.items():
-            if key in count_signature.parameters.keys():
-                exec("%s = %s" % (key, value))  # assign the value to the variable name
-            else:
-                kwargs[key] = value  # if the variable is not in the function signature, then add it to kwargs
-
-    # * 1.6. For the nargs="+" arguments, convert any list of length 1 to a string
+    # * 1.5. For the nargs="+" arguments, convert any list of length 1 to a string
     if isinstance(fastqs, (list, tuple)) and len(fastqs) == 1:
         fastqs = fastqs[0]
 
@@ -237,6 +226,14 @@ def count(
     # * 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
     params_dict['logger'] = logger
+
+    # Load in parameters from a config file if provided
+    if isinstance(config, str) and os.path.isfile(config):
+        vk_count_config_file_input = vk.utils.load_params(config)
+
+        # overwrite any parameters passed in with those from the config file
+        for key, value in vk_count_config_file_input.items():
+            params_dict[key] = value  # overwrite the parameter in params_dict with the value from the config file
 
     params_dict_for_type_checking = copy.deepcopy(params_dict)  # make a copy of the params_dict for type checking, so that I can modify it without affecting the original params_dict
     params_dict_for_type_checking['adata_vcrs'] = 'placeholder/adata.h5ad'  # this is just a placeholder, but it is needed for type checking
@@ -336,6 +333,10 @@ def count(
     k, threads = int(k), int(threads)
 
     # * 8. Start the actual function
+    params_dict["vcrs_index"] = index
+    params_dict["vcrs_t2g"] = t2g
+    params_dict["fastqs"] = fastqs
+    
     if isinstance(fastqs, list):
         fastqs = tuple(fastqs)
     
@@ -598,6 +599,10 @@ def count(
 
     vk_count_output_dict["vcf"] = vcf_out
     vk_count_output_dict["vk_summarize_output_dir"] = vk_summarize_out_dir
+
+    for var_name, var_value in locals().items():
+        if var_name in params_dict and params_dict[var_name] != var_value:
+            logger.debug("Disagreement in parameter values between for variable %s between function and params_dict: %s != %s" % (var_name, var_value, params_dict[var_name]))
 
     if not dry_run:
         report_time_elapsed(start_time, logger=logger, function_name="count")

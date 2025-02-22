@@ -126,7 +126,8 @@ downloadable_references = [
 ]
 
 
-# don't worry if it says an argument is unused - they will all get put in params_dict
+# don't worry if it says an argument is unused, as they will all get put in params_dict and passed to the child functions - in fact, be careful about the arguments that are used here AND passed in through params_dict (e.g., sequences, variants, k, out, etc), as the argument lives in vk ref but the params_dict value lives only in params_dict and the child functions it gets passed to
+# so, in other words, if I modify one of these arguments, I should also modify it in params_dict, and vice-versa
 def ref(
     sequences,
     variants,
@@ -276,19 +277,7 @@ def ref(
             log_out_dir = os.path.join(out, "logs")
         logger = set_up_logger(logger, logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
 
-    # * 1.5. Load in parameters from a config file if provided
-    if isinstance(config, str) and os.path.isfile(config):
-        vk_ref_config_file_input = vk.utils.load_params(config)
-
-        # overwrite any parameters passed in with those from the config file
-        ref_signature = inspect.signature(ref)
-        for key, value in vk_ref_config_file_input.items():
-            if key in ref_signature.parameters.keys():
-                exec("%s = %s" % (key, value))  # assign the value to the variable name
-            else:
-                kwargs[key] = value  # if the variable is not in the function signature, then add it to kwargs
-
-    # * 1.75. For the nargs="+" arguments, convert any list of length 1 to a string
+    # * 1.5. For the nargs="+" arguments, convert any list of length 1 to a string
     if isinstance(sequences, (list, tuple)) and len(sequences) == 1:
         sequences = sequences[0]
     if isinstance(variants, (list, tuple)) and len(variants) == 1:
@@ -297,6 +286,14 @@ def ref(
     # * 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
     params_dict['logger'] = logger
+
+    # Load in parameters from a config file if provided
+    if isinstance(config, str) and os.path.isfile(config):
+        vk_ref_config_file_input = vk.utils.load_params(config)
+
+        # overwrite any parameters passed in with those from the config file
+        for key, value in vk_ref_config_file_input.items():
+            params_dict[key] = value  # overwrite the parameter in params_dict with the value from the config file
 
     params_dict_for_type_checking = copy.deepcopy(params_dict)  # make a copy of the params_dict for type checking, so that I can modify it without affecting the original params_dict
     params_dict_for_type_checking = check_that_two_paths_in_params_dict_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict_for_type_checking, "out", "input_dir")  # because input_dir is a required argument, it does not have a default, and so I should enforce this default manually
@@ -389,21 +386,21 @@ def ref(
     # dlist handled below - see the comment "set d-list argument"
 
     # * 6.5 Just to make the unused parameter coloration go away in VSCode
-    filters = filters
-    w = w
-    mode = mode
-    verbose = verbose
-    dlist_reference_source = dlist_reference_source
-    reference_out_dir = reference_out_dir
-    var_column = var_column
-    seq_id_column = seq_id_column
-    var_id_column = var_id_column
+    # filters = filters
+    # w = w
+    # mode = mode
+    # verbose = verbose
+    # dlist_reference_source = dlist_reference_source
+    # reference_out_dir = reference_out_dir
+    # var_column = var_column
+    # seq_id_column = seq_id_column
+    # var_id_column = var_id_column
 
     # * 7. Define kwargs defaults
     # Nothing to see here
 
     # * 7.5. make sure ints are ints
-    w, k, threads = int(w), int(k), int(threads)
+    # w, k, threads = int(w), int(k), int(threads)
 
     # * 8. Start the actual function
     # some copy-paste from vk build to ensure correct column names if using the cosmic_cmc database
@@ -641,6 +638,10 @@ def ref(
     vk_ref_output_dict = {}
     vk_ref_output_dict["index"] = index_out
     vk_ref_output_dict["t2g"] = vcrs_t2g_for_alignment
+
+    for var_name, var_value in locals().items():
+        if var_name in params_dict and params_dict[var_name] != var_value:
+            logger.warning("Disagreement in parameter values between for variable %s between function and params_dict: %s != %s" % (var_name, var_value, params_dict[var_name]))
 
     # Report time
     if not dry_run:

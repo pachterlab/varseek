@@ -2384,6 +2384,7 @@ def main():  # noqa: C901
         help=extract_help_from_doc(count, "species"),
     )
     parser_count.add_argument(
+        "-c",
         "--config",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
@@ -2596,8 +2597,8 @@ def main():  # noqa: C901
 
     # Load params from config if provided
     if "config" in args and args.config:
-        # Assert that, if `--config` is passed, that no other arguments are passed
-        assert_only_config(args, parent_parser)
+        # # Assert that, if `--config` is passed, that no other arguments are passed - no need for this
+        # assert_only_config(args, parent_parser)
 
         params = load_params(file=args.config)
 
@@ -2790,7 +2791,7 @@ def main():  # noqa: C901
 
         # for pytest
         if os.getenv("TESTING") == "true":
-            return params_dict
+            return fastqs, params_dict
 
         count_results = count(*fastqs, **params_dict)
 

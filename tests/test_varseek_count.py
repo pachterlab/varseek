@@ -21,10 +21,11 @@ def test_varseek_count_on_command_line(monkeypatch):
     monkeypatch.setenv("TESTING", "true")  # so that main returns params_dict (there is a conditional in main to look for this environment variable)
     
     importlib.reload(main_module)
-    params_dict = main_module.main()  # now returns params_dict because TESTING is set
+    fastqs, params_dict = main_module.main()  # now returns params_dict because TESTING is set
+
+    expected_fastqs = ['myfastq.fastq']
 
     expected_dict = {
-        'fastqs': ['myfastq.fastq'],
         'index': 'shamindex.idx',
         't2g': 'shamt2g.txt',
         'technology': 'bulk',
@@ -34,4 +35,5 @@ def test_varseek_count_on_command_line(monkeypatch):
         'multiplexed': True
     }
     
+    assert fastqs == expected_fastqs
     assert params_dict == expected_dict

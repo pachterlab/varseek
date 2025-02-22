@@ -2,6 +2,7 @@ sequences: "cdna"
 variants: "cosmic_cmc"
 w: 44
 k: 49
-mode: "normal"
+logging_level: "20"
+optimize_flanking_regions: False
 unknown_arg: True
 dry_run: True
