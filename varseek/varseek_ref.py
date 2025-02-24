@@ -251,6 +251,7 @@ def ref(
         if save_logs and not log_out_dir:
             log_out_dir = os.path.join(out, "logs")
         logger = set_up_logger(logger, logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
+    kwargs["logger"] = logger
 
     # * 1.5. For the nargs="+" arguments, convert any list of length 1 to a string
     if isinstance(sequences, (list, tuple)) and len(sequences) == 1:
@@ -472,13 +473,29 @@ def ref(
 
     #* vk build
     if not os.path.exists(file_signifying_successful_vk_build_completion) or overwrite:  # the reason I do it like this, rather than if overwrite or not os.path.exists(MYPATH), is because I would like vk ref/count to automatically overwrite partially-completed function outputs even when overwrite=False; but when overwrite=True, then run from scratch regardless
-        params_dict_vk_build = make_function_parameter_to_value_dict(1)  # will reflect any updated values to variables found in vk ref signature and anything in kwargs
-        params_dict_vk_build = {key: value for key, value in params_dict_vk_build.items() if key in all_parameter_names_set_vk_build}
-        params_dict_vk_build["logger"] = logger  # set any variables in here that are variables in vk ref (not passed in as an argument to vk ref) and that I want to pass in as a kwarg to vk build
-        params_dict_vk_build["overwrite"] = True
+        kwargs_vk_build = {key: value for key, value in kwargs.items() if ((key in all_parameter_names_set_vk_build) and (key not in ref_signature.parameters.keys()))}
+        # update anything in kwargs_vk_build that is not fully updated in (vk ref's) kwargs (should be nothing or very close to it, as I try to avoid these double-assignments by always keeping kwargs in kwargs)
+        # eg kwargs_vk_build['mykwarg'] = mykwarg
 
         logger.info("Running vk build")
-        _ = vk.build(**params_dict_vk_build)
+        _ = vk.build(
+                sequences=sequences,
+                variants=variants,
+                seq_id_column=seq_id_column,
+                var_column=var_column,
+                var_id_column=var_id_column,
+                w=w,
+                k=k,
+                out=out,
+                reference_out_dir=reference_out_dir,
+                dry_run=dry_run,
+                overwrite=True,  # overwrite=True rather than overwrite=overwrite because I only enter this condition if the file signifying success does not exist and/or overwrite is True anyways - this allows me to overwrite half-completed functions
+                logging_level=logging_level,
+                save_logs=save_logs,
+                log_out_dir=log_out_dir,
+                verbose=verbose,
+                **kwargs_vk_build
+        )
     else:
         logger.warning(f"Skipping vk build because {file_signifying_successful_vk_build_completion} already exists and overwrite=False")
 
@@ -487,26 +504,49 @@ def ref(
         if kwargs.get("use_IDs", None) is False:
             logger.warning("use_IDs=False is not recommended for vk info, as the headers output by vk build can break some programs that read fasta files due to the inclusion of '>' symbols in substitutions and the potentially long length of the headers (with multiple combined headers and/or long insertions). Consider setting use_IDs=True (use IDs throughout the workflow) or leaving this parameter blank (will use IDs in vk build so that vk info runs properly [unless vk info/filter will not be run, in which case it will use headers], and will use headers in vk filter so that the output is more readable).")
         if not os.path.exists(file_signifying_successful_vk_info_completion) or overwrite:
-            params_dict_vk_info = make_function_parameter_to_value_dict(1)  # will reflect any updated values to variables found in vk ref signature and anything in kwargs
-            params_dict_vk_info = {key: value for key, value in params_dict_vk_info.items() if key in all_parameter_names_set_vk_info}
-            params_dict_vk_info["logger"] = logger  # set any variables in here that are variables in vk ref (not passed in as an argument to vk ref) and that I want to pass in as a kwarg to vk info
-            params_dict_vk_info["overwrite"] = True
-
+            kwargs_vk_info = {key: value for key, value in kwargs.items() if ((key in all_parameter_names_set_vk_info) and (key not in ref_signature.parameters.keys()))}
+            # update anything in kwargs_vk_info that is not fully updated in (vk ref's) kwargs (should be nothing or very close to it, as I try to avoid these double-assignments by always keeping kwargs in kwargs)
+            # eg kwargs_vk_info['mykwarg'] = mykwarg
+            
             logger.info("Running vk info")
-            _ = vk.info(**params_dict_vk_info)
+            _ = vk.info(
+                variants=variants,  # a kwarg of vk info but an explicit argument of vk ref, so I must pass it in like this
+                w=w,  # a kwarg of vk info but an explicit argument of vk ref, so I must pass it in like this
+                k=k,
+                dlist_reference_source=dlist_reference_source,
+                seq_id_column=seq_id_column,
+                var_column=var_column,
+                out=out,
+                reference_out_dir=reference_out_dir,
+                dry_run=dry_run,
+                overwrite=True,  # overwrite=True rather than overwrite=overwrite because I only enter this condition if the file signifying success does not exist and/or overwrite is True anyways - this allows me to overwrite half-completed functions
+                threads=threads,
+                logging_level=logging_level,
+                save_logs=save_logs,
+                log_out_dir=log_out_dir,
+                **kwargs_vk_info
+        )
         else:
             logger.warning(f"Skipping vk info because {file_signifying_successful_vk_info_completion} already exists and overwrite=False")
 
     # vk filter
     if not skip_filter:
         if not all(os.path.exists(f) for f in files_signifying_successful_vk_filter_completion) or overwrite:
-            params_dict_vk_filter = make_function_parameter_to_value_dict(1)  # will reflect any updated values to variables found in vk ref signature and anything in kwargs
-            params_dict_vk_filter = {key: value for key, value in params_dict_vk_filter.items() if key in all_parameter_names_set_vk_filter}
-            params_dict_vk_filter["logger"] = logger  # set any variables in here that are variables in vk ref (not passed in as an argument to vk ref) and that I want to pass in as a kwarg to vk filter
-            params_dict_vk_filter["overwrite"] = True
-
-            logger.filter("Running vk filter")
-            _ = vk.filter(**params_dict_vk_filter)
+            kwargs_vk_filter = {key: value for key, value in kwargs.items() if ((key in all_parameter_names_set_vk_filter) and (key not in ref_signature.parameters.keys()))}
+            # update anything in kwargs_vk_filter that is not fully updated in (vk ref's) kwargs (should be nothing or very close to it, as I try to avoid these double-assignments by always keeping kwargs in kwargs)
+            # eg kwargs_vk_filter['mykwarg'] = mykwarg
+            
+            logger.info("Running vk filter")
+            _ = vk.filter(
+                filters=filters,
+                out=out,
+                dry_run=dry_run,
+                overwrite=True,  # overwrite=True rather than overwrite=overwrite because I only enter this condition if the file signifying success does not exist and/or overwrite is True anyways - this allows me to overwrite half-completed functions
+                logging_level=logging_level,
+                save_logs=save_logs,
+                log_out_dir=log_out_dir,
+                **kwargs_vk_filter
+        )
         else:
             logger.warning(f"Skipping vk filter because {files_signifying_successful_vk_filter_completion} already exist and overwrite=False")
 

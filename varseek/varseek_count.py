@@ -214,6 +214,7 @@ def count(
         if save_logs and not log_out_dir:
             log_out_dir = os.path.join(out, "logs")
         logger = set_up_logger(logger, logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
+    kwargs["logger"] = logger
 
     # * 1.5. For the nargs="+" arguments, convert any list of length 1 to a string
     if isinstance(fastqs, (list, tuple)) and len(fastqs) == 1:
@@ -285,7 +286,6 @@ def count(
         os.makedirs(vk_summarize_out_dir, exist_ok=True)
 
     # for kb count --> vk clean
-    kb_count_vcrs_out_dir, kwargs['kb_count_vcrs_dir'] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(kb_count_vcrs_out_dir, kwargs.get("kb_count_vcrs_dir"))
     kb_count_vcrs_out_dir, kwargs['kb_count_vcrs_dir'] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(kb_count_vcrs_out_dir, kwargs.get("kb_count_vcrs_dir"))  # check that, if kb_count_vcrs_dir and kb_count_vcrs_out_dir are both provided, they are the same directory; otherwise, if only one is provided, then make them equal to each other
     kb_count_reference_genome_out_dir, kwargs['kb_count_reference_genome_dir'] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(kb_count_reference_genome_out_dir, kwargs.get('kb_count_reference_genome_dir'))  # same story as above but for kb_count_reference_genome and kb_count_reference_genome_out_dir
 
@@ -312,10 +312,7 @@ def count(
     # * 7.5 make sure ints are ints
     k, threads = int(k), int(threads)
 
-    # * 8. Start the actual function
-    kwargs["vcrs_index"] = index
-    kwargs["vcrs_t2g"] = t2g
-    
+    # * 8. Start the actual function    
     if isinstance(fastqs, list):
         fastqs = tuple(fastqs)
     
@@ -363,14 +360,26 @@ def count(
 
     # vk fastqpp
     if not disable_fastqpp:  # don't do the whole overwrite thing here because it is the first function, and a user should know if they are overwriting their fastqs
-        params_dict_vk_fastqpp = make_function_parameter_to_value_dict(1)  # will reflect any updated values to variables found in vk count signature and anything in kwargs
-        params_dict_vk_fastqpp = {key: value for key, value in params_dict_vk_fastqpp.items() if key in all_parameter_names_set_vk_fastqpp}  # only pass in the parameters that are in the vk fastqpp function signature for dry run
-        params_dict_vk_fastqpp["logger"] = logger  # set any variables in here that are variables in vk count (not passed in as an argument to vk count) and that I want to pass in as a kwarg to vk fastqpp
-        #$ intentionally do not set params_dict_vk_fastqpp["overwrite"] = True here because it is the first function, and a user should know if they are overwriting their fastqs
-        # do not need params_dict_vk_fastqpp.pop("fastqs", None) because it is not in the vk fastqpp function signature (because it is *fastqs)
+        kwargs_vk_fastqpp = {key: value for key, value in kwargs.items() if ((key in all_parameter_names_set_vk_fastqpp) and (key not in count_signature.parameters.keys()))}
+        # update anything in kwargs_vk_fastqpp that is not fully updated in (vk count's) kwargs (should be nothing or very close to it, as I try to avoid these double-assignments by always keeping kwargs in kwargs)
+        # eg kwargs_vk_summarize['mykwarg'] = mykwarg
 
         logger.info("Running vk fastqpp")
-        fastqpp_dict = vk.fastqpp(fastqs, **params_dict_vk_fastqpp)
+        fastqpp_dict = vk.fastqpp(
+                            fastqs,
+                            technology=technology,
+                            parity=parity,
+                            out=out,
+                            dry_run=dry_run,
+                            overwrite=overwrite,  # intentionally do not set overwrite = True here because it is the first function, and a user should know if they are overwriting their fastqs
+                            sort_fastqs=sort_fastqs,
+                            threads=threads,
+                            logging_level=logging_level,
+                            save_logs=save_logs,
+                            log_out_dir=log_out_dir,
+                            **kwargs_vk_fastqpp
+
+        )
 
         fastqs_vcrs = fastqpp_dict["final"]
         fastqs_reference_genome = fastqpp_dict["quality_controlled"] if "quality_controlled" in fastqpp_dict else fastqs
@@ -535,14 +544,33 @@ def count(
     # vk clean
     if not disable_clean:
         if not os.path.exists(file_signifying_successful_vk_clean_completion) or overwrite:
-            params_dict_vk_clean = make_function_parameter_to_value_dict(1)  # will reflect any updated values to variables found in vk count signature and anything in kwargs
-            params_dict_vk_clean = {key: value for key, value in params_dict_vk_clean.items() if key in all_parameter_names_set_vk_clean}
-            params_dict_vk_clean["logger"] = logger  # set any variables in here that are variables in vk count (not passed in as an argument to vk count) and that I want to pass in as a kwarg to vk clean
-            params_dict_vk_clean["overwrite"] = True
-            params_dict_vk_clean["adata_vcrs"] = adata_vcrs
+            kwargs_vk_clean = {key: value for key, value in kwargs.items() if ((key in all_parameter_names_set_vk_clean) and (key not in count_signature.parameters.keys()))}
+            # update anything in kwargs_vk_clean that is not fully updated in (vk count's) kwargs (should be nothing or very close to it, as I try to avoid these double-assignments by always keeping kwargs in kwargs)
+            # eg kwargs_vk_clean['mykwarg'] = mykwarg
 
             logger.info("Running vk clean")
-            _ = vk.clean(**params_dict_vk_clean)
+            _ = vk.clean(
+                    adata_vcrs=adata_vcrs,
+                    vcrs_index=index,
+                    vcrs_t2g=t2g,
+                    technology=technology,
+                    fastqs=fastqs,
+                    k=k,
+                    qc_against_gene_matrix=qc_against_gene_matrix,
+                    mm=mm,
+                    union=union,
+                    parity=parity,
+                    adata_reference_genome=adata_reference_genome,
+                    out=out,
+                    dry_run=dry_run,
+                    overwrite=True,
+                    sort_fastqs=sort_fastqs,
+                    threads=threads,
+                    logging_level=logging_level,
+                    save_logs=save_logs,
+                    log_out_dir=log_out_dir,
+                    **kwargs_vk_clean
+            )
         else:
             logger.warning(f"Skipping vk clean because file {file_signifying_successful_vk_clean_completion} already exists and overwrite=False")
         adata = adata_vcrs_clean_out  # for vk summarize
@@ -553,15 +581,22 @@ def count(
     # # vk summarize
     if not disable_summarize:
         if not os.path.exists(file_signifying_successful_vk_summarize_completion) or overwrite:
-            params_dict_vk_summarize = make_function_parameter_to_value_dict(1)  # will reflect any updated values to variables found in vk count signature and anything in kwargs
-            params_dict_vk_summarize = {key: value for key, value in params_dict_vk_summarize.items() if key in all_parameter_names_set_vk_summarize}
-            params_dict_vk_summarize["logger"] = logger  # set any variables in here that are variables in vk count (not passed in as an argument to vk count) and that I want to pass in as a kwarg to vk summarize
-            params_dict_vk_summarize["overwrite"] = True
-            params_dict_vk_summarize["out"] = vk_summarize_out_dir
-            params_dict_vk_summarize["adata"] = adata
+            kwargs_vk_summarize = {key: value for key, value in kwargs.items() if ((key in all_parameter_names_set_vk_summarize) and (key not in count_signature.parameters.keys()))}
+            # update anything in kwargs_vk_summarize that is not fully updated in (vk count's) kwargs (should be nothing or very close to it, as I try to avoid these double-assignments by always keeping kwargs in kwargs)
+            # eg kwargs_vk_summarize['mykwarg'] = mykwarg
 
             logger.info("Running vk summarize")
-            _ = vk.summarize(**params_dict_vk_summarize)
+            _ = vk.summarize(
+                    adata=adata,
+                    technology=technology,
+                    out=vk_summarize_out_dir,
+                    dry_run=dry_run,
+                    overwrite=True,
+                    logging_level=logging_level,
+                    save_logs=save_logs,
+                    log_out_dir=log_out_dir,
+                    **kwargs_vk_summarize
+            )
         else:
             logger.warning(f"Skipping vk summarize because file {file_signifying_successful_vk_summarize_completion} already exists and overwrite=False")
     else:

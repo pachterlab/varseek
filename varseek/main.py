@@ -946,10 +946,10 @@ def main():  # noqa: C901
         help=extract_help_from_doc(info, "reference_genome_fasta"),
     )
     parser_info.add_argument(
-        "--variants_csv",
+        "--variants",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "variants_csv"),
+        help=extract_help_from_doc(info, "variants"),
     )
 
     # NEW PARSER

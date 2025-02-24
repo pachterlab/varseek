@@ -390,16 +390,16 @@ def filter(
     - logging_level                                (str) Logging level. Can also be set with the environment variable VARSEEK_LOGGING_LEVEL. Default: INFO.
     - save_logs                                    (True/False) Whether to save logs to a file. Default: False.
     - log_out_dir                                  (str) Directory to save logs. Default: None (do not save logs).
-    - logger                                       (logging.Logger) Logger object. Default: None (use default logger).
 
     # Hidden arguments:
-    filter_all_dlists (bool) If True, filter all dlists. Default: False.
-    dlist_genome_fasta (str) Path to the genome dlist fasta file. Default: None.
-    dlist_cdna_fasta (str) Path to the cDNA dlist fasta file. Default: None.
-    dlist_genome_filtered_fasta_out (str) Path to the filtered genome dlist fasta file. Default: None.
-    dlist_cdna_filtered_fasta_out (str) Path to the filtered cDNA dlist fasta file. Default: None.
-    save_vcrs_filtered_fasta_and_t2g (bool) If True, save the filtered vcrs fasta and t2g files. Default: True.
-    use_IDs (bool) If True, use IDs instead of headers. Default: False.
+    - filter_all_dlists                            (bool) If True, filter all dlists. Default: False.
+    - dlist_genome_fasta                           (str) Path to the genome dlist fasta file. Default: None.
+    - dlist_cdna_fasta                             (str) Path to the cDNA dlist fasta file. Default: None.
+    - dlist_genome_filtered_fasta_out              (str) Path to the filtered genome dlist fasta file. Default: None.
+    - dlist_cdna_filtered_fasta_out                (str) Path to the filtered cDNA dlist fasta file. Default: None.
+    - save_vcrs_filtered_fasta_and_t2g             (bool) If True, save the filtered vcrs fasta and t2g files. Default: True.
+    - use_IDs                                      (bool) If True, use IDs instead of headers. Default: False.
+    - logger                                       (logging.Logger) Logger object. Default: None (use default logger).
     """
     # * 0. Informational arguments that exit early
     if list_filter_rules:

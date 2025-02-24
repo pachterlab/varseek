@@ -174,7 +174,7 @@ def validate_input_clean(params_dict):
     for param_name in ["vk_ref_dir", "kb_count_vcrs_dir", "kb_count_reference_genome_dir"]:
         if not isinstance(params_dict.get(param_name), (str, Path)) and params_dict.get(param_name) is not None:
             raise ValueError(f"Directory {param_name} {params_dict.get(param_name)} is not a string or None")
-        if params_dict.get(param_name) and not os.path.isdir(params_dict.get(param_name)):
+        if params_dict.get(param_name) and not params_dict.get("dry_run") and (not os.path.isdir(params_dict.get(param_name)) or len(os.listdir(params_dict.get(param_name))) == 0):  # including the dry_run condition so that vk count dry run does not throw an error
             raise ValueError(f"Directory {params_dict.get(param_name)} does not exist")
     if not isinstance(params_dict.get("out"), (str, Path)):
         raise ValueError(f"Out directory {params_dict.get('out')} is not a string")
@@ -213,8 +213,8 @@ def clean(
     parity="single",
     multiplexed=None,
     sort_fastqs=True,
-    adata_reference_genome=None,
-    fastqs=None,  # optional inputs
+    adata_reference_genome=None,  # optional inputs
+    fastqs=None,
     vk_ref_dir=None,
     vcrs_index=None,
     vcrs_t2g=None,
@@ -278,7 +278,7 @@ def clean(
 
     # Optional input arguments:
     - adata_reference_genome                (str): Path to the reference genome AnnData object. Default: `kb_count_reference_genome_dir`/counts_unfiltered/adata.h5ad.
-    - fastqs                                (str or list[str]) List of fastq files to be processed. If paired end, the list should contains paths such as [file1_R1, file1_R2, file2_R1, file2_R2, ...]
+    - fastqs                                (str or list[str]) List of fastq files to be processed. If paired end, the list should contains paths such as [file1_R1, file1_R2, file2_R1, file2_R2, ...]. Only used when `apply_single_end_mode_on_paired_end_data_correction`, `apply_dlist_correction`, `qc_against_gene_matrix` is True. Default: None
     - vk_ref_dir                            (str): Directory containing the VCRS reference files. Same as `out` as specified in vk ref. Default: None.
     - vcrs_index                            (str): Path to the VCRS index file. Default: None.
     - vcrs_t2g                              (str): Path to the VCRS t2g file. Default: None.
@@ -342,7 +342,7 @@ def clean(
 
     # * 3. Dry-run and set out folder (must to it up here or else config will save in the wrong place)
     if dry_run:
-        print_varseek_dry_run(params_dict, function_name="info")
+        print_varseek_dry_run(params_dict, function_name="clean")
         return None
 
     # * 4. Save params to config file and run info file
