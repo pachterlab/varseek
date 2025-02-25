@@ -225,58 +225,58 @@ def create_header_to_sequence_ordered_dict_from_fasta_after_semicolon_splitting(
     return mutant_reference
 
 
-def merge_genome_into_transcriptome_fasta(
-    mutation_reference_file_fasta_transcriptome,
-    mutation_reference_file_fasta_genome,
-    mutation_reference_file_fasta_combined,
-    cosmic_reference_file_mutation_csv,
-):
+# def merge_genome_into_transcriptome_fasta(
+#     mutation_reference_file_fasta_transcriptome,
+#     mutation_reference_file_fasta_genome,
+#     mutation_reference_file_fasta_combined,
+#     cosmic_reference_file_mutation_csv,
+# ):
 
-    # TODO: make header fasta from id fasta with id:header dict
+#     # TODO: make header fasta from id fasta with id:header dict
 
-    mutant_reference_transcriptome = create_header_to_sequence_ordered_dict_from_fasta_after_semicolon_splitting(mutation_reference_file_fasta_transcriptome)
-    mutant_reference_genome = create_header_to_sequence_ordered_dict_from_fasta_after_semicolon_splitting(mutation_reference_file_fasta_genome)
+#     mutant_reference_transcriptome = create_header_to_sequence_ordered_dict_from_fasta_after_semicolon_splitting(mutation_reference_file_fasta_transcriptome)
+#     mutant_reference_genome = create_header_to_sequence_ordered_dict_from_fasta_after_semicolon_splitting(mutation_reference_file_fasta_genome)
 
-    cosmic_df = pd.read_csv(
-        cosmic_reference_file_mutation_csv,
-        usecols=["seq_ID", "mutation_cdna", "chromosome", "mutation_genome"],
-    )
-    cosmic_df["chromosome"] = cosmic_df["chromosome"].apply(convert_chromosome_value_to_int_when_possible)
+#     cosmic_df = pd.read_csv(
+#         cosmic_reference_file_mutation_csv,
+#         usecols=["seq_ID", "mutation_cdna", "chromosome", "mutation_genome"],  # TODO: remove column hard-coding
+#     )
+#     cosmic_df["chromosome"] = cosmic_df["chromosome"].apply(convert_chromosome_value_to_int_when_possible)
 
-    mutant_reference_genome_to_keep = OrderedDict()
+#     mutant_reference_genome_to_keep = OrderedDict()
 
-    for header_genome, sequence_genome in mutant_reference_genome.items():
-        seq_id_genome, mutation_id_genome = header_genome.split(":", 1)
-        row_corresponding_to_genome = cosmic_df[(cosmic_df["chromosome"] == seq_id_genome) & (cosmic_df["mutation_genome"] == mutation_id_genome)]
-        seq_id_transcriptome_corresponding_to_genome = row_corresponding_to_genome["seq_ID"].iloc[0]
-        mutation_id_transcriptome_corresponding_to_genome = row_corresponding_to_genome["mutation_cdna"].iloc[0]
-        header_transcriptome_corresponding_to_genome = f"{seq_id_transcriptome_corresponding_to_genome}:{mutation_id_transcriptome_corresponding_to_genome}"
+#     for header_genome, sequence_genome in mutant_reference_genome.items():
+#         seq_id_genome, mutation_id_genome = header_genome.split(":", 1)
+#         row_corresponding_to_genome = cosmic_df[(cosmic_df["chromosome"] == seq_id_genome) & (cosmic_df["mutation_genome"] == mutation_id_genome)]
+#         seq_id_transcriptome_corresponding_to_genome = row_corresponding_to_genome["seq_ID"].iloc[0]
+#         mutation_id_transcriptome_corresponding_to_genome = row_corresponding_to_genome["mutation_cdna"].iloc[0]
+#         header_transcriptome_corresponding_to_genome = f"{seq_id_transcriptome_corresponding_to_genome}:{mutation_id_transcriptome_corresponding_to_genome}"
 
-        if header_transcriptome_corresponding_to_genome in mutant_reference_transcriptome:
-            if mutant_reference_transcriptome[header_transcriptome_corresponding_to_genome] != sequence_genome:
-                header_genome_transcriptome_style = f"unspliced{header_transcriptome_corresponding_to_genome}"  # TODO: change when I change unspliced notation
-                mutant_reference_genome_to_keep[header_genome_transcriptome_style] = sequence_genome
-        else:
-            header_genome_transcriptome_style = f"unspliced{header_transcriptome_corresponding_to_genome}"  # TODO: change when I change unspliced notation
-            mutant_reference_genome_to_keep[header_genome_transcriptome_style] = sequence_genome
+#         if header_transcriptome_corresponding_to_genome in mutant_reference_transcriptome:
+#             if mutant_reference_transcriptome[header_transcriptome_corresponding_to_genome] != sequence_genome:
+#                 header_genome_transcriptome_style = f"unspliced{header_transcriptome_corresponding_to_genome}"  # TODO: change when I change unspliced notation
+#                 mutant_reference_genome_to_keep[header_genome_transcriptome_style] = sequence_genome
+#         else:
+#             header_genome_transcriptome_style = f"unspliced{header_transcriptome_corresponding_to_genome}"  # TODO: change when I change unspliced notation
+#             mutant_reference_genome_to_keep[header_genome_transcriptome_style] = sequence_genome
 
-    mutant_reference_combined = OrderedDict(mutant_reference_transcriptome)
-    mutant_reference_combined.update(mutant_reference_genome_to_keep)
+#     mutant_reference_combined = OrderedDict(mutant_reference_transcriptome)
+#     mutant_reference_combined.update(mutant_reference_genome_to_keep)
 
-    mutant_reference_combined = join_keys_with_same_values(mutant_reference_combined)
+#     mutant_reference_combined = join_keys_with_same_values(mutant_reference_combined)
 
-    # initialize combined fasta file with transcriptome fasta
-    with open(mutation_reference_file_fasta_combined, "w", encoding="utf-8") as fasta_file:
-        for (
-            header_transcriptome,
-            sequence_transcriptome,
-        ) in mutant_reference_combined.items():
-            # write the header followed by the sequence
-            fasta_file.write(f">{header_transcriptome}\n{sequence_transcriptome}\n")
+#     # initialize combined fasta file with transcriptome fasta
+#     with open(mutation_reference_file_fasta_combined, "w", encoding="utf-8") as fasta_file:
+#         for (
+#             header_transcriptome,
+#             sequence_transcriptome,
+#         ) in mutant_reference_combined.items():
+#             # write the header followed by the sequence
+#             fasta_file.write(f">{header_transcriptome}\n{sequence_transcriptome}\n")
 
-    # TODO: make id fasta from header fasta with id:header dict
+#     # TODO: make id fasta from header fasta with id:header dict
 
-    print(f"Combined fasta file created at {mutation_reference_file_fasta_combined}")
+#     print(f"Combined fasta file created at {mutation_reference_file_fasta_combined}")
 
 
 def join_keys_with_same_values(original_dict):

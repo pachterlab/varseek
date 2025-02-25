@@ -20,7 +20,7 @@ from .constants import (
     supported_databases_and_corresponding_reference_sequence_type,
 )
 from .utils import (
-    add_mutation_type,
+    add_variant_type,
     check_file_path_is_string_with_valid_extension,
     convert_chromosome_value_to_int_when_possible,
     convert_mutation_cds_locations_to_cdna,
@@ -171,24 +171,24 @@ def improve_genome_strand_information(cosmic_reference_file_mutation_csv, mutati
 
     df.loc[minus_sub_mask, "actual_variant_rc"] = df.loc[minus_sub_mask, "actual_variant"].apply(complement_substitution)
 
-    df.loc[ins_delins_mask, ["mutation_type", "mut_nucleotides"]] = df.loc[ins_delins_mask, "actual_variant"].str.extract(r"(delins|ins)([A-Z]+)").values
+    df.loc[ins_delins_mask, ["variant_type", "mut_nucleotides"]] = df.loc[ins_delins_mask, "actual_variant"].str.extract(r"(delins|ins)([A-Z]+)").values
 
     df.loc[ins_delins_mask, "mut_nucleotides_rc"] = df.loc[ins_delins_mask, "mut_nucleotides"].apply(reverse_complement_insertion)
 
-    df.loc[ins_delins_mask, "actual_variant_rc"] = df.loc[ins_delins_mask, "mutation_type"] + df.loc[ins_delins_mask, "mut_nucleotides_rc"]
+    df.loc[ins_delins_mask, "actual_variant_rc"] = df.loc[ins_delins_mask, "variant_type"] + df.loc[ins_delins_mask, "mut_nucleotides_rc"]
 
     df["actual_variant_final"] = np.where(df["strand_modified"] == "+", df["actual_variant"], df["actual_variant_rc"])
 
-    df["mutation_genome"] = np.where(
+    df[mutation_genome_column_name] = np.where(
         df["GENOME_START"] != df["GENOME_STOP"],
         "g." + df["GENOME_START"].astype(str) + "_" + df["GENOME_STOP"].astype(str) + df["actual_variant_final"],
         "g." + df["GENOME_START"].astype(str) + df["actual_variant_final"],
     )
 
     df.drop(
-        columns=["GENOME_START", "GENOME_STOP", "nucleotide_positions", "actual_variant", "actual_variant_rc", "mutation_type", "mut_nucleotides", "mut_nucleotides_rc", "actual_variant_final", "strand_modified"],
+        columns=["GENOME_START", "GENOME_STOP", "nucleotide_positions", "actual_variant", "actual_variant_rc", "variant_type", "mut_nucleotides", "mut_nucleotides_rc", "actual_variant_final", "strand_modified"],
         inplace=True,
-    )  # drop all columns except mutation_genome (and the original ones)
+    )  # drop all columns exceptmutation_genome_column_name(and the original ones)
 
     if output_mutations_path:
         df.to_csv(output_mutations_path, index=False)
@@ -272,12 +272,12 @@ def end_mut_nucleotides_with_left_flank(mut_nucleotides, left_flank_region):
 
 
 def calculate_beginning_mutation_overlap_with_right_flank(row):
-    if row["mutation_type"] == "deletion":
+    if row["variant_type"] == "deletion":
         sequence_to_check = row["wt_nucleotides_ensembl"]
     else:
         sequence_to_check = row["mut_nucleotides"]
 
-    if row["mutation_type"] == "delins" or row["mutation_type"] == "inversion":
+    if row["variant_type"] == "delins" or row["variant_type"] == "inversion":
         original_sequence = row["wt_nucleotides_ensembl"] + row["right_flank_region"]
     else:
         original_sequence = row["right_flank_region"]
@@ -286,12 +286,12 @@ def calculate_beginning_mutation_overlap_with_right_flank(row):
 
 
 def calculate_end_mutation_overlap_with_left_flank(row):
-    if row["mutation_type"] == "deletion":
+    if row["variant_type"] == "deletion":
         sequence_to_check = row["wt_nucleotides_ensembl"]
     else:
         sequence_to_check = row["mut_nucleotides"]
 
-    if row["mutation_type"] == "delins" or row["mutation_type"] == "inversion":
+    if row["variant_type"] == "delins" or row["variant_type"] == "inversion":
         original_sequence = row["left_flank_region"] + row["wt_nucleotides_ensembl"]
     else:
         original_sequence = row["left_flank_region"]
@@ -734,7 +734,7 @@ def build(
         "header",
         seq_id_column,
         var_column,
-        "mutation_type",
+        "variant_type",
         "wt_sequence",
         "vcrs_sequence",
         "nucleotide_positions",
@@ -1056,7 +1056,7 @@ def build(
     # ensure seq_ID column is string type, and chromosome numbers don't have decimals
     mutations[seq_id_column] = mutations[seq_id_column].apply(convert_chromosome_value_to_int_when_possible)
 
-    mutations = add_mutation_type(mutations, var_column)
+    add_variant_type(mutations, var_column)
 
     # Link sequences to their mutations using the sequence identifiers
     if store_full_sequences:
@@ -1081,7 +1081,6 @@ def build(
     if var_id_column is not None:
         mutations["header"] = mutations[var_id_column]
         logger.info("Using var_id_column '%s' as the variant header column.", var_id_column)
-        raise NotImplementedError("var_id_column is not implemented yet. Please leave it as None.") # too much dependency of later functions to parse the header as SEQID:VARIANT
     else:
         mutations["header"] = mutations[seq_id_column] + ":" + mutations[var_column]
         logger.info("Using the seq_id_column:var_column '%s' columns as the variant header column.", f"{seq_id_column}:{var_column}")
@@ -1147,12 +1146,12 @@ def build(
 
     # Create masks for each type of mutation
     mutations["wt_nucleotides_ensembl"] = None
-    substitution_mask = mutations["mutation_type"] == "substitution"
-    deletion_mask = mutations["mutation_type"] == "deletion"
-    delins_mask = mutations["mutation_type"] == "delins"
-    insertion_mask = mutations["mutation_type"] == "insertion"
-    duplication_mask = mutations["mutation_type"] == "duplication"
-    inversion_mask = mutations["mutation_type"] == "inversion"
+    substitution_mask = mutations["variant_type"] == "substitution"
+    deletion_mask = mutations["variant_type"] == "deletion"
+    delins_mask = mutations["variant_type"] == "delins"
+    insertion_mask = mutations["variant_type"] == "insertion"
+    duplication_mask = mutations["variant_type"] == "duplication"
+    inversion_mask = mutations["variant_type"] == "inversion"
 
     if remove_seqs_with_wt_kmers:
         long_duplications = ((duplication_mask) & ((mutations["end_variant_position"] - mutations["start_variant_position"]) >= k)).sum()

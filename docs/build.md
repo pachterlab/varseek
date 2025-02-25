@@ -243,8 +243,8 @@ varseek.build(
   variants="variants_input.csv",
   out="mut_fasta.fa",
   w=4,
-  seq_id_column="Chromosome",
-  var_column="Mutation",
+  seq_id_column="chromosome",
+  var_column="mutation",
   gtf="genome_annotation.gtf",
   gtf_transcript_id_column="Ensembl_Transcript_ID",
   optimize_flanking_regions=True,
@@ -276,7 +276,7 @@ TTAGAACTT
 &rarr; Saves 'variants_updated.csv' file containing: 
 ```
 
-| Chromosome | Mutation          | Ensembl_Transcript_ID  | mutation_type  | wt_sequence | vcrs_sequence | wt_sequence_full  | vcrs_sequence_full| wt_sequence_aa_full | vcrs_sequence_aa_full |
+| Chromosome | Mutation          | Ensembl_Transcript_ID  | variant_type  | wt_sequence | vcrs_sequence | wt_sequence_full  | vcrs_sequence_full| wt_sequence_aa_full | vcrs_sequence_aa_full |
 |------------|-------------------|------------------------|---------------|-------------|-----------------|-------------------|----------------------|---------------------|-------------------------|
 | 1          | g.224411A>C       | ENSMUST00000193812     | Substitution  | TGCTATGCT   | TGCTCTGCT       | ...TGCTATGCT...   | ...TGCTCTGCT...      | ...CYA...           | ...CSA...               |
 | 8          | g.25111del        | ENST00000174411        | Deletion      | GAGTCCGAT   | GAGTCGAT        | ...GAGTCCGAT...   | ...GAGTCGAT...       | ...ESD...           | ...ES...                |

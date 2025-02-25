@@ -260,25 +260,6 @@ def check_if_header_is_in_set(headers_concatenated, header_set_from_mutation_fas
             return header  # Return the first match where it's a substring
     return headers_concatenated
 
-
-def apply_enst_format(unique_mutations_genome, cosmic_reference_file_mutation_csv):
-    # TODO: make header fasta with id:header dict
-    unique_mutations_genome_enst_format = set()
-    cosmic_df = pd.read_csv(
-        cosmic_reference_file_mutation_csv,
-        usecols=["seq_ID", "mutation_cdna", "chromosome", "mutation_genome"],
-    )
-    for header_genome in unique_mutations_genome:
-        seq_id_genome, mutation_id_genome = header_genome.split(":", 1)
-        row_corresponding_to_genome = cosmic_df[(cosmic_df["chromosome"] == seq_id_genome) & (cosmic_df["mutation_genome"] == mutation_id_genome)]
-        seq_id_transcriptome_corresponding_to_genome = row_corresponding_to_genome["seq_ID"].iloc[0]
-        mutation_id_transcriptome_corresponding_to_genome = row_corresponding_to_genome["mutation_cdna"].iloc[0]
-        header_genome = f"{seq_id_transcriptome_corresponding_to_genome}:{mutation_id_transcriptome_corresponding_to_genome}"
-        unique_mutations_genome_enst_format.add(header_genome)
-    # TODO: make header fasta with id:header dict
-    return unique_mutations_genome_enst_format
-
-
 # Not used
 def convert_nonsemicolon_headers_to_semicolon_joined_headers(nonsemicolon_read_headers_set, semicolon_reference_headers_set):
     # Step 1: Initialize the mapping dictionary
@@ -476,29 +457,29 @@ def get_ensembl_gene_name_bulk(gene_ids: list[str]) -> dict[str, str]:
         raise e
 
 
-def get_valid_ensembl_gene_id_bulk(
-    df: pd.DataFrame,
-) -> Callable[[pd.Series, str, str], str]:
-    map_: dict[str, str] | None = None
+# def get_valid_ensembl_gene_id_bulk(
+#     df: pd.DataFrame,
+# ) -> Callable[[pd.Series, str, str], str]:
+#     map_: dict[str, str] | None = None
 
-    def f(
-        row: pd.Series,
-        transcript_column: str = "seq_ID",
-        gene_column: str = "gene_name",
-    ):
-        # logger.info(f"Row: {row}")
-        nonlocal map_
-        if map_ is None:
-            all_transcript_ids = df[transcript_column].unique()
-            map_ = get_ensembl_gene_id_bulk(list(all_transcript_ids))
+#     def f(
+#         row: pd.Series,
+#         transcript_column: str = "seq_ID",
+#         gene_column: str = "gene_name",
+#     ):
+#         # logger.info(f"Row: {row}")
+#         nonlocal map_
+#         if map_ is None:
+#             all_transcript_ids = df[transcript_column].unique()
+#             map_ = get_ensembl_gene_id_bulk(list(all_transcript_ids))
 
-        ensembl_gene_id = map_.get(row[transcript_column], "Unknown")
-        if ensembl_gene_id == "Unknown":
-            return row[gene_column]
+#         ensembl_gene_id = map_.get(row[transcript_column], "Unknown")
+#         if ensembl_gene_id == "Unknown":
+#             return row[gene_column]
 
-        return ensembl_gene_id
+#         return ensembl_gene_id
 
-    return f
+#     return f
 
 
 # # Example usage
@@ -666,18 +647,18 @@ def download_ensembl_reference_files(reference_out_dir_sequences_dlist, grch="37
     return ref_dlist_fa_genome, ref_dlist_fa_cdna, ref_dlist_gtf
 
 
-def get_mutation_type_series(mutation_series):
+def get_variant_type_series(mutation_series):
     # Extract mutation type id using the regex pattern
-    mutation_type_id = mutation_series.str.extract(mutation_pattern)[1]
+    variant_type_id = mutation_series.str.extract(mutation_pattern)[1]
 
     # Define conditions and choices for mutation types
     conditions = [
-        mutation_type_id.str.contains(">", na=False),
-        mutation_type_id.str.contains("delins", na=False),
-        mutation_type_id.str.contains("del", na=False) & ~mutation_type_id.str.contains("delins", na=False),
-        mutation_type_id.str.contains("ins", na=False) & ~mutation_type_id.str.contains("delins", na=False),
-        mutation_type_id.str.contains("dup", na=False),
-        mutation_type_id.str.contains("inv", na=False),
+        variant_type_id.str.contains(">", na=False),
+        variant_type_id.str.contains("delins", na=False),
+        variant_type_id.str.contains("del", na=False) & ~variant_type_id.str.contains("delins", na=False),
+        variant_type_id.str.contains("ins", na=False) & ~variant_type_id.str.contains("delins", na=False),
+        variant_type_id.str.contains("dup", na=False),
+        variant_type_id.str.contains("inv", na=False),
     ]
 
     choices = [
@@ -690,67 +671,67 @@ def get_mutation_type_series(mutation_series):
     ]
 
     # Determine mutation type
-    mutation_type_array = np.select(conditions, choices, default="unknown")
+    variant_type_array = np.select(conditions, choices, default="unknown")
 
-    return mutation_type_array
+    return variant_type_array
 
 
-def add_vcrs_mutation_type(mutations_df, var_column="vcrs_header"):
+def add_vcrs_variant_type(mutations_df, var_column="vcrs_header"):
     mutations_df = mutations_df.copy()
 
     # Split the var_column by ';'
-    mutations_df["mutation_list"] = mutations_df[var_column].str.split(";")
+    mutations_df["variant_list"] = mutations_df[var_column].str.split(";")
 
-    # Explode the mutation_list to get one mutation per row
-    mutations_exploded = mutations_df.explode("mutation_list")
+    # Explode the variant_list to get one mutation per row
+    mutations_exploded = mutations_df.explode("variant_list")
 
-    # Apply the vectorized get_mutation_type_series function
-    mutations_exploded["vcrs_mutation_type"] = get_mutation_type_series(mutations_exploded["mutation_list"])
+    # Apply the vectorized get_variant_type_series function
+    mutations_exploded["vcrs_variant_type"] = get_variant_type_series(mutations_exploded["variant_list"])
 
     # Reset index to keep track of original rows
     mutations_exploded.reset_index(inplace=True)
 
     # Group back to the original DataFrame, joining mutation types with ';'
-    grouped_mutation_types = mutations_exploded.groupby("index")["vcrs_mutation_type"].apply(";".join)
+    grouped_variant_types = mutations_exploded.groupby("index")["vcrs_variant_type"].apply(";".join)
 
-    # Assign the 'mutation_type' back to mutations_df
-    mutations_df["vcrs_mutation_type"] = grouped_mutation_types
+    # Assign the 'variant_type' back to mutations_df
+    mutations_df["vcrs_variant_type"] = grouped_variant_types
 
-    # Split 'mutation_type' by ';' to analyze unique mutation types
-    mutations_df["mutation_type_split"] = mutations_df["vcrs_mutation_type"].str.split(";")
+    # Split 'variant_type' by ';' to analyze unique mutation types
+    mutations_df["variant_type_split"] = mutations_df["vcrs_variant_type"].str.split(";")
 
     # Calculate the number of unique mutation types
-    mutations_df["unique_mutation_count"] = mutations_df["mutation_type_split"].map(set).str.len()
+    mutations_df["unique_variant_count"] = mutations_df["variant_type_split"].map(set).str.len()
 
-    # Replace 'mutation_type' with the single unique mutation type if unique_mutation_count == 1
-    mask_single = mutations_df["unique_mutation_count"] == 1
-    mutations_df.loc[mask_single, "vcrs_mutation_type"] = mutations_df.loc[mask_single, "mutation_type_split"].str[0]
+    # Replace 'variant_type' with the single unique mutation type if unique_variant_count == 1
+    mask_single = mutations_df["unique_variant_count"] == 1
+    mutations_df.loc[mask_single, "vcrs_variant_type"] = mutations_df.loc[mask_single, "variant_type_split"].str[0]
 
     # Replace entries containing ';' with 'mixed'
-    mutations_df.loc[mutations_df["vcrs_mutation_type"].str.contains(";"), "vcrs_mutation_type"] = "mixed"
+    mutations_df.loc[mutations_df["vcrs_variant_type"].str.contains(";"), "vcrs_variant_type"] = "mixed"
 
     # Drop helper columns
     mutations_df.drop(
-        columns=["mutation_list", "mutation_type_split", "unique_mutation_count"],
+        columns=["variant_list", "variant_type_split", "unique_variant_count"],
         inplace=True,
     )
 
-    mutations_df.loc[mutations_df[var_column].isna(), "vcrs_mutation_type"] = np.nan
+    mutations_df.loc[mutations_df[var_column].isna(), "vcrs_variant_type"] = np.nan
 
     return mutations_df
 
 
-def add_mutation_type(mutations, var_column):
-    mutations["mutation_type_id"] = mutations[var_column].str.extract(mutation_pattern)[1]
+def add_variant_type(mutations, var_column):
+    mutations["variant_type_id"] = mutations[var_column].str.extract(mutation_pattern)[1]
 
     # Define conditions and choices for the mutation types
     conditions = [
-        mutations["mutation_type_id"].str.contains(">", na=False),
-        mutations["mutation_type_id"].str.contains("delins", na=False),
-        mutations["mutation_type_id"].str.contains("del", na=False) & ~mutations["mutation_type_id"].str.contains("delins", na=False),
-        mutations["mutation_type_id"].str.contains("ins", na=False) & ~mutations["mutation_type_id"].str.contains("delins", na=False),
-        mutations["mutation_type_id"].str.contains("dup", na=False),
-        mutations["mutation_type_id"].str.contains("inv", na=False),
+        mutations["variant_type_id"].str.contains(">", na=False),
+        mutations["variant_type_id"].str.contains("delins", na=False),
+        mutations["variant_type_id"].str.contains("del", na=False) & ~mutations["variant_type_id"].str.contains("delins", na=False),
+        mutations["variant_type_id"].str.contains("ins", na=False) & ~mutations["variant_type_id"].str.contains("delins", na=False),
+        mutations["variant_type_id"].str.contains("dup", na=False),
+        mutations["variant_type_id"].str.contains("inv", na=False),
     ]
 
     choices = [
@@ -763,10 +744,10 @@ def add_mutation_type(mutations, var_column):
     ]
 
     # Assign the mutation types
-    mutations["mutation_type"] = np.select(conditions, choices, default="unknown")
+    mutations["variant_type"] = np.select(conditions, choices, default="unknown")
 
-    # Drop the temporary mutation_type_id column
-    mutations.drop(columns=["mutation_type_id"], inplace=True)
+    # Drop the temporary variant_type_id column
+    mutations.drop(columns=["variant_type_id"], inplace=True)
 
     return mutations
 
@@ -919,3 +900,21 @@ def calculate_end_position(pos, cigar):
     end_pos = pos + alignment_length - 1
 
     return end_pos
+
+
+def add_mutation_information(mutation_metadata_df, mutation_column="mutation", variant_source=""):
+    if variant_source and not variant_source.startswith("_"):
+        variant_source = f"_{variant_source}"
+    mutation_metadata_df[[f"nucleotide_positions{variant_source}", f"actual_variant{variant_source}"]] = mutation_metadata_df[mutation_column].str.extract(mutation_pattern)
+
+    split_positions = mutation_metadata_df[f"nucleotide_positions{variant_source}"].str.split("_", expand=True)
+    mutation_metadata_df[f"start_variant_position{variant_source}"] = split_positions[0]
+
+    if split_positions.shape[1] > 1:
+        mutation_metadata_df[f"end_variant_position{variant_source}"] = split_positions[1].fillna(split_positions[0])
+    else:
+        mutation_metadata_df[f"end_variant_position{variant_source}"] = mutation_metadata_df[f"start_variant_position{variant_source}"]
+
+    mutation_metadata_df[[f"start_variant_position{variant_source}", f"end_variant_position{variant_source}"]] = mutation_metadata_df[[f"start_variant_position{variant_source}", f"end_variant_position{variant_source}"]].astype("Int64")        
+
+    return mutation_metadata_df

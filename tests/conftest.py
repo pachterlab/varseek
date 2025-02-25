@@ -12,7 +12,9 @@ from varseek.utils import (
     create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting,
     create_identity_t2g,
     make_mapping_dict,
-    reverse_complement
+    reverse_complement,
+    add_mutation_information,
+    add_variant_type
 )
 
 def pytest_ignore_collect(path, config):  # skip test_bustools.py on Mac due to kb python issues
@@ -170,8 +172,8 @@ def toy_mutation_metadata_df_path(vcrs_id_and_header_and_sequence_standard_lists
 
     df = pd.DataFrame(data)
 
-    df = vk.varseek_info.add_mutation_information(df, mutation_column = "mutation", variant_source = None)
-    df = vk.utils.add_mutation_type(df, var_column = "mutation")
+    df = add_mutation_information(df, mutation_column = "mutation", variant_source = None)
+    df = add_variant_type(df, var_column = "mutation")
     df["vcrs_sequence_rc"] = df["vcrs_sequence"].apply(reverse_complement)
 
     df.to_csv(str(temp_csv_file), index=False)
@@ -193,7 +195,7 @@ def toy_mutation_metadata_df_with_read_parents_path(toy_mutation_metadata_df_pat
     df['wt_sequence_read_parent'] = df['mutant_sequence_read_parent']   # TODO: this means that testing only supports mutant sequences for now
 
     df['header'] = df['vcrs_id']
-    df['vcrs_mutation_type'] = 'unknown'
+    df['vcrs_variant_type'] = 'unknown'
     df["mutant_sequence_read_parent_rc"] = df["mutant_sequence_read_parent"].apply(reverse_complement)
     df["mutant_sequence_read_parent_length"] = df["mutant_sequence_read_parent"].apply(len)
     df["wt_sequence_read_parent_rc"] = df["wt_sequence_read_parent"].apply(reverse_complement)

@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from varseek.utils import (
-    add_vcrs_mutation_type,
+    add_vcrs_variant_type,
     align_to_normal_genome_and_build_dlist,
     calculate_nearby_mutations,
     collapse_df,
@@ -23,8 +23,8 @@ from varseek.utils import (
     get_vcrss_that_pseudoalign_but_arent_dlisted,
     longest_homopolymer,
     triplet_stats,
+    add_mutation_information
 )
-from varseek.varseek_info import add_mutation_information
 
 store_out_in_permanent_paths = False
 tests_dir = Path(__file__).resolve().parent
@@ -175,7 +175,7 @@ def mock_helpers_visualization(monkeypatch):
 def test_calculate_nearby_mutations(mock_helpers_visualization):
     # Create a toy DataFrame
     data = {
-        "seq_ID": ["ENST0001", "ENST0001", "ENST0001", "ENST0001"],
+        "seq_ID_used_for_vcrs": ["ENST0001", "ENST0001", "ENST0001", "ENST0001"],
         "start_variant_position": [100, 101, 112, 123],
         "end_variant_position": [105, 101, 112, 123],
         "header": ["ENST0001:c.101_105del", "ENST0001:c.101C>A", "ENST0001:c.112G>C", "ENST0001:c.123A>G"],
@@ -185,7 +185,7 @@ def test_calculate_nearby_mutations(mock_helpers_visualization):
     
     # Run the function with the mock data
     output_df, columns_to_explode = calculate_nearby_mutations(
-        variant_source_column="seq_ID",
+        variant_source_column=None,
         k=10,
         output_plot_folder="mock_folder",
         variant_source="not_combined",
@@ -333,7 +333,7 @@ def test_count_kmer_overlaps(mock_helpers):
         pd.testing.assert_frame_equal(df, expected_df)
 
 
-def test_add_vcrs_mutation_type(mock_helpers):
+def test_add_vcrs_variant_type(mock_helpers):
     # Create a toy DataFrame
     data = {
         "vcrs_header": [
@@ -349,25 +349,25 @@ def test_add_vcrs_mutation_type(mock_helpers):
     mutation_metadata_df = pd.DataFrame(data)
 
     # Run the function
-    result_df = add_vcrs_mutation_type(mutation_metadata_df, var_column="vcrs_header")
+    result_df = add_vcrs_variant_type(mutation_metadata_df, var_column="vcrs_header")
 
     # Expected results
-    expected_mutation_type = ["insertion", "substitution", "mixed", "delins", "duplication", "substitution", np.nan]
-    expected_columns = ["vcrs_header", "vcrs_mutation_type"]
+    expected_variant_type = ["insertion", "substitution", "mixed", "delins", "duplication", "substitution", np.nan]
+    expected_columns = ["vcrs_header", "vcrs_variant_type"]
 
     # Assertions
     # Check that the output has the expected columns
     assert all(col in result_df.columns for col in expected_columns)
 
-    # Check the values in the vcrs_mutation_type column
+    # Check the values in the vcrs_variant_type column
     pd.testing.assert_series_equal(
-        result_df["vcrs_mutation_type"],
-        pd.Series(expected_mutation_type, name="vcrs_mutation_type"),
+        result_df["vcrs_variant_type"],
+        pd.Series(expected_variant_type, name="vcrs_variant_type"),
         check_dtype=False
     )
 
     # Check that NaN values remain NaN
-    assert result_df.loc[result_df["vcrs_header"].isna(), "vcrs_mutation_type"].isna().all()
+    assert result_df.loc[result_df["vcrs_header"].isna(), "vcrs_variant_type"].isna().all()
 
 
 # recommended temp path:

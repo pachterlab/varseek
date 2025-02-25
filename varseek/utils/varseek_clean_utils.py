@@ -18,8 +18,8 @@ from varseek.constants import (
     technology_barcode_and_umi_dict,
 )
 from varseek.utils.seq_utils import (
-    add_mutation_type,
-    add_vcrs_mutation_type,
+    add_variant_type,
+    add_vcrs_variant_type,
     create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting,
     get_header_set_from_fastq,
     make_mapping_dict,
@@ -192,19 +192,19 @@ def decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_
     else:
         bus_df = pd.read_csv(f"{kb_count_out}/bus_df.csv")
 
-    if "vcrs_mutation_type" not in adata.var.columns:
-        adata.var = add_vcrs_mutation_type(adata.var, var_column="vcrs_header")
+    if "vcrs_variant_type" not in adata.var.columns:
+        adata.var = add_vcrs_variant_type(adata.var, var_column="vcrs_header")
 
     if keep_only_insertions:  # valid when fragment length >= 2*read length
         # Can only count for insertions (lengthens the VCRS)
-        mutation_types_with_a_chance_of_being_double_counted_after_N_split = {
+        variant_types_with_a_chance_of_being_double_counted_after_N_split = {
             "insertion",
             "delins",
             "mixed",
         }
 
         # Filter and retrieve the set of 'vcrs_header' values
-        potentially_double_counted_reference_items = set(adata.var["vcrs_id"][adata.var["vcrs_mutation_type"].isin(mutation_types_with_a_chance_of_being_double_counted_after_N_split)])
+        potentially_double_counted_reference_items = set(adata.var["vcrs_id"][adata.var["vcrs_variant_type"].isin(variant_types_with_a_chance_of_being_double_counted_after_N_split)])
 
         # filter bus_df to only keep rows where bus_df['gene_names_final'] contains a gene that is in potentially_double_counted_reference_items
         pattern = "|".join(potentially_double_counted_reference_items)
@@ -781,10 +781,10 @@ def add_vcf_info_to_cosmic_tsv(cosmic_tsv, reference_genome_fasta, cosmic_df_out
     cosmic_df = pd.read_csv(cosmic_tsv, sep="\t", usecols=["Mutation genome position GRCh37", "GENOMIC_WT_ALLELE_SEQ", "GENOMIC_MUT_ALLELE_SEQ", "ACCESSION_NUMBER", "Mutation CDS", "MUTATION_URL"])
 
     if mutation_source == "cdna":
-        cosmic_cdna_info_df = pd.read_csv(cosmic_cdna_info_csv, usecols=["mutation_id", "mutation_cdna"])
+        cosmic_cdna_info_df = pd.read_csv(cosmic_cdna_info_csv, usecols=["mutation_id", "mutation_cdna"])  # TODO: remove column hard-coding
         cosmic_cdna_info_df = cosmic_cdna_info_df.rename(columns={"mutation_cdna": "Mutation cDNA"})
 
-    cosmic_df = add_mutation_type(cosmic_df, "Mutation CDS")
+    cosmic_df = add_variant_type(cosmic_df, "Mutation CDS")
 
     cosmic_df["ACCESSION_NUMBER"] = cosmic_df["ACCESSION_NUMBER"].str.split(".").str[0]
 
@@ -817,52 +817,52 @@ def add_vcf_info_to_cosmic_tsv(cosmic_tsv, reference_genome_fasta, cosmic_df_out
         return "".join([complement[nuc] for nuc in nucleotide_sequence])
 
     # Insertion, get original nucleotide (not in COSMIC df)
-    cosmic_df.loc[(cosmic_df["GENOME_END_POS"].astype(int) != 1) & (cosmic_df["mutation_type"] == "insertion"), "original_nucleotide"] = cosmic_df.loc[(cosmic_df["GENOME_END_POS"].astype(int) != 1) & (cosmic_df["mutation_type"] == "insertion"), ["CHROM", "POS"]].progress_apply(lambda row: get_nucleotide_from_reference(row["CHROM"], int(row["POS"])), axis=1)
+    cosmic_df.loc[(cosmic_df["GENOME_END_POS"].astype(int) != 1) & (cosmic_df["variant_type"] == "insertion"), "original_nucleotide"] = cosmic_df.loc[(cosmic_df["GENOME_END_POS"].astype(int) != 1) & (cosmic_df["variant_type"] == "insertion"), ["CHROM", "POS"]].progress_apply(lambda row: get_nucleotide_from_reference(row["CHROM"], int(row["POS"])), axis=1)
 
     # Deletion, get new nucleotide (not in COSMIC df)
-    cosmic_df.loc[(cosmic_df["POS"].astype(int) != 1) & (cosmic_df["mutation_type"] == "deletion"), "original_nucleotide"] = cosmic_df.loc[(cosmic_df["POS"].astype(int) != 1) & (cosmic_df["mutation_type"] == "deletion"), ["CHROM", "POS"]].progress_apply(lambda row: get_nucleotide_from_reference(row["CHROM"], int(row["POS"]) - 1), axis=1)
+    cosmic_df.loc[(cosmic_df["POS"].astype(int) != 1) & (cosmic_df["variant_type"] == "deletion"), "original_nucleotide"] = cosmic_df.loc[(cosmic_df["POS"].astype(int) != 1) & (cosmic_df["variant_type"] == "deletion"), ["CHROM", "POS"]].progress_apply(lambda row: get_nucleotide_from_reference(row["CHROM"], int(row["POS"]) - 1), axis=1)
 
     # Duplication
-    cosmic_df.loc[cosmic_df["mutation_type"] == "duplication", "original_nucleotide"] = cosmic_df.loc[cosmic_df["ID"].str.contains("dup", na=False), "ALT"].str[-1]
+    cosmic_df.loc[cosmic_df["variant_type"] == "duplication", "original_nucleotide"] = cosmic_df.loc[cosmic_df["ID"].str.contains("dup", na=False), "ALT"].str[-1]
 
     # deal with start of 1, insertion
-    cosmic_df.loc[(cosmic_df["GENOME_END_POS"].astype(int) == 1) & (cosmic_df["mutation_type"] == "insertion"), "original_nucleotide"] = cosmic_df.loc[(cosmic_df["GENOME_END_POS"].astype(int) == 1) & (cosmic_df["mutation_type"] == "insertion"), ["CHROM", "POS"]].progress_apply(lambda row: get_nucleotide_from_reference(row["CHROM"], int(row["GENOME_END_POS"])), axis=1)
+    cosmic_df.loc[(cosmic_df["GENOME_END_POS"].astype(int) == 1) & (cosmic_df["variant_type"] == "insertion"), "original_nucleotide"] = cosmic_df.loc[(cosmic_df["GENOME_END_POS"].astype(int) == 1) & (cosmic_df["variant_type"] == "insertion"), ["CHROM", "POS"]].progress_apply(lambda row: get_nucleotide_from_reference(row["CHROM"], int(row["GENOME_END_POS"])), axis=1)
 
     # deal with start of 1, deletion
-    cosmic_df.loc[(cosmic_df["POS"].astype(int) == 1) & (cosmic_df["mutation_type"] == "deletion"), "original_nucleotide"] = cosmic_df.loc[(cosmic_df["POS"].astype(int) == 1) & (cosmic_df["mutation_type"] == "deletion"), ["CHROM", "POS"]].progress_apply(lambda row: get_nucleotide_from_reference(row["CHROM"], int(row["GENOME_END_POS"]) + 1), axis=1)
+    cosmic_df.loc[(cosmic_df["POS"].astype(int) == 1) & (cosmic_df["variant_type"] == "deletion"), "original_nucleotide"] = cosmic_df.loc[(cosmic_df["POS"].astype(int) == 1) & (cosmic_df["variant_type"] == "deletion"), ["CHROM", "POS"]].progress_apply(lambda row: get_nucleotide_from_reference(row["CHROM"], int(row["GENOME_END_POS"]) + 1), axis=1)
 
     # # deal with (-) strand - commented out because the vcf should all be relative to the forward strand, not the cdna
     # cosmic_df.loc[cosmic_df['strand'] == '-', 'original_nucleotide'] = cosmic_df.loc[cosmic_df['strand'] == '-', 'original_nucleotide'].apply(get_complement)
 
     # ins and dup, starting position not 1
-    cosmic_df.loc[(((cosmic_df["mutation_type"] == "insertion") | (cosmic_df["mutation_type"] == "duplication")) & (cosmic_df["POS"].astype(int) != 1)), "ref_updated"] = cosmic_df.loc[(((cosmic_df["mutation_type"] == "insertion") | (cosmic_df["mutation_type"] == "duplication")) & (cosmic_df["POS"].astype(int) != 1)), "original_nucleotide"]
-    cosmic_df.loc[(((cosmic_df["mutation_type"] == "insertion") | (cosmic_df["mutation_type"] == "duplication")) & (cosmic_df["POS"].astype(int) != 1)), "alt_updated"] = cosmic_df.loc[(((cosmic_df["mutation_type"] == "insertion") | (cosmic_df["mutation_type"] == "duplication")) & (cosmic_df["POS"].astype(int) != 1)), "original_nucleotide"] + cosmic_df.loc[(((cosmic_df["mutation_type"] == "insertion") | (cosmic_df["mutation_type"] == "duplication")) & (cosmic_df["POS"].astype(int) != 1)), "ALT"]
+    cosmic_df.loc[(((cosmic_df["variant_type"] == "insertion") | (cosmic_df["variant_type"] == "duplication")) & (cosmic_df["POS"].astype(int) != 1)), "ref_updated"] = cosmic_df.loc[(((cosmic_df["variant_type"] == "insertion") | (cosmic_df["variant_type"] == "duplication")) & (cosmic_df["POS"].astype(int) != 1)), "original_nucleotide"]
+    cosmic_df.loc[(((cosmic_df["variant_type"] == "insertion") | (cosmic_df["variant_type"] == "duplication")) & (cosmic_df["POS"].astype(int) != 1)), "alt_updated"] = cosmic_df.loc[(((cosmic_df["variant_type"] == "insertion") | (cosmic_df["variant_type"] == "duplication")) & (cosmic_df["POS"].astype(int) != 1)), "original_nucleotide"] + cosmic_df.loc[(((cosmic_df["variant_type"] == "insertion") | (cosmic_df["variant_type"] == "duplication")) & (cosmic_df["POS"].astype(int) != 1)), "ALT"]
 
     # ins and dup, starting position 1
-    cosmic_df.loc[(((cosmic_df["mutation_type"] == "insertion") | (cosmic_df["mutation_type"] == "duplication")) & (cosmic_df["POS"].astype(int) == 1)), "ref_updated"] = cosmic_df.loc[(((cosmic_df["mutation_type"] == "insertion") | (cosmic_df["mutation_type"] == "duplication")) & (cosmic_df["POS"].astype(int) == 1)), "original_nucleotide"]
-    cosmic_df.loc[(((cosmic_df["mutation_type"] == "insertion") | (cosmic_df["mutation_type"] == "duplication")) & (cosmic_df["POS"].astype(int) == 1)), "alt_updated"] = cosmic_df.loc[(((cosmic_df["mutation_type"] == "insertion") | (cosmic_df["mutation_type"] == "duplication")) & (cosmic_df["POS"].astype(int) == 1)), "ALT"] + cosmic_df.loc[(((cosmic_df["mutation_type"] == "insertion") | (cosmic_df["mutation_type"] == "duplication")) & (cosmic_df["POS"].astype(int) == 1)), "original_nucleotide"]
+    cosmic_df.loc[(((cosmic_df["variant_type"] == "insertion") | (cosmic_df["variant_type"] == "duplication")) & (cosmic_df["POS"].astype(int) == 1)), "ref_updated"] = cosmic_df.loc[(((cosmic_df["variant_type"] == "insertion") | (cosmic_df["variant_type"] == "duplication")) & (cosmic_df["POS"].astype(int) == 1)), "original_nucleotide"]
+    cosmic_df.loc[(((cosmic_df["variant_type"] == "insertion") | (cosmic_df["variant_type"] == "duplication")) & (cosmic_df["POS"].astype(int) == 1)), "alt_updated"] = cosmic_df.loc[(((cosmic_df["variant_type"] == "insertion") | (cosmic_df["variant_type"] == "duplication")) & (cosmic_df["POS"].astype(int) == 1)), "ALT"] + cosmic_df.loc[(((cosmic_df["variant_type"] == "insertion") | (cosmic_df["variant_type"] == "duplication")) & (cosmic_df["POS"].astype(int) == 1)), "original_nucleotide"]
 
     # del, starting position not 1
-    cosmic_df.loc[((cosmic_df["mutation_type"] == "deletion") & (cosmic_df["POS"].astype(int) != 1)), "ref_updated"] = cosmic_df.loc[((cosmic_df["mutation_type"] == "deletion") & (cosmic_df["POS"].astype(int) != 1)), "original_nucleotide"] + cosmic_df.loc[((cosmic_df["mutation_type"] == "deletion") & (cosmic_df["POS"].astype(int) != 1)), "REF"]
-    cosmic_df.loc[((cosmic_df["mutation_type"] == "deletion") & (cosmic_df["POS"].astype(int) != 1)), "alt_updated"] = cosmic_df.loc[((cosmic_df["mutation_type"] == "deletion") & (cosmic_df["POS"].astype(int) != 1)), "original_nucleotide"]
+    cosmic_df.loc[((cosmic_df["variant_type"] == "deletion") & (cosmic_df["POS"].astype(int) != 1)), "ref_updated"] = cosmic_df.loc[((cosmic_df["variant_type"] == "deletion") & (cosmic_df["POS"].astype(int) != 1)), "original_nucleotide"] + cosmic_df.loc[((cosmic_df["variant_type"] == "deletion") & (cosmic_df["POS"].astype(int) != 1)), "REF"]
+    cosmic_df.loc[((cosmic_df["variant_type"] == "deletion") & (cosmic_df["POS"].astype(int) != 1)), "alt_updated"] = cosmic_df.loc[((cosmic_df["variant_type"] == "deletion") & (cosmic_df["POS"].astype(int) != 1)), "original_nucleotide"]
 
     # del, starting position 1
-    cosmic_df.loc[((cosmic_df["mutation_type"] == "deletion") & (cosmic_df["POS"].astype(int) == 1)), "ref_updated"] = cosmic_df.loc[((cosmic_df["mutation_type"] == "deletion") & (cosmic_df["POS"].astype(int) == 1)), "REF"] + cosmic_df.loc[((cosmic_df["mutation_type"] == "deletion") & (cosmic_df["POS"].astype(int) == 1)), "original_nucleotide"]
-    cosmic_df.loc[((cosmic_df["mutation_type"] == "deletion") & (cosmic_df["POS"].astype(int) == 1)), "alt_updated"] = cosmic_df.loc[((cosmic_df["mutation_type"] == "deletion") & (cosmic_df["POS"].astype(int) == 1)), "original_nucleotide"]
+    cosmic_df.loc[((cosmic_df["variant_type"] == "deletion") & (cosmic_df["POS"].astype(int) == 1)), "ref_updated"] = cosmic_df.loc[((cosmic_df["variant_type"] == "deletion") & (cosmic_df["POS"].astype(int) == 1)), "REF"] + cosmic_df.loc[((cosmic_df["variant_type"] == "deletion") & (cosmic_df["POS"].astype(int) == 1)), "original_nucleotide"]
+    cosmic_df.loc[((cosmic_df["variant_type"] == "deletion") & (cosmic_df["POS"].astype(int) == 1)), "alt_updated"] = cosmic_df.loc[((cosmic_df["variant_type"] == "deletion") & (cosmic_df["POS"].astype(int) == 1)), "original_nucleotide"]
 
     # Deletion, update position (should refer to 1 BEFORE the deletion)
-    cosmic_df.loc[(cosmic_df["POS"].astype(int) != 1) & (cosmic_df["mutation_type"] == "deletion"), "POS"] = cosmic_df.loc[(cosmic_df["POS"].astype(int) != 1) & (cosmic_df["mutation_type"] == "deletion"), "POS"].progress_apply(lambda pos: int(pos) - 1)
+    cosmic_df.loc[(cosmic_df["POS"].astype(int) != 1) & (cosmic_df["variant_type"] == "deletion"), "POS"] = cosmic_df.loc[(cosmic_df["POS"].astype(int) != 1) & (cosmic_df["variant_type"] == "deletion"), "POS"].progress_apply(lambda pos: int(pos) - 1)
 
     # deal with start of 1, deletion update position (should refer to 1 after the deletion)
-    cosmic_df.loc[(cosmic_df["POS"].astype(int) == 1) & (cosmic_df["mutation_type"] == "deletion"), "POS"] = cosmic_df.loc[(cosmic_df["POS"].astype(int) == 1) & (cosmic_df["mutation_type"] == "deletion"), "GENOME_END_POS"].astype(int) + 1
+    cosmic_df.loc[(cosmic_df["POS"].astype(int) == 1) & (cosmic_df["variant_type"] == "deletion"), "POS"] = cosmic_df.loc[(cosmic_df["POS"].astype(int) == 1) & (cosmic_df["variant_type"] == "deletion"), "GENOME_END_POS"].astype(int) + 1
 
     # Insertion, update position when pos=1 (should refer to 1)
-    cosmic_df.loc[(cosmic_df["GENOME_END_POS"].astype(int) == 1) & (cosmic_df["mutation_type"] == "insertion"), "POS"] = 1
+    cosmic_df.loc[(cosmic_df["GENOME_END_POS"].astype(int) == 1) & (cosmic_df["variant_type"] == "insertion"), "POS"] = 1
 
     cosmic_df["ref_updated"] = cosmic_df["ref_updated"].fillna(cosmic_df["REF"])
     cosmic_df["alt_updated"] = cosmic_df["alt_updated"].fillna(cosmic_df["ALT"])
     cosmic_df.rename(columns={"ALT": "alt_cosmic", "alt_updated": "ALT", "REF": "ref_cosmic", "ref_updated": "REF"}, inplace=True)
-    cosmic_df.drop(columns=["Mutation genome position GRCh37", "GENOME_POS", "GENOME_END_POS", "ACCESSION_NUMBER", "Mutation CDS", "mutation_id", "ref_cosmic", "alt_cosmic", "original_nucleotide", "mutation_type"], inplace=True)  # 'strand'
+    cosmic_df.drop(columns=["Mutation genome position GRCh37", "GENOME_POS", "GENOME_END_POS", "ACCESSION_NUMBER", "Mutation CDS", "mutation_id", "ref_cosmic", "alt_cosmic", "original_nucleotide", "variant_type"], inplace=True)  # 'strand'
 
     num_rows_with_na = cosmic_df.isna().any(axis=1).sum()
     if num_rows_with_na > 0:

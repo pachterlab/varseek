@@ -477,7 +477,7 @@ def sim(
             header = row.header
             vcrs_id = getattr(row, "vcrs_id", None)
             vcrs_header = getattr(row, "vcrs_header", None)
-            vcrs_mutation_type = getattr(row, "vcrs_mutation_type", None)
+            vcrs_variant_type = getattr(row, "vcrs_variant_type", None)
             mutant_sequence = getattr(row, variant_sequence_read_parent_column)
             mutant_sequence_rc = getattr(row, variant_sequence_read_parent_rc_column)
             mutant_sequence_length = row.mutant_sequence_read_parent_length
@@ -605,7 +605,7 @@ def sim(
                         "reference_header": header,
                         "vcrs_id": vcrs_id,
                         "vcrs_header": vcrs_header,
-                        "vcrs_mutation_type": vcrs_mutation_type,
+                        "vcrs_variant_type": vcrs_variant_type,
                         "mutant_read": True,
                         "wt_read": False,
                         "region_included_in_vcrs_reference": True,
@@ -649,7 +649,7 @@ def sim(
                         "reference_header": header,
                         "vcrs_id": vcrs_id,
                         "vcrs_header": vcrs_header,
-                        "vcrs_mutation_type": vcrs_mutation_type,
+                        "vcrs_variant_type": vcrs_variant_type,
                         "mutant_read": False,
                         "wt_read": True,
                         "region_included_in_vcrs_reference": True,

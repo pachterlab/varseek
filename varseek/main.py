@@ -726,26 +726,25 @@ def main():  # noqa: C901
         help=extract_help_from_doc(info, "dlist_reference_ensembl_release"),
     )
     parser_info.add_argument(
+        "--var_id_column",
+        type=str,
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(info, "gene_name_column"),
+    )
+    parser_info.add_argument(
+        "--gene_name_column",
+        type=str,
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(info, "gene_name_column"),
+    )
+    parser_info.add_argument(
         "--variant_source_column",
         type=str,
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(info, "variant_source_column"),
-    )
-    parser_info.add_argument(
-        "-vc",
-        "--var_column",
-        type=str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "var_column"),
-    )
-    parser_info.add_argument(
-        "--seq_id_column",
-        type=str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "seq_id_column"),
     )
     parser_info.add_argument(
         "--var_cdna_column",
@@ -940,6 +939,20 @@ def main():  # noqa: C901
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(info, "variants"),
+    )
+    parser_info.add_argument(
+        "--seq_id_column",
+        type=str,
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(info, "seq_id_column"),
+    )
+    parser_info.add_argument(
+        "--var_column",
+        type=str,
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(info, "var_column"),
     )
 
     # NEW PARSER
@@ -2035,6 +2048,12 @@ def main():  # noqa: C901
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(summarize, "technology"),
+    )
+    parser_summarize.add_argument(
+        "--gene_name_column",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(summarize, "gene_name_column"),
     )
     parser_summarize.add_argument(
         "--vcrs_header_column",

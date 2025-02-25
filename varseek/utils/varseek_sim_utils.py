@@ -7,7 +7,7 @@ import pyfastx
 from tqdm import tqdm
 
 from varseek.utils.logger_utils import splitext_custom
-from varseek.utils.seq_utils import fasta_to_fastq, reverse_complement
+from varseek.utils.seq_utils import fasta_to_fastq, reverse_complement, add_mutation_information
 
 tqdm.pandas()
 
@@ -138,7 +138,7 @@ def append_row(read_df, id_value, header_value, sequence_value, start_position, 
             "reference_header": None,
             "vcrs_id": None,
             "vcrs_header": None,
-            "vcrs_mutation_type": None,
+            "vcrs_variant_type": None,
             "mutant_read": False,
             "wt_read": True,
             "region_included_in_vcrs_reference": False,
@@ -182,13 +182,15 @@ def introduce_sequencing_errors(sequence, error_rate=0.0001, error_distribution=
 def build_random_genome_read_df(
     reference_fasta_file_path,
     mutation_metadata_df,
+    seq_id_column="seq_ID",
+    var_column="mutation",
+    input_type="cdna",
     read_df=None,
     read_df_out=None,
     fastq_output_path="random_reads.fq",
     fastq_parent_path=None,
     n=10,
     read_length=150,
-    input_type="transcriptome",
     strand=None,
     add_noise_sequencing_error=False,
     add_noise_base_quality=False,
@@ -197,34 +199,26 @@ def build_random_genome_read_df(
     max_errors=float("inf"),
     seed=42,
 ):
+    if input_type == "transcriptome":
+        input_type = "cdna"  # for backwards compatibility
+    if input_type not in ["genome", "cdna"]:
+        raise ValueError(f"Invalid input_type: {input_type}. Expected 'genome' or 'cdna'.")
+    if f"start_variant_position_{input_type}" not in mutation_metadata_df.columns or f"end_variant_position_{input_type}" not in mutation_metadata_df.columns:
+        add_mutation_information(mutation_metadata_df, mutation_column=var_column, variant_source=input_type)
+    mutation_metadata_df[f"start_position_for_which_read_contains_mutation_{input_type}"] = mutation_metadata_df[f"start_variant_position_{input_type}"] - read_length + 1
+    
     # Collect all headers and sequences from the FASTA file
     fastq_output_path_base, fastq_output_path_ext = splitext_custom(fastq_output_path)
     fasta_output_path_temp = fastq_output_path_base + "_temp.fa"
-
-    # TODO: stop hard-coding this
-    if "start_variant_position_cdna" in mutation_metadata_df.columns:
-        mutation_metadata_df["start_position_for_which_read_contains_mutation_cdna"] = mutation_metadata_df["start_variant_position_cdna"] - read_length + 1
-    if "start_variant_position_genome" in mutation_metadata_df.columns:
-        mutation_metadata_df["start_position_for_which_read_contains_mutation_genome"] = mutation_metadata_df["start_variant_position_genome"] - read_length + 1
 
     fasta_entries = list(pyfastx.Fastx(reference_fasta_file_path))
     if read_df is None:
         column_names = ["read_id", "read_header", "read_sequence", "reference_header", "vcrs_header", "mutant_read", "wt_read", "region_included_in_vcrs_reference", "noise_added"]
         read_df = pd.DataFrame(columns=column_names)
 
-    if input_type == "genome":
-        chromosomes = [str(x) for x in list(range(23))]
-        chromosomes.extend(["X", "Y", "MT"])
-        fasta_entries = [entry for entry in fasta_entries if entry[0] not in chromosomes]
-        fasta_entry_column = "chromosome"
-        vcrs_start_column = "start_position_for_which_read_contains_mutation_genome"
-        vcrs_end_column = "end_variant_position_genome"
-    elif input_type == "transcriptome":
-        fasta_entry_column = "seq_ID"
-        vcrs_start_column = "start_position_for_which_read_contains_mutation_cdna"
-        vcrs_end_column = "end_variant_position_cdna"
-    else:
-        raise ValueError(f"Invalid input_type: {input_type}")
+    fasta_entry_column = seq_id_column
+    vcrs_start_column = f"start_position_for_which_read_contains_mutation_{input_type}"
+    vcrs_end_column = f"end_variant_position_{input_type}"
 
     if seed:
         random.seed(seed)
@@ -242,7 +236,7 @@ def build_random_genome_read_df(
                 continue
 
             random_transcript = random_transcript.split()[0]  # grab ENST from long transcript name string
-            if input_type == "transcriptome":
+            if input_type == "cdna":
                 random_transcript = random_transcript.split(".")[0]  # strip version number from ENST
 
             # Choose a random integer between 1 and the sequence_length-read_length as start position

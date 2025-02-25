@@ -11,7 +11,7 @@ import pytest
 from pdb import set_trace as st
 
 import varseek as vk
-from varseek.utils import add_mutation_type
+from varseek.utils import add_variant_type
 
 from .conftest import (
     compare_two_dataframes_without_regard_for_order_of_rows_or_columns,
@@ -66,20 +66,20 @@ def cosmic_csv_path(out_dir):
     if not os.path.exists(subsampled_cosmic_csv_path):
 
         mutations = pd.read_csv(cosmic_csv_path_starting)
-        mutations = add_mutation_type(mutations, var_column = "mutation_cdna")
+        mutations = add_variant_type(mutations, var_column = "mutation_cdna")
 
-        mutation_types = ["substitution", "deletion", "insertion", "delins", "duplication", "inversion"]
-        sample_size_per_mutation_type = sample_size // len(mutation_types)
+        variant_types = ["substitution", "deletion", "insertion", "delins", "duplication", "inversion"]
+        sample_size_per_variant_type = sample_size // len(variant_types)
 
         final_df = pd.DataFrame()
 
-        for mutation_type in mutation_types:
+        for variant_type in variant_types:
             # Filter DataFrame for the current mutation type
-            mutation_subset = mutations[mutations["mutation_type"] == mutation_type]
+            mutation_subset = mutations[mutations["variant_type"] == variant_type]
 
-            sample_size_round = min(sample_size_per_mutation_type, len(mutation_subset))
+            sample_size_round = min(sample_size_per_variant_type, len(mutation_subset))
             
-            # Randomly sample `sample_size_per_mutation_type` rows from the subset (adjusts if less than sample_size_per_mutation_type)
+            # Randomly sample `sample_size_per_variant_type` rows from the subset (adjusts if less than sample_size_per_variant_type)
             sample = mutation_subset.sample(n=min(sample_size_round, len(mutation_subset)), random_state=42)
             
             # Append the sample to the final DataFrame

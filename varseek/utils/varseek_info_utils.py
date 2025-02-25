@@ -223,7 +223,8 @@ def select_contiguous_substring(sequence, kmer, read_length=150):
     return selected_substring
 
 
-def remove_Ns_fasta(fasta_file, max_ambiguous_reference=0):
+def remove_Ns_fasta(fasta_file, max_ambiguous_reference=0, logger=None):
+    logger_info = get_printlog(logger=logger)
     fasta_file_temp = fasta_file + ".tmp"
     try:
         i = 0
@@ -239,118 +240,14 @@ def remove_Ns_fasta(fasta_file, max_ambiguous_reference=0):
                     i += 1
         
         os.replace(fasta_file_temp, fasta_file)
-        print(f"Removed {i} sequences with Ns from {fasta_file}")
+        logger_info(f"Removed {i} sequences with Ns from {fasta_file}")
     except Exception as e:
         if os.path.exists(fasta_file_temp):
             os.remove(fasta_file_temp)
         raise e
     
-def count_nearby_mutations_efficient(df, k, fasta_entry_column, start_column, end_column, header_column=None):
-    # Ensure 'seq_ID' is in the DataFrame
-    if "seq_ID" not in df.columns:
-        raise ValueError("The DataFrame must contain a 'seq_ID' column.")
 
-    # Initialize counts_unique array
-    counts_unique = np.zeros(len(df), dtype=int)
-
-    # Group by seq_ID
-    grouped = df.groupby(fasta_entry_column)
-    len_grouped = len(grouped)
-
-    z = 0
-    for seq_id, group in grouped:
-        # Extract positions and indices within the group
-        indices_original = group.index.values  # Original indices in df
-        starts = group[start_column].values
-        ends = group[end_column].values
-        N = len(group)
-
-        # Proceed only if group has more than one mutation
-        if N > 1:
-            # Create mapping from group indices (0 to N-1) to original indices
-            mapping = dict(enumerate(indices_original))
-
-            # Prepare DataFrames with positions and group indices (0 to N-1)
-            df_starts = pd.DataFrame({"position": starts, "index": np.arange(N)})
-            df_ends = pd.DataFrame({"position": ends, "index": np.arange(N)})
-
-            # Sort by positions
-            df_starts_sorted = df_starts.sort_values("position").reset_index(drop=True)
-            df_ends_sorted = df_ends.sort_values("position").reset_index(drop=True)
-
-            # Initialize counts
-            counts = np.zeros(N, dtype=int)
-
-            # Condition 1: For each start, count ends within [start - (k - 1), start + (k - 1)]
-            positions_ends = df_ends_sorted["position"].values
-            indices_ends = df_ends_sorted["index"].values
-            for i in range(N):
-                start = starts[i]
-                left = start - (k - 1)
-                right = start + (k - 1)
-                left_idx = np.searchsorted(positions_ends, left, side="left")
-                right_idx = np.searchsorted(positions_ends, right, side="right")
-                nearby_indices = indices_ends[left_idx:right_idx]
-                # Exclude self
-                nearby_indices = nearby_indices[nearby_indices != i]
-                counts[i] += len(nearby_indices)
-
-            # Condition 2: For each end, count starts within [end - (k - 1), end + (k - 1)]
-            positions_starts = df_starts_sorted["position"].values
-            indices_starts = df_starts_sorted["index"].values
-            for i in range(N):
-                end = ends[i]
-                left = end - (k - 1)
-                right = end + (k - 1)
-                left_idx = np.searchsorted(positions_starts, left, side="left")
-                right_idx = np.searchsorted(positions_starts, right, side="right")
-                nearby_indices = indices_starts[left_idx:right_idx]
-                # Exclude self
-                nearby_indices = nearby_indices[nearby_indices != i]
-                counts[i] += len(nearby_indices)
-
-            # Merging Conditions
-            counts_unique_group = np.zeros(N, dtype=int)
-            for i in range(N):
-                # Condition 1
-                start = starts[i]
-                left1 = start - (k - 1)
-                right1 = start + (k - 1)
-                left_idx1 = np.searchsorted(positions_ends, left1, side="left")
-                right_idx1 = np.searchsorted(positions_ends, right1, side="right")
-                nearby_indices1 = set(indices_ends[left_idx1:right_idx1])
-                nearby_indices1.discard(i)
-
-                # Condition 2
-                end = ends[i]
-                left2 = end - (k - 1)
-                right2 = end + (k - 1)
-                left_idx2 = np.searchsorted(positions_starts, left2, side="left")
-                right_idx2 = np.searchsorted(positions_starts, right2, side="right")
-                nearby_indices2 = set(indices_starts[left_idx2:right_idx2])
-                nearby_indices2.discard(i)
-
-                # Combine indices
-                nearby_indices_total = nearby_indices1.union(nearby_indices2)
-                counts_unique_group[i] = len(nearby_indices_total)
-
-            # Assign counts to counts_unique using mapping
-            for i in range(N):
-                idx_original = mapping[i]
-                counts_unique[idx_original] = counts_unique_group[i]
-        else:
-            # Only one mutation in group; count is zero
-            idx_original = indices_original[0]
-            counts_unique[idx_original] = 0
-
-        z += 1
-        if z % 100 == 0:
-            print(f"Processed {z}/{len_grouped} groups.")
-
-    df["nearby_variants_count"] = counts_unique
-    return df
-
-
+# there used to be a count_nearby_mutations_efficient function that I erased on 2/25/25
 def count_nearby_mutations_efficient_with_identifiers(df, k, fasta_entry_column, start_column, end_column, header_column):
     # Ensure the required columns are in the DataFrame
     required_columns = [fasta_entry_column, start_column, end_column, header_column]
@@ -471,8 +368,9 @@ def create_df_of_vcrs_to_self_headers(
     strandedness=False,
     vcrs_id_column="vcrs_id",
     output_stat_file=None,
+    logger=None,
 ):
-
+    logger_info = get_printlog(logger=logger)
     if not bowtie_path:
         bowtie2_build = "bowtie2-build"
         bowtie2 = "bowtie2"
@@ -482,7 +380,7 @@ def create_df_of_vcrs_to_self_headers(
 
     if not os.path.exists(vcrs_sam_file):
         if not os.path.exists(bowtie_vcrs_reference_folder) or not os.listdir(bowtie_vcrs_reference_folder):
-            print("Running bowtie2 build")
+            logger_info("Running bowtie2 build")
             os.makedirs(bowtie_vcrs_reference_folder, exist_ok=True)
             bowtie_reference_prefix = os.path.join(bowtie_vcrs_reference_folder, "vcrs")
             subprocess.run(
@@ -496,7 +394,7 @@ def create_df_of_vcrs_to_self_headers(
                 check=True,
             )
 
-        print("Running bowtie2 alignment")
+        logger_info("Running bowtie2 alignment")
 
         bowtie2_alignment_command = [
             bowtie2,  # Path to the bowtie2 executable
@@ -557,7 +455,7 @@ def create_df_of_vcrs_to_self_headers(
     substring_to_superstring_list_dict = defaultdict(list)
     superstring_to_substring_list_dict = defaultdict(list)
 
-    print("Processing SAM file")
+    logger_info("Processing SAM file")
     for fields in process_sam_file(vcrs_sam_file):
         read_name = fields[0]
         ref_name = fields[2]
@@ -624,9 +522,9 @@ def compare_cdna_and_genome(mutation_metadata_df_exploded, varseek_build_temp_fo
         usecols=[
             "header",
             "vcrs_sequence",
-            "seq_ID",
-            "mutation_cdna",
-            "mutation_type",
+            seq_id_column_cdna,
+            var_column_cdna,
+            "variant_type",
         ],
     )
 
@@ -658,28 +556,28 @@ def compare_cdna_and_genome(mutation_metadata_df_exploded, varseek_build_temp_fo
         usecols=[
             "header",
             "vcrs_sequence",
-            "chromosome",
-            "mutation_genome",
-            "mutation_type",
-            "seq_ID",
-            "mutation_cdna",
+            seq_id_column_genome,
+            var_column_genome,
+            "variant_type",
+            seq_id_column_cdna,
+            var_column_cdna,
         ],
     )
 
     combined_updated_df = cdna_updated_df.merge(
         genome_updated_df,
-        on=["seq_ID", "mutation_cdna"],
+        on=[seq_id_column_cdna, var_column_cdna],
         how="outer",
         suffixes=("_cdna", "_genome"),
     )
 
-    combined_updated_df["cdna_and_genome_same"] = combined_updated_df["mutant_sequence_cdna"] == combined_updated_df["mutant_sequence_genome"]  # combined_updated_df['mutant_sequence_plus_genome']
+    combined_updated_df["cdna_and_genome_same"] = combined_updated_df["vcrs_sequence_cdna"] == combined_updated_df["vcrs_sequence_genome"]
     # combined_updated_df["cdna_and_genome_same"] = combined_updated_df["cdna_and_genome_same"].astype(str)
 
     if "cosmic" in mutations_csv:
         # cosmic is not reliable at recording duplication mutations at the genome level
         combined_updated_df.loc[
-            (combined_updated_df["mutation_type_cdna"] == "duplication") | (combined_updated_df["mutation_type_genome"] == "duplication"),
+            (combined_updated_df["variant_type_cdna"] == "duplication") | (combined_updated_df["variant_type_genome"] == "duplication"),
             "cdna_and_genome_same",
         ] = np.nan
 
@@ -1256,6 +1154,7 @@ def compute_distance_to_closest_splice_junction(
     reference_genome_gtf,
     columns_to_explode=None,
     near_splice_junction_threshold=10,
+    seq_id_genome_column="chromosome"
 ):
     """
     Compute the distance to the closest splice junction for each mutation.
@@ -1282,13 +1181,12 @@ def compute_distance_to_closest_splice_junction(
         mutation_metadata_df_exploded.iterrows(),
         total=len(mutation_metadata_df_exploded),
     ):
-        # TODO: stop hard-coding column names
-        if pd.isna(row["chromosome"]) or pd.isna(row["start_variant_position_genome"]) or pd.isna(row["end_variant_position_genome"]):
+        if pd.isna(row[seq_id_genome_column]) or pd.isna(row["start_variant_position_genome"]) or pd.isna(row["end_variant_position_genome"]):
             distances.append(np.nan)
             continue
 
         try:
-            chrom = str(row["chromosome"])
+            chrom = str(row[seq_id_genome_column])
             start_pos = int(row["start_variant_position_genome"])
             end_pos = int(row["end_variant_position_genome"])
         except ValueError:
@@ -1436,6 +1334,7 @@ def run_bowtie_alignment_dlist(
 def calculate_total_gene_info(
     mutation_metadata_df_exploded,
     vcrs_id_column="vcrs_id",
+    gene_name_column="gene_name",
     output_stat_file=None,
     output_plot_folder=None,
     columns_to_include="all",
@@ -1447,8 +1346,8 @@ def calculate_total_gene_info(
         columns_to_explode = columns_to_explode.copy()
 
     number_of_mutations_total = len(mutation_metadata_df_exploded[vcrs_id_column].unique())
-    number_of_transcripts_total = len(mutation_metadata_df_exploded["seq_ID"].unique())
-    number_of_genes_total = len(mutation_metadata_df_exploded["gene_name"].unique())
+    number_of_transcripts_total = len(mutation_metadata_df_exploded["seq_ID_used_for_vcrs"].unique())
+    number_of_genes_total = len(mutation_metadata_df_exploded[gene_name_column].unique())
 
     metadata_counts_dict = {
         "Mutations_total": number_of_mutations_total,
@@ -1471,11 +1370,11 @@ def calculate_total_gene_info(
     )
 
     if columns_to_include == "all" or "header_with_gene_name" in columns_to_include:
-        mutation_metadata_df_exploded["header_with_gene_name"] = mutation_metadata_df_exploded["header"].str.split(":", n=1).str[0] + "(" + mutation_metadata_df_exploded["gene_name"] + "):" + mutation_metadata_df_exploded["header"].str.split(":", n=1).str[1]
+        mutation_metadata_df_exploded["header_with_gene_name"] = mutation_metadata_df_exploded["header"].str.split(":", n=1).str[0] + "(" + mutation_metadata_df_exploded[gene_name_column] + "):" + mutation_metadata_df_exploded["header"].str.split(":", n=1).str[1]
 
     if columns_to_include == "all" or "number_of_variants_in_this_gene_total" in columns_to_include:
-        gene_counts = mutation_metadata_df_exploded["gene_name"].value_counts()
-        mutation_metadata_df_exploded["number_of_variants_in_this_gene_total"] = mutation_metadata_df_exploded["gene_name"].map(gene_counts)
+        gene_counts = mutation_metadata_df_exploded[gene_name_column].value_counts()
+        mutation_metadata_df_exploded["number_of_variants_in_this_gene_total"] = mutation_metadata_df_exploded[gene_name_column].map(gene_counts)
 
         output_plot_file_descending_bar_plot = f"{output_plot_folder}/descending_bar_plot.png"
 
@@ -1499,7 +1398,11 @@ def calculate_nearby_mutations(
     variant_source,
     mutation_metadata_df_exploded,
     columns_to_explode=None,
+    seq_id_cdna_column="seq_ID",
+    seq_id_genome_column="chromosome",
+    logger=None
 ):
+    logger_info = get_printlog(logger=logger)
     if columns_to_explode is None:
         columns_to_explode = ["header", "order"]
     else:  # * remove with set
@@ -1516,7 +1419,7 @@ def calculate_nearby_mutations(
         mutation_metadata_df_exploded_copy = count_nearby_mutations_efficient_with_identifiers(
             mutation_metadata_df_exploded_copy,
             k=k,
-            fasta_entry_column="seq_ID",
+            fasta_entry_column="seq_ID_used_for_vcrs",
             start_column="start_variant_position",
             end_column="end_variant_position",
             header_column="header",
@@ -1530,13 +1433,16 @@ def calculate_nearby_mutations(
 
     else:
         # find other mutations within (k-1) of each mutation for cDNA
+        start_column = "start_variant_position_cdna" if "start_variant_position_cdna" in mutation_metadata_df_exploded.columns else "start_variant_position"
+        end_column = "end_variant_position_cdna" if "end_variant_position_cdna" in mutation_metadata_df_exploded.columns else "end_variant_position"
+
         mutation_metadata_df_exploded_cdna = mutation_metadata_df_exploded.loc[mutation_metadata_df_exploded[variant_source_column] == "cdna"].reset_index(drop=True)
         mutation_metadata_df_exploded_cdna = count_nearby_mutations_efficient_with_identifiers(
             mutation_metadata_df_exploded_cdna,
             k=k,
-            fasta_entry_column="seq_ID",
-            start_column="start_variant_position_cdna",
-            end_column="end_variant_position_cdna",
+            fasta_entry_column=seq_id_cdna_column,
+            start_column=start_column,
+            end_column=end_column,
             header_column="header",
         )  # * change to header_column='header_cdna' (along with below) if I don't want to distinguish between spliced and unspliced variants being close
         mutation_metadata_df_exploded = mutation_metadata_df_exploded.merge(
@@ -1562,7 +1468,7 @@ def calculate_nearby_mutations(
         mutation_metadata_df_exploded_genome = count_nearby_mutations_efficient_with_identifiers(
             mutation_metadata_df_exploded_genome,
             k=k,
-            fasta_entry_column="chromosome",
+            fasta_entry_column=seq_id_genome_column,
             start_column="start_variant_position_genome",
             end_column="end_variant_position_genome",
             header_column="header",
@@ -1592,7 +1498,7 @@ def calculate_nearby_mutations(
 
     mutation_metadata_df_exploded["nearby_variants_count"] = mutation_metadata_df_exploded["nearby_variants"].apply(lambda x: len(x) if isinstance(x, list) else 0)
     mutation_metadata_df_exploded["has_a_nearby_variant"] = mutation_metadata_df_exploded["nearby_variants_count"] > 0
-    print(f"Number of mutations with nearby mutations: {mutation_metadata_df_exploded['has_a_nearby_variant'].sum()} {mutation_metadata_df_exploded['has_a_nearby_variant'].sum() / len(mutation_metadata_df_exploded) * 100:.2f}%")
+    logger_info(f"Number of mutations with nearby mutations: {mutation_metadata_df_exploded['has_a_nearby_variant'].sum()} {mutation_metadata_df_exploded['has_a_nearby_variant'].sum() / len(mutation_metadata_df_exploded) * 100:.2f}%")
     bins = min(int(mutation_metadata_df_exploded["nearby_variants_count"].max()), 1000)
     nearby_mutations_output_plot_file = f"{output_plot_folder}/nearby_mutations_histogram.png"
     plot_histogram_of_nearby_mutations_7_5(
@@ -1630,6 +1536,7 @@ def align_to_normal_genome_and_build_dlist(
     dlist_fasta_file=None,
     logger=None,
 ):
+    logger_info = get_printlog(logger=logger)
     bowtie_stat_file = f"{output_stat_folder}/bowtie_alignment.txt"
 
     ref_folder_genome_bowtie = f"{reference_out}/bowtie_index_genome"
@@ -1663,6 +1570,7 @@ def align_to_normal_genome_and_build_dlist(
         )
 
     dlist_genome_df = create_df_of_dlist_headers(output_sam_file_genome, header_column_name=vcrs_id_column, k=k)
+    dlist_genome_df.rename(columns={"alignment_to_reference_count_total": "alignment_to_reference_count_genome"}, inplace=True)
 
     if not dlist_fasta_file_genome_full:
         dlist_fasta_file_genome_full = f"{out_dir_notebook}/dlist_genome.fa"
@@ -1683,6 +1591,7 @@ def align_to_normal_genome_and_build_dlist(
         strandedness=strandedness,
         header_column_name=vcrs_id_column,
     )
+    dlist_substring_genome_df.rename(columns={"substring_alignment_to_reference_count_total": "substring_alignment_to_reference_count_genome"}, inplace=True)
 
     dlist_genome_df[vcrs_id_column] = dlist_genome_df[vcrs_id_column].astype(str)
     dlist_substring_genome_df[vcrs_id_column] = dlist_substring_genome_df[vcrs_id_column].astype(str)
@@ -1690,7 +1599,7 @@ def align_to_normal_genome_and_build_dlist(
     dlist_genome_df["substring_alignment_to_reference"] = dlist_genome_df["substring_alignment_to_reference"].fillna(False)
 
     if max_ambiguous_reference < 9999:  #! be careful of changing this number - it is related to the condition in varseek info - max_ambiguous_reference = 99999
-        remove_Ns_fasta(dlist_fasta_file_genome_full, max_ambiguous_reference=max_ambiguous_reference)
+        remove_Ns_fasta(dlist_fasta_file_genome_full, max_ambiguous_reference=max_ambiguous_reference, logger=logger)
 
     ref_folder_cdna_bowtie = f"{reference_out}/bowtie_index_transcriptome"
     ref_prefix_cdna_full = f"{ref_folder_cdna_bowtie}/{ref_prefix}"
@@ -1723,6 +1632,7 @@ def align_to_normal_genome_and_build_dlist(
         )
 
     dlist_cdna_df = create_df_of_dlist_headers(output_sam_file_cdna, header_column_name=vcrs_id_column, k=k)
+    dlist_cdna_df.rename(columns={"alignment_to_reference_count_total": "alignment_to_reference_count_cdna"}, inplace=True)
 
     if not dlist_fasta_file_cdna_full:
         dlist_fasta_file_cdna_full = f"{out_dir_notebook}/dlist_cdna.fa"
@@ -1744,6 +1654,8 @@ def align_to_normal_genome_and_build_dlist(
         header_column_name=vcrs_id_column,
     )
 
+    dlist_substring_cdna_df.rename(columns={"substring_alignment_to_reference_count_total": "substring_alignment_to_reference_count_cdna"}, inplace=True)
+
     dlist_cdna_df[vcrs_id_column] = dlist_cdna_df[vcrs_id_column].astype(str)
 
     dlist_cdna_df[vcrs_id_column] = dlist_cdna_df[vcrs_id_column].astype(str)
@@ -1752,7 +1664,7 @@ def align_to_normal_genome_and_build_dlist(
     dlist_cdna_df["substring_alignment_to_reference"] = dlist_cdna_df["substring_alignment_to_reference"].fillna(False)
 
     if max_ambiguous_reference < 9999:  #! be careful of changing this number - it is related to the condition in varseek info - max_ambiguous_reference = 99999
-        remove_Ns_fasta(dlist_fasta_file_cdna_full, max_ambiguous_reference=max_ambiguous_reference)
+        remove_Ns_fasta(dlist_fasta_file_cdna_full, max_ambiguous_reference=max_ambiguous_reference, logger=logger)
 
     if not dlist_fasta_file:
         dlist_fasta_file = f"{out_dir_notebook}/dlist.fa"
@@ -1847,17 +1759,14 @@ def align_to_normal_genome_and_build_dlist(
 
     # Log the messages
     for message in log_messages:
-        if logger:
-            logger.info(message)
-        else:
-            print(message)
+        logger_info(message)
 
     if os.path.exists(bowtie_stat_file):
         write_mode = "a"
     else:
         write_mode = "w"
 
-        # Re-print and save the messages to a text file
+    # Re-print and save the messages to a text file
     with open(bowtie_stat_file, write_mode, encoding="utf-8") as f:  # Use 'a' to append to the file
         f.write("Bowtie alignment statistics summary\n")
         for message in log_messages:
