@@ -9,7 +9,7 @@ vk.varseek_build.build(
     variants="cosmic_cmc",
     sequences="cdna",
     w=27,
-    k=31,
+    k=59,
     out=out,
     gtf=True,  # just so that gtf information gets merged into cosmic df
     save_logs=True,

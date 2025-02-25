@@ -531,12 +531,10 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "log_out_dir"),
     )
     parser_build.add_argument(
-        "-q",
-        "--quiet",
-        dest="verbose",
-        action="store_false",
+        "--verbose",
+        action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help="Do not print progress information.",
+        help=extract_help_from_doc(build, "verbose"),
     )
 
     # Additional kwargs arguments that I still want as command-line options
@@ -728,25 +726,11 @@ def main():  # noqa: C901
         help=extract_help_from_doc(info, "dlist_reference_ensembl_release"),
     )
     parser_info.add_argument(
-        "--vcrs_id_column",
+        "--variant_source_column",
         type=str,
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "vcrs_id_column"),
-    )
-    parser_info.add_argument(
-        "--vcrs_sequence_column",
-        type=str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "vcrs_sequence_column"),
-    )
-    parser_info.add_argument(
-        "--vcrs_source_column",
-        type=str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "vcrs_source_column"),
+        help=extract_help_from_doc(info, "variant_source_column"),
     )
     parser_info.add_argument(
         "-vc",
@@ -764,11 +748,11 @@ def main():  # noqa: C901
         help=extract_help_from_doc(info, "seq_id_column"),
     )
     parser_info.add_argument(
-        "--variant_cdna_column",
+        "--var_cdna_column",
         type=str,
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "variant_cdna_column"),
+        help=extract_help_from_doc(info, "var_cdna_column"),
     )
     parser_info.add_argument(
         "--seq_id_cdna_column",
@@ -778,11 +762,11 @@ def main():  # noqa: C901
         help=extract_help_from_doc(info, "seq_id_cdna_column"),
     )
     parser_info.add_argument(
-        "--variant_genome_column",
+        "--var_genome_column",
         type=str,
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "variant_genome_column"),
+        help=extract_help_from_doc(info, "var_genome_column"),
     )
     parser_info.add_argument(
         "--seq_id_genome_column",
@@ -903,6 +887,12 @@ def main():  # noqa: C901
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(info, "log_out_dir"),
     )
+    parser_info.add_argument(
+        "--verbose",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(info, "verbose"),
+    )
 
     # kwargs
     parser_info.add_argument(
@@ -1000,24 +990,6 @@ def main():  # noqa: C901
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(filter, "dlist_fasta"),
-    )
-    parser_filter.add_argument(
-        "--vcrs_id_column",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "vcrs_id_column"),
-    )
-    parser_filter.add_argument(
-        "--vcrs_header_column",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "vcrs_header_column"),
-    )
-    parser_filter.add_argument(
-        "--vcrs_sequence_column",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "vcrs_sequence_column"),
     )
     parser_filter.add_argument(
         "-o",
@@ -1927,12 +1899,6 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "variants_updated_csv_columns_to_merge"),
     )
     parser_clean.add_argument(
-        "--vcrs_id_column",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "vcrs_id_column"),
-    )
-    parser_clean.add_argument(
         "--seq_id_column",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
@@ -2075,12 +2041,6 @@ def main():  # noqa: C901
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(summarize, "vcrs_header_column"),
-    )
-    parser_summarize.add_argument(
-        "--vcrs_id_column",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(summarize, "vcrs_id_column"),
     )
     parser_summarize.add_argument(
         "-o",

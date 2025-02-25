@@ -16,7 +16,9 @@ import pandas as pd
 import pyfastx
 from tqdm import tqdm
 
-from varseek.utils.logger_utils import splitext_custom, get_file_name_without_extensions_or_full_path
+tqdm.pandas()
+
+from varseek.utils.logger_utils import splitext_custom, get_file_name_without_extensions_or_full_path, get_printlog
 from varseek.utils.seq_utils import (
     create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting,
     fasta_to_fastq,
@@ -105,7 +107,10 @@ def parse_sam_and_extract_sequences(
     capitalize=True,
     remove_duplicates=False,
     check_for_bad_cigars=True,
+    logger=None
 ):
+    logger_info = get_printlog(logger=logger)
+
     if dfk_length is None:
         dfk_length = k + 2
 
@@ -141,43 +146,15 @@ def parse_sam_and_extract_sequences(
                     dlist_fasta.write(f">{header}\n{sequence}\n")
 
         if check_for_bad_cigars:
-            print(f"Skipped {bad_cigar} reads with bad CIGAR strings")
+            logger_info(f"Skipped {bad_cigar} reads with bad CIGAR strings")
 
     if capitalize:
-        print("Capitalizing sequences")
+        logger_info("Capitalizing sequences")
         capitalize_sequences(output_fasta_file)
 
     if remove_duplicates:  #!!! not fully working yet
-        print("Removing duplicate sequences")
+        logger_info("Removing duplicate sequences")
         remove_dlist_duplicates(output_fasta_file)
-
-
-def combine_transcriptome_fasta(input_fasta, output_file, max_chunk_size=10000000, k=31):
-    joined_sequences = []
-    current_size = 0
-    current_chunk = 0
-
-    with open(output_file, "w", encoding="utf-8") as outfile:
-        # Open the FASTA file and loop through each entry
-        outfile.write(f">Joined_transcriptome_chunk_{current_chunk}\n")
-        for _, sequence in pyfastx.Fastx(input_fasta):
-            current_size += len(sequence)
-            if current_size <= max_chunk_size:
-                joined_sequences.append(sequence)
-            else:
-                joined_sequences_string = ("N" * k).join(joined_sequences)  # type: ignore
-                outfile.write(f"{joined_sequences_string}\n")
-                joined_sequences = [sequence]
-                current_size = len(sequence)
-                current_chunk += 1
-                outfile.write(f">Joined_transcriptome_chunk_{current_chunk}\n")
-
-        # Write the remaining sequences to the final chunk
-        joined_sequences_string = ("N" * k).join(joined_sequences)
-        outfile.write(f"{joined_sequences_string}\n")
-
-    print(f"Saved joined transcriptome to {output_file}")
-
 
 def process_sam_file(sam_file):
     with open(sam_file, "r", encoding="utf-8") as sam:
@@ -223,70 +200,6 @@ def sequence_match(vcrs_sequence, dlist_sequence, strandedness=False):
     else:
         # Check both forward and reverse complement
         return (vcrs_sequence in dlist_sequence) or (vcrs_sequence in reverse_complement(dlist_sequence))
-
-
-def remove_mutations_which_are_a_perfect_substring_of_wt_reference_genome(
-    mutation_reference_file_fasta,
-    dlist_fasta_file,
-    output_fasta=None,
-    output_dlist=None,
-    strandedness=False,
-):
-    # TODO: make header fasta from id fasta with id:header dict
-
-    mutant_reference = create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(mutation_reference_file_fasta)
-
-    headers_NOT_to_put_in_dlist = set()
-
-    if output_fasta is None:
-        output_fasta = mutation_reference_file_fasta + ".tmp"
-
-    if output_dlist is None:
-        output_dlist = dlist_fasta_file + ".tmp"
-
-    try:
-        i = 0
-        for dlist_header, dlist_sequence in pyfastx.Fastx(dlist_fasta_file):
-            dlist_header_shortened = dlist_header.rsplit("_", 1)[0]
-            if dlist_header_shortened in mutant_reference:
-                if sequence_match(
-                    mutant_reference[dlist_header_shortened],
-                    dlist_sequence,
-                    strandedness=strandedness,
-                ):
-                    # if mutant_reference[dlist_header_shortened] in dlist_sequence or mutant_reference[dlist_header_shortened] in reverse_complement(dlist_sequence):
-                    del mutant_reference[dlist_header_shortened]
-                    headers_NOT_to_put_in_dlist.add(dlist_header_shortened)
-                    semicolon_separated_headers = dlist_header_shortened.split(";")
-                    i += len(semicolon_separated_headers)
-
-        with open(output_dlist, "w", encoding="utf-8") as file:
-            for dlist_header, dlist_sequence in pyfastx.Fastx(dlist_fasta_file):
-                if not dlist_header.rsplit("_", 1)[0] in headers_NOT_to_put_in_dlist:
-                    file.write(f">{dlist_header}\n{dlist_sequence}\n")
-
-        with open(output_fasta, "w", encoding="utf-8") as file:
-            for header, sequence in mutant_reference.items():
-                file.write(f">{header}\n{sequence}\n")
-
-        if output_fasta == mutation_reference_file_fasta + ".tmp":
-            os.replace(output_fasta, mutation_reference_file_fasta)
-
-        if output_dlist == dlist_fasta_file + ".tmp":
-            os.replace(output_dlist, dlist_fasta_file)
-
-        print(f"Removed {i} mutations which are a perfect substring of the wildtype reference genome")
-
-        # TODO: make id fasta from header fasta with id:header dict
-    except Exception as e:
-        if os.path.exists(output_fasta):
-            os.remove(output_fasta)
-
-        if os.path.exists(output_dlist):
-            os.remove(output_dlist)
-
-        raise e
-
 
 def select_contiguous_substring(sequence, kmer, read_length=150):
     sequence_length = len(sequence)
@@ -674,7 +587,7 @@ def create_df_of_vcrs_to_self_headers(
     return substring_to_superstring_df, superstring_to_substring_df
 
 
-def compare_cdna_and_genome(mutation_metadata_df_exploded, varseek_build_temp_folder="vk_build_tmp", reference_cdna_fasta="cdna", reference_genome_fasta="genome", mutations_csv=None, w=30, vcrs_source="cdna", columns_to_explode=None, seq_id_column_cdna="seq_ID", var_column_cdna="mutation_cdna", seq_id_column_genome="chromosome", var_column_genome="mutation_genome", delete_temp_dir=True):
+def compare_cdna_and_genome(mutation_metadata_df_exploded, varseek_build_temp_folder="vk_build_tmp", reference_cdna_fasta="cdna", reference_genome_fasta="genome", mutations_csv=None, w=30, variant_source="cdna", columns_to_explode=None, seq_id_column_cdna="seq_ID", var_column_cdna="mutation_cdna", seq_id_column_genome="chromosome", var_column_genome="mutation_genome", delete_temp_dir=True):
     from varseek.varseek_build import build
 
     if columns_to_explode is None:
@@ -710,7 +623,7 @@ def compare_cdna_and_genome(mutation_metadata_df_exploded, varseek_build_temp_fo
         varseek_build_cdna_out_df,
         usecols=[
             "header",
-            "variant_sequence",
+            "vcrs_sequence",
             "seq_ID",
             "mutation_cdna",
             "mutation_type",
@@ -744,7 +657,7 @@ def compare_cdna_and_genome(mutation_metadata_df_exploded, varseek_build_temp_fo
         varseek_build_genome_out_df,
         usecols=[
             "header",
-            "variant_sequence",
+            "vcrs_sequence",
             "chromosome",
             "mutation_genome",
             "mutation_type",
@@ -770,11 +683,11 @@ def compare_cdna_and_genome(mutation_metadata_df_exploded, varseek_build_temp_fo
             "cdna_and_genome_same",
         ] = np.nan
 
-    if vcrs_source == "combined":
+    if variant_source == "combined":
         column_to_merge = "header_cdna"
     else:
         column_to_merge = "header"
-        combined_updated_df.rename(columns={f"header_{vcrs_source}": "header"}, inplace=True)
+        combined_updated_df.rename(columns={f"header_{variant_source}": "header"}, inplace=True)
 
     # mutation_metadata_df_exploded = explode_df(mutation_metadata_df, columns_to_explode)
 
@@ -789,7 +702,7 @@ def compare_cdna_and_genome(mutation_metadata_df_exploded, varseek_build_temp_fo
     # mutation_metadata_df, columns_to_explode = collapse_df(mutation_metadata_df_exploded, columns_to_explode, columns_to_explode_extend_values = ["cdna_and_genome_same"])
 
     # # mutation_metadata_df["cdna_and_genome_same"] = mutation_metadata_df["cdna_and_genome_same"].fillna("unsure")  # because I'm filling values with unsure, I must specify == True if indexing true values
-    # # mutation_metadata_df = mutation_metadata_df.loc[~((mutation_metadata_df["cdna_and_genome_same"] == "True") & (mutation_metadata_df["vcrs_source"] == "genome"))]  #* uncomment to filter out rows derived from genome where cDNA and genome are the same (I used to filter these out because they are redundant and I only wanted to keep rows where genome differed from cDNA)
+    # # mutation_metadata_df = mutation_metadata_df.loc[~((mutation_metadata_df["cdna_and_genome_same"] == "True") & (mutation_metadata_df["variant_source"] == "genome"))]  #* uncomment to filter out rows derived from genome where cDNA and genome are the same (I used to filter these out because they are redundant and I only wanted to keep rows where genome differed from cDNA)
 
     # delete temp folder and all contents
     if delete_temp_dir:
@@ -1144,7 +1057,8 @@ def convert_to_list_in_df(value, reference_length=0):
     return value  # If already a list, return as is
 
 
-def explode_df(mutation_metadata_df, columns_to_explode=None):
+def explode_df(mutation_metadata_df, columns_to_explode=None, verbose=False, logger=None):
+    logger_info = get_printlog(logger=logger)
     if columns_to_explode is None:
         columns_to_explode = ["header", "order"]
     else:  # * remove with set
@@ -1164,10 +1078,13 @@ def explode_df(mutation_metadata_df, columns_to_explode=None):
     #         axis=1
     #     )
 
-    print("About to apply safe evals")
-    for column in tqdm(columns_to_explode, desc="Checking columns"):
-        mutation_metadata_df[column] = mutation_metadata_df.apply(lambda row: safe_literal_eval(row[column]), axis=1)
-        mutation_metadata_df[column] = mutation_metadata_df[column].apply(safe_literal_eval)
+    logger_info("About to apply safe evals")
+    if verbose:
+        for column in tqdm(columns_to_explode, desc="Checking columns"):
+            mutation_metadata_df[column] = mutation_metadata_df[column].progress_apply(safe_literal_eval)
+    else:
+        for column in columns_to_explode:
+            mutation_metadata_df[column] = mutation_metadata_df[column].apply(safe_literal_eval)
 
     mutation_metadata_df_exploded = mutation_metadata_df.explode(list(columns_to_explode)).reset_index(drop=True)
 
@@ -1176,19 +1093,12 @@ def explode_df(mutation_metadata_df, columns_to_explode=None):
 
 def collapse_df(
     mutation_metadata_df_exploded,
-    columns_to_explode=None,
-    columns_to_explode_extend_values=None,
+    columns_to_explode=None
 ):
     if columns_to_explode is None:
         columns_to_explode = ["header", "order"]
     else:  # * remove with set
         columns_to_explode = columns_to_explode.copy()
-
-    if columns_to_explode_extend_values:
-        if isinstance(columns_to_explode_extend_values, list):
-            columns_to_explode.extend(columns_to_explode_extend_values)  # * .update(items) for set
-        elif isinstance(columns_to_explode_extend_values, str):
-            columns_to_explode.append(columns_to_explode_extend_values)  # * .add(items) for set
 
     for column in list(columns_to_explode):
         mutation_metadata_df_exploded[column] = mutation_metadata_df_exploded[column].apply(lambda x: tuple(x) if isinstance(x, list) else x)
@@ -1420,9 +1330,10 @@ def compute_distance_to_closest_splice_junction(
     return mutation_metadata_df_exploded, columns_to_explode
 
 
-def run_bowtie_build_dlist(ref_fa, ref_folder, ref_prefix, bowtie2_build, threads=2):
+def run_bowtie_build_dlist(ref_fa, ref_folder, ref_prefix, bowtie2_build, threads=2, logger=None):
+    logger_info = get_printlog(logger=logger)
     if not os.path.exists(ref_folder) or not os.listdir(ref_folder):
-        print("Running bowtie2 build")
+        logger_info("Running bowtie2 build")
         os.makedirs(ref_folder, exist_ok=True)
         bowtie_reference_prefix = os.path.join(ref_folder, ref_prefix)
         subprocess.run(
@@ -1436,7 +1347,7 @@ def run_bowtie_build_dlist(ref_fa, ref_folder, ref_prefix, bowtie2_build, thread
             check=True,
         )
 
-        print("Bowtie2 build complete")
+        logger_info("Bowtie2 build complete")
 
 
 def run_bowtie_alignment_dlist(
@@ -1451,9 +1362,11 @@ def run_bowtie_alignment_dlist(
     N_penalty=1,
     max_ambiguous_vcrs=0,
     output_stat_file=None,
+    logger=None
 ):
+    logger_info = get_printlog(logger=logger)
     if not os.path.exists(output_sam_file):
-        print("Running bowtie2 alignment")
+        logger_info("Running bowtie2 alignment")
 
         os.makedirs(os.path.dirname(output_sam_file), exist_ok=True)
 
@@ -1517,7 +1430,7 @@ def run_bowtie_alignment_dlist(
                 f.write(result.stderr)
                 f.write("\n\n")
 
-        print("Bowtie2 alignment complete")
+        logger_info("Bowtie2 alignment complete")
 
 
 def calculate_total_gene_info(
@@ -1580,10 +1493,10 @@ def calculate_total_gene_info(
 
 
 def calculate_nearby_mutations(
-    vcrs_source_column,
+    variant_source_column,
     k,
     output_plot_folder,
-    vcrs_source,
+    variant_source,
     mutation_metadata_df_exploded,
     columns_to_explode=None,
 ):
@@ -1598,7 +1511,7 @@ def calculate_nearby_mutations(
         "has_a_nearby_variant",
     ]
 
-    if vcrs_source != "combined":
+    if variant_source != "combined":
         mutation_metadata_df_exploded_copy = mutation_metadata_df_exploded.copy()
         mutation_metadata_df_exploded_copy = count_nearby_mutations_efficient_with_identifiers(
             mutation_metadata_df_exploded_copy,
@@ -1617,7 +1530,7 @@ def calculate_nearby_mutations(
 
     else:
         # find other mutations within (k-1) of each mutation for cDNA
-        mutation_metadata_df_exploded_cdna = mutation_metadata_df_exploded.loc[mutation_metadata_df_exploded[vcrs_source_column] == "cdna"].reset_index(drop=True)
+        mutation_metadata_df_exploded_cdna = mutation_metadata_df_exploded.loc[mutation_metadata_df_exploded[variant_source_column] == "cdna"].reset_index(drop=True)
         mutation_metadata_df_exploded_cdna = count_nearby_mutations_efficient_with_identifiers(
             mutation_metadata_df_exploded_cdna,
             k=k,
@@ -1645,7 +1558,7 @@ def calculate_nearby_mutations(
         )
 
         # find other mutations within (k-1) of each mutation for genome
-        mutation_metadata_df_exploded_genome = mutation_metadata_df_exploded.copy()  # mutation_metadata_df.loc[(mutation_metadata_df[vcrs_source_column] == "cdna") | (mutation_metadata_df['cdna_and_genome_same'] != "True")].reset_index(drop=True)  #* uncomment this filtering if I only want to keep genome cases that differ from cdna
+        mutation_metadata_df_exploded_genome = mutation_metadata_df_exploded.copy()  # mutation_metadata_df.loc[(mutation_metadata_df[variant_source_column] == "cdna") | (mutation_metadata_df['cdna_and_genome_same'] != "True")].reset_index(drop=True)  #* uncomment this filtering if I only want to keep genome cases that differ from cdna
         mutation_metadata_df_exploded_genome = count_nearby_mutations_efficient_with_identifiers(
             mutation_metadata_df_exploded_genome,
             k=k,
@@ -1730,6 +1643,7 @@ def align_to_normal_genome_and_build_dlist(
             ref_prefix=ref_prefix_genome_full,
             bowtie2_build=bowtie2_build,
             threads=threads,
+            logger=logger,
         )
 
     if not os.path.exists(output_sam_file_genome):
@@ -1745,6 +1659,7 @@ def align_to_normal_genome_and_build_dlist(
             N_penalty=N_penalty,
             max_ambiguous_vcrs=max_ambiguous_vcrs,
             output_stat_file=bowtie_stat_file,
+            logger=logger
         )
 
     dlist_genome_df = create_df_of_dlist_headers(output_sam_file_genome, header_column_name=vcrs_id_column, k=k)
@@ -1759,6 +1674,7 @@ def align_to_normal_genome_and_build_dlist(
             k=k,
             capitalize=True,
             remove_duplicates=False,
+            logger=logger
         )
 
     dlist_substring_genome_df = get_vcrs_headers_that_are_substring_dlist(
@@ -1787,6 +1703,7 @@ def align_to_normal_genome_and_build_dlist(
             ref_prefix=ref_prefix_cdna_full,
             bowtie2_build=bowtie2_build,
             threads=threads,
+            logger=logger
         )
 
     if not os.path.exists(output_sam_file_cdna):
@@ -1802,6 +1719,7 @@ def align_to_normal_genome_and_build_dlist(
             N_penalty=N_penalty,
             max_ambiguous_vcrs=max_ambiguous_vcrs,
             output_stat_file=bowtie_stat_file,
+            logger=logger
         )
 
     dlist_cdna_df = create_df_of_dlist_headers(output_sam_file_cdna, header_column_name=vcrs_id_column, k=k)
@@ -1816,6 +1734,7 @@ def align_to_normal_genome_and_build_dlist(
             k=k,
             capitalize=True,
             remove_duplicates=False,
+            logger=logger
         )
 
     dlist_substring_cdna_df = get_vcrs_headers_that_are_substring_dlist(
@@ -1948,3 +1867,17 @@ def align_to_normal_genome_and_build_dlist(
     sequence_names_set_cdna = get_set_of_headers_from_sam(output_sam_file_cdna, k=k)
     sequence_names_set_union_genome_and_cdna = sequence_names_set_genome | sequence_names_set_cdna
     return (mutation_metadata_df, sequence_names_set_union_genome_and_cdna)
+
+
+def identify_variant_source(mutation_metadata_df_exploded, variant_source_column = "variant_source"):
+    # intentionally modifies mutation_metadata_df_exploded in-place
+    choices = ["cdna", "genome"]
+
+    conditions = [
+        mutation_metadata_df_exploded["variant_used_for_vcrs"].str.startswith("c.", na=False),
+        mutation_metadata_df_exploded["variant_used_for_vcrs"].str.startswith("g.", na=False),
+    ]  # if it finds ":c.", make it "cdna"; if it finds ":g.", make it "genome"; if it finds both or neither, make it "unknown"
+
+    mutation_metadata_df_exploded[variant_source_column] = np.select(
+        conditions, choices, default="unknown"
+    )

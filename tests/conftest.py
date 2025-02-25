@@ -62,17 +62,17 @@ def compare_two_id_to_header_mappings(id_to_header_csv, id_to_header_csv_ground_
 @pytest.fixture
 def vcrs_id_and_header_and_sequence_standard_lists():
     vcrs_id_list = [
-        "seq1204954474446204",
-        "seq4723197439168244",
-        "seq1693806423259989",
-        "seq8256702678403708",
-        "seq1784404960707341",
-        "seq7524932564184340",
-        "seq2241452516841814",
-        "seq9556672898923933",
-        "seq9627237534759445",
-        "seq3545345645923316",
-        "seq9762246785550270"
+        "vcrs_1204954474446204",
+        "vcrs_4723197439168244",
+        "vcrs_1693806423259989",
+        "vcrs_8256702678403708",
+        "vcrs_1784404960707341",
+        "vcrs_7524932564184340",
+        "vcrs_2241452516841814",
+        "vcrs_9556672898923933",
+        "vcrs_9627237534759445",
+        "vcrs_3545345645923316",
+        "vcrs_9762246785550270"
     ]
     vcrs_header_list = [
         "ENST00000312553:c.1758C>T", 
@@ -170,9 +170,9 @@ def toy_mutation_metadata_df_path(vcrs_id_and_header_and_sequence_standard_lists
 
     df = pd.DataFrame(data)
 
-    df = vk.varseek_info.add_mutation_information(df, mutation_column = "mutation", vcrs_source = None)
-    df = vk.varseek_build.add_mutation_type(df, var_column = "mutation")
-    df["variant_sequence_rc"] = df["vcrs_sequence"].apply(reverse_complement)
+    df = vk.varseek_info.add_mutation_information(df, mutation_column = "mutation", variant_source = None)
+    df = vk.utils.add_mutation_type(df, var_column = "mutation")
+    df["vcrs_sequence_rc"] = df["vcrs_sequence"].apply(reverse_complement)
 
     df.to_csv(str(temp_csv_file), index=False)
     
@@ -304,7 +304,7 @@ def toy_mutation_metadata_df_exploded():
         "start_variant_position_cdna": [101, 1211, 256, 256, 401, 501, 301, 301, 599, 101, 108],
         "end_variant_position_cdna": [101, 1212, 256, 260, 403, 501, 303, 301, 602, 101, 108],
         "seq_ID": ["ENST1", "ENST2", "ENST3", "ENST4", "ENST5", "ENST6", "ENST7", "ENST8", "ENST9", "ENST1", "ENST11"],
-        "vcrs_id": ["seq_1", "seq_2", "seq_3", "seq_4", "seq_5", "seq_6", "seq_7", "seq_8", "seq_9", "seq_1", "seq_1"],
+        "vcrs_id": ["vcrs_1", "vcrs_2", "vcrs_3", "vcrs_4", "vcrs_5", "vcrs_6", "vcrs_7", "vcrs_8", "vcrs_9", "vcrs_1", "vcrs_1"],
         "vcrs_header": ["ENST1:c.101A>G;ENST1:c.101A>G;ENST11:c.108A>G", "ENST2:c.1211_1212insAAG", "ENST3:c.256del", "ENST4:c.256_260del", "ENST5:c.401_403delinsG", "ENST6:c.501delinsGA", "ENST7:c.301_303dup", "ENST8:c.301dup", "ENST9:c.599_602inv", "ENST1:c.101A>G;ENST1:c.101A>G;ENST11:c.108A>G", "ENST1:c.101A>G;ENST1:c.101A>G;ENST11:c.108A>G"],
         "vcrs_sequence": ["ATGCAAGGCTA", "TGGTGCATA", "GCTAGCGGCATA", "GACATCATCAG", "TTGACGGTACA", "GTCCCATACCGA", "GGCGTTGCAGCA", "GCCCAATGACAG", "ACATAGACAGGA", "ATGCAAGGCTA", "ATGCAAGGCTA"]
     }
@@ -336,7 +336,7 @@ def toy_mutation_metadata_df_collapsed():
         "start_variant_position_cdna": [[101, 101, 108], [1211], [256], [256], [401], [501], [301], [301], [599]],
         "end_variant_position_cdna": [[101, 101, 108], [1212], [256], [260], [403], [501], [303], [301], [602]],
         "seq_ID": [["ENST1", "ENST1", "ENST11"], ["ENST2"], ["ENST3"], ["ENST4"], ["ENST5"], ["ENST6"], ["ENST7"], ["ENST8"], ["ENST9"]],
-        "vcrs_id": ["seq_1", "seq_2", "seq_3", "seq_4", "seq_5", "seq_6", "seq_7", "seq_8", "seq_9"],
+        "vcrs_id": ["vcrs_1", "vcrs_2", "vcrs_3", "vcrs_4", "vcrs_5", "vcrs_6", "vcrs_7", "vcrs_8", "vcrs_9"],
         "vcrs_header": ["ENST1:c.101A>G;ENST1:c.101A>G;ENST11:c.108A>G", "ENST2:c.1211_1212insAAG", "ENST3:c.256del", "ENST4:c.256_260del", "ENST5:c.401_403delinsG", "ENST6:c.501delinsGA", "ENST7:c.301_303dup", "ENST8:c.301dup", "ENST9:c.599_602inv"],
         "vcrs_sequence": ["ATGCAAGGCTA", "TGGTGCATA", "GCTAGCGGCATA", "GACATCATCAG", "TTGACGGTACA", "GTCCCATACCGA", "GGCGTTGCAGCA", "GCCCAATGACAG", "ACATAGACAGGA"]
     }

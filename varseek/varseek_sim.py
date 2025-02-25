@@ -330,7 +330,8 @@ def sim(
 
         sim_data_df.rename(
             columns={
-                "variant_sequence": variant_sequence_read_parent_column,
+                "vcrs_header": "header",
+                "vcrs_sequence": variant_sequence_read_parent_column,
                 "wt_sequence": ref_sequence_read_parent_column,
             },
             inplace=True,

@@ -577,7 +577,7 @@ def build(
     - logging_level                      (str) Logging level. Can also be set with the environment variable VARSEEK_LOGGING_LEVEL. Default: INFO.
     - save_logs                          (True/False) Whether to save logs to a file. Default: False.
     - log_out_dir                        (str) Directory to save logs. Default: `out`/logs
-    - verbose                            (True/False) Whether to print additional information e.g., progress bars. Default: False.
+    - verbose                            (True/False) Whether to print additional information e.g., progress bars. Does not affect logging. Default: False.
 
     # # Hidden arguments (part of kwargs) - for niche use cases, specific databases, or debugging:
     # # niche use cases
@@ -736,7 +736,7 @@ def build(
         var_column,
         "mutation_type",
         "wt_sequence",
-        "variant_sequence",
+        "vcrs_sequence",
         "nucleotide_positions",
         "start_variant_position",
         "end_variant_position",
@@ -1076,11 +1076,12 @@ def build(
 
         mutations = mutations[mutations[seq_id_column].isin(seq_dict.keys())]
 
-    mutations["variant_sequence"] = ""
+    mutations["vcrs_sequence"] = ""
 
     if var_id_column is not None:
         mutations["header"] = mutations[var_id_column]
         logger.info("Using var_id_column '%s' as the variant header column.", var_id_column)
+        raise NotImplementedError("var_id_column is not implemented yet. Please leave it as None.") # too much dependency of later functions to parse the header as SEQID:VARIANT
     else:
         mutations["header"] = mutations[seq_id_column] + ":" + mutations[var_column]
         logger.info("Using the seq_id_column:var_column '%s' columns as the variant header column.", f"{seq_id_column}:{var_column}")
@@ -1352,11 +1353,11 @@ def build(
 
     # Create mutant substitution w-mer sequences
     if substitution_mask.any():
-        mutations.loc[substitution_mask, "variant_sequence"] = mutations.loc[substitution_mask, "left_flank_region"] + mutations.loc[substitution_mask, "mut_nucleotides"] + mutations.loc[substitution_mask, "right_flank_region"]
+        mutations.loc[substitution_mask, "vcrs_sequence"] = mutations.loc[substitution_mask, "left_flank_region"] + mutations.loc[substitution_mask, "mut_nucleotides"] + mutations.loc[substitution_mask, "right_flank_region"]
 
     # Create mutant non-substitution w-mer sequences
     if non_substitution_mask.any():
-        mutations.loc[non_substitution_mask, "variant_sequence"] = mutations.loc[non_substitution_mask].apply(
+        mutations.loc[non_substitution_mask, "vcrs_sequence"] = mutations.loc[non_substitution_mask].apply(
             lambda row: row["left_flank_region"][row["updated_left_flank_start"] :] + row["mut_nucleotides"] + row["right_flank_region"][: len(row["right_flank_region"]) - row["updated_right_flank_end"]],
             axis=1,
         )
@@ -1367,7 +1368,7 @@ def build(
 
         mutations["wt_fragment_and_mutant_fragment_share_kmer"] = mut_apply(
             lambda row: wt_fragment_and_mutant_fragment_share_kmer(
-                mutated_fragment=row["variant_sequence"],
+                mutated_fragment=row["vcrs_sequence"],
                 wildtype_fragment=row["wt_sequence"],
                 k=k,
             ),
@@ -1381,18 +1382,18 @@ def build(
         mutations_overlapping_with_wt = 0
 
     if save_variants_updated_csv and store_full_sequences:
-        columns_to_keep.extend(["wt_sequence_full", "variant_sequence_full"])
+        columns_to_keep.extend(["wt_sequence_full", "vcrs_sequence_full"])
 
         # Create full sequences (substitution and non-substitution)
-        mutations["variant_sequence_full"] = mutations["left_flank_region_full"] + mutations["mut_nucleotides"] + mutations["right_flank_region_full"]
+        mutations["vcrs_sequence_full"] = mutations["left_flank_region_full"] + mutations["mut_nucleotides"] + mutations["right_flank_region_full"]
 
     if min_seq_len:
         # Calculate k-mer lengths (where k=w) and report the distribution
-        mutations["variant_sequence_kmer_length"] = mutations["variant_sequence"].apply(lambda x: len(x) if pd.notna(x) else 0)
+        mutations["vcrs_sequence_kmer_length"] = mutations["vcrs_sequence"].apply(lambda x: len(x) if pd.notna(x) else 0)
 
-        rows_less_than_minimum = (mutations["variant_sequence_kmer_length"] < min_seq_len).sum()
+        rows_less_than_minimum = (mutations["vcrs_sequence_kmer_length"] < min_seq_len).sum()
 
-        mutations = mutations[mutations["variant_sequence_kmer_length"] >= min_seq_len]
+        mutations = mutations[mutations["vcrs_sequence_kmer_length"] >= min_seq_len]
 
         logger.info("Removed %d variant kmers with length less than %d...", rows_less_than_minimum, min_seq_len)
     else:
@@ -1400,7 +1401,7 @@ def build(
 
     if max_ambiguous is not None:
         # Get number of 'N' or 'n' occuring in the sequence
-        mutations["num_N"] = mutations["variant_sequence"].str.lower().str.count("n")
+        mutations["num_N"] = mutations["vcrs_sequence"].str.lower().str.count("n")
         num_rows_with_N = (mutations["num_N"] > max_ambiguous).sum()
         mutations = mutations[mutations["num_N"] <= max_ambiguous]
 
@@ -1458,7 +1459,7 @@ def build(
             file.write(report)
 
     if translate and save_variants_updated_csv and store_full_sequences:
-        columns_to_keep.extend(["wt_sequence_aa_full", "variant_sequence_aa_full"])
+        columns_to_keep.extend(["wt_sequence_aa_full", "vcrs_sequence_aa_full"])
 
         if not mutations_path:
             if not isinstance(translate_start, int) and not isinstance(translate_end, int):
@@ -1479,10 +1480,10 @@ def build(
             if verbose:
                 tqdm.pandas(desc="Translating mutant amino acid sequences")
 
-                mutations["variant_sequence_aa_full"] = mutations["variant_sequence_full"].progress_apply(lambda x: translate_sequence(x, start=translate_start, end=translate_end))
+                mutations["vcrs_sequence_aa_full"] = mutations["vcrs_sequence_full"].progress_apply(lambda x: translate_sequence(x, start=translate_start, end=translate_end))
 
             else:
-                mutations["variant_sequence_aa_full"] = mutations["variant_sequence_full"].apply(lambda x: translate_sequence(x, start=translate_start, end=translate_end))
+                mutations["vcrs_sequence_aa_full"] = mutations["vcrs_sequence_full"].apply(lambda x: translate_sequence(x, start=translate_start, end=translate_end))
 
             logger.info(f"Translated variant sequences: {mutations['wt_sequence_aa_full']}")
         else:
@@ -1509,9 +1510,9 @@ def build(
             if verbose:
                 tqdm.pandas(desc="Translating mutant amino acid sequences")
 
-            mutations["variant_sequence_aa_full"] = mut_apply(
+            mutations["vcrs_sequence_aa_full"] = mut_apply(
                 lambda row: translate_sequence(
-                    row["variant_sequence_full"],
+                    row["vcrs_sequence_full"],
                     row[translate_start],
                     row[translate_end],
                 ),
@@ -1555,32 +1556,32 @@ def build(
         number_of_mutations_total = len(mutations)
 
         if merge_identical_rc:
-            mutations["variant_sequence_rc"] = mutations["variant_sequence"].apply(reverse_complement)
+            mutations["vcrs_sequence_rc"] = mutations["vcrs_sequence"].apply(reverse_complement)
 
-            # Create a column that stores a sorted tuple of (variant_sequence, variant_sequence_rc)
-            mutations["variant_sequence_and_rc_tuple"] = mutations.apply(
-                lambda row: tuple(sorted([row["variant_sequence"], row["variant_sequence_rc"]])),
+            # Create a column that stores a sorted tuple of (vcrs_sequence, vcrs_sequence_rc)
+            mutations["vcrs_sequence_and_rc_tuple"] = mutations.apply(
+                lambda row: tuple(sorted([row["vcrs_sequence"], row["vcrs_sequence_rc"]])),
                 axis=1,
             )
 
-            # mutations = mutations.drop(columns=['variant_sequence_rc'])
+            # mutations = mutations.drop(columns=['vcrs_sequence_rc'])
 
-            group_key = "variant_sequence_and_rc_tuple"
+            group_key = "vcrs_sequence_and_rc_tuple"
             columns_not_to_semicolon_join = [
-                "variant_sequence",
-                "variant_sequence_rc",
-                "variant_sequence_and_rc_tuple",
+                "vcrs_sequence",
+                "vcrs_sequence_rc",
+                "vcrs_sequence_and_rc_tuple",
             ]
             agg_columns = mutations.columns
 
         else:
-            group_key = "variant_sequence"
+            group_key = "vcrs_sequence"
             columns_not_to_semicolon_join = []
-            agg_columns = [col for col in mutations.columns if col != "variant_sequence"]
+            agg_columns = [col for col in mutations.columns if col != "vcrs_sequence"]
 
         if save_variants_updated_csv:
             logger.warning("Merging rows of identical VCRSs can take a while if save_variants_updated_csv=True since it will concatenate all VCRSs too)")
-            mutations = mutations.groupby(group_key, sort=False).agg({col: ("first" if col in columns_not_to_semicolon_join else (";".join if col == "header" else lambda x: list(x.fillna(np.nan)))) for col in agg_columns}).reset_index(drop=merge_identical_rc)  # lambda x: list(x) will make simple list, but lengths will be inconsistent with NaN values  # concatenate values with semicolons: lambda x: `";".join(x.astype(str))`   # drop if merging by variant_sequence_and_rc_tuple, but not if merging by variant_sequence
+            mutations = mutations.groupby(group_key, sort=False).agg({col: ("first" if col in columns_not_to_semicolon_join else (";".join if col == "header" else lambda x: list(x.fillna(np.nan)))) for col in agg_columns}).reset_index(drop=merge_identical_rc)  # lambda x: list(x) will make simple list, but lengths will be inconsistent with NaN values  # concatenate values with semicolons: lambda x: `";".join(x.astype(str))`   # drop if merging by vcrs_sequence_and_rc_tuple, but not if merging by vcrs_sequence
             if original_order:
                 mutations['original_order'] = mutations['original_order'].apply(min)  # get the minimum original order for each group
         else:
@@ -1593,14 +1594,14 @@ def build(
                 mutations_temp = mutations.groupby(group_key, sort=False, group_keys=False)["header"].apply(";".join).reset_index()  # ignores original_order
             
             if merge_identical_rc:
-                mutations_temp = mutations_temp.merge(mutations[["variant_sequence", group_key]], on=group_key, how="left")
+                mutations_temp = mutations_temp.merge(mutations[["vcrs_sequence", group_key]], on=group_key, how="left")
                 mutations_temp = mutations_temp.drop_duplicates(subset="header")
                 mutations_temp.drop(columns=[group_key], inplace=True)
 
             mutations = mutations_temp
 
-        if "variant_sequence_and_rc_tuple" in mutations.columns:
-            mutations = mutations.drop(columns=["variant_sequence_and_rc_tuple"])
+        if "vcrs_sequence_and_rc_tuple" in mutations.columns:
+            mutations = mutations.drop(columns=["vcrs_sequence_and_rc_tuple"])
 
         # Calculate the number of semicolons in each entry
         mutations["semicolon_count"] = mutations["header"].str.count(";")
@@ -1640,23 +1641,25 @@ def build(
         logger.info(merging_report)
         logger.info("Merged headers were combined and separated using a semicolon (;). Occurences of identical VCRSs may be reduced by increasing w.")
 
-    empty_kmer_count = (mutations["variant_sequence"] == "").sum()
+    empty_kmer_count = (mutations["vcrs_sequence"] == "").sum()
 
     if empty_kmer_count > 0:
         logger.warning(f"{empty_kmer_count} VCRSs were empty and were not included in the output.")
 
-    mutations = mutations[mutations["variant_sequence"] != ""]
+    mutations = mutations[mutations["vcrs_sequence"] != ""]
 
     # Restore the original order (minus any dropped rows)
     if original_order:
         mutations = mutations.sort_values(by="original_order").drop(columns="original_order")
 
+    mutations.rename(columns={"header": "vcrs_header"}, inplace=True)
     if use_IDs:  # or (var_id_column in mutations.columns and not merge_identical):
         mutations["vcrs_id"] = generate_unique_ids(len(mutations))
-        mutations[["vcrs_id", "header"]].to_csv(id_to_header_csv_out, index=False)  # make the mapping csv
+        mutations[["vcrs_id", "vcrs_header"]].to_csv(id_to_header_csv_out, index=False)  # make the mapping csv
     else:
         mutations["vcrs_id"] = mutations["header"]
-
+    columns_to_keep.extend(["vcrs_id", "vcrs_header"])
+    
     if save_variants_updated_csv:  # use variants_updated_csv_out if present,
         logger.info("Saving dataframe with updated variant info...")
         logger.warning("File size can be very large if the number of variants is large.")
@@ -1664,7 +1667,7 @@ def build(
         print(f"Updated variant info has been saved to {variants_updated_csv_out}")
 
     if len(mutations) > 0:
-        mutations["fasta_format"] = ">" + mutations["vcrs_id"] + "\n" + mutations["variant_sequence"] + "\n"
+        mutations["fasta_format"] = ">" + mutations["vcrs_id"] + "\n" + mutations["vcrs_sequence"] + "\n"
 
         if save_wt_vcrs_fasta_and_t2g:
             if not save_variants_updated_csv:
@@ -1699,7 +1702,7 @@ def build(
     # When stream_output is True, return list of mutated seqs
     if return_variant_output:
         all_mut_seqs = []
-        all_mut_seqs.extend(mutations["variant_sequence"].values)
+        all_mut_seqs.extend(mutations["vcrs_sequence"].values)
 
         # Remove empty strings from final list of mutated sequences (these are introduced when unknown mutations are encountered)
         while "" in all_mut_seqs:

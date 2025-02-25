@@ -44,9 +44,6 @@ def validate_input_summarize(params_dict):
     if not isinstance(params_dict["out"], (str, Path)):
         raise ValueError("out must be a string or Path object.")
 
-    if not isinstance(params_dict["vcrs_id_column"], str):
-        raise ValueError("vcrs_id_column must be a string.")
-
     for param_name in ["dry_run", "overwrite"]:
         if not isinstance(params_dict.get(param_name), bool):
             raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
@@ -56,8 +53,6 @@ def summarize(
     adata,
     top_values=10,
     technology=None,
-    vcrs_header_column="vcrs_header",
-    vcrs_id_column="vcrs_id",
     out=".",
     dry_run=False,
     overwrite=False,
@@ -75,7 +70,6 @@ def summarize(
     # Optional input arguments:
     - top_values                        (int) Number of top values to report. Default: 10
     - technology                        (str) Technology used to generate the data. To see list of spported technologies, run `kb --list`. For the purposes of this function, the only distinction that matters is bulk vs. non-bulk. Default: None
-    - vcrs_id_column                    (str) Column name in adata.var that contains the vcrs_id. Default: "vcrs_id"
     - out                               (str) Output directory. Default: "."
     - dry_run                           (bool) If True, print the commands that would be run without actually running them. Default: False
     - overwrite                         (bool) Whether to overwrite existing files. Default: False
@@ -151,11 +145,6 @@ def summarize(
         adata = ad.read_h5ad(adata)
     else:
         raise ValueError("adata must be a string (file path) or an AnnData object.")
-
-    if vcrs_id_column not in adata.var.columns:
-        adata.var[vcrs_id_column] = adata.var_names
-
-    adata.var_names = adata.var[vcrs_header_column]
 
     if "vcrs_count" not in adata.var.columns:
         adata.var["vcrs_count"] = adata.X.sum(axis=0).A1 if hasattr(adata.X, "A1") else adata.X.sum(axis=0).flatten()

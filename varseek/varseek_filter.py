@@ -259,8 +259,6 @@ def print_list_filter_rules():
 
 
 def validate_input_filter(params_dict):
-    # directories
-    input_dir = params_dict["input_dir"]
     # Type-checking for paths
     if not isinstance(params_dict.get("input_dir"), (str, Path)):  # I will enforce that input_dir exists later, as otherwise it will throw an error when I call this through vk ref before vk build's out exists
         raise ValueError(f"Invalid value for input_dir: {params_dict.get('input_dir')}")
@@ -326,9 +324,6 @@ def filter(
     variants_updated_exploded_vk_info_csv=None,  # input exploded variant metadata df
     id_to_header_csv=None,  # input id to header csv
     dlist_fasta=None,  # input dlist
-    vcrs_id_column="vcrs_id",
-    vcrs_header_column="vcrs_header",
-    vcrs_sequence_column="vcrs_sequence",
     out=None,  # output directory
     variants_updated_filtered_csv_out=None,  # output metadata df
     variants_updated_exploded_filtered_csv_out=None,  # output exploded variant metadata df
@@ -361,11 +356,6 @@ def filter(
     - variants_updated_exploded_vk_info_csv       (str) Path to the updated exploded dataframe containing the VCRS headers and sequences. Corresponds to `variants_updated_exploded_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).
     - id_to_header_csv                             (str) Path to the csv file containing the mapping of IDs to headers generated from varseek build corresponding to vcrs_fasta. Corresponds to `id_to_header_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).
     - dlist_fasta                                  (str) Path to the dlist fasta file. Default: None (will find it in `input_dir` if it exists).
-
-    # Optional headers generated from earlier steps:
-    - vcrs_id_column                                 (str) Column name in the variant metadata dataframe containing the VCRS IDs. Generated in varseek build. Default: "vcrs_id".
-    - vcrs_header_column                             (str) Column name in the variant metadata dataframe containing the VCRS headers. Generated in varseek info. Default: "vcrs_header".
-    - vcrs_sequence_column                           (str) Column name in the variant metadata dataframe containing the VCRS sequences. Generated in varseek info. Default: "vcrs_sequence".
 
     # Optional output file paths: (only needed if changing/customizing file names or locations):
     - out                                          (str) Path to the directory where the output files will be saved. Default: `input_dir`.
@@ -412,7 +402,10 @@ def filter(
     # * 1. Start timer
     start_time = time.perf_counter()
 
-    # * 1.5. logger
+    # * 1.5. logger and set out folder (must to it up here or else logger and config will save in the wrong place)
+    if out is None:
+        out = input_dir if input_dir else "."
+
     global logger
     if kwargs.get("logger") and isinstance(kwargs.get("logger"), logging.Logger):
         logger = kwargs.get("logger")
@@ -435,8 +428,6 @@ def filter(
     if dry_run:
         print_varseek_dry_run(params_dict, function_name="filter")
         return
-    if out is None:
-        out = input_dir if input_dir else "."
 
     # * 4. Save params to config file and run info file
     config_file = os.path.join(out, "config", "vk_filter_config.json")
@@ -541,15 +532,20 @@ def filter(
     else:
         variant_metadata_df = variants_updated_vk_info_csv
 
-    if vcrs_header_column not in variant_metadata_df.columns:
-        if id_to_header_csv and os.path.isfile(id_to_header_csv):
-            id_to_header_dict = make_mapping_dict(id_to_header_csv, dict_key="id")
+    vcrs_header_column = "vcrs_header"
+    vcrs_sequence_column = "vcrs_sequence"
 
-            if id_to_header_dict is not None:
-                variant_metadata_df[vcrs_header_column] = variant_metadata_df[vcrs_id_column].map(id_to_header_dict)
-        else:
-            logger.warning(f"ID to header csv file not found at {id_to_header_csv}. Assuming vcrs_id_column={vcrs_id_column} is the desired vcrs_header_column.")
-            variant_metadata_df[vcrs_header_column] = variant_metadata_df[vcrs_id_column]
+    if not variant_metadata_df["vcrs_id"].iloc[0].startswith("vcrs"):  # use_IDs was False in vk build and header column is "vcrs_id"
+        vcrs_header_column = "vcrs_id"
+    else:
+        if vcrs_header_column not in variant_metadata_df.columns:
+            if id_to_header_csv and os.path.isfile(id_to_header_csv):
+                id_to_header_dict = make_mapping_dict(id_to_header_csv, dict_key="id")
+
+                if id_to_header_dict is not None:
+                    variant_metadata_df[vcrs_header_column] = variant_metadata_df["vcrs_id"].map(id_to_header_dict)
+            else:
+                raise ValueError(f"ID to header mapping file not found at {id_to_header_csv}, and vcrs_id provides an ID that must be replaced. Please provide a valid file.")
 
     if "semicolon_count" not in variant_metadata_df.columns and vcrs_header_column in variant_metadata_df.columns:  # adding for reporting purposes
         variant_metadata_df["semicolon_count"] = variant_metadata_df[vcrs_header_column].str.count(";")
@@ -566,7 +562,7 @@ def filter(
 
     # make vcrs_filtered_fasta_out
     if use_IDs:
-        output_fasta_header_column = vcrs_id_column
+        output_fasta_header_column = "vcrs_id"
     else:
         output_fasta_header_column = vcrs_header_column
     filtered_df[output_fasta_header_column] = filtered_df[output_fasta_header_column].astype(str)
@@ -606,14 +602,14 @@ def filter(
 
     filtered_df.reset_index(drop=True, inplace=True)
 
-    filtered_df_vcrs_ids = set(filtered_df[vcrs_id_column])  # no need to use output_fasta_header_column here because output_fasta_header_column is only necessary when saving the fasta files (this is using the IDs just to check for membership, not to save to a file any differently)
+    filtered_df_vcrs_ids = set(filtered_df["vcrs_id"])  # no need to use output_fasta_header_column here because output_fasta_header_column is only necessary when saving the fasta files (this is using the IDs just to check for membership, not to save to a file any differently)
 
     # make variants_updated_exploded_filtered_csv_out iff variants_updated_exploded_vk_info_csv exists
     if save_variants_updated_filtered_csvs and variants_updated_exploded_vk_info_csv and os.path.isfile(variants_updated_exploded_vk_info_csv):
         variant_metadata_df_exploded = pd.read_csv(variants_updated_exploded_vk_info_csv)
 
         # Filter variant_metadata_df_exploded based on these unique values
-        filtered_variant_metadata_df_exploded = variant_metadata_df_exploded[variant_metadata_df_exploded[vcrs_id_column].isin(filtered_df_vcrs_ids)]
+        filtered_variant_metadata_df_exploded = variant_metadata_df_exploded[variant_metadata_df_exploded["vcrs_id"].isin(filtered_df_vcrs_ids)]
 
         filtered_variant_metadata_df_exploded.to_csv(variants_updated_exploded_filtered_csv_out, index=False)
 

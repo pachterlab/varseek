@@ -224,7 +224,6 @@ def clean(
     kb_count_vcrs_dir=None,
     kb_count_reference_genome_dir=None,
     variants_updated_csv_columns_to_merge=None,
-    vcrs_id_column="vcrs_id",
     seq_id_column="seq_ID",
     gene_id_column="gene_id",
     out=".",  # output paths
@@ -290,7 +289,6 @@ def clean(
 
     # Optional column names variants_updated_csv
     - variants_updated_csv_columns_to_merge (str or set): Columns in the variants_updated_csv to merge with the adata var. Default: None.
-    - vcrs_id_column                        (str): Column name in the adata var that contains the VCRS ID. Default: "vcrs_id".
     - seq_id_column                         (str): Column name in the adata var that contains the transcript ID. Default: "seq_ID".
     - gene_id_column                        (str): Column name in the adata var that contains the gene ID. Default: "gene_id".
 
@@ -449,7 +447,16 @@ def clean(
     if isinstance(adata, str) and os.path.exists(adata) and adata.endswith(".h5ad"):
         adata = ad.read_h5ad(adata)
 
-    adata.var[vcrs_id_column] = adata.var.index
+    if adata.var.index[0].startswith("vcrs_"):
+        adata.var["vcrs_id"] = adata.var.index
+        if id_to_header_csv and isinstance(id_to_header_csv, str) and os.path.exists(id_to_header_csv):
+            id_to_header_df = pd.read_csv(id_to_header_csv, index_col=0)
+            adata.var = adata.var.merge(id_to_header_df, on="vcrs_id", how="left")  # will add vcrs_header
+        else:
+            adata.var["vcrs_header"] = adata.var["vcrs_id"]
+    else:
+        adata.var["vcrs_header"] = adata.var.index
+
     original_var_names = adata.var_names.copy()
 
     variants_updated_csv_columns_to_merge = kwargs.get("variants_updated_csv_columns_to_merge", None)
@@ -466,18 +473,15 @@ def clean(
         raise ValueError(f"variants_updated_csv_columns_to_merge is not None, but variants_updated_csv does not exist.")
 
     if os.path.isfile(variants_updated_csv) and variants_updated_csv_columns_to_merge is not None:
-        if vcrs_id_column not in variants_updated_csv_columns_to_merge:
-            variants_updated_csv_columns_to_merge.add(vcrs_id_column)
         variants_updated_df = pd.read_csv(variants_updated_csv, index_col=0, usecols=list(variants_updated_csv_columns_to_merge))
-        adata.var = adata.var.merge(variants_updated_df, on=vcrs_id_column, how="left")
+        merging_column = "vcrs_header"
+        if merging_column not in variants_updated_csv_columns_to_merge:
+            variants_updated_csv_columns_to_merge.add(merging_column)
+        adata.var = adata.var.merge(variants_updated_df, left_on="vcrs_header", right_on=merging_column, how="left")
 
     if adata_reference_genome:
         if isinstance(adata_reference_genome, str) and os.path.exists(adata_reference_genome) and adata_reference_genome.endswith(".h5ad"):
             adata_reference_genome = ad.read_h5ad(adata_reference_genome)
-
-    if id_to_header_csv and isinstance(id_to_header_csv, str) and os.path.exists(id_to_header_csv):
-        id_to_header_df = pd.read_csv(id_to_header_csv, index_col=0)
-        adata.var = adata.var.merge(id_to_header_df, on=vcrs_id_column, how="left")
 
     adata.var_names = original_var_names
 
@@ -651,7 +655,7 @@ def clean(
             adata,
             values_of_interest=vcrs_id_set_to_exclusively_keep,
             operation="keep",
-            var_column_name=vcrs_id_column,
+            var_column_name="vcrs_header",
         )
 
     if vcrs_id_set_to_exclude:
@@ -659,7 +663,7 @@ def clean(
             adata,
             values_of_interest=vcrs_id_set_to_exclude,
             operation="exclude",
-            var_column_name=vcrs_id_column,
+            var_column_name="vcrs_header",
         )
 
     if transcript_set_to_exclusively_keep:

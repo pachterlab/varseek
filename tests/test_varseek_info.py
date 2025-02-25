@@ -75,7 +75,8 @@ def test_add_mutation_information(toy_mutation_metadata_df_exploded):
             toy_mutation_metadata_df_exploded.drop(column, axis=1, inplace=True)
 
     mutation_metadata_df = toy_mutation_metadata_df_exploded[["mutation", "seq_ID", "vcrs_id", "header", "vcrs_sequence"]].copy()
-    output_df = add_mutation_information(mutation_metadata_df, mutation_column="mutation", vcrs_source="cdna")
+    output_df = add_mutation_information(mutation_metadata_df, mutation_column="mutation")
+    output_df = add_mutation_information(mutation_metadata_df, mutation_column="mutation", variant_source="cdna")
     output_df = output_df[expected_df.columns]
 
     # Assert that the output matches the expected DataFrame
@@ -86,7 +87,7 @@ def test_collapse(toy_mutation_metadata_df_exploded, toy_mutation_metadata_df_co
 
     mutation_metadata_df_exploded = toy_mutation_metadata_df_exploded
     columns_to_explode = [col for col in mutation_metadata_df_exploded.columns if col not in ['vcrs_id', 'vcrs_header', 'vcrs_sequence']]
-    output_df, _ = collapse_df(mutation_metadata_df_exploded, columns_to_explode = columns_to_explode, columns_to_explode_extend_values = None)
+    output_df, _ = collapse_df(mutation_metadata_df_exploded, columns_to_explode = columns_to_explode)
     output_df = output_df[expected_df.columns]
 
     # Assert that the output matches the expected DataFrame
@@ -184,10 +185,10 @@ def test_calculate_nearby_mutations(mock_helpers_visualization):
     
     # Run the function with the mock data
     output_df, columns_to_explode = calculate_nearby_mutations(
-        vcrs_source_column="seq_ID",
+        variant_source_column="seq_ID",
         k=10,
         output_plot_folder="mock_folder",
-        vcrs_source="not_combined",
+        variant_source="not_combined",
         mutation_metadata_df_exploded=mutation_metadata_df_exploded,
         columns_to_explode=None
     )
