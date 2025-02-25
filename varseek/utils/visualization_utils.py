@@ -69,7 +69,7 @@ def print_column_summary_stats(df_overlap, column, output_file=None):
     print(stats_summary)
 
 
-def plot_histogram_notebook_1(df_overlap, column, x_label="x-axis", title="Histogram", output_plot_file=None):
+def plot_histogram_notebook_1(df_overlap, column, x_label="x-axis", title="Histogram", output_plot_file=None, show=False):
     # Define the bin range for the histograms
     bins = range(0, df_overlap[column].max() + 2)  # Bins for k-mers
 
@@ -101,11 +101,12 @@ def plot_histogram_notebook_1(df_overlap, column, x_label="x-axis", title="Histo
         if SAVE_PDF_GLOBAL:
             plt.savefig(output_plot_file.replace(".png", ".pdf"), format="pdf", dpi=DPI)
 
-    plt.show()
-    plt.close()
+    if show:
+        plt.show()
+        plt.close()
 
 
-def plot_histogram_of_nearby_mutations_7_5(mutation_metadata_df, column, bins, output_file=None):
+def plot_histogram_of_nearby_mutations_7_5(mutation_metadata_df, column, bins, output_file=None, show=False):
     plt.figure(figsize=(10, 6))
     plt.hist(mutation_metadata_df[column], bins=bins, color="skyblue", edgecolor="black")
 
@@ -124,8 +125,9 @@ def plot_histogram_of_nearby_mutations_7_5(mutation_metadata_df, column, bins, o
         if SAVE_PDF_GLOBAL:
             plt.savefig(output_file.replace(".png", ".pdf"), format="pdf", dpi=DPI)
 
-    plt.show()
-    plt.close()
+    if show:
+        plt.show()
+        plt.close()
 
 
 def retrieve_value_from_metric_file(key_of_interest, metric_file):
@@ -287,6 +289,7 @@ def create_stratified_metric_bar_plot(
     display_numbers=False,
     out_path=None,
     crude=False,
+    show=True
 ):
     if bins is not None:
         labels = convert_number_bin_into_labels(bins)
@@ -409,11 +412,12 @@ def create_stratified_metric_bar_plot(
         if SAVE_PDF_GLOBAL:
             plt.savefig(out_path.replace(".png", ".pdf"), format="pdf", dpi=DPI)
 
-    plt.show()
-    plt.close()
+    if show:
+        plt.show()
+        plt.close()
 
 
-def create_venn_diagram(true_set, positive_set, TN=None, mm=None, out_path=None):
+def create_venn_diagram(true_set, positive_set, TN=None, mm=None, out_path=None, show=True):
     from matplotlib_venn import venn2
     venn = venn2(
         [true_set, positive_set],
@@ -473,8 +477,9 @@ def create_venn_diagram(true_set, positive_set, TN=None, mm=None, out_path=None)
         plt.savefig(out_path, bbox_inches="tight")
 
     # Show the plot
-    plt.show()
-    plt.close()
+    if show:
+        plt.show()
+        plt.close()
 
 
 def plot_histogram(
@@ -486,6 +491,7 @@ def plot_histogram(
     y_axis_label=None,
     title=None,
     out_path=None,
+    show=True
 ):
     """
     Plot a histogram of the specified column in the DataFrame with custom bins and log x-axis.
@@ -539,12 +545,13 @@ def plot_histogram(
         plt.savefig(out_path, bbox_inches="tight", dpi=DPI)
         if SAVE_PDF_GLOBAL:
             plt.savefig(out_path.replace(".png", ".pdf"), format="pdf", dpi=DPI)
-    else:
+    
+    if show:
         plt.show()
         plt.close()
 
 
-def synthetic_data_summary_plot(df, column, sort_ascending=True, out_path=None):
+def synthetic_data_summary_plot(df, column, sort_ascending=True, out_path=None, show=False):
     # Step 1: Calculate the counts of each unique value
     value_counts = df[column].value_counts()
 
@@ -583,11 +590,12 @@ def synthetic_data_summary_plot(df, column, sort_ascending=True, out_path=None):
             plt.savefig(out_path.replace(".png", ".pdf"), format="pdf", dpi=DPI)
 
     # Show the plot
-    plt.show()
-    plt.close()
+    if show:
+        plt.show()
+        plt.close()
 
 
-def plot_basic_bar_plot_from_dict(my_dict, y_axis, log_scale=False, output_file=None):
+def plot_basic_bar_plot_from_dict(my_dict, y_axis, log_scale=False, output_file=None, show=False):
     plt.figure(figsize=(8, 6))
     plt.bar(list(my_dict.keys()), list(my_dict.values()), color="black", alpha=0.8)
     plt.ylabel(y_axis)
@@ -603,11 +611,12 @@ def plot_basic_bar_plot_from_dict(my_dict, y_axis, log_scale=False, output_file=
         if SAVE_PDF_GLOBAL:
             plt.savefig(output_file.replace(".png", ".pdf"), format="pdf", dpi=DPI)
 
-    plt.show()
-    plt.close()
+    if show:
+        plt.show()
+        plt.close()
 
 
-def plot_descending_bar_plot(gene_counts, x_label, y_label, tick_interval=None, output_file=None):
+def plot_descending_bar_plot(gene_counts, x_label, y_label, tick_interval=None, output_file=None, show=True):
     # Plot a histogram of gene names in descending order
     plt.figure(figsize=(10, 6))
     gene_counts.plot(kind="bar", color="skyblue")
@@ -634,8 +643,9 @@ def plot_descending_bar_plot(gene_counts, x_label, y_label, tick_interval=None, 
         if SAVE_PDF_GLOBAL:
             plt.savefig(output_file.replace(".png", ".pdf"), format="pdf", dpi=DPI)
 
-    plt.show()
-    plt.close()
+    if show:
+        plt.show()
+        plt.close()
 
 
 def draw_confusion_matrix(metric_dictionary_reads, title="Confusion Matrix", title_color="black", suffix="", additional_fp_key="", output_file=None, show=True):
@@ -738,7 +748,7 @@ def find_specific_value_from_metric_text_file(file_path, line):
     return value
 
 
-def plot_kat_histogram(kat_hist, out_path=None):
+def plot_kat_histogram(kat_hist, out_path=None, show=False):
     if out_path is None:
         base_name = os.path.basename(kat_hist).replace(".", "_")
         out_path = f"{base_name}_custom.png"
@@ -774,8 +784,9 @@ def plot_kat_histogram(kat_hist, out_path=None):
         plt.savefig(out_path.replace(".png", ".pdf"), format="pdf", dpi=DPI)
 
     # Display the plot
-    plt.show()
-    plt.close()
+    if show:
+        plt.show()
+        plt.close()
 
 
 def plot_items_descending_order(df, x_column, y_column, item_range=(0, 10), xlabel="x-axis", title="Title", save_path=None, figsize=(15, 7), show=False):
@@ -823,6 +834,7 @@ def plot_knee_plot(
     knee_locator,
     min_counts_assessed_by_knee_plot=None,
     output_file=None,
+    show=False
 ):
     plt.plot(range(len(umi_counts_sorted)), umi_counts_sorted, marker=".")
     plt.axvline(
@@ -837,5 +849,6 @@ def plot_knee_plot(
     plt.legend()
     if output_file:
         plt.savefig(output_file)
-    plt.show()
-    plt.close()
+    if show:
+        plt.show()
+        plt.close()

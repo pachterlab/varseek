@@ -232,8 +232,8 @@ def remove_Ns_fasta(fasta_file, max_ambiguous_reference=0, logger=None):
             condition = lambda sequence: "N" not in sequence.upper()
         else:  # at most max_ambiguous_reference Ns
             condition = lambda sequence: sequence.upper().count("N") <= max_ambiguous_reference
-        with open(fasta_file, "r", encoding="utf-8") as infile, open(fasta_file_temp, "w", encoding="utf-8") as outfile:
-            for header, sequence in pyfastx.Fastx(infile):
+        with open(fasta_file_temp, "w", encoding="utf-8") as outfile:
+            for header, sequence in pyfastx.Fastx(fasta_file):
                 if condition(sequence):
                     outfile.write(f">{header}\n{sequence}\n")
                 else:
@@ -713,7 +713,7 @@ def get_vcrs_headers_that_are_substring_dlist(
 ):
     vcrs_headers_that_are_substring_dlist = []
 
-    mutant_reference = create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(mutation_reference_file_fasta)  # TODO: replace with pyfastx
+    mutant_reference = create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(mutation_reference_file_fasta)
 
     for dlist_header, dlist_sequence in pyfastx.Fastx(dlist_fasta_file):
         vcrs_header = dlist_header.rsplit("_", 1)[0]
@@ -722,7 +722,7 @@ def get_vcrs_headers_that_are_substring_dlist(
 
     df = pd.DataFrame(vcrs_headers_that_are_substring_dlist, columns=[header_column_name]).drop_duplicates()
 
-    df["substring_alignment_to_reference_count_total"] = df[header_column_name].map(pd.Series(vcrs_headers_that_are_substring_dlist).value_counts())
+    df["substring_alignment_to_reference_count"] = df[header_column_name].map(pd.Series(vcrs_headers_that_are_substring_dlist).value_counts())
 
     df["substring_alignment_to_reference"] = True
 
@@ -1591,7 +1591,6 @@ def align_to_normal_genome_and_build_dlist(
         strandedness=strandedness,
         header_column_name=vcrs_id_column,
     )
-    dlist_substring_genome_df.rename(columns={"substring_alignment_to_reference_count_total": "substring_alignment_to_reference_count_genome"}, inplace=True)
 
     dlist_genome_df[vcrs_id_column] = dlist_genome_df[vcrs_id_column].astype(str)
     dlist_substring_genome_df[vcrs_id_column] = dlist_substring_genome_df[vcrs_id_column].astype(str)
@@ -1654,8 +1653,6 @@ def align_to_normal_genome_and_build_dlist(
         header_column_name=vcrs_id_column,
     )
 
-    dlist_substring_cdna_df.rename(columns={"substring_alignment_to_reference_count_total": "substring_alignment_to_reference_count_cdna"}, inplace=True)
-
     dlist_cdna_df[vcrs_id_column] = dlist_cdna_df[vcrs_id_column].astype(str)
 
     dlist_cdna_df[vcrs_id_column] = dlist_cdna_df[vcrs_id_column].astype(str)
@@ -1686,40 +1683,14 @@ def align_to_normal_genome_and_build_dlist(
         suffixes=("_cdna", "_genome"),
     )
 
-    dlist_combined_df["dlist_cdna"] = dlist_combined_df["dlist_cdna"].fillna(False).astype(bool)
-    dlist_combined_df["dlist_genome"] = dlist_combined_df["dlist_genome"].fillna(False).astype(bool)
-    dlist_combined_df["dlist_substring_cdna"] = dlist_combined_df["dlist_substring_cdna"].fillna(False).astype(bool)
-    dlist_combined_df["dlist_substring_genome"] = dlist_combined_df["dlist_substring_genome"].fillna(False).astype(bool)
-
-    dlist_combined_df["alignment_to_reference"] = "none"  # default to 'none'
-    dlist_combined_df.loc[dlist_combined_df["dlist_cdna"] & dlist_combined_df["dlist_genome"], "alignment_to_reference"] = "cdna_and_genome"
-    dlist_combined_df.loc[dlist_combined_df["dlist_cdna"] & ~dlist_combined_df["dlist_genome"], "alignment_to_reference"] = "cdna"
-    dlist_combined_df.loc[~dlist_combined_df["dlist_cdna"] & dlist_combined_df["dlist_genome"], "alignment_to_reference"] = "genome"
-
-    dlist_combined_df.drop(columns=["dlist_cdna", "dlist_genome"], inplace=True)
-
-    dlist_combined_df["substring_alignment_to_reference"] = "none"  # default to 'none'
-    dlist_combined_df.loc[
-        dlist_combined_df["dlist_substring_cdna"] & dlist_combined_df["dlist_substring_genome"],
-        "substring_alignment_to_reference",
-    ] = "cdna_and_genome"
-    dlist_combined_df.loc[
-        dlist_combined_df["dlist_substring_cdna"] & ~dlist_combined_df["dlist_substring_genome"],
-        "substring_alignment_to_reference",
-    ] = "cdna"
-    dlist_combined_df.loc[
-        ~dlist_combined_df["dlist_substring_cdna"] & dlist_combined_df["dlist_substring_genome"],
-        "substring_alignment_to_reference",
-    ] = "genome"
-
-    dlist_combined_df.drop(columns=["dlist_substring_cdna", "dlist_substring_genome"], inplace=True)
-
     mutation_metadata_df = mutation_metadata_df.merge(
         dlist_combined_df[
             [
                 vcrs_id_column,
-                "alignment_to_reference",
-                "substring_alignment_to_reference",
+                "alignment_to_reference_cdna",
+                "alignment_to_reference_genome",
+                "substring_alignment_to_reference_cdna",
+                "substring_alignment_to_reference_genome",
                 "alignment_to_reference_count_cdna",
                 "alignment_to_reference_count_genome",
                 "substring_alignment_to_reference_count_cdna",
@@ -1729,24 +1700,31 @@ def align_to_normal_genome_and_build_dlist(
         on=vcrs_id_column,
         how="left",
     )
+
+    mutation_metadata_df["alignment_to_reference_cdna"] = mutation_metadata_df["alignment_to_reference_cdna"].fillna(False).astype(bool)
+    mutation_metadata_df["alignment_to_reference_genome"] = mutation_metadata_df["alignment_to_reference_genome"].fillna(False).astype(bool)
+    mutation_metadata_df['alignment_to_reference'] = (mutation_metadata_df['alignment_to_reference_cdna'] | mutation_metadata_df['alignment_to_reference_genome']).astype(bool)
+
+    mutation_metadata_df["substring_alignment_to_reference_cdna"] = mutation_metadata_df["substring_alignment_to_reference_cdna"].fillna(False).astype(bool)
+    mutation_metadata_df["substring_alignment_to_reference_genome"] = mutation_metadata_df["substring_alignment_to_reference_genome"].fillna(False).astype(bool)
+    mutation_metadata_df['substring_alignment_to_reference'] = (mutation_metadata_df['substring_alignment_to_reference_cdna'] | mutation_metadata_df['substring_alignment_to_reference_genome']).astype(bool)
+
     mutation_metadata_df["alignment_to_reference_count_cdna"] = mutation_metadata_df["alignment_to_reference_count_cdna"].fillna(0).astype(int)
     mutation_metadata_df["alignment_to_reference_count_genome"] = mutation_metadata_df["alignment_to_reference_count_genome"].fillna(0).astype(int)
+    mutation_metadata_df["alignment_to_reference_count_total"] = mutation_metadata_df["alignment_to_reference_count_cdna"] + mutation_metadata_df["alignment_to_reference_count_genome"]
+    
     mutation_metadata_df["substring_alignment_to_reference_count_cdna"] = mutation_metadata_df["substring_alignment_to_reference_count_cdna"].fillna(0).astype(int)
     mutation_metadata_df["substring_alignment_to_reference_count_genome"] = mutation_metadata_df["substring_alignment_to_reference_count_genome"].fillna(0).astype(int)
-
-    mutation_metadata_df["alignment_to_reference_count_total"] = mutation_metadata_df["alignment_to_reference_count_cdna"] + mutation_metadata_df["alignment_to_reference_count_genome"]
     mutation_metadata_df["substring_alignment_to_reference_count_total"] = mutation_metadata_df["substring_alignment_to_reference_count_cdna"] + mutation_metadata_df["substring_alignment_to_reference_count_genome"]
-    mutation_metadata_df["alignment_to_reference"] = mutation_metadata_df["alignment_to_reference"].fillna("none")
-    mutation_metadata_df["substring_alignment_to_reference"] = mutation_metadata_df["substring_alignment_to_reference"].fillna("none")
 
-    # TODO: for those that dlist in the genome, add an additional check to see if they filter in coding regions (I already check for spliced with cDNA, but I don't distinguish unspliced coding vs noncoding)
+    # TODO: for those that dlist in the genome, add an additional check to see if they filter in coding regions (I already check for spliced with cDNA, but I don't distinguish unspliced coding vs noncoding) - add to column alignment_to_reference_coding_genome, substring_alignment_to_reference_coding_genome, alignment_to_reference_count_coding_genome, substring_alignment_to_reference_count_coding_genome
 
-    count_cdna_unique = (mutation_metadata_df["alignment_to_reference"] == "cdna").sum()
-    count_genome_unique = (mutation_metadata_df["alignment_to_reference"] == "genome").sum()
-    count_cdna_and_genome_intersection = (mutation_metadata_df["alignment_to_reference"] == "cdna_and_genome").sum()
-    count_cdna_total = ((mutation_metadata_df["alignment_to_reference"] == "cdna") | (mutation_metadata_df["alignment_to_reference"] == "cdna_and_genome")).sum()
-    count_genome_total = ((mutation_metadata_df["alignment_to_reference"] == "genome") | (mutation_metadata_df["alignment_to_reference"] == "cdna_and_genome")).sum()
-    count_cdna_or_genome_union = ((mutation_metadata_df["alignment_to_reference"] == "cdna") | (mutation_metadata_df["alignment_to_reference"] == "genome") | (mutation_metadata_df["alignment_to_reference"] == "cdna_and_genome")).sum()
+    count_cdna_unique = ((mutation_metadata_df["alignment_to_reference_cdna"]) & (~mutation_metadata_df["alignment_to_reference_genome"])).sum()
+    count_genome_unique = ((mutation_metadata_df["alignment_to_reference_genome"]) & (~mutation_metadata_df["alignment_to_reference_cdna"])).sum()
+    count_cdna_and_genome_intersection = ((mutation_metadata_df["alignment_to_reference_genome"]) & (mutation_metadata_df["alignment_to_reference_cdna"])).sum()
+    count_cdna_total = mutation_metadata_df["alignment_to_reference_cdna"].sum()
+    count_genome_total = mutation_metadata_df["alignment_to_reference_genome"].sum()
+    count_cdna_or_genome_union = mutation_metadata_df["alignment_to_reference"].sum()
 
     log_messages = [
         f"Unique to cDNA: {count_cdna_unique}",

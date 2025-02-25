@@ -113,8 +113,8 @@ def ref(
     w=54,
     k=59,
     filters=(
-        "alignment_to_reference:equal=none",
-        # "substring_alignment_to_reference:equal=none",  # filter out variants that are a substring of the reference genome  #* uncomment this and erase the line above when implementing d-list
+        "alignment_to_reference:is_not_true",
+        # "substring_alignment_to_reference:is_not_true",  # filter out variants that are a substring of the reference genome  #* uncomment this and erase the line above when implementing d-list
         "pseudoaligned_to_reference_despite_not_truly_aligning:is_not_true",  # filter out variants that pseudoaligned to human genome despite not truly aligning
         "num_distinct_triplets:greater_than=2",  # filters out VCRSs with <= 2 unique triplets
     ),

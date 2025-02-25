@@ -99,13 +99,13 @@ def apply_filters(df, filters, filtering_report_text_out=None):
         elif rule == "is_not_null":
             df = df.loc[df[column].notnull()]
         elif rule == "is_true":
-            df = df.loc[df[column] == True]
+            df = df.loc[df[column] == True]  # df.loc[df[column]] does not work when NaN values are present
         elif rule == "is_false":
             df = df.loc[df[column] == False]
         elif rule == "is_not_true":
-            df = df.loc[(df[column] != True) | df[column].isnull()]
+            df = df.loc[(df[column] != True)]
         elif rule == "is_not_false":
-            df = df.loc[(df[column] != False) | df[column].isnull()]
+            df = df.loc[(df[column] != False)]
         else:
             raise ValueError(f"Rule '{rule}' not recognized")
 

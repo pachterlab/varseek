@@ -133,8 +133,8 @@ def test_vk_ref(cosmic_csv_path, out_dir):
     columns_to_include = "all"
     threads = 2
     filters=(
-        "alignment_to_reference:equal=none",
-        # "substring_alignment_to_reference:equal=none",  # filter out variants that are a substring of the reference genome  #* uncomment this and erase the line above when implementing d-list
+        "alignment_to_reference:is_not_true",
+        # "substring_alignment_to_reference:is_not_true",  # filter out variants that are a substring of the reference genome  #* uncomment this and erase the line above when implementing d-list
         "pseudoaligned_to_reference_despite_not_truly_aligning:is_not_true",  # filter out variants that pseudoaligned to human genome despite not truly aligning
         "num_distinct_triplets:greater_than=2",  # filters out VCRSs with <= 2 unique triplets
     )
@@ -202,7 +202,7 @@ def test_parameter_values(toy_sequences_fasta_for_vk_ref, toy_variants_csv_for_v
         {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "k": 55.1},  # float k
         {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "k": 56},  # even k
         {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "w": 59, "k": 55},  # w > k
-        {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "filters": ["alignment_to_reference:equal=none", "num_distinct_triplets:greater_than"]},  # bad filter rule (greater_than needs a VALUE)
+        {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "filters": ["alignment_to_reference:is_not_true", "num_distinct_triplets:greater_than"]},  # bad filter rule (greater_than needs a VALUE)
         {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "dlist_reference_source": "invalid"},  # invalid dlist_reference_source
         {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "index_out": "index.fasta"},  # bad ext for index_out (expects .idx)
         {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "t2g_out": "t2g.fasta"},  # bad ext for t2g_out (expects .txt)
