@@ -601,7 +601,7 @@ def build(
 
     # # specific databases
     - cosmic_version                     (str) COSMIC release version to download. Default: "101".
-    - cosmic_grch                        (str) COSMIC genome reference version to download. Default: "37".
+    - cosmic_grch                        (str) COSMIC genome reference version to download. Default: None (choose the largest value from all internally supported values).
     - cosmic_email                       (str) Email address for COSMIC download. Default: None.
     - cosmic_password                    (str) Password for COSMIC download. Default: None.
 

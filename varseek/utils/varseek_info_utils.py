@@ -392,6 +392,8 @@ def create_df_of_vcrs_to_self_headers(
                     bowtie_reference_prefix,  # Output reference folder
                 ],
                 check=True,
+                stdout=subprocess.DEVNULL,  # don't need output
+                stderr=subprocess.DEVNULL,  # don't need output
             )
 
         logger_info("Running bowtie2 alignment")
@@ -781,6 +783,8 @@ def get_vcrss_that_pseudoalign_but_arent_dlisted(
     threads=2,
     strandedness=False,
     column_name="pseudoaligned_to_human_reference_despite_not_truly_aligning",
+    kallisto=None,
+    bustools=None
 ):
     if ref_folder_kb is None:
         ref_folder_kb = out_dir_notebook
@@ -833,10 +837,15 @@ def get_vcrss_that_pseudoalign_but_arent_dlisted(
             str(k),
             "-t",
             str(threads),
-            human_reference_genome_fa,
-            human_reference_gtf,
         ]
     )
+
+    if kallisto:
+        kb_ref_command.extend(["--kallisto", kallisto])
+    if bustools:
+        kb_ref_command.extend(["--bustools", bustools])
+
+    kb_ref_command.extend([human_reference_genome_fa, human_reference_gtf])
 
     if not os.path.exists(kb_human_reference_index_file):
         subprocess.run(kb_ref_command, check=True)
@@ -859,35 +868,37 @@ def get_vcrss_that_pseudoalign_but_arent_dlisted(
         kb_human_reference_index_file,
         "-g",
         kb_human_reference_t2g_file,
-        vcrs_fQ_filtered_bowtie,
     ]
 
     if strandedness:
         kb_extract_command = kb_extract_command[:4] + ["--strand", "forward"] + kb_extract_command[4:]
 
-    try:
-        subprocess.run(kb_extract_command, check=True)
+    if kallisto:
+        kb_extract_command.extend(["--kallisto", kallisto])
+    if bustools:
+        kb_extract_command.extend(["--bustools", bustools])
+    
+    kb_extract_command.append(vcrs_fQ_filtered_bowtie)
 
-        kb_extract_output_fastq_file = f"{kb_extract_out_dir_bowtie_filtered}/all/1.fastq.gz"
+    # don't wrap in try-except block since I do this outside the function
+    subprocess.run(kb_extract_command, check=True)
 
-        problematic_mutations_total = get_header_set_from_fastq(kb_extract_output_fastq_file, "list")
+    kb_extract_output_fastq_file = f"{kb_extract_out_dir_bowtie_filtered}/all/1.fastq.gz"
 
-        df = pd.DataFrame(problematic_mutations_total, columns=[header_column_name]).drop_duplicates()
+    problematic_mutations_total = get_header_set_from_fastq(kb_extract_output_fastq_file, "list")
 
-        df[column_name] = True
+    df = pd.DataFrame(problematic_mutations_total, columns=[header_column_name]).drop_duplicates()
 
-        df[vcrs_id_column] = df[vcrs_id_column].astype(str)
+    df[column_name] = True
 
-        mutation_metadata_df = pd.merge(
-            mutation_metadata_df,
-            df,
-            on=vcrs_id_column,
-            how="left",
-        )
+    df[vcrs_id_column] = df[vcrs_id_column].astype(str)
 
-    except Exception:
-        print("No reads pseudoaligned - setting entire column to False")
-        mutation_metadata_df[column_name] = False
+    mutation_metadata_df = pd.merge(
+        mutation_metadata_df,
+        df,
+        on=vcrs_id_column,
+        how="left",
+    )
 
     return mutation_metadata_df
 
@@ -1243,6 +1254,8 @@ def run_bowtie_build_dlist(ref_fa, ref_folder, ref_prefix, bowtie2_build, thread
                 bowtie_reference_prefix,  # Output reference folder
             ],
             check=True,
+            stdout=subprocess.DEVNULL,  # don't need output
+            stderr=subprocess.DEVNULL,  # don't need output
         )
 
         logger_info("Bowtie2 build complete")

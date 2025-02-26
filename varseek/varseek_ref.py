@@ -367,6 +367,7 @@ def ref(
             seq_id_column = "seq_ID"
             var_column = "mutation"
         var_id_column = "mutation_id" if var_id_column is not None else None
+        kwargs["gene_name_column"] = "gene_name"
 
 
     # get COSMIC info
@@ -393,6 +394,16 @@ def ref(
     if kwargs.get("columns_to_include") is not None:
         logger.info("columns_to_include is not None, so minimum_info_columns will be set to False")
         minimum_info_columns = False
+    else:
+        if minimum_info_columns:
+            if isinstance(filters, str):
+                columns_to_include = filters.split(":")[0]
+            else:
+                columns_to_include = [item.split(":")[0] for item in filters]
+        else:
+            columns_to_include = ("number_of_variants_in_this_gene_total", "alignment_to_reference", "pseudoaligned_to_reference_despite_not_truly_aligning", "triplet_complexity")  #!! matches vk info default
+        kwargs["columns_to_include"] = columns_to_include
+
 
     # decide whether to skip vk info and vk filter
     # filters_column_names = list({filter.split('-')[0] for filter in filters})
@@ -510,8 +521,7 @@ def ref(
             
             logger.info("Running vk info")
             _ = vk.info(
-                variants=variants,  # a kwarg of vk info but an explicit argument of vk ref, so I must pass it in like this
-                w=w,  # a kwarg of vk info but an explicit argument of vk ref, so I must pass it in like this
+                columns_to_include=columns_to_include,
                 k=k,
                 dlist_reference_source=dlist_reference_source,
                 seq_id_column=seq_id_column,
@@ -524,7 +534,9 @@ def ref(
                 logging_level=logging_level,
                 save_logs=save_logs,
                 log_out_dir=log_out_dir,
-                **kwargs_vk_info
+                variants=variants,  # a kwargs of vk info but explicit in vk ref
+                w=w,  # a kwargs of vk info but explicit in vk ref
+                **kwargs_vk_info  # including input_dir
         )
         else:
             logger.warning(f"Skipping vk info because {file_signifying_successful_vk_info_completion} already exists and overwrite=False")

@@ -186,6 +186,9 @@ def validate_input_info(params_dict):
     # Optional boolean
     if params_dict.get("vcrs_strandedness") is not None and not isinstance(params_dict.get("vcrs_strandedness"), bool):
         raise ValueError(f"vcrs_strandedness must be a boolean. Got {params_dict.get('vcrs_strandedness')} of type {type(params_dict.get('vcrs_strandedness'))}.")
+    
+    if params_dict.get("pseudoalignment_workflow") and params_dict.get("pseudoalignment_workflow") not in {"standard", "nac"}:
+        raise ValueError(f"Invalid value for pseudoalignment_workflow: {params_dict.get('pseudoalignment_workflow')}. Expected 'standard' or 'nac'.")
 
 
 supported_dlist_reference_values = {"T2T", "grch37", "grch38"}
@@ -349,6 +352,9 @@ def info(
     - variants                           (str) Path to the variants csv file. Only utilized for the column 'cdna_and_genome_same', and when `var_id_column` provided. Corresponds to `variants` in the varseek build function. Default: None.
     - seq_id_column                      (str) Corresponds to `seq_id_column` in the varseek build function. Only utilized when `var_id_column` provided. Default: None.
     - var_column                         (str) Corresponds to `var_column` in the varseek build function. Only utilized when `var_id_column` provided. Default: None.
+    - kallisto                           (str) Path to the directory containing the kallisto executable. Only utilized for the columns `pseudoaligned_to_reference`, `pseudoaligned_to_reference_despite_not_truly_aligning`. Default: None.
+    - bustools                           (str) Path to the directory containing the bustools executable. Only utilized for the columns `pseudoaligned_to_reference`, `pseudoaligned_to_reference_despite_not_truly_aligning`. Default: None.
+    - pseudoalignment_workflow           (str) Pseudoalignment workflow to use. Only utilized for the columns `pseudoaligned_to_reference`, `pseudoaligned_to_reference_despite_not_truly_aligning`. Options: {"standard", "nac"}. Default: "nac".
     - logger                             (logging.Logger) Logger object. Default: None.
     """
     # CELL
@@ -453,6 +459,10 @@ def info(
     reference_cdna_fasta = kwargs.get("reference_cdna_fasta", None)
     reference_genome_fasta = kwargs.get("reference_genome_fasta", None)
     variants_csv = kwargs.get("variants", None)
+    # seq_id_column and var_column defined later
+    kallisto = kwargs.get("kallisto", None)
+    bustools = kwargs.get("bustools", None)
+    pseudoalignment_workflow = kwargs.get("pseudoalignment_workflow", "nac")
 
     # * 7.5 make sure ints are ints
     k, max_ambiguous_vcrs, max_ambiguous_reference, dlist_reference_ensembl_release, threads = int(k), int(max_ambiguous_vcrs), int(max_ambiguous_reference), int(dlist_reference_ensembl_release), int(threads)
@@ -690,8 +700,8 @@ def info(
                 variant_source=variant_source,
                 mutation_metadata_df_exploded=mutation_metadata_df_exploded,
                 columns_to_explode=columns_to_explode,
-                seq_id_column_cdna=seq_id_cdna_column,
-                seq_id_column_genome=seq_id_genome_column,
+                seq_id_cdna_column=seq_id_cdna_column,
+                seq_id_genome_column=seq_id_genome_column,
                 logger=logger
             )
         except Exception as e:
@@ -830,14 +840,16 @@ def info(
                 out_dir_notebook=out,
                 ref_folder_kb=ref_folder_kb,
                 header_column_name="vcrs_id",
-                additional_kb_extract_filtering_workflow="nac",
+                additional_kb_extract_filtering_workflow=pseudoalignment_workflow,
                 k=k,
                 threads=threads,
                 strandedness=vcrs_strandedness,
                 column_name="pseudoaligned_to_reference",
+                kallisto=kallisto,
+                bustools=bustools,
             )
         except Exception as e:
-            logger.error(f"Error getting VCRSs that pseudoalign but aren't dlisted: {e}")
+            logger.error(f"Error getting VCRSs that pseudoalign: {e}")
             columns_not_successfully_added.append("pseudoaligned_to_reference")
     
     if columns_to_include == "all" or ("pseudoaligned_to_reference_despite_not_truly_aligning" in columns_to_include):
@@ -864,11 +876,13 @@ def info(
                         out_dir_notebook=out,
                         ref_folder_kb=ref_folder_kb,
                         header_column_name="vcrs_id",
-                        additional_kb_extract_filtering_workflow="nac",
+                        additional_kb_extract_filtering_workflow=pseudoalignment_workflow,
                         k=k,
                         threads=threads,
                         strandedness=vcrs_strandedness,
                         column_name="pseudoaligned_to_reference_despite_not_truly_aligning",
+                        kallisto=kallisto,
+                        bustools=bustools,
                     )
                 except Exception as e:
                     logger.error(f"Error getting VCRSs that pseudoalign but aren't dlisted: {e}")

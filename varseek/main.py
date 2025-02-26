@@ -954,6 +954,20 @@ def main():  # noqa: C901
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(info, "var_column"),
     )
+    parser_info.add_argument(
+        "--kallisto",
+        type=str,
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(info, "kallisto"),
+    )
+    parser_info.add_argument(
+        "--bustools",
+        type=str,
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(info, "bustools"),
+    )
 
     # NEW PARSER
     filter_desc = "Filter variants based on the provided filters and save the filtered variants to a fasta file."

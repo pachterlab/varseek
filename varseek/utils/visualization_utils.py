@@ -103,7 +103,7 @@ def plot_histogram_notebook_1(df_overlap, column, x_label="x-axis", title="Histo
 
     if show:
         plt.show()
-        plt.close()
+    plt.close()
 
 
 def plot_histogram_of_nearby_mutations_7_5(mutation_metadata_df, column, bins, output_file=None, show=False):
@@ -127,7 +127,7 @@ def plot_histogram_of_nearby_mutations_7_5(mutation_metadata_df, column, bins, o
 
     if show:
         plt.show()
-        plt.close()
+    plt.close()
 
 
 def retrieve_value_from_metric_file(key_of_interest, metric_file):
@@ -414,7 +414,7 @@ def create_stratified_metric_bar_plot(
 
     if show:
         plt.show()
-        plt.close()
+    plt.close()
 
 
 def create_venn_diagram(true_set, positive_set, TN=None, mm=None, out_path=None, show=True):
@@ -479,7 +479,7 @@ def create_venn_diagram(true_set, positive_set, TN=None, mm=None, out_path=None,
     # Show the plot
     if show:
         plt.show()
-        plt.close()
+    plt.close()
 
 
 def plot_histogram(
@@ -548,7 +548,7 @@ def plot_histogram(
     
     if show:
         plt.show()
-        plt.close()
+    plt.close()
 
 
 def synthetic_data_summary_plot(df, column, sort_ascending=True, out_path=None, show=False):
@@ -592,7 +592,7 @@ def synthetic_data_summary_plot(df, column, sort_ascending=True, out_path=None, 
     # Show the plot
     if show:
         plt.show()
-        plt.close()
+    plt.close()
 
 
 def plot_basic_bar_plot_from_dict(my_dict, y_axis, log_scale=False, output_file=None, show=False):
@@ -613,7 +613,7 @@ def plot_basic_bar_plot_from_dict(my_dict, y_axis, log_scale=False, output_file=
 
     if show:
         plt.show()
-        plt.close()
+    plt.close()
 
 
 def plot_descending_bar_plot(gene_counts, x_label, y_label, tick_interval=None, output_file=None, show=True):
@@ -645,7 +645,7 @@ def plot_descending_bar_plot(gene_counts, x_label, y_label, tick_interval=None, 
 
     if show:
         plt.show()
-        plt.close()
+    plt.close()
 
 
 def draw_confusion_matrix(metric_dictionary_reads, title="Confusion Matrix", title_color="black", suffix="", additional_fp_key="", output_file=None, show=True):
@@ -696,7 +696,7 @@ def draw_confusion_matrix(metric_dictionary_reads, title="Confusion Matrix", tit
         plt.savefig(output_file, bbox_inches="tight", pad_inches=0.5)
     if show:
         plt.show()
-        plt.close()
+    plt.close()
 
 
 def draw_confusion_matrix_rich(metric_dictionary_reads, title="Confusion Matrix", suffix="", additional_fp_key=""):
@@ -786,7 +786,7 @@ def plot_kat_histogram(kat_hist, out_path=None, show=False):
     # Display the plot
     if show:
         plt.show()
-        plt.close()
+    plt.close()
 
 
 def plot_items_descending_order(df, x_column, y_column, item_range=(0, 10), xlabel="x-axis", title="Title", save_path=None, figsize=(15, 7), show=False):
@@ -825,7 +825,6 @@ def plot_items_descending_order(df, x_column, y_column, item_range=(0, 10), xlab
     # Show the plot
     if show:
         plt.show()
-
     plt.close()
 
 
@@ -851,4 +850,4 @@ def plot_knee_plot(
         plt.savefig(output_file)
     if show:
         plt.show()
-        plt.close()
+    plt.close()
