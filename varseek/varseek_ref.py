@@ -368,6 +368,12 @@ def ref(
             var_column = "mutation"
         var_id_column = "mutation_id" if var_id_column is not None else None
         kwargs["gene_name_column"] = "gene_name"
+        kwargs["seq_id_genome_column"] = "chromosome"
+        kwargs["var_genome_column"] = "mutation_genome"
+        kwargs["seq_id_cdna_column"] = "seq_ID"
+        kwargs["var_cdna_column"] = "mutation_cdna" if sequences == "cdna" else "mutation"
+        if kwargs.get("gtf") and (not isinstance(kwargs.get("gtf"), str) or not os.path.isfile(kwargs.get("gtf"))):  # eg if gtf is True, or a non-existent file
+            kwargs["gtf"] = os.path.join(reference_out_dir, supported_databases_and_corresponding_reference_sequence_type[variants]["sequence_file_names"]["gtf"]).replace("GRCH_NUMBER", grch)  # copy-paste from vk build
 
 
     # get COSMIC info
@@ -487,6 +493,7 @@ def ref(
         kwargs_vk_build = {key: value for key, value in kwargs.items() if ((key in all_parameter_names_set_vk_build) and (key not in ref_signature.parameters.keys()))}
         # update anything in kwargs_vk_build that is not fully updated in (vk ref's) kwargs (should be nothing or very close to it, as I try to avoid these double-assignments by always keeping kwargs in kwargs)
         # eg kwargs_vk_build['mykwarg'] = mykwarg
+        # just to be extra clear, I must explicitly pass arguments that are in the signature of vk ref; anything not in vk ref's signature should go in kwargs_vk_build (it is irrelevant what is in vk build's signature); and in the line above, I should update any values that are (1) not in vk ref's signature (so therefore they're in vk ref's kwargs), (2) I want to pass to vk build, and (3) have been updated outside of vk ref's kwargs somewhere in the function
 
         logger.info("Running vk build")
         _ = vk.build(

@@ -158,7 +158,7 @@ def validate_input_info(params_dict):
 
     # integers - optional just means that it's in kwargs
     for param_name, min_value, optional_value in [
-        ("w", 1, False),
+        ("w", 1, True),
         ("max_ambiguous_vcrs", 0, False),
         ("max_ambiguous_reference", 0, False),
         ("dlist_reference_ensembl_release", 50, False),
@@ -220,10 +220,10 @@ columns_to_include_possible_values = OrderedDict(
         ("substring_alignment_to_reference_count_genome", ("Number of substring matches to normal human reference genome (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
         ("pseudoaligned_to_reference", ("Pseudoaligned to human reference", ["k", "dlist_reference_genome_fasta", "dlist_reference_gtf", "threads", "vcrs_strandedness"])),
         ("pseudoaligned_to_reference_despite_not_truly_aligning", ("Pseudoaligned to human reference despite not truly aligning", ["k", "dlist_reference_genome_fasta", "dlist_reference_gtf", "threads", "vcrs_strandedness"])),
-        ("number_of_kmers_with_overlap_to_other_VCRSs", ("Number of k-mers with overlap to other VCRS items in VCRS reference", ["k", "vcrs_strandedness"])),
-        ("number_of_other_VCRSs_with_overlapping_kmers", ("Number of VCRS items with overlapping k-mers in VCRS reference", ["k", "vcrs_strandedness"])),
-        ("VCRSs_with_overlapping_kmers", ("VCRS items with overlapping k-mers in VCRS reference (requires bowtie2)", ["k", "threads"])),
-        ("kmer_overlap_with_other_VCRSs", ("K-mer overlap in VCRS reference (a boolean of `number_of_kmers_with_overlap_to_other_VCRSs`)", [])),
+        ("number_of_kmers_with_overlap_to_other_VCRSs", ("Number of k-mers with overlap to other VCRS items in VCRS reference (MEMORY-INTENSIVE)", ["k", "vcrs_strandedness"])),
+        ("number_of_other_VCRSs_with_overlapping_kmers", ("Number of VCRS items with overlapping k-mers in VCRS reference (MEMORY-INTENSIVE)", ["k", "vcrs_strandedness"])),
+        ("VCRSs_with_overlapping_kmers", ("VCRS items with overlapping k-mers in VCRS reference (requires bowtie2) (MEMORY-INTENSIVE)", ["k", "threads"])),
+        ("kmer_overlap_with_other_VCRSs", ("K-mer overlap in VCRS reference (a boolean of `number_of_kmers_with_overlap_to_other_VCRSs`) (MEMORY-INTENSIVE)", [])),
         ("longest_homopolymer_length", ("Longest homopolymer length", [])),
         ("longest_homopolymer", ("Longest homopolymer", [])),
         ("num_distinct_triplets", ("Number of distinct triplets", [])),
@@ -347,8 +347,8 @@ def info(
     - bowtie2_path                       (str) Path to the directory containing the bowtie2 and bowtie2-build executables. Default: None.
     - vcrs_strandedness                  (bool) Whether to consider VCRSs as stranded when aligning to the human reference and comparing VCRS k-mers to each other. vcrs_strandedness True corresponds to treating forward and reverse-complement as distinct; False corresponds to treating them as the same. Corresponds to `vcrs_strandedness` in the varseek build function. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_cdna', 'alignment_to_reference_genome', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_cdna', 'substring_alignment_to_reference_genome', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome', 'pseudoaligned_to_reference', 'pseudoaligned_to_reference_despite_not_truly_aligning', 'number_of_kmers_with_overlap_to_other_VCRSs', 'number_of_other_VCRSs_with_overlapping_kmers', 'VCRSs_with_overlapping_kmers, 'kmer_overlap_with_other_VCRSs'; and if make_kat_histogram==True. Default: False.
     - near_splice_junction_threshold     (int) Maximum distance from a splice junction to be considered "near" a splice junction. Only utilized for the column 'distance_to_nearest_splice_junction'. Default: 10.
-    - reference_cdna_fasta               (str) Path to the reference cDNA fasta file. Only utilized for the column 'cdna_and_genome_same'. Default: None.
-    - reference_genome_fasta             (str) Path to the reference genome fasta file. Only utilized for the column 'cdna_and_genome_same'. Default: None.
+    - reference_cdna_fasta               (str) Path to the reference cDNA fasta file. Only utilized for the column 'cdna_and_genome_same'. Default: "cdna".
+    - reference_genome_fasta             (str) Path to the reference genome fasta file. Only utilized for the column 'cdna_and_genome_same'. Default: "genome".
     - variants                           (str) Path to the variants csv file. Only utilized for the column 'cdna_and_genome_same', and when `var_id_column` provided. Corresponds to `variants` in the varseek build function. Default: None.
     - seq_id_column                      (str) Corresponds to `seq_id_column` in the varseek build function. Only utilized when `var_id_column` provided. Default: None.
     - var_column                         (str) Corresponds to `var_column` in the varseek build function. Only utilized when `var_id_column` provided. Default: None.
@@ -456,8 +456,8 @@ def info(
     bowtie_path = kwargs.get("bowtie2_path", None)
     vcrs_strandedness = kwargs.get("vcrs_strandedness", False)
     near_splice_junction_threshold = kwargs.get("near_splice_junction_threshold", 10)
-    reference_cdna_fasta = kwargs.get("reference_cdna_fasta", None)
-    reference_genome_fasta = kwargs.get("reference_genome_fasta", None)
+    reference_cdna_fasta = kwargs.get("reference_cdna_fasta", "cdna")
+    reference_genome_fasta = kwargs.get("reference_genome_fasta", "genome")
     variants_csv = kwargs.get("variants", None)
     # seq_id_column and var_column defined later
     kallisto = kwargs.get("kallisto", None)
@@ -604,9 +604,9 @@ def info(
     add_mutation_information(mutation_metadata_df_exploded, mutation_column="variant_used_for_vcrs")
 
     if seq_id_cdna_column and var_cdna_column in mutation_metadata_df_exploded.columns:
-        add_mutation_information(mutation_metadata_df_exploded, mutation_column=var_cdna_column, source="cdna")
+        add_mutation_information(mutation_metadata_df_exploded, mutation_column=var_cdna_column, variant_source="cdna")
     if seq_id_genome_column and var_genome_column in mutation_metadata_df_exploded.columns:
-        add_mutation_information(mutation_metadata_df_exploded, mutation_column=var_genome_column, source="genome")
+        add_mutation_information(mutation_metadata_df_exploded, mutation_column=var_genome_column, variant_source="genome")
 
     if "variant_type" not in mutation_metadata_df_exploded.columns:
         add_variant_type(mutation_metadata_df_exploded, var_column="variant_used_for_vcrs")
@@ -636,6 +636,7 @@ def info(
                     var_column_cdna=var_cdna_column,
                     seq_id_column_genome=seq_id_genome_column,
                     var_column_genome=var_genome_column,
+                    reference_out_dir=reference_out_dir,
                 )
             except Exception as e:
                 logger.error(f"Error comparing cDNA and genome: {e}")
@@ -751,7 +752,7 @@ def info(
     if columns_to_include == "all" or ("alignment_to_reference" in columns_to_include or "alignment_to_reference_count_total" in columns_to_include or "alignment_to_reference_count_cdna" in columns_to_include or "alignment_to_reference_count_genome" in columns_to_include or "substring_alignment_to_reference" in columns_to_include or "substring_alignment_to_reference_count_total" in columns_to_include or "substring_alignment_to_reference_count_cdna" in columns_to_include or "substring_alignment_to_reference_count_genome" in columns_to_include):
         if not is_program_installed(bowtie2):
             bowtie_columns = ["alignment_to_reference", "alignment_to_reference_cdna", "alignment_to_reference_genome", "alignment_to_reference_count_total", "alignment_to_reference_count_cdna", "alignment_to_reference_count_genome", "substring_alignment_to_reference", "substring_alignment_to_reference_cdna", "substring_alignment_to_reference_genome", "substring_alignment_to_reference_count_total", "substring_alignment_to_reference_count_cdna", "substring_alignment_to_reference_count_genome"]
-            raise ValueError(f"bowtie2 must be installed to run for the following columns: {bowtie_columns}. Please install bowtie2 or omit these columns")
+            logger.error(f"bowtie2 must be installed to run for the following columns: {bowtie_columns}. Please install bowtie2 or omit these columns")
         try:
             logger.info("Aligning to normal genome and building dlist")
             mutation_metadata_df, sequence_names_set_union_genome_and_cdna = align_to_normal_genome_and_build_dlist(
@@ -829,7 +830,7 @@ def info(
     if columns_to_include == "all" or ("pseudoaligned_to_reference" in columns_to_include):
         ref_folder_kb = f"{reference_out_dir}/kb_index_for_vcrs_pseudoalignment_to_reference_genome"
         try:
-            logger.info("Getting VCRSs that pseudoalign but aren't dlisted")
+            logger.info("Getting VCRSs that pseudoalign")
             mutation_metadata_df = get_vcrss_that_pseudoalign_but_arent_dlisted(
                 mutation_metadata_df=mutation_metadata_df,
                 vcrs_id_column="vcrs_id",
@@ -998,7 +999,7 @@ def info(
     if columns_to_include == "all" or ("VCRSs_for_which_this_VCRS_is_a_substring" in columns_to_include or "VCRSs_for_which_this_VCRS_is_a_superstring" in columns_to_include or "VCRS_is_a_substring_of_another_VCRS" in columns_to_include or "VCRS_is_a_superstring_of_another_VCRS" in columns_to_include):
         if not is_program_installed(bowtie2):
             bowtie_columns = ["VCRSs_for_which_this_VCRS_is_a_substring", "VCRSs_for_which_this_VCRS_is_a_superstring", "VCRS_is_a_substring_of_another_VCRS", "VCRS_is_a_superstring_of_another_VCRS"]
-            raise ValueError(f"bowtie2 must be installed to run for the following columns: {bowtie_columns}. Please install bowtie2 or omit these columns")
+            logger.error(f"bowtie2 must be installed to run for the following columns: {bowtie_columns}. Please install bowtie2 or omit these columns")
         vcrs_to_vcrs_bowtie_folder = f"{out}/bowtie_vcrs_to_vcrs"
         vcrs_sam_file = f"{vcrs_to_vcrs_bowtie_folder}/mutant_reads_to_vcrs_index.sam"
         substring_output_stat_file = f"{output_stat_folder}/substring_output_stat.txt"

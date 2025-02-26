@@ -487,7 +487,7 @@ def create_df_of_vcrs_to_self_headers(
     return substring_to_superstring_df, superstring_to_substring_df
 
 
-def compare_cdna_and_genome(mutation_metadata_df_exploded, varseek_build_temp_folder="vk_build_tmp", reference_cdna_fasta="cdna", reference_genome_fasta="genome", mutations_csv=None, w=30, variant_source="cdna", columns_to_explode=None, seq_id_column_cdna="seq_ID", var_column_cdna="mutation_cdna", seq_id_column_genome="chromosome", var_column_genome="mutation_genome", delete_temp_dir=True):
+def compare_cdna_and_genome(mutation_metadata_df_exploded, reference_out_dir=None, varseek_build_temp_folder="vk_build_tmp", reference_cdna_fasta="cdna", reference_genome_fasta="genome", mutations_csv=None, w=30, variant_source="cdna", columns_to_explode=None, seq_id_column_cdna="seq_ID", var_column_cdna="mutation_cdna", seq_id_column_genome="chromosome", var_column_genome="mutation_genome", delete_temp_dir=True):
     from varseek.varseek_build import build
 
     if columns_to_explode is None:
@@ -495,7 +495,11 @@ def compare_cdna_and_genome(mutation_metadata_df_exploded, varseek_build_temp_fo
     else:
         columns_to_explode = columns_to_explode.copy()
 
-    reference_out_dir_temp = f"{varseek_build_temp_folder}/reference_out"
+    if reference_out_dir is None:
+        reference_out_dir_temp = f"{varseek_build_temp_folder}/reference_out"
+    else:
+        reference_out_dir_temp = reference_out_dir
+
     varseek_build_cdna_out_df = f"{varseek_build_temp_folder}/varseek_build_cdna_{w}.csv"
 
     if not os.path.exists(varseek_build_cdna_out_df):
@@ -522,7 +526,7 @@ def compare_cdna_and_genome(mutation_metadata_df_exploded, varseek_build_temp_fo
     cdna_updated_df = pd.read_csv(
         varseek_build_cdna_out_df,
         usecols=[
-            "header",
+            "vcrs_header",
             "vcrs_sequence",
             seq_id_column_cdna,
             var_column_cdna,
@@ -556,7 +560,7 @@ def compare_cdna_and_genome(mutation_metadata_df_exploded, varseek_build_temp_fo
     genome_updated_df = pd.read_csv(
         varseek_build_genome_out_df,
         usecols=[
-            "header",
+            "vcrs_header",
             "vcrs_sequence",
             seq_id_column_genome,
             var_column_genome,
@@ -586,8 +590,8 @@ def compare_cdna_and_genome(mutation_metadata_df_exploded, varseek_build_temp_fo
     if variant_source == "combined":
         column_to_merge = "header_cdna"
     else:
-        column_to_merge = "header"
-        combined_updated_df.rename(columns={f"header_{variant_source}": "header"}, inplace=True)
+        column_to_merge = "vcrs_header"
+        combined_updated_df.rename(columns={f"vcrs_header_{variant_source}": "vcrs_header"}, inplace=True)
 
     # mutation_metadata_df_exploded = explode_df(mutation_metadata_df, columns_to_explode)
 

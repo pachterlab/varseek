@@ -473,13 +473,13 @@ def filter(
     if not ((isinstance(variants_updated_vk_info_csv, str) and os.path.isfile(variants_updated_vk_info_csv)) or isinstance(variants_updated_vk_info_csv, pd.DataFrame)):
         raise FileNotFoundError(f"Variant metadata file not found at {variants_updated_vk_info_csv}.")
     if not ((isinstance(variants_updated_exploded_vk_info_csv, str) and os.path.isfile(variants_updated_exploded_vk_info_csv)) or isinstance(variants_updated_exploded_vk_info_csv, pd.DataFrame)):
-        logger.info(f"Exploded variant metadata file not found at {variants_updated_exploded_vk_info_csv}. Skipping filtering of exploded variant metadata.")
+        # logger.info(f"Exploded variant metadata file not found at {variants_updated_exploded_vk_info_csv}. Skipping filtering of exploded variant metadata.")
         variants_updated_exploded_vk_info_csv = None
     if not os.path.isfile(dlist_fasta):
-        logger.warning(f"d-list file not found at {dlist_fasta}. Skipping filtering of d-list.")
+        # logger.warning(f"d-list file not found at {dlist_fasta}. Skipping filtering of d-list.")
         dlist_fasta = None
     if not os.path.isfile(id_to_header_csv):
-        logger.warning(f"ID to header csv file not found at {id_to_header_csv}. Skipping filtering of ID to header csv.")
+        # logger.warning(f"ID to header csv file not found at {id_to_header_csv}. Skipping filtering of ID to header csv.")
         id_to_header_csv = None
 
     # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True

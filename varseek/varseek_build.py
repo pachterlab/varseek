@@ -366,7 +366,7 @@ def validate_input_build(params_dict):
     for param_name, min_value, optional_value in [
         ("w", 1, False),
         ("k", 1, False),
-        ("max_ambiguous", 0, False),
+        ("max_ambiguous", 0, True),
         ("insertion_size_limit", 1, True),
         ("min_seq_len", 1, True),
     ]:
@@ -699,6 +699,9 @@ def build(
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
     # * 7. Define kwargs defaults
+    if not k:
+        k = w + 1
+
     cosmic_version = kwargs.get("cosmic_version", "101")
     cosmic_grch = kwargs.get("cosmic_grch", None)
     cosmic_email = kwargs.get("cosmic_email", None)
@@ -717,10 +720,13 @@ def build(
     del variants
 
     # * 7.5 make sure ints are ints
-    if not k:
-        k = w + 1
-    
-    w, k, max_ambiguous, min_seq_len = int(w), int(k), int(max_ambiguous), int(min_seq_len)
+    w, k = int(w), int(k)
+    if max_ambiguous is not None:
+        max_ambiguous = int(max_ambiguous)
+    if insertion_size_limit is not None:
+        max_ambiguous = int(insertion_size_limit)
+    if min_seq_len is not None:
+        max_ambiguous = int(min_seq_len)
 
     # * 8. Start the actual function
     if isinstance(mutations, Path):
@@ -1656,7 +1662,7 @@ def build(
         mutations["vcrs_id"] = generate_unique_ids(len(mutations))
         mutations[["vcrs_id", "vcrs_header"]].to_csv(id_to_header_csv_out, index=False)  # make the mapping csv
     else:
-        mutations["vcrs_id"] = mutations["header"]
+        mutations["vcrs_id"] = mutations["vcrs_header"]
     columns_to_keep.extend(["vcrs_id", "vcrs_header"])
     
     if save_variants_updated_csv:  # use variants_updated_csv_out if present,
