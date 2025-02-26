@@ -724,9 +724,9 @@ def build(
     if max_ambiguous is not None:
         max_ambiguous = int(max_ambiguous)
     if insertion_size_limit is not None:
-        max_ambiguous = int(insertion_size_limit)
+        insertion_size_limit = int(insertion_size_limit)
     if min_seq_len is not None:
-        max_ambiguous = int(min_seq_len)
+        min_seq_len = int(min_seq_len)
 
     # * 8. Start the actual function
     if isinstance(mutations, Path):
