@@ -61,7 +61,7 @@ vk.info(
 vk.filter(
     input_dir=out,
     filters=filters,
-    reference_out_dir="/Users/joeyrich/Desktop/local/varseek/data/reference",
+    reference_out_dir=reference_out_dir,
     save_logs=True,
     dry_run=dry_run,
 )

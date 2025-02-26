@@ -350,11 +350,11 @@ def ref(
 
     # * 8. Start the actual function
     # some copy-paste from vk build to ensure correct column names if using the cosmic_cmc database
-    if variants == "cosmic_cmc":
+    if variants == "cosmic_cmc":  #* as I support more databases, I should consider wrapping this in a function that goes in a utils file (especially since there will be code duplication between here and vk build)
         if not kwargs.get("cosmic_grch"):
-            grch_dict = supported_databases_and_corresponding_reference_sequence_type[variants]["database_version_to_reference_assembly_build"]
-            largest_key = max(int(k) for k in grch_dict.keys())
-            grch = grch_dict[str(largest_key)]
+            grch_supported_values_tuple = supported_databases_and_corresponding_reference_sequence_type[variants]["database_version_to_reference_assembly_build"][kwargs.get("cosmic_version", "101")]  # 101 matches vk build default
+            grch_supported_values_tuple = [int(grch) for grch in grch_supported_values_tuple]
+            grch = str(max(grch_supported_values_tuple))
         else:
             grch = kwargs.get("cosmic_grch")
         if sequences == "cdna" or sequences.endswith(supported_databases_and_corresponding_reference_sequence_type[variants]["sequence_file_names"]["cdna"].replace("GRCH_NUMBER", grch)):  # covers whether sequences == "cdna" or sequences == "PATH/TO/Homo_sapiens.GRCh37.cdna.all.fa"
@@ -367,29 +367,33 @@ def ref(
             seq_id_column = "seq_ID"
             var_column = "mutation"
         var_id_column = "mutation_id" if var_id_column is not None else None
-        kwargs["gene_name_column"] = "gene_name"
-        kwargs["seq_id_genome_column"] = "chromosome"
-        kwargs["var_genome_column"] = "mutation_genome"
-        kwargs["seq_id_cdna_column"] = "seq_ID"
-        kwargs["var_cdna_column"] = "mutation_cdna" if sequences == "cdna" else "mutation"
+        kwargs["gene_name_column"] = kwargs.get("gene_name_column", "gene_name")  # don't override user-provided value, but otherwise set to gene_name
+        kwargs["seq_id_genome_column"] = kwargs.get("seq_id_genome_column", "chromosome")
+        kwargs["var_genome_column"] = kwargs.get("var_genome_column", "mutation_genome")
+        kwargs["seq_id_cdna_column"] = kwargs.get("seq_id_cdna_column", "seq_ID")
+        if not kwargs.get("var_cdna_column"):
+            kwargs["var_cdna_column"] = "mutation_cdna" if sequences == "cdna" else "mutation"
         if kwargs.get("gtf") and (not isinstance(kwargs.get("gtf"), str) or not os.path.isfile(kwargs.get("gtf"))):  # eg if gtf is True, or a non-existent file
-            kwargs["gtf"] = os.path.join(reference_out_dir, supported_databases_and_corresponding_reference_sequence_type[variants]["sequence_file_names"]["gtf"]).replace("GRCH_NUMBER", grch)  # copy-paste from vk build
-
+            kwargs["gtf"] = os.path.join(reference_out_dir, f"ensembl_grch{grch}_release93", supported_databases_and_corresponding_reference_sequence_type[variants]["sequence_file_names"]["gtf"]).replace("GRCH_NUMBER", grch)  # copy-paste from vk build
 
     # get COSMIC info
     cosmic_email = kwargs.get("cosmic_email", None)
-    if not cosmic_email:
-        cosmic_email = os.getenv("COSMIC_EMAIL")
     if cosmic_email:
-        logger.info(f"Using COSMIC email from COSMIC_EMAIL environment variable: {cosmic_email}")
-        kwargs["cosmic_email"] = cosmic_email
-
+        logger.info(f"Using COSMIC email from arguments: {cosmic_email}")
+    else:
+        cosmic_email = os.getenv("COSMIC_EMAIL")
+        if cosmic_email:
+            logger.info(f"Using COSMIC email from COSMIC_EMAIL environment variable: {cosmic_email}")
+            kwargs["cosmic_email"] = cosmic_email
+    
     cosmic_password = kwargs.get("cosmic_password", None)
-    if not cosmic_password:
-        cosmic_password = os.getenv("COSMIC_PASSWORD")
     if cosmic_password:
-        logger.info("Using COSMIC password from COSMIC_PASSWORD environment variable")
-        kwargs["cosmic_password"] = cosmic_password
+        logger.info("Using COSMIC password from arguments")
+    else:
+        cosmic_password = os.getenv("COSMIC_PASSWORD")
+        if cosmic_password:
+            logger.info("Using COSMIC password from COSMIC_PASSWORD environment variable")
+            kwargs["cosmic_password"] = cosmic_password
 
     # ensure that max_ambiguous (build) and max_ambiguous_vcrs (info) are the same if only one is provided
     if kwargs.get("max_ambiguous") and not kwargs.get("max_ambiguous_vcrs"):
@@ -405,7 +409,7 @@ def ref(
             if isinstance(filters, str):
                 columns_to_include = filters.split(":")[0]
             else:
-                columns_to_include = [item.split(":")[0] for item in filters]
+                columns_to_include = tuple([item.split(":")[0] for item in filters])
         else:
             columns_to_include = ("number_of_variants_in_this_gene_total", "alignment_to_reference", "pseudoaligned_to_reference_despite_not_truly_aligning", "triplet_complexity")  #!! matches vk info default
         kwargs["columns_to_include"] = columns_to_include
@@ -528,7 +532,6 @@ def ref(
             
             logger.info("Running vk info")
             _ = vk.info(
-                columns_to_include=columns_to_include,
                 k=k,
                 dlist_reference_source=dlist_reference_source,
                 seq_id_column=seq_id_column,
@@ -541,6 +544,7 @@ def ref(
                 logging_level=logging_level,
                 save_logs=save_logs,
                 log_out_dir=log_out_dir,
+                verbose=verbose,
                 variants=variants,  # a kwargs of vk info but explicit in vk ref
                 w=w,  # a kwargs of vk info but explicit in vk ref
                 **kwargs_vk_info  # including input_dir
@@ -606,10 +610,10 @@ def ref(
     kb_ref_command.append(vcrs_fasta_for_index)
 
     if not os.path.exists(file_signifying_successful_kb_ref_completion) or overwrite:
-        logger.info(f"Running kb ref with command: {' '.join(kb_ref_command)}")
         if dry_run:
             print(" ".join(kb_ref_command))
         else:
+            logger.info(f"Running kb ref with command: {' '.join(kb_ref_command)}")
             subprocess.run(kb_ref_command, check=True)
     else:
         logger.warning(f"Skipping kb ref because {file_signifying_successful_kb_ref_completion} already exists and overwrite=False")

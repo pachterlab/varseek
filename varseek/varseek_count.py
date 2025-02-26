@@ -448,10 +448,10 @@ def count(
 
         kb_count_command += fastqs_vcrs
 
-        logger.info(f"Running kb count with command: {' '.join(kb_count_command)}")
         if dry_run:
             print(' '.join(kb_count_command))
         else:
+            logger.info(f"Running kb count with command: {' '.join(kb_count_command)}")
             subprocess.run(kb_count_command, check=True)
     else:
         logger.warning(f"Skipping kb count because file {file_signifying_successful_kb_count_vcrs_completion} already exists and overwrite=False")
@@ -478,10 +478,10 @@ def count(
                 species,
             ]
 
-            logger.info(f"Running kb ref for reference genome with command: {' '.join(kb_ref_command)}")
             if dry_run:
                 print(' '.join(kb_ref_command))
             else:
+                logger.info(f"Running kb ref for reference genome with command: {' '.join(kb_ref_command)}")
                 subprocess.run(kb_ref_command, check=True)
 
         #!!! WT vcrs alignment, copied from previous notebook 1_2 (still not implemented in here correctly)
@@ -532,10 +532,10 @@ def count(
 
         kb_count_standard_index_command += fastqs_reference_genome
 
-        logger.info(f"Running kb count for reference genome with command: {' '.join(kb_count_standard_index_command)}")
         if dry_run:
             print(' '.join(kb_count_standard_index_command))
         else:
+            logger.info(f"Running kb count for reference genome with command: {' '.join(kb_count_standard_index_command)}")
             subprocess.run(kb_count_standard_index_command, check=True)
 
     else:

@@ -13,8 +13,8 @@ filters=(
     "num_distinct_triplets:greater_than=2",  # filters out VCRSs with <= 2 unique triplets
 )
 
-subprocess.run(f"cp -r /mnt/gpussd2/jrich/varseek/data/vk_build_out {out}", shell=True, check=True)
-subprocess.run(f"rm -rf /mnt/gpussd2/jrich/varseek/data/vk_build_out_basic/variants_updated.csv", shell=True, check=True)
+# subprocess.run(f"cp -r /mnt/gpussd2/jrich/varseek/data/vk_build_out {out}", shell=True, check=True)
+# subprocess.run(f"rm -rf /mnt/gpussd2/jrich/varseek/data/vk_build_out_basic/variants_updated.csv", shell=True, check=True)
 
 vk.ref(
     variants="cosmic_cmc",
@@ -34,7 +34,7 @@ vk.ref(
     cosmic_password="bopdit-xybRog-bycqu1",
     dlist_reference_source="grch37",
     dlist_reference_ensembl_release=93,
-    columns_to_include="all",
+    # columns_to_include="all",
     kallisto="/home/jrich/enter/envs/varseek/lib/python3.10/site-packages/kb_python/bins/linux/kallisto/kallisto_k64",
     bustools="/home/jrich/enter/envs/varseek/lib/python3.10/site-packages/kb_python/bins/linux/bustools/bustools",
     bowtie2_path="/mnt/gpussd2/jrich/opt/bowtie2-2.5.4-linux-x86_64"

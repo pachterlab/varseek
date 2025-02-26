@@ -269,7 +269,7 @@ def return_kb_arguments(command, remove_dashes=False):
     return kb_arguments
 
 
-def print_varseek_dry_run(params, function_name=None):
+def print_varseek_dry_run(params, function_name=None, remove_passwords=True):
     if function_name:
         if function_name not in {"build", "info", "filter", "fastqpp", "clean", "summarize", "ref", "count"}:
             raise ValueError(f"function_name must be one of build, info, filter, fastqpp, clean, summarize, ref, count. Got {function_name}")
@@ -278,6 +278,10 @@ def print_varseek_dry_run(params, function_name=None):
     for i, (param_key, param_value) in enumerate(params.items()):
         if isinstance(param_value, str):
             param_value = f'"{param_value}"'
+
+        if "password" in param_key.lower() and remove_passwords:
+            param_value = "******"
+
         end = ",\n  " if i < len_params - 1 else "\n"  # Normal newline for last entry
         print(f"{param_key} = {param_value}", end=end)
     if function_name:
@@ -862,12 +866,12 @@ def save_run_info(out_file="run_info.txt", remove_passwords=True):
 
     if remove_passwords:
         # for python calls
-        python_pattern = re.compile(r'(\b\w*password\w*\s*=\s*)(["\'].*?["\'])', re.IGNORECASE)
-        function_call = python_pattern.sub(r'\1"******"', function_call)  
+        python_password_pattern = re.compile(r'(\b\w*password\w*\s*=\s*)(["\'].*?["\'])', re.IGNORECASE)
+        function_call = python_password_pattern.sub(r'\1"******"', function_call)  
 
         # for CLI calls
-        cli_pattern = re.compile(r'(--\w*password\w*\s+)(\S+)', re.IGNORECASE)
-        function_call = cli_pattern.sub(r'\1******', function_call)
+        cli_password_pattern = re.compile(r'(--\w*password\w*\s+)(\S+)', re.IGNORECASE)
+        function_call = cli_password_pattern.sub(r'\1******', function_call)
 
     # Get the current date and time
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
