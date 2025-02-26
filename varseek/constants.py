@@ -142,6 +142,16 @@ supported_databases_and_corresponding_reference_sequence_type = {
         "database_version_to_reference_release": defaultdict(lambda: "93", {"100": "93", "101": "93"}),  # sets default to 93
         "database_version_to_reference_assembly_build": defaultdict(lambda: ("37",), {"100": ("37",), "101": ("37",)}),  # sets default to ("37",)
         "variant_file_name": "CancerMutationCensus_AllData_Tsv_vCOSMIC_RELEASE_GRChGRCH_NUMBER/CancerMutationCensus_AllData_vCOSMIC_RELEASE_GRChGRCH_NUMBER_mutation_workflow.csv",
+        "column_names": {
+            "seq_id_genome_column": "chromosome", 
+            "var_genome_column": "mutation_genome", 
+            "seq_id_cdna_column": "seq_ID", 
+            "var_cdna_column": "mutation_cdna", 
+            "seq_id_cds_column": "seq_ID",
+            "var_cds_column": "mutation",
+            "var_id_column": "mutation_id",
+            "gene_name_column": "gene_name",
+        }
     }
 }
 

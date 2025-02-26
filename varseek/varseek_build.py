@@ -6,6 +6,7 @@ import re
 import subprocess
 import time
 import logging
+import json
 
 import gget
 import numpy as np
@@ -606,6 +607,7 @@ def build(
     - cosmic_password                    (str) Password for COSMIC download. Default: None.
 
     # other
+    - save_column_names_json_path        (str) Whether to save the column names in their own json file. Utilized internally by vk ref. Default: None.
     - logger                             (logging.Logger) Logger object. Default: None.
 
 
@@ -715,6 +717,7 @@ def build(
     vcrs_strandedness = kwargs.get("vcrs_strandedness", False)
     use_IDs = kwargs.get("use_IDs", True)
     original_order = kwargs.get("original_order", True)
+    save_column_names_json_path = kwargs.get("save_column_names_json_path", None)
 
     mutations = variants
     del variants
@@ -866,10 +869,12 @@ def build(
     else:
         mutations_path = None
 
+    if isinstance(mutations, str):
+        mutations_original = mutations
+
     if isinstance(mutations, str) and mutations in supported_databases_and_corresponding_reference_sequence_type:
         # TODO: expand beyond COSMIC (utilize the variant_file_name key in supported_databases_and_corresponding_reference_sequence_type)
         if "cosmic" in mutations:
-            mutations_original = mutations
             reference_out_cosmic = f"{reference_out_dir}/cosmic"
             if int(cosmic_version) == 100:
                 mutations = f"{reference_out_cosmic}/CancerMutationCensus_AllData_Tsv_v{cosmic_version}_GRCh{grch}_v2/CancerMutationCensus_AllData_v{cosmic_version}_GRCh{grch}_mutation_workflow.csv"
@@ -929,8 +934,8 @@ def build(
                     # intronic_mutations += bad_cosmic_mutations_dict["intronic_mutations"]
                     # posttranslational_region_mutations += bad_cosmic_mutations_dict["posttranslational_region_mutations"]
                     
-                seq_id_column = "seq_ID"
-                var_column = "mutation_cdna"
+                seq_id_column = supported_databases_and_corresponding_reference_sequence_type[mutations_original]["column_names"]["seq_id_cdna_column"]  # "seq_ID"
+                var_column = supported_databases_and_corresponding_reference_sequence_type[mutations_original]["column_names"]["var_cdna_column"]  # "mutation_cdna"
 
             elif sequences == "genome" or sequences.endswith(supported_databases_and_corresponding_reference_sequence_type[mutations_original]["sequence_file_names"]["genome"].replace("GRCH_NUMBER", grch)):  # covers whether sequences == "genome" or sequences == "PATH/TO/Homo_sapiens.GRCh37.dna.primary_assembly.fa"
                 mutations_path_no_duplications = mutations_path.replace(".csv", "_no_duplications.csv")
@@ -940,14 +945,25 @@ def build(
                 else:
                     mutations = pd.read_csv(mutations_path_no_duplications)
 
-                seq_id_column = "chromosome"
-                var_column = "mutation_genome"
+                seq_id_column = supported_databases_and_corresponding_reference_sequence_type[mutations_original]["column_names"]["seq_id_genome_column"]  # "chromosome"
+                var_column = supported_databases_and_corresponding_reference_sequence_type[mutations_original]["column_names"]["var_genome_column"]  # "mutation_genome"
 
             elif sequences == "cds" or sequences.endswith(supported_databases_and_corresponding_reference_sequence_type[mutations_original]["sequence_file_names"]["cds"].replace("GRCH_NUMBER", grch)):  # covers whether sequences == "cds" or sequences == "PATH/TO/Homo_sapiens.GRCh37.cds.all.fa"
-                seq_id_column = "seq_ID"
-                var_column = "mutation"  # if "mutation_cds" not in mutations.columns else "mutation_cds"  # checks if CDS mutation column was renamed by convert_mutation_cds_locations_to_cdna
+                seq_id_column = supported_databases_and_corresponding_reference_sequence_type[mutations_original]["column_names"]["seq_id_cds_column"]  # "seq_ID"
+                var_column = supported_databases_and_corresponding_reference_sequence_type[mutations_original]["column_names"]["var_cds_column"]  # "mutation"
 
-            var_id_column = "mutation_id" if var_id_column is not None else None  # use the id column if the user wanted to; otherwise keep as default
+            var_id_column = supported_databases_and_corresponding_reference_sequence_type[mutations_original]["column_names"]["var_id_column"] if var_id_column is not None else None  # use the id column if the user wanted to; otherwise keep as default
+    
+    if (isinstance(mutations_original, str) and mutations_original in supported_databases_and_corresponding_reference_sequence_type) and save_column_names_json_path:
+        # save seq_id_column, var_column, var_id_column in temp json for vk ref
+        column_name_dict = {"seq_id_column": seq_id_column, "var_column": var_column, "var_id_column": var_id_column}
+        column_name_dict["gtf"] = gtf if os.path.exists(gtf) else None
+        column_name_dict["reference_genome_fasta"] = genome_file if os.path.exists(genome_file) else None
+        column_name_dict["reference_cds_fasta"] = cds_file if os.path.exists(cds_file) else None
+        column_name_dict["reference_cdna_fasta"] = cdna_file if os.path.exists(cdna_file) else None
+
+        with open(save_column_names_json_path, "w") as f:
+            json.dump(column_name_dict, f, indent=4)
 
     # Read in 'mutations' if passed as filepath to comma-separated csv
     if isinstance(mutations, str) and mutations.endswith(".csv"):

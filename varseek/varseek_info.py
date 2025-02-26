@@ -359,7 +359,6 @@ def info(
     """
     # CELL
     # * 0. Informational arguments that exit early
-
     if list_columns:
         print_list_columns()
         return

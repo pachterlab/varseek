@@ -4,8 +4,7 @@ import inspect
 import os
 import subprocess
 import time
-from pathlib import Path
-import copy
+import json
 import logging
 
 import requests
@@ -349,33 +348,6 @@ def ref(
     w, k, threads = int(w), int(k), int(threads)
 
     # * 8. Start the actual function
-    # some copy-paste from vk build to ensure correct column names if using the cosmic_cmc database
-    if variants == "cosmic_cmc":  #* as I support more databases, I should consider wrapping this in a function that goes in a utils file (especially since there will be code duplication between here and vk build)
-        if not kwargs.get("cosmic_grch"):
-            grch_supported_values_tuple = supported_databases_and_corresponding_reference_sequence_type[variants]["database_version_to_reference_assembly_build"][kwargs.get("cosmic_version", "101")]  # 101 matches vk build default
-            grch_supported_values_tuple = [int(grch) for grch in grch_supported_values_tuple]
-            grch = str(max(grch_supported_values_tuple))
-        else:
-            grch = kwargs.get("cosmic_grch")
-        if sequences == "cdna" or sequences.endswith(supported_databases_and_corresponding_reference_sequence_type[variants]["sequence_file_names"]["cdna"].replace("GRCH_NUMBER", grch)):  # covers whether sequences == "cdna" or sequences == "PATH/TO/Homo_sapiens.GRCh37.cdna.all.fa"
-            seq_id_column = "seq_ID"
-            var_column = "mutation_cdna"
-        elif sequences == "genome" or sequences.endswith(supported_databases_and_corresponding_reference_sequence_type[variants]["sequence_file_names"]["genome"].replace("GRCH_NUMBER", grch)):  # covers whether sequences == "genome" or sequences == "PATH/TO/Homo_sapiens.GRCh37.dna.primary_assembly.fa"
-            seq_id_column = "chromosome"
-            var_column = "mutation_genome"
-        elif sequences == "cds" or sequences.endswith(supported_databases_and_corresponding_reference_sequence_type[variants]["sequence_file_names"]["cds"].replace("GRCH_NUMBER", grch)):  # covers whether sequences == "cds" or sequences == "PATH/TO/Homo_sapiens.GRCh37.cds.all.fa"
-            seq_id_column = "seq_ID"
-            var_column = "mutation"
-        var_id_column = "mutation_id" if var_id_column is not None else None
-        kwargs["gene_name_column"] = kwargs.get("gene_name_column", "gene_name")  # don't override user-provided value, but otherwise set to gene_name
-        kwargs["seq_id_genome_column"] = kwargs.get("seq_id_genome_column", "chromosome")
-        kwargs["var_genome_column"] = kwargs.get("var_genome_column", "mutation_genome")
-        kwargs["seq_id_cdna_column"] = kwargs.get("seq_id_cdna_column", "seq_ID")
-        if not kwargs.get("var_cdna_column"):
-            kwargs["var_cdna_column"] = "mutation_cdna" if sequences == "cdna" else "mutation"
-        if kwargs.get("gtf") and (not isinstance(kwargs.get("gtf"), str) or not os.path.isfile(kwargs.get("gtf"))):  # eg if gtf is True, or a non-existent file
-            kwargs["gtf"] = os.path.join(reference_out_dir, f"ensembl_grch{grch}_release93", supported_databases_and_corresponding_reference_sequence_type[variants]["sequence_file_names"]["gtf"]).replace("GRCH_NUMBER", grch)  # copy-paste from vk build
-
     # get COSMIC info
     cosmic_email = kwargs.get("cosmic_email", None)
     if cosmic_email:
@@ -499,6 +471,8 @@ def ref(
         # eg kwargs_vk_build['mykwarg'] = mykwarg
         # just to be extra clear, I must explicitly pass arguments that are in the signature of vk ref; anything not in vk ref's signature should go in kwargs_vk_build (it is irrelevant what is in vk build's signature); and in the line above, I should update any values that are (1) not in vk ref's signature (so therefore they're in vk ref's kwargs), (2) I want to pass to vk build, and (3) have been updated outside of vk ref's kwargs somewhere in the function
 
+        save_column_names_json_path=f"{out}/column_names_tmp.json"
+
         logger.info("Running vk build")
         _ = vk.build(
                 sequences=sequences,
@@ -516,8 +490,27 @@ def ref(
                 save_logs=save_logs,
                 log_out_dir=log_out_dir,
                 verbose=verbose,
+                save_column_names_json_path=save_column_names_json_path,  # saves the temp json
                 **kwargs_vk_build
         )
+
+        # use values for columns and file paths as provided in vk build
+        if os.path.exists(save_column_names_json_path):  # will only exist if variants in supported_databases_and_corresponding_reference_sequence_type
+            with open(save_column_names_json_path, "r") as f:
+                column_names_and_file_names_dict = json.load(f)
+            os.remove(save_column_names_json_path)
+            if column_names_and_file_names_dict['seq_id_column']:
+                seq_id_column = column_names_and_file_names_dict['seq_id_column']
+            if column_names_and_file_names_dict['var_column']:
+                var_column = column_names_and_file_names_dict['var_column']
+            if column_names_and_file_names_dict['var_id_column']:
+                var_id_column = column_names_and_file_names_dict['var_id_column']
+            for column in ("seq_id_genome_column", "var_genome_column", "seq_id_cdna_column", "var_cdna_column", "gene_name_column"):
+                kwargs[column] = kwargs.get(column, supported_databases_and_corresponding_reference_sequence_type[variants]["column_names"][column])
+            for file in ("gtf", "reference_genome_fasta", "reference_cdna_fasta"):
+                if column_names_and_file_names_dict[file]:
+                    kwargs[file] = kwargs.get(file, column_names_and_file_names_dict[file])
+
     else:
         logger.warning(f"Skipping vk build because {file_signifying_successful_vk_build_completion} already exists and overwrite=False")
 
