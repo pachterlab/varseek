@@ -869,8 +869,7 @@ def build(
     else:
         mutations_path = None
 
-    if isinstance(mutations, str):
-        mutations_original = mutations
+    mutations_original = mutations
 
     if isinstance(mutations, str) and mutations in supported_databases_and_corresponding_reference_sequence_type:
         # TODO: expand beyond COSMIC (utilize the variant_file_name key in supported_databases_and_corresponding_reference_sequence_type)
@@ -1601,7 +1600,7 @@ def build(
             agg_columns = [col for col in mutations.columns if col != "vcrs_sequence"]
 
         if save_variants_updated_csv:
-            logger.warning("Merging rows of identical VCRSs can take a while if save_variants_updated_csv=True since it will concatenate all VCRSs too)")
+            logger.warning("Merging rows of identical VCRSs can take a while if save_variants_updated_csv=True since it will concatenate all VCRSs too")
             mutations = mutations.groupby(group_key, sort=False).agg({col: ("first" if col in columns_not_to_semicolon_join else (";".join if col == "header" else lambda x: list(x.fillna(np.nan)))) for col in agg_columns}).reset_index(drop=merge_identical_rc)  # lambda x: list(x) will make simple list, but lengths will be inconsistent with NaN values  # concatenate values with semicolons: lambda x: `";".join(x.astype(str))`   # drop if merging by vcrs_sequence_and_rc_tuple, but not if merging by vcrs_sequence
             if original_order:
                 mutations['original_order'] = mutations['original_order'].apply(min)  # get the minimum original order for each group

@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import time
 import logging
+import json
 
 import anndata
 import numpy as np
@@ -178,6 +179,16 @@ def validate_input_clean(params_dict):
             raise ValueError(f"Directory {params_dict.get(param_name)} does not exist")
     if not isinstance(params_dict.get("out"), (str, Path)):
         raise ValueError(f"Out directory {params_dict.get('out')} is not a string")
+    
+    if params_dict.get("qc_against_gene_matrix"):
+        for arg in ["kb_count_vcrs_dir", "kb_count_reference_genome_dir"]:
+            kb_count_normal_dir = params_dict.get(arg)
+            if kb_count_normal_dir and os.path.exists(kb_count_normal_dir):
+                run_info_json = os.path.join(kb_count_normal_dir, "run_info.json")
+                with open(run_info_json, "r") as f:
+                    data = json.load(f)
+                if "--num" not in data["call"]:
+                    raise ValueError(f"--num must be included in the provided value for {arg}. Please run kb count on the normal genome again, or provide a new path for {arg} to allow varseek count to make this file for you.")
 
 
 needs_for_normal_genome_matrix = ["filter_cells_by_min_counts", "filter_cells_by_min_genes", "filter_genes_by_min_cells", "filter_cells_by_max_mt_content", "doublet_detection", "cpm_normalization"]
@@ -356,7 +367,7 @@ def clean(
 
     id_to_header_csv = kwargs.get("id_to_header_csv", None)
 
-    if vk_ref_dir:  # make sure all of the defaults below match vk info/filter
+    if vk_ref_dir and os.path.exists(vk_ref_dir):  # make sure all of the defaults below match vk info/filter
         vcrs_index = os.path.join(vk_ref_dir, "vcrs_index.idx") if not vcrs_index else vcrs_index
         if not vcrs_t2g:
             vcrs_t2g = os.path.join(vk_ref_dir, "vcrs_t2g_filtered.txt") if os.path.isfile(os.path.join(vk_ref_dir, "vcrs_t2g_filtered.txt")) else os.path.join(vk_ref_dir, "vcrs_t2g.txt")
@@ -369,9 +380,9 @@ def clean(
         if not dlist_fasta:
             dlist_fasta = os.path.join(vk_ref_dir, "dlist_filtered.fa") if os.path.isfile(os.path.join(vk_ref_dir, "dlist_filtered.fa")) else os.path.join(vk_ref_dir, "dlist.fa")
 
-    if (apply_single_end_mode_on_paired_end_data_correction or apply_dlist_correction or qc_against_gene_matrix) and (not kb_count_vcrs_dir or not os.path.exists(kb_count_vcrs_dir)):
+    if (apply_single_end_mode_on_paired_end_data_correction or apply_dlist_correction or qc_against_gene_matrix) and (not kb_count_vcrs_dir or not os.path.exists(kb_count_vcrs_dir) or len(os.listdir(kb_count_vcrs_dir)) == 0):
         raise ValueError("kb_count_vcrs_dir must be provided as the output from kb count out to the VCRS reference if apply_single_end_mode_on_paired_end_data_correction, apply_dlist_correction, or qc_against_gene_matrix is True.")
-    if qc_against_gene_matrix and (not kb_count_reference_genome_dir or not os.path.exists(kb_count_reference_genome_dir)):
+    if qc_against_gene_matrix and (not kb_count_reference_genome_dir or not os.path.exists(kb_count_reference_genome_dir) or len(os.listdir(kb_count_reference_genome_dir)) == 0):
         raise ValueError("kb_count_reference_genome_dir must be provided as the output from kb count out to the reference genome if qc_against_gene_matrix is True.")
 
     # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True

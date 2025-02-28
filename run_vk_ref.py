@@ -30,8 +30,6 @@ vk.ref(
     dry_run=dry_run,
     save_variants_updated_csv=True,
     save_variants_updated_exploded_vk_info_csv=True,
-    cosmic_email="jmrich@caltech.edu",
-    cosmic_password="bopdit-xybRog-bycqu1",
     dlist_reference_source="grch37",
     dlist_reference_ensembl_release=93,
     # columns_to_include="all",

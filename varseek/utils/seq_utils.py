@@ -562,11 +562,13 @@ def download_t2t_reference_files(reference_out_dir_sequences_dlist):
 
     if os.path.exists(ref_dlist_fa_genome) and os.path.exists(ref_dlist_fa_cdna) and os.path.exists(ref_dlist_gtf):
         return ref_dlist_fa_genome, ref_dlist_fa_cdna, ref_dlist_gtf
+    
+    print("Downloading T2T reference files...")
 
     # Step 1: Download the ZIP file using wget
     download_url = "https://api.ncbi.nlm.nih.gov/datasets/v2alpha/genome/accession/GCF_009914755.1/download?include_annotation_type=GENOME_FASTA&include_annotation_type=RNA_FASTA&include_annotation_type=GENOME_GTF&hydrated=FULLY_HYDRATED"
     zip_file = f"{reference_out_dir_sequences_dlist}/t2t.zip"
-    subprocess.run(["wget", "-O", zip_file, download_url], check=True)
+    subprocess.run(["wget", "-O", zip_file, download_url], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  # the output can take up a lot of space in python/Jupyter
 
     # Step 2: Unzip the downloaded file
     temp_dir = f"{reference_out_dir_sequences_dlist}/temp"
@@ -771,7 +773,8 @@ def bulk_sort_order_for_kb_count_fastqs(filepath):
 
 def illumina_sort_order_for_kb_count_fastqs(filepath):
     # Define order for file types
-    file_type_order = {"R1": 0, "R2": 1, "I1": 2, "I2": 3}
+    # file_type_order = {"R1": 0, "R2": 1, "I1": 2, "I2": 3}
+    file_type_order = {"I1": 0, "I2": 1, "R1": 2, "R2": 3}  # New Feb 2025
 
     # Split the filepath into parts by '/'
     path_parts = filepath.split("/")

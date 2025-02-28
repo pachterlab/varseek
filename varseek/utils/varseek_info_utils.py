@@ -904,6 +904,8 @@ def get_vcrss_that_pseudoalign_but_arent_dlisted(
         how="left",
     )
 
+    mutation_metadata_df[column_name] = mutation_metadata_df[column_name].fillna(False)
+
     return mutation_metadata_df
 
 

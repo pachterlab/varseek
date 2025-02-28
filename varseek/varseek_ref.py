@@ -635,8 +635,8 @@ def ref(
         vcrs_t2g_for_alignment = None
 
     vk_ref_output_dict = {}
-    vk_ref_output_dict["index"] = index_out
-    vk_ref_output_dict["t2g"] = vcrs_t2g_for_alignment
+    vk_ref_output_dict["index"] = os.path.abspath(index_out)
+    vk_ref_output_dict["t2g"] = os.path.abspath(vcrs_t2g_for_alignment)
 
     # Report time
     if not dry_run:

@@ -62,31 +62,23 @@ def validate_input_fastqpp(params_dict):
         raise ValueError(f"Invalid value for out: {params_dict.get('out', None)}")
 
     # optional str
-    for file_name_suffix in ["quality_control_fastqs_out_suffix", "replace_low_quality_bases_with_N_out_suffix", "split_by_Ns_and_low_quality_bases_out_suffix", "concatenate_paired_fastqs_out_suffix"]:
+    for file_name_suffix in ["split_by_Ns_and_low_quality_bases_out_suffix", "concatenate_paired_fastqs_out_suffix"]:
         if params_dict.get(file_name_suffix) is not None and not isinstance(params_dict.get(file_name_suffix), str):
             raise ValueError(f"Invalid suffix: {params_dict.get(file_name_suffix)}")
 
     # integers - optional just means that it's in kwargs
     for param_name, min_value, max_value, optional_value in [
-        ("cut_mean_quality", 1, 36, False),
-        ("cut_window_size", 1, 1000, False),
-        ("qualified_quality_phred", 0, 93, False),
-        ("unqualified_percent_limit", 1, 100, False),
-        ("max_ambiguous", 1, 50, False),
         ("min_base_quality_for_splitting", 0, 93, False),
     ]:
         param_value = params_dict.get(param_name)
         if not is_valid_int(param_value, "between", min_value_inclusive=min_value, max_value_inclusive=max_value, optional=optional_value):
             raise ValueError(f"{param_name} must be an integer between {min_value} and {max_value}. Got {params_dict.get(param_name)}.")
 
-    if not is_valid_int(params_dict["threads"], ">=", 1, optional=False):
-        raise ValueError(f"threads must be an integer >= 1. Got {params_dict.get('threads')}.")
-
     if not is_valid_int(params_dict["min_read_len"], ">=", 1, optional=False) and params_dict["min_read_len"] is not None:
-        raise ValueError(f"min_read_len must be an integer >= 1 or None. Got {params_dict.get('threads')}.")
+        raise ValueError(f"min_read_len must be an integer >= 1 or None. Got {params_dict.get('min_read_len')}.")
 
     # boolean
-    for param_name in ["quality_control_fastqs", "fastqc_and_multiqc", "split_reads_by_Ns_and_low_quality_bases", "concatenate_paired_fastqs", "dry_run", "overwrite", "sort_fastqs"]:
+    for param_name in ["split_reads_by_Ns_and_low_quality_bases", "concatenate_paired_fastqs", "dry_run", "overwrite", "sort_fastqs"]:
         if not isinstance(params_dict.get(param_name), bool):
             raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
 
@@ -102,22 +94,14 @@ def fastqpp(
     technology=None,
     multiplexed=None,
     parity="single",
-    quality_control_fastqs=False,
-    cut_mean_quality=13,
-    cut_window_size=4,  # new
-    qualified_quality_phred=0,
-    unqualified_percent_limit=100,
-    max_ambiguous=50,
-    min_read_len=63,
-    fastqc_and_multiqc=False,
     split_reads_by_Ns_and_low_quality_bases=False,
     min_base_quality_for_splitting=5,
+    min_read_len=63,
     concatenate_paired_fastqs=False,
     out=".",
     dry_run=False,
     overwrite=False,
     sort_fastqs=True,
-    threads=2,
     logging_level=None,
     save_logs=False,
     log_out_dir=None,
@@ -133,14 +117,6 @@ def fastqpp(
     - technology                        (str) Technology used to generate the data. Only used if sort_fastqs=True. To see list of spported technologies, run `kb --list`. Default: None
     - multiplexed                       (bool) Indicates that the fastq files are multiplexed. Only used if sort_fastqs=True and technology is a smartseq technology. Default: None
     - parity                            (str) "single" or "paired". Only relevant if technology is bulk or a smart-seq. Default: "single"
-    - quality_control_fastqs            (bool) If True, run fastp to trim and filter reads. Requires fastp or seqtk to be installed. Default: False
-    - cut_mean_quality                  (int) The mean quality requirement option in cut_window_size when trimming edges. Only used if quality_control_fastqs=True. if See details with `fastp --help`. Range: 1-36. Default: 20
-    - cut_window_size                   (int) The window size with which to calculate cut_mean_quality when trimming edges. Only used if quality_control_fastqs=True. See details with `fastp --help`. Range: 1-1000. Default: 4
-    - qualified_quality_phred           (int) The phred quality score for a base to be considered qualified. Only used if quality_control_fastqs=True. See details with `fastp --help`. Range: 0-93. Default: 0 (no average quality filtering)
-    - unqualified_percent_limit         (int) The percent of unqualified bases allowed in a read. Only used if quality_control_fastqs=True. See details with `fastp --help`. Range: 1-100. Default: 100 (no average quality filtering)
-    - max_ambiguous                     (int) The maximum number of ambiguous bases allowed in a read. Only used if quality_control_fastqs=True. See details with `fastp --help`. Range: 1-50. Default: 50
-    - min_read_len                      (int) The minimum length of a read. Only used if quality_control_fastqs=True or split_reads_by_Ns_and_low_quality_bases=True. Recommended to set equal to the value of k in kb ref/count. Default: None (no minimum length)
-    - fastqc_and_multiqc                (bool) If True, run FastQC and MultiQC. Requires FastQC ± MultiQC to be installed. Default: False
     - split_reads_by_Ns_and_low_quality_bases   (bool) If True, split reads by Ns and low quality bases (lower than min_base_quality_for_splitting) into multiple smaller reads. If min_base_quality_for_splitting > 0, then requires seqtk to be installed. If technology == "bulk", then seqtk will speed this up significantly. Default: False
     - min_base_quality_for_splitting    (int) The minimum acceptable base quality for split_reads_by_Ns_and_low_quality_bases. Bases below this quality will split. Only used if split_reads_by_Ns_and_low_quality_bases=True. Range: 0-93. Default: 13
     - concatenate_paired_fastqs         (bool) If True, concatenate paired fastq files. Default: False
@@ -148,18 +124,12 @@ def fastqpp(
     - dry_run                           (bool) If True, print the commands that would be run without actually running them. Default: False
     - overwrite                         (True/False) Whether to overwrite existing output files. Will return if any output file already exists. Default: False.
     - sort_fastqs                       (bool) If True, sort fastq files by kb count. If False, then still check the order but do not change anything. Default: True
-    - threads                           (int) Number of threads to use. Default: 2
     - logging_level                      (str) Logging level. Can also be set with the environment variable VARSEEK_LOGGING_LEVEL. Default: INFO.
     - save_logs                          (True/False) Whether to save logs to a file. Default: False.
     - log_out_dir                        (str) Directory to save logs. Default: `out`/logs
 
     # Hidden arguments (part of kwargs)
-    - fastp_path                       (str) Path to fastp. Default: "fastp"
     - seqtk_path                       (str) Path to seqtk. Default: "seqtk"
-    - fastqc_path                      (str) Path to fastqc. Default: "fastqc"
-    - multiqc_path                     (str) Path to multiqc. Default: "multiqc"
-    - quality_control_fastqs_out_suffix (str) Suffix to add to fastq files after quality control (preceded by underscore). Default: "qc"
-    - replace_low_quality_bases_with_N_out_suffix (str) Suffix to add to fastq files after replacing low quality bases with N (preceded by underscore). Default: "addedNs"
     - split_by_Ns_and_low_quality_bases_out_suffix            (str) Suffix to add to fastq files after splitting by Ns (preceded by underscore). Default: "splitNs"
     - concatenate_paired_fastqs_out_suffix (str) Suffix to add to fastq files after concatenating paired fastq files (preceded by underscore). Default: "concatenated"
     - delete_intermediate_files        (bool) If True, delete intermediate files. Default: True
@@ -211,15 +181,12 @@ def fastqpp(
     # all input files for vk fastqpp are required in the varseek workflow, so this is skipped
 
     # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
-    quality_control_fastqs_out_suffix = kwargs.get("quality_control_fastqs_out_suffix", "qc")
     replace_low_quality_bases_with_N_out_suffix = kwargs.get("replace_low_quality_bases_with_N_out_suffix", "addedNs")
     split_by_Ns_and_low_quality_bases_out_suffix = kwargs.get("split_by_Ns_and_low_quality_bases_out_suffix", "split")
     concatenate_paired_fastqs_out_suffix = kwargs.get("concatenate_paired_fastqs_out_suffix", "concatenatedPairs")
 
     os.makedirs(out, exist_ok=True)
 
-    fastq_quality_controlled_all_files = []
-    fastq_fastqc_all_files = []
     fastq_more_Ns_all_files = []
     split_by_Ns_and_low_quality_bases_all_files = []
     fastq_concatenated_all_files = []
@@ -227,13 +194,6 @@ def fastqpp(
     if not overwrite:
         for fastq in fastqs:
             parts_filename = fastq.split(".", 1)
-            if quality_control_fastqs:
-                fastq_quality_controlled = os.path.join(out, f"{parts_filename[0]}_{quality_control_fastqs_out_suffix}.{parts_filename[1]}")
-                fastq_quality_controlled_all_files.append(fastq_quality_controlled)
-            if fastqc_and_multiqc:
-                fastq_fastqc_html = os.path.join(out, f"{parts_filename[0]}_fastqc.html")
-                fastq_fastqc_zip = os.path.join(out, f"{parts_filename[0]}_fastqc.zip")
-                fastq_fastqc_all_files.extend([fastq_fastqc_html, fastq_fastqc_zip])
             if split_reads_by_Ns_and_low_quality_bases:
                 fastq_more_Ns = os.path.join(out, f"{parts_filename[0]}_{replace_low_quality_bases_with_N_out_suffix}.{parts_filename[1]}")
                 fastq_more_Ns_all_files.append(fastq_more_Ns)
@@ -243,19 +203,12 @@ def fastqpp(
                 fastq_concatenated = os.path.join(out, f"{parts_filename[0]}_{concatenate_paired_fastqs_out_suffix}.{parts_filename[1]}")
                 fastq_concatenated_all_files.append(fastq_concatenated)
 
-        multiqc_html = os.path.join(out, "multiqc_report.html")
-        # multiqc_dir = os.path.join(out, "multiqc_data")
-        fastq_fastqc_all_files.append(multiqc_html)
-
     # * 7. Define kwargs defaults
-    fastp = kwargs.get("fastp_path", "fastp")
     seqtk = kwargs.get("seqtk_path", "seqtk")
-    fastqc = kwargs.get("fastqc_path", "fastqc")
-    multiqc = kwargs.get("multiqc_path", "multiqc")
     delete_intermediate_files = kwargs.get("delete_intermediate_files", True)
 
     # * 7.5 make sure ints are ints
-    cut_mean_quality, cut_window_size, qualified_quality_phred, unqualified_percent_limit, max_ambiguous, min_read_len, threads = int(cut_mean_quality), int(cut_window_size), int(qualified_quality_phred), int(unqualified_percent_limit), int(max_ambiguous), int(min_read_len), int(threads)
+    min_read_len, threads = int(min_read_len), int(threads)
 
     # * 8. Start the actual function
     try:
@@ -279,46 +232,10 @@ def fastqpp(
     fastqpp_dict = {}
     fastqpp_dict["original"] = fastqs
 
-    if quality_control_fastqs:
-        if not is_program_installed(fastp) and not is_program_installed(seqtk):
-            raise ValueError(f"fastp (recommended) or seqtk must be installed to run quality_control_fastqs. Please install at least one of these and try again, or set quality_control_fastqs=False.")  # option for an exception rather than a warning because I think the user would be more frustrated with incorrect results with a log message that could be easy to miss than having to restart their run
+    # see trim_edges_off_reads_fastq_list for the fastp code
+    # see run_fastqc_and_multiqc for the fastqc/multiqc code
 
-        # check if any file in fastq_quality_controlled_all_files does not exist
-        if not all(os.path.exists(f) for f in fastq_quality_controlled_all_files) or overwrite:
-            logger.info("Quality controlling fastq files (trimming adaptors, trimming low-quality read edges, filtering low quality reads)")
-            fastqs = trim_edges_off_reads_fastq_list(
-                rnaseq_fastq_files=fastqs,
-                parity=parity,
-                minimum_base_quality_trim_reads=cut_mean_quality,
-                cut_window_size=cut_window_size,
-                qualified_quality_phred=qualified_quality_phred,
-                unqualified_percent_limit=unqualified_percent_limit,
-                n_base_limit=max_ambiguous,
-                length_required=min_read_len,
-                fastp=fastp,
-                seqtk=seqtk,
-                out_dir=out,
-                threads=threads,
-                logger=logger,
-                suffix=quality_control_fastqs_out_suffix,
-            )
-        else:
-            logger.warning("Quality controlled fastq files already exist. Skipping quality control step. Use overwrite=True to overwrite existing files.")
-        fastqpp_dict["quality_controlled"] = fastqs
-
-    if fastqc_and_multiqc:
-        if not is_program_installed(fastqc):
-            raise ValueError(f"fastqc must be installed to run fastqc_and_multiqc. Please install it and try again, or set fastqc_and_multiqc=False.")
-        if not is_program_installed(multiqc):
-            logger.warning(f"multiqc is not installed and fastqc_and_multiqc=True. Skipping multiqc step.")
-
-        # check if any file in fastq_quality_controlled_all_files does not exist
-        if not all(os.path.exists(f) for f in fastq_fastqc_all_files) or overwrite:
-            logger.info("Running FastQC and MultiQC")
-            run_fastqc_and_multiqc(fastqs, out, fastqc=fastqc, multiqc=multiqc)
-        else:
-            logger.warning("FastQC and MultiQC files already exist. Skipping FastQC and MultiQC step. Use overwrite=True to overwrite existing files.")
-
+    # TODO: only process the file with sequencing data, and make sure any barcode/UMI is not processed and gets duplicated for each split
     if split_reads_by_Ns_and_low_quality_bases:  # seqtk install is checked internally, as it only applies to the bulk condition and the code can still run with the same output without it (albeit slower)
         delete_intermediate_files_original = delete_intermediate_files
         if min_base_quality_for_splitting > 0:

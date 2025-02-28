@@ -26,8 +26,6 @@ vk.build(
     save_logs=True,
     verbose=True,
     save_variants_updated_csv=True,
-    cosmic_email="jmrich@caltech.edu",
-    cosmic_password="bopdit-xybRog-bycqu1",
     dry_run=dry_run,
 )
 

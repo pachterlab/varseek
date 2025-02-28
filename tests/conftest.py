@@ -22,10 +22,14 @@ def pytest_ignore_collect(path, config):  # skip test_bustools.py on Mac due to 
         return True
 
 
-def compare_two_dataframes_without_regard_for_order_of_rows_or_columns(df1_path, df2_path, columns_to_drop=None, head=False):
-    df1 = pd.read_csv(df1_path)
-    df2 = pd.read_csv(df2_path)
-
+def compare_two_dataframes_without_regard_for_order_of_rows_or_columns(df1_path, df2_path, columns_to_drop=None, head=False, only_check_intersection_of_columns=False):
+    nrows = 5 if head else None
+    df1 = df1_path if isinstance(df1_path, pd.DataFrame) else pd.read_csv(df1_path, nrows=nrows)
+    df2 = df2_path if isinstance(df2_path, pd.DataFrame) else pd.read_csv(df2_path, nrows=nrows)
+    if head:
+        df1 = df1.head()
+        df2 = df2.head()
+        
     if columns_to_drop:
         if type(columns_to_drop) == str:
             columns_to_drop = [columns_to_drop]
@@ -33,15 +37,31 @@ def compare_two_dataframes_without_regard_for_order_of_rows_or_columns(df1_path,
         df1 = df1.drop(columns=columns_to_drop, errors='ignore')
         df2 = df2.drop(columns=columns_to_drop, errors='ignore')
 
-    # Sort by all columns and reset index to ignore both row and column order
-    df1_sorted = df1.sort_values(by=list(df1.columns)).reset_index(drop=True)
-    df2_sorted = df2.sort_values(by=list(df2.columns)).reset_index(drop=True)
+    if only_check_intersection_of_columns:
+        df1_cols = set(df1.columns)
+        df2_cols = set(df2.columns)
 
-    if head:
-        df1 = df1.head()
-        df2 = df2.head()
+        only_in_df1 = df1_cols - df2_cols
+        only_in_df2 = df2_cols - df1_cols
 
-    pd.testing.assert_frame_equal(df1_sorted, df2_sorted, check_like=True)
+        print("Columns only in df1:", only_in_df1)
+        print("Columns only in df2:", only_in_df2)
+
+        # Get intersection of columns
+        common_cols = df1_cols & df2_cols
+
+        if len(common_cols) == 0:
+            raise ValueError("No common columns to compare.")
+
+        # Create new DataFrames with only common columns
+        df1 = df1[list(common_cols)]
+        df2 = df2[list(common_cols)]
+    
+    # # Sort by all columns and reset index to ignore both row and column order  # commented out Feb 2025
+    # df1 = df1.sort_values(by=list(df1.columns)).reset_index(drop=True)
+    # df2 = df2.sort_values(by=list(df2.columns)).reset_index(drop=True)
+
+    pd.testing.assert_frame_equal(df1, df2, check_like=True, check_exact=False)
 
 def compare_two_fastas_without_regard_for_order_of_entries(fasta1, fasta2):
     fasta1_dict = create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(fasta1)

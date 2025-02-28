@@ -7,6 +7,7 @@ import subprocess
 import time
 import copy
 import logging
+import json
 
 import varseek as vk
 from varseek.utils import (
@@ -98,9 +99,8 @@ def validate_input_count(params_dict):
     out = params_dict.get("out", ".")
     kb_count_reference_genome_out_dir = params_dict.get("kb_count_reference_genome_out_dir") if params_dict.get("kb_count_reference_genome_out_dir") else f"{out}/kb_count_out_reference_genome"
     if params_dict.get("qc_against_gene_matrix") and not os.path.exists(kb_count_reference_genome_out_dir):  # align to this genome if (1) adata doesn't exist and (2) qc_against_gene_matrix=True (because I need the BUS file for this)  # purposely omitted overwrite because it is reasonable to expect that someone has pre-computed this matrix and doesn't want it recomputed under any circumstances (and if they did, then simply point to a different directory)
-        species = params_dict.get("species", None)
-        if not isinstance(species, str) and species not in supported_downloadable_normal_reference_genomes_with_kb_ref:
-            raise ValueError(f"Species {species} is not supported. Supported values are {supported_downloadable_normal_reference_genomes_with_kb_ref}. See more details at https://github.com/pachterlab/kallisto-transcriptome-indices/")
+        if not os.path.exists(params_dict.get("reference_genome_index")) or not os.path.exists(params_dict.get("reference_genome_t2g")):
+            raise ValueError(f"Reference genome index {params_dict.get('reference_genome_index')} or t2g {params_dict.get('reference_genome_t2g')} does not exist. Please provide a valid reference genome index and t2g file created with the `kb ref` command (a standard reference genome index/t2g, *not* a variant reference).")
         if params_dict.get("mm") != params_dict.get("union"):  # mm must be equal to union if qc_against_gene_matrix=True - because qc_against_gene_matrix=True will automatically add mm and union to vcrs's kb count (which is a good thing because the normal gene matrix can resolve some of the ambiguities introduced here, and the whole premise of what I'm doing is that I want a single k-mer match to indicate reasonable confidence in alignment), and once I am looping through BUS file, it will be impossible to distinguish between multimap and union cases (both will appear as 2+ EC's for 1 read)
             raise ValueError("If qc_against_gene_matrix=True, then mm and union must be the same")
 
@@ -118,6 +118,17 @@ def validate_input_count(params_dict):
                         raise ValueError(f"{argument} must be a string. Got {type(argument_value)}.")
                 elif argument_type == "multiple_arguments":
                     pass
+    
+    # --nums required when qc_against_gene_matrix=True
+    if params_dict.get("qc_against_gene_matrix"):
+        for arg in ["kb_count_reference_genome_dir", "kb_count_reference_genome_out_dir"]:
+            kb_count_normal_dir = params_dict.get(arg)
+            if kb_count_normal_dir and os.path.exists(kb_count_normal_dir):
+                run_info_json = os.path.join(kb_count_normal_dir, "run_info.json")
+                with open(run_info_json, "r") as f:
+                    data = json.load(f)
+                if "--num" not in data["call"]:
+                    raise ValueError(f"--num must be included in the provided value for {arg}. Please run kb count on the normal genome again, or provide a new path for {arg} to allow varseek count to make this file for you.")
 
 
 # don't worry if it says an argument is unused, as they will all get put in params_dict for each respective function and passed to the child functions
@@ -132,7 +143,6 @@ def count(
     mm=False,
     union=False,
     parity="single",
-    species=None,
     reference_genome_index=None,  # optional inputs
     reference_genome_t2g=None,
     adata_reference_genome=None,
@@ -168,7 +178,6 @@ def count(
     - mm                                    (bool)  If True, use the multi-mapping reads. Default: False.
     - union                                 (bool)  If True, use the union of the read mappings. Default: False.
     - parity                                (str)  The parity of the reads for vk fastqpp. Either "single" or "paired". Only used if technology is bulk or a smart-seq. For parity in kb count, see parity_kb_count. Default: "single".
-    - species                               (str)  The species of the reference genome. Only used if qc_against_gene_matrix=True (see vk clean --help). Default: None.
 
     # Optional input arguments
     - reference_genome_index                (str) Path to index file for the "normal" reference genome. Created if not provided. Only used if qc_against_gene_matrix=True (see vk clean --help). Default: None.
@@ -359,6 +368,9 @@ def count(
     all_parameter_names_set_vk_summarize = explicit_parameters_vk_summarize | allowable_kwargs_vk_summarize
 
     # vk fastqpp
+    if not any([kwargs[fastqpp_param] for fastqpp_param in ["split_reads_by_Ns_and_low_quality_bases", "concatenate_paired_fastqs"]]):
+        disable_fastqpp = True
+
     if not disable_fastqpp:  # don't do the whole overwrite thing here because it is the first function, and a user should know if they are overwriting their fastqs
         kwargs_vk_fastqpp = {key: value for key, value in kwargs.items() if ((key in all_parameter_names_set_vk_fastqpp) and (key not in count_signature.parameters.keys()))}
         # update anything in kwargs_vk_fastqpp that is not fully updated in (vk count's) kwargs (should be nothing or very close to it, as I try to avoid these double-assignments by always keeping kwargs in kwargs)
@@ -373,7 +385,6 @@ def count(
                             dry_run=dry_run,
                             overwrite=overwrite,  # intentionally do not set overwrite = True here because it is the first function, and a user should know if they are overwriting their fastqs
                             sort_fastqs=sort_fastqs,
-                            threads=threads,
                             logging_level=logging_level,
                             save_logs=save_logs,
                             log_out_dir=log_out_dir,
@@ -382,11 +393,9 @@ def count(
         )
 
         fastqs_vcrs = fastqpp_dict["final"]
-        fastqs_reference_genome = fastqpp_dict["quality_controlled"] if "quality_controlled" in fastqpp_dict else fastqs
     else:
         logger.warning("Skipping vk fastqpp because disable_fastqpp=True")
         fastqs_vcrs = fastqs
-        fastqs_reference_genome = fastqs
     fastqs = fastqs_vcrs  # so that the correct fastqs get passed into vk clean
 
     # # kb count, VCRS
@@ -461,28 +470,7 @@ def count(
         reference_genome_t2g = reference_genome_t2g if reference_genome_t2g else os.path.join(out, "reference_genome_t2g.t2g")
 
         if not os.path.exists(reference_genome_index) or not os.path.exists(reference_genome_t2g):  # download reference if does not exist
-            if not isinstance(species, str) and species not in supported_downloadable_normal_reference_genomes_with_kb_ref:
-                raise ValueError(f"Species {species} is not supported. Supported values are {supported_downloadable_normal_reference_genomes_with_kb_ref}. See more details at https://github.com/pachterlab/kallisto-transcriptome-indices/")
-            
-            # kb ref, reference genome
-            kb_ref_command = [
-                "kb",
-                "ref",
-                "-t",
-                str(threads),
-                "-i",
-                reference_genome_index,
-                "-g",
-                reference_genome_t2g,
-                "-d",
-                species,
-            ]
-
-            if dry_run:
-                print(' '.join(kb_ref_command))
-            else:
-                logger.info(f"Running kb ref for reference genome with command: {' '.join(kb_ref_command)}")
-                subprocess.run(kb_ref_command, check=True)
+            raise ValueError(f"Reference genome index {reference_genome_index} or t2g {reference_genome_t2g} does not exist. Please provide a valid reference genome index and t2g file created with the `kb ref` command (a standard reference genome index/t2g, *not* a variant reference).")
 
         #!!! WT vcrs alignment, copied from previous notebook 1_2 (still not implemented in here correctly)
         # if os.path.exists(wt_vcrs_index) and (not os.path.exists(kb_count_out_wt_vcrs) or len(os.listdir(kb_count_out_wt_vcrs)) == 0):
@@ -530,7 +518,7 @@ def count(
                     else:  # multiple_arguments or something else
                         pass
 
-        kb_count_standard_index_command += fastqs_reference_genome
+        kb_count_standard_index_command += fastqs  # the ones unprocessed by fastqpp
 
         if dry_run:
             print(' '.join(kb_count_standard_index_command))
@@ -603,13 +591,13 @@ def count(
         logger.warning("Skipping vk summarize because disable_summarize=True")
 
     vk_count_output_dict = {}
-    vk_count_output_dict["adata_path_unprocessed"] = adata_vcrs
-    vk_count_output_dict["adata_path_reference_genome_unprocessed"] = adata_reference_genome
-    vk_count_output_dict["adata_path"] = adata_vcrs_clean_out
-    vk_count_output_dict["adata_path_reference_genome"] = adata_reference_genome_clean_out
+    vk_count_output_dict["adata_path_unprocessed"] = os.path.abspath(adata_vcrs)
+    vk_count_output_dict["adata_path_reference_genome_unprocessed"] = os.path.abspath(adata_reference_genome)
+    vk_count_output_dict["adata_path"] = os.path.abspath(adata_vcrs_clean_out)
+    vk_count_output_dict["adata_path_reference_genome"] = os.path.abspath(adata_reference_genome_clean_out)
 
-    vk_count_output_dict["vcf"] = vcf_out
-    vk_count_output_dict["vk_summarize_output_dir"] = vk_summarize_out_dir
+    vk_count_output_dict["vcf"] = os.path.abspath(vcf_out)
+    vk_count_output_dict["vk_summarize_output_dir"] = os.path.abspath(vk_summarize_out_dir)
 
     if not dry_run:
         report_time_elapsed(start_time, logger=logger, function_name="count")

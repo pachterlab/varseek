@@ -1485,47 +1485,6 @@ def main():  # noqa: C901
         help=extract_help_from_doc(fastqpp, "parity"),
     )
     parser_fastqpp.add_argument(
-        "--quality_control_fastqs",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(fastqpp, "quality_control_fastqs"),
-    )
-    parser_fastqpp.add_argument(
-        "--cut_mean_quality",
-        type=int,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(fastqpp, "cut_mean_quality"),
-    )
-    parser_fastqpp.add_argument(
-        "--cut_window_size",
-        type=int,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(fastqpp, "cut_window_size"),
-    )
-    parser_fastqpp.add_argument(
-        "--qualified_quality_phred",
-        type=int,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(fastqpp, "qualified_quality_phred"),
-    )
-    parser_fastqpp.add_argument(
-        "--unqualified_percent_limit",
-        type=int,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(fastqpp, "unqualified_percent_limit"),
-    )
-    parser_fastqpp.add_argument(
-        "--max_ambiguous",
-        type=int,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(fastqpp, "max_ambiguous"),
-    )
-    parser_fastqpp.add_argument(
         "--min_read_len",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
@@ -1584,14 +1543,6 @@ def main():  # noqa: C901
         help=extract_help_from_doc(fastqpp, "sort_fastqs", disable=True),
     )
     parser_fastqpp.add_argument(
-        "-t",
-        "--threads",
-        type=int,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(fastqpp, "threads"),
-    )
-    parser_fastqpp.add_argument(
         "--logging_level",
         choices=["NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "0", "10", "20", "30", "40", "50", "60", None],
         required=False,
@@ -1613,46 +1564,16 @@ def main():  # noqa: C901
 
     # kwargs
     parser_fastqpp.add_argument(
-        "--fastp_path",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(fastqpp, "fastp_path"),
-    )
-    parser_fastqpp.add_argument(
         "--seqtk_path",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(fastqpp, "seqtk_path"),
     )
     parser_fastqpp.add_argument(
-        "--fastqc_path",
+        "--split_by_Ns_and_low_quality_bases_out_suffix",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(fastqpp, "fastqc_path"),
-    )
-    parser_fastqpp.add_argument(
-        "--multiqc_path",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(fastqpp, "multiqc_path"),
-    )
-    parser_fastqpp.add_argument(
-        "--quality_control_fastqs_out_suffix",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(fastqpp, "quality_control_fastqs_out_suffix"),
-    )
-    parser_fastqpp.add_argument(
-        "--replace_low_quality_bases_with_N_out_suffix",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(fastqpp, "replace_low_quality_bases_with_N_out_suffix"),
-    )
-    parser_fastqpp.add_argument(
-        "--split_by_N_out_suffix",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(fastqpp, "split_by_N_out_suffix"),
+        help=extract_help_from_doc(fastqpp, "split_by_Ns_and_low_quality_bases_out_suffix"),
     )
     parser_fastqpp.add_argument(
         "--concatenate_paired_fastqs_out_suffix",
@@ -2357,12 +2278,6 @@ def main():  # noqa: C901
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(count, "parity"),
-    )
-    parser_count.add_argument(
-        "--species",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(count, "species"),
     )
     parser_count.add_argument(
         "--reference_genome_index",

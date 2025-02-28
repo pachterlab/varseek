@@ -1056,7 +1056,7 @@ def info(
     logger.info(f"Saved variant metadata to {variants_updated_vk_info_csv_out}")
     logger.info(f"Columns: {mutation_metadata_df.columns}")
     logger.info(f"Columns successfully added: {set(mutation_metadata_df.columns.tolist()) - set(columns_original)}")
-    logger.info(f"Columns not successfully added: {columns_not_successfully_added}")
+    logger.info(f"Columns not successfully added: {set(columns_not_successfully_added)}")
 
     # Report time
     report_time_elapsed(start_time, logger=logger, function_name="info")
