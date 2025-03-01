@@ -182,7 +182,7 @@ def count(
     # Optional input arguments
     - reference_genome_index                (str) Path to index file for the "normal" reference genome. Created if not provided. Only used if qc_against_gene_matrix=True (see vk clean --help). Default: None.
     - reference_genome_t2g                  (str) Path to t2g file for the "normal" reference genome. Created if not provided. Only used if qc_against_gene_matrix=True (see vk clean --help). Default: None.
-    - adata_reference_genome                (str) Path to adata file for the "normal" reference genome. Created if not provided. Only used if qc_against_gene_matrix=True or performing gene-level normalization on the VCRS count matrix (see vk clean --help). Default: None.
+    - adata_reference_genome                (str) Path to adata file for the "normal" reference genome. Created if not provided. Only used if qc_against_gene_matrix=True or performing gene-level normalization on the VCRS count matrix (see vk clean --help). Default: `kb_count_reference_genome_out_dir`/counts_unfiltered/adata.h5ad.
 
     # Optional output file paths: (only needed if changing/customizing file names or locations):
     - out                                   (str) Output directory. Default: ".".
@@ -203,7 +203,7 @@ def count(
     - log_out_dir                           (str) Directory to save logs. Default: None (do not save logs).
 
     # Hidden arguments (part of kwargs):
-    - num                                  (bool) If True, use the --num argument in kb count. Default: False.
+    - num                                  (bool) If True, use the --num argument in kb count. Default: True.
     - parity_kb_count                      (str) The parity of the reads for kb count. Always recommended to run in single. Default: "single".
 
     For a complete list of supported parameters, see the documentation for varseek fastqpp, kb count, varseek clean, and varseek summarize. Note that any shared parameter names between functions are meant to have identical purposes.
@@ -317,6 +317,7 @@ def count(
 
     # * 7. Define kwargs defaults
     kwargs["parity_kb_count"] = kwargs.get("parity_kb_count", "single")
+    kwargs["num"] = kwargs.get("num", True)
 
     # * 7.5 make sure ints are ints
     k, threads = int(k), int(threads)
@@ -349,7 +350,9 @@ def count(
         concatenate_paired_fastqs = False
     kwargs["concatenate_paired_fastqs"] = concatenate_paired_fastqs
 
-    
+    if disable_clean:
+        qc_against_gene_matrix = False  # disable_clean gets priority
+
     if not kwargs.get("min_read_len"):
         kwargs["min_read_len"] = k
 
