@@ -18,23 +18,17 @@ from tqdm import tqdm
 
 tqdm.pandas()
 
-from varseek.utils.logger_utils import splitext_custom, get_file_name_without_extensions_or_full_path, get_printlog
+from varseek.utils.logger_utils import (
+    get_file_name_without_extensions_or_full_path, get_printlog,
+    splitext_custom)
 from varseek.utils.seq_utils import (
     create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting,
-    fasta_to_fastq,
-    filter_fasta,
-    make_mapping_dict,
-    reverse_complement,
-    safe_literal_eval,
-    get_header_set_from_fastq
-)
+    fasta_to_fastq, filter_fasta, get_header_set_from_fastq, make_mapping_dict,
+    reverse_complement, safe_literal_eval)
 from varseek.utils.visualization_utils import (
-    plot_basic_bar_plot_from_dict,
-    plot_descending_bar_plot,
-    plot_histogram_notebook_1,
-    plot_histogram_of_nearby_mutations_7_5,
-    print_column_summary_stats,
-)
+    plot_basic_bar_plot_from_dict, plot_descending_bar_plot,
+    plot_histogram_notebook_1, plot_histogram_of_nearby_mutations_7_5,
+    print_column_summary_stats)
 
 tqdm.pandas()
 

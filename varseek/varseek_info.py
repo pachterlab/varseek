@@ -1,56 +1,42 @@
 """varseek info and specific helper functions."""
 
 # CELL
+import logging
 import os
 import subprocess
-from pathlib import Path
 import time
-import logging
 from collections import OrderedDict
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pyfastx
 from tqdm import tqdm
 
-from varseek.constants import mutation_pattern, HGVS_pattern
-from varseek.utils import (
-    add_vcrs_variant_type,
-    align_to_normal_genome_and_build_dlist,
-    calculate_nearby_mutations,
-    calculate_total_gene_info,
-    check_file_path_is_string_with_valid_extension,
-    collapse_df,
-    compare_cdna_and_genome,
-    compute_distance_to_closest_splice_junction,
-    create_df_of_vcrs_to_self_headers,
-    download_ensembl_reference_files,
-    download_t2t_reference_files,
-    explode_df,
-    fasta_summary_stats,
-    get_df_overlap,
-    get_vcrss_that_pseudoalign_but_arent_dlisted,
-    is_program_installed,
-    is_valid_int,
-    longest_homopolymer,
-    make_function_parameter_to_value_dict,
-    make_mapping_dict,
-    plot_histogram_of_nearby_mutations_7_5,
-    plot_kat_histogram,
-    add_variant_type,
-    print_varseek_dry_run,
-    report_time_elapsed,
-    reverse_complement,
-    safe_literal_eval,
-    save_params_to_config_file,
-    save_run_info,
-    set_up_logger,
-    splitext_custom,
-    identify_variant_source,
-    swap_ids_for_headers_in_fasta,
-    triplet_stats,
-    add_mutation_information
-)
+from varseek.constants import HGVS_pattern, mutation_pattern
+from varseek.utils import (add_mutation_information, add_variant_type,
+                           add_vcrs_variant_type,
+                           align_to_normal_genome_and_build_dlist,
+                           calculate_nearby_mutations,
+                           calculate_total_gene_info,
+                           check_file_path_is_string_with_valid_extension,
+                           collapse_df, compare_cdna_and_genome,
+                           compute_distance_to_closest_splice_junction,
+                           create_df_of_vcrs_to_self_headers,
+                           download_ensembl_reference_files,
+                           download_t2t_reference_files, explode_df,
+                           fasta_summary_stats, get_df_overlap,
+                           get_vcrss_that_pseudoalign_but_arent_dlisted,
+                           identify_variant_source, is_program_installed,
+                           is_valid_int, longest_homopolymer,
+                           make_function_parameter_to_value_dict,
+                           make_mapping_dict,
+                           plot_histogram_of_nearby_mutations_7_5,
+                           plot_kat_histogram, print_varseek_dry_run,
+                           report_time_elapsed, reverse_complement,
+                           safe_literal_eval, save_params_to_config_file,
+                           save_run_info, set_up_logger, splitext_custom,
+                           swap_ids_for_headers_in_fasta, triplet_stats)
 
 tqdm.pandas()
 logger = logging.getLogger(__name__)

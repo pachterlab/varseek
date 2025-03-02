@@ -2,29 +2,21 @@
 
 import ast
 import csv
-import os
-from pathlib import Path
-import time
 import logging
+import os
 import re
+import time
+from pathlib import Path
 
 import pandas as pd
 
-from .utils import (
-    check_file_path_is_string_with_valid_extension,
-    create_identity_t2g,
-    extract_documentation_file_blocks,
-    fasta_summary_stats,
-    filter_fasta,
-    make_function_parameter_to_value_dict,
-    make_mapping_dict,
-    print_varseek_dry_run,
-    report_time_elapsed,
-    safe_literal_eval,
-    save_params_to_config_file,
-    save_run_info,
-    set_up_logger,
-)
+from .utils import (check_file_path_is_string_with_valid_extension,
+                    create_identity_t2g, extract_documentation_file_blocks,
+                    fasta_summary_stats, filter_fasta,
+                    make_function_parameter_to_value_dict, make_mapping_dict,
+                    print_varseek_dry_run, report_time_elapsed,
+                    safe_literal_eval, save_params_to_config_file,
+                    save_run_info, set_up_logger)
 
 logger = logging.getLogger(__name__)
 

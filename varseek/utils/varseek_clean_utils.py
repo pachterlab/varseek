@@ -7,24 +7,16 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 import pyfastx
-import anndata as ad
 import scipy.sparse as sp
 from scipy.sparse import csr_matrix
 from tqdm import tqdm
 
-from varseek.constants import (
-    complement,
-    fastq_extensions,
-    technology_barcode_and_umi_dict,
-)
+from varseek.constants import (complement, fastq_extensions,
+                               technology_barcode_and_umi_dict)
 from varseek.utils.seq_utils import (
-    add_variant_type,
-    add_vcrs_variant_type,
+    add_variant_type, add_vcrs_variant_type,
     create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting,
-    get_header_set_from_fastq,
-    make_mapping_dict,
-    safe_literal_eval,
-)
+    get_header_set_from_fastq, make_mapping_dict, safe_literal_eval)
 
 tqdm.pandas()
 
@@ -777,6 +769,7 @@ def vcf_to_dataframe(vcf_file, additional_columns=True, explode_alt=True, filter
 
 def add_vcf_info_to_cosmic_tsv(cosmic_tsv, reference_genome_fasta, cosmic_df_out=None, cosmic_cdna_info_csv=None, mutation_source="cds"):
     import pysam
+
     # load in COSMIC tsv with columns CHROM, POS, ID, REF, ALT
     cosmic_df = pd.read_csv(cosmic_tsv, sep="\t", usecols=["Mutation genome position GRCh37", "GENOMIC_WT_ALLELE_SEQ", "GENOMIC_MUT_ALLELE_SEQ", "ACCESSION_NUMBER", "Mutation CDS", "MUTATION_URL"])
 

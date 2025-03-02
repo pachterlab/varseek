@@ -1,34 +1,27 @@
 """varseek count and specific helper functions."""
 
+import copy
 import inspect
-from pathlib import Path
+import json
+import logging
 import os
 import subprocess
 import time
-import copy
-import logging
-import json
+from pathlib import Path
 
 import varseek as vk
 from varseek.utils import (
     check_file_path_is_string_with_valid_extension,
     check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal,
-    is_valid_int,
-    load_in_fastqs,
-    make_function_parameter_to_value_dict,
-    report_time_elapsed,
-    save_params_to_config_file,
-    save_run_info,
-    set_up_logger,
-    sort_fastq_files_for_kb_count,
-)
+    is_valid_int, load_in_fastqs, make_function_parameter_to_value_dict,
+    report_time_elapsed, save_params_to_config_file, save_run_info,
+    set_up_logger, sort_fastq_files_for_kb_count)
 from varseek.varseek_clean import needs_for_normal_genome_matrix
 
 from .constants import (
     non_single_cell_technologies,
     supported_downloadable_normal_reference_genomes_with_kb_ref,
-    varseek_count_only_allowable_kb_count_arguments
-)
+    varseek_count_only_allowable_kb_count_arguments)
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +138,6 @@ def count(
     parity="single",
     reference_genome_index=None,  # optional inputs
     reference_genome_t2g=None,
-    adata_reference_genome=None,
     out=".",  # optional outputs
     kb_count_vcrs_out_dir=None,
     kb_count_reference_genome_out_dir=None,
@@ -182,7 +174,6 @@ def count(
     # Optional input arguments
     - reference_genome_index                (str) Path to index file for the "normal" reference genome. Created if not provided. Only used if qc_against_gene_matrix=True (see vk clean --help). Default: None.
     - reference_genome_t2g                  (str) Path to t2g file for the "normal" reference genome. Created if not provided. Only used if qc_against_gene_matrix=True (see vk clean --help). Default: None.
-    - adata_reference_genome                (str) Path to adata file for the "normal" reference genome. Created if not provided. Only used if qc_against_gene_matrix=True or performing gene-level normalization on the VCRS count matrix (see vk clean --help). Default: `kb_count_reference_genome_out_dir`/counts_unfiltered/adata.h5ad.
 
     # Optional output file paths: (only needed if changing/customizing file names or locations):
     - out                                   (str) Output directory. Default: ".".
@@ -299,7 +290,7 @@ def count(
     kb_count_reference_genome_out_dir, kwargs['kb_count_reference_genome_dir'] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(kb_count_reference_genome_out_dir, kwargs.get('kb_count_reference_genome_dir'))  # same story as above but for kb_count_reference_genome and kb_count_reference_genome_out_dir
 
     adata_vcrs = f"{kb_count_vcrs_out_dir}/counts_unfiltered/adata.h5ad" if not kwargs.get("adata_vcrs") else kwargs.get("adata_vcrs")  # from vk clean
-    adata_reference_genome = f"{kb_count_reference_genome_out_dir}/counts_unfiltered/adata.h5ad" if not adata_reference_genome else adata_reference_genome  # from vk clean
+    adata_reference_genome = f"{kb_count_reference_genome_out_dir}/counts_unfiltered/adata.h5ad" if not kwargs.get("adata_reference_genome") else kwargs.get("adata_reference_genome")  # from vk clean
     adata_vcrs_clean_out = f"{out}/adata_cleaned.h5ad" if not kwargs.get("adata_vcrs_clean_out") else kwargs.get("adata_vcrs_clean_out")  # from vk clean
     adata_reference_genome_clean_out = f"{out}/adata_cleaned.h5ad" if not kwargs.get("adata_reference_genome_clean_out") else kwargs.get("adata_reference_genome_clean_out")  # from vk clean
     vcf_out = os.path.join(out, "vcf") if not kwargs.get("vcf_out") else kwargs["vcf_out"]  # from vk clean
@@ -353,8 +344,8 @@ def count(
     if disable_clean:
         qc_against_gene_matrix = False  # disable_clean gets priority
 
-    if not kwargs.get("min_read_len"):
-        kwargs["min_read_len"] = k
+    if not kwargs.get("length_required"):
+        kwargs["length_required"] = k
 
     # define the vk fastqpp, clean, and summarize arguments (explicit arguments and allowable kwargs)
     explicit_parameters_vk_fastqpp = vk.utils.get_set_of_parameters_from_function_signature(vk.varseek_fastqpp.fastqpp)  # does not include *fastqs due to asterisk
@@ -396,9 +387,11 @@ def count(
         )
 
         fastqs_vcrs = fastqpp_dict["final"]
+        fastqs_reference_genome = fastqpp_dict["quality_controlled"] if "quality_controlled" in fastqpp_dict else fastqs
     else:
         logger.warning("Skipping vk fastqpp because disable_fastqpp=True")
         fastqs_vcrs = fastqs
+        fastqs_reference_genome = fastqs
     fastqs = fastqs_vcrs  # so that the correct fastqs get passed into vk clean
 
     # # kb count, VCRS
@@ -521,7 +514,7 @@ def count(
                     else:  # multiple_arguments or something else
                         pass
 
-        kb_count_standard_index_command += fastqs  # the ones unprocessed by fastqpp
+        kb_count_standard_index_command += fastqs_reference_genome  # the ones unprocessed by fastqpp
 
         if dry_run:
             print(' '.join(kb_count_standard_index_command))
@@ -541,7 +534,7 @@ def count(
 
             logger.info("Running vk clean")
             _ = vk.clean(
-                    adata_vcrs=adata_vcrs,
+                    adata_vcrs=adata_vcrs,  # kb_count_reference_genome_dir is passed in via kwargs, as is adata_reference_genome
                     vcrs_index=index,
                     vcrs_t2g=t2g,
                     technology=technology,
@@ -551,7 +544,6 @@ def count(
                     mm=mm,
                     union=union,
                     parity=parity,
-                    adata_reference_genome=adata_reference_genome,
                     out=out,
                     dry_run=dry_run,
                     overwrite=True,

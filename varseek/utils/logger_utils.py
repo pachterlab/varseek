@@ -4,21 +4,21 @@ import base64
 import getpass
 import inspect
 import json
-from pathlib import Path
 import logging
 import os
+import pathlib
 import re
 import shutil
 import subprocess
 import sys
 import time
 from collections import OrderedDict
-from datetime import datetime, date
-import pandas as pd
-import anndata as ad
-import pathlib
-import numpy as np
+from datetime import date, datetime
+from pathlib import Path
 
+import anndata as ad
+import numpy as np
+import pandas as pd
 import requests
 from gget.gget_cosmic import is_valid_email
 
@@ -852,9 +852,8 @@ def get_python_or_cli_function_call():
 
 
 def save_run_info(out_file="run_info.txt", remove_passwords=True):
-    from varseek import (
-        __version__,  # keep internal to this function to avoid circular import
-    )
+    from varseek import \
+        __version__  # keep internal to this function to avoid circular import
 
     out_file_directory = os.path.dirname(out_file)
     if not out_file_directory:

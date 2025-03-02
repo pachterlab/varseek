@@ -1,7 +1,7 @@
 import os
 import re
-from collections import OrderedDict, defaultdict
 import tempfile
+from collections import OrderedDict, defaultdict
 
 import pandas as pd
 import pyfastx

@@ -13,7 +13,7 @@ from varseek.utils.logger_utils import get_printlog, is_program_installed
 tqdm.pandas()
 
 
-def concatenate_fastqs(*input_files, out_dir=".", delete_original_files=False, suffix="concatenatedPairs"):
+def concatenate_fastqs(*input_files, out_dir=".", delete_original_files=False):
     """
     Concatenate a variable number of FASTQ files (gzipped or not) into a single output file.
 
@@ -27,8 +27,11 @@ def concatenate_fastqs(*input_files, out_dir=".", delete_original_files=False, s
 
     os.makedirs(out_dir, exist_ok=True)
 
-    parts_filename = input_files[0].split(".", 1)
-    output_file = os.path.join(out_dir, f"{parts_filename[0]}_{suffix}.{parts_filename[1]}")
+    filename_0 = os.path.basename(input_files[0]).split(".", 1)[0]
+    filename_1 = os.path.basename(input_files[1]).split(".", 1)[0]
+    ext = os.path.basename(input_files[0]).split(".", 1)[1]
+
+    output_file = os.path.join(out_dir, f"{filename_0}_{filename_1}.{ext}")
 
     input_files_space_separated = " ".join(list(input_files))
     cat_command = f"cat {input_files_space_separated} > {output_file}"
@@ -192,10 +195,9 @@ def trim_edges_of_fastq_reads_seqtk(
 #     split_fastq_reads_by_N(input_fastq_file, output_fastq_file = output_fastq_file, minimum_sequence_length = minimum_sequence_length)
 
 
-def replace_low_quality_base_with_N(filename, out_dir=".", seqtk="seqtk", minimum_base_quality=13, suffix="addedNs"):
+def replace_low_quality_base_with_N(filename, out_dir=".", seqtk="seqtk", minimum_base_quality=13):
     os.makedirs(out_dir, exist_ok=True)
-    parts = filename.split(".", 1)
-    filename_filtered = os.path.join(out_dir, f"{parts[0]}_{suffix}.{parts[1]}")
+    filename_filtered = os.path.join(out_dir, os.path.basename(filename))
     command = [
         seqtk,
         "seq",
@@ -207,7 +209,7 @@ def replace_low_quality_base_with_N(filename, out_dir=".", seqtk="seqtk", minimu
         filename,
     ]  # to drop a read containing N, use -N
     command = " ".join(command)
-    if ".gz" in parts[1]:
+    if ".gz" in filename:
         command += f" | gzip > {filename_filtered}"
         # with open(filename_filtered, 'wb') as output_file:
         #     process = subprocess.Popen(command, stdout=subprocess.PIPE)
@@ -232,7 +234,7 @@ def split_fastq_reads_by_N(input_fastq_file, out_dir=".", minimum_sequence_lengt
     logger_info = get_printlog(verbose=verbose, logger=logger)
     os.makedirs(out_dir, exist_ok=True)
     parts = input_fastq_file.split(".", 1)
-    output_fastq_file = os.path.join(out_dir, f"{parts[0]}_{suffix}.{parts[1]}")
+    output_fastq_file = os.path.join(out_dir, os.path.basename(input_fastq_file))
 
     technology = technology.lower()
 
@@ -377,13 +379,13 @@ def run_fastqc_and_multiqc(rnaseq_fastq_files_quality_controlled, fastqc_out_dir
         print(e)
 
 
-def replace_low_quality_bases_with_N_list(rnaseq_fastq_files, minimum_base_quality, seqtk="seqtk", out_dir=".", delete_original_files=False, logger=None, verbose=True, suffix="addedNs"):
+def replace_low_quality_bases_with_N_list(rnaseq_fastq_files, minimum_base_quality, out_dir, seqtk="seqtk", delete_original_files=False, logger=None, verbose=True):
     logger_info = get_printlog(verbose=verbose, logger=logger)
     os.makedirs(out_dir, exist_ok=True)
     rnaseq_fastq_files_replace_low_quality_bases_with_N = []
     for i, rnaseq_fastq_file in enumerate(rnaseq_fastq_files):
         logger_info(f"Replacing low quality bases with N in {rnaseq_fastq_file}")
-        rnaseq_fastq_file = replace_low_quality_base_with_N(rnaseq_fastq_file, seqtk=seqtk, minimum_base_quality=minimum_base_quality, out_dir=out_dir, suffix=suffix)
+        rnaseq_fastq_file = replace_low_quality_base_with_N(rnaseq_fastq_file, seqtk=seqtk, minimum_base_quality=minimum_base_quality, out_dir=out_dir)
         rnaseq_fastq_files_replace_low_quality_bases_with_N.append(rnaseq_fastq_file)
         # delete the file in rnaseq_fastq_files[i]
         if delete_original_files:
@@ -392,13 +394,13 @@ def replace_low_quality_bases_with_N_list(rnaseq_fastq_files, minimum_base_quali
 
 
 # TODO: enable single vs paired end mode (single end works as-is; paired end requires 2 files as input, and for every line it splits in file 1, I will add a line of all Ns in file 2); also get it working for scRNA-seq data (which is single end parity but still requires the paired-end treatment) - get Delaney's help to determine how to treat single cell files
-def split_reads_by_N_list(rnaseq_fastq_files_replace_low_quality_bases_with_N, minimum_sequence_length=None, out_dir=".", delete_original_files=True, logger=None, verbose=True, suffix="splitNs", seqtk="seqtk"):
+def split_reads_by_N_list(rnaseq_fastq_files_replace_low_quality_bases_with_N, minimum_sequence_length=None, out_dir=".", delete_original_files=True, logger=None, verbose=True, seqtk="seqtk"):
     logger_info = get_printlog(verbose=verbose, logger=logger)
     os.makedirs(out_dir, exist_ok=True)
     rnaseq_fastq_files_split_reads_by_N = []
     for i, rnaseq_fastq_file in enumerate(rnaseq_fastq_files_replace_low_quality_bases_with_N):
         logger_info(f"Splitting reads by N in {rnaseq_fastq_file}")
-        rnaseq_fastq_file = split_fastq_reads_by_N(rnaseq_fastq_file, minimum_sequence_length=minimum_sequence_length, out_dir=out_dir, logger=logger, verbose=verbose, suffix=suffix, seqtk=seqtk)  # TODO: would need a way of postprocessing to make sure I don't double-count fragmented reads - I would need to see where each fragmented read aligns - perhaps with kb extract or pseudobam
+        rnaseq_fastq_file = split_fastq_reads_by_N(rnaseq_fastq_file, minimum_sequence_length=minimum_sequence_length, out_dir=out_dir, logger=logger, verbose=verbose, seqtk=seqtk)  # TODO: would need a way of postprocessing to make sure I don't double-count fragmented reads - I would need to see where each fragmented read aligns - perhaps with kb extract or pseudobam
         # replace_low_quality_base_with_N_and_split_fastq_reads_by_N(input_fastq_file = rnaseq_fastq_file, output_fastq_file = None, minimum_sequence_length=k, seqtk = seqtk, minimum_base_quality = minimum_base_quality_replace_with_N)
         rnaseq_fastq_files_split_reads_by_N.append(rnaseq_fastq_file)
         # # delete the file in rnaseq_fastq_files_replace_low_quality_bases_with_N[i]
@@ -410,9 +412,14 @@ def split_reads_by_N_list(rnaseq_fastq_files_replace_low_quality_bases_with_N, m
 
 import pyfastx
 
+
 def ensure_read_agreement(r1_unfiltered_fastq_path, r2_unfiltered_fastq_path, removed_reads_fastq_path, r1_fastq_out_path=None, indices_file_path=None, delete_indices_file=True):
     # assumes that I ran fastp on r2_unfiltered_fastq_path (transcripts) with some unintended filtering using --failed_out removed_reads_fastq_path, and I want to filter the same reads out of r1_unfiltered_fastq_path (barcodes/UMIs)
     
+    if os.path.getsize(removed_reads_fastq_path) == 0:
+        print("No reads were removed from the transcripts. No need to filter the barcodes/UMIs.")
+        return
+
     if not r1_fastq_out_path:
         r1_fastq_out_path = r1_unfiltered_fastq_path  # overwrite the original file
     
@@ -453,7 +460,7 @@ def ensure_read_agreement(r1_unfiltered_fastq_path, r2_unfiltered_fastq_path, re
 
 
 
-def run_fastp_bulk(r1_fastq_path, r2_fastq_path=None, out_dir="filtered", parity="single", cut_front=False, cut_tail=False, cut_window_size=4, cut_mean_quality=15, disable_adapter_trimming=False, qualified_quality_phred=15, unqualified_percent_limit=40, average_qual=15, n_base_limit=10, disable_quality_filtering=False, length_required=31, disable_length_filtering=False, dont_eval_duplication=True, disable_trim_poly_g=True, failed_out=False, r1_fastq_out_path="r1_filtered.fq", r2_fastq_out_path="r2_filtered.fq"):
+def run_fastp_bulk(r1_fastq_path, r2_fastq_path=None, out_dir="filtered", parity="single", cut_front=False, cut_tail=False, cut_window_size=4, cut_mean_quality=15, disable_adapter_trimming=False, qualified_quality_phred=15, unqualified_percent_limit=40, average_qual=15, n_base_limit=10, disable_quality_filtering=False, length_required=31, disable_length_filtering=False, dont_eval_duplication=True, disable_trim_poly_g=True, threads=2, failed_out=False, r1_fastq_out_path="r1_filtered.fq", r2_fastq_out_path="r2_filtered.fq"):
     fastp_cmd = ["fastp", "-i", r1_fastq_path, "-o", r1_fastq_out_path]
         
     if parity == "paired":
@@ -486,6 +493,8 @@ def run_fastp_bulk(r1_fastq_path, r2_fastq_path=None, out_dir="filtered", parity
     if disable_trim_poly_g:
         fastp_cmd += ["--disable_trim_poly_g"]
 
+    fastp_cmd += ["--thread", str(threads)]
+
     fastp_cmd += ["-h", os.path.join(out_dir, "fastp_report.html"), "-j", os.path.join(out_dir, "fastp_report.json")]
 
     if failed_out:
@@ -493,7 +502,7 @@ def run_fastp_bulk(r1_fastq_path, r2_fastq_path=None, out_dir="filtered", parity
 
     subprocess.run(fastp_cmd, check=True)
 
-def run_fastp_single_cell_general(r1_fastq_path, r2_fastq_path, out_dir="filtered", cut_front=False, cut_tail=False, cut_window_size=4, cut_mean_quality=15, disable_adapter_trimming=False, qualified_quality_phred=15, unqualified_percent_limit=40, average_qual=15, n_base_limit=10, disable_quality_filtering=False, failed_out=False, r1_fastq_out_path="r1_filtered.fq", r2_fastq_out_path="r2_filtered.fq", tmp_dir="tmp"):
+def run_fastp_single_cell_general(r1_fastq_path, r2_fastq_path, out_dir="filtered", cut_front=False, cut_tail=False, cut_window_size=4, cut_mean_quality=15, disable_adapter_trimming=False, qualified_quality_phred=15, unqualified_percent_limit=40, average_qual=15, n_base_limit=10, disable_quality_filtering=False, threads=2, failed_out=False, r1_fastq_out_path="r1_filtered.fq", r2_fastq_out_path="r2_filtered.fq", tmp_dir="tmp"):
     #* rather than doing fastp twice as I do below (once for quality filtering and once for edge trimming), I could do it all in one go, but that would require running ensure_read_agreement, which I haven't thoroughly debugged or benchmarked for runtime compared to another fastp command - if I debug ensure_read_agreement and either (1) find ensure_read_agreement is much faster than another fastp OR (2) find that I am running ensure_read_agreement with the current setup anyways, then replace the current setup with a single fastp call that combiens both read filtering and edge trimming, followed by ensure_read_agreement (this has the added benefit of being 100% sure that I don't factor barcode/UMI information in at all when filtering - plus, I could include length filtering again)
     if average_qual < cut_mean_quality:
         print("Warning: average_qual is less than cut_mean_quality. This means that ensure_read_agreement might need to run.")
@@ -515,7 +524,9 @@ def run_fastp_single_cell_general(r1_fastq_path, r2_fastq_path, out_dir="filtere
                           "-h", os.path.join(out_dir, "fastp_report.html"),
                           "-j", os.path.join(out_dir, "fastp_report.json")
                           ]
-            
+        
+        fastp_cmd1 += ["--thread", str(threads)]
+
         if failed_out:
             fastp_cmd1 += ["--failed_out", failed_out]
 
@@ -538,6 +549,8 @@ def run_fastp_single_cell_general(r1_fastq_path, r2_fastq_path, out_dir="filtere
             fastp_cmd2 += ["--disable_adapter_trimming"]
             
         fastp_cmd2 += ["--disable_quality_filtering", "--disable_length_filtering", "--dont_eval_duplication", "--disable_trim_poly_g"]
+
+        fastp_cmd2 += ["--thread", str(threads)]
             
         if failed_out:
             failed_out2 = os.path.join(out_dir, "removed_reads2.fastq")
@@ -557,7 +570,7 @@ def run_fastp_single_cell_general(r1_fastq_path, r2_fastq_path, out_dir="filtere
         os.rename(r1_fastq_out_path_tmp, r1_fastq_out_path)
         os.rename(r2_fastq_out_path_tmp, r2_fastq_out_path)
 
-def run_fastp_smartseq3(r1_fastq_path, r2_fastq_path, out_dir="filtered", cut_front=False, cut_tail=False, cut_window_size=4, cut_mean_quality=15, disable_adapter_trimming=False, qualified_quality_phred=15, unqualified_percent_limit=40, average_qual=15, n_base_limit=10, disable_quality_filtering=False, length_required=31, disable_length_filtering=False, failed_out=False, r1_fastq_out_path="r1_filtered.fq", r2_fastq_out_path="r2_filtered.fq", tmp_dir="tmp"):
+def run_fastp_smartseq3(r1_fastq_path, r2_fastq_path, out_dir="filtered", cut_front=False, cut_tail=False, cut_window_size=4, cut_mean_quality=15, disable_adapter_trimming=False, qualified_quality_phred=15, unqualified_percent_limit=40, average_qual=15, n_base_limit=10, disable_quality_filtering=False, length_required=31, disable_length_filtering=False, threads=2, failed_out=False, r1_fastq_out_path="r1_filtered.fq", r2_fastq_out_path="r2_filtered.fq", tmp_dir="tmp"):
     if average_qual < cut_mean_quality:
         print("Warning: average_qual is less than cut_mean_quality. This means that ensure_read_agreement might need to run.")
     
@@ -582,7 +595,7 @@ def run_fastp_smartseq3(r1_fastq_path, r2_fastq_path, out_dir="filtered", cut_fr
     else:
         fastp_cmd += ["--length_required", str(length_required)]
         
-    fastp_cmd += ["--dont_eval_duplication", "--disable_trim_poly_g"]
+    fastp_cmd += ["--dont_eval_duplication", "--disable_trim_poly_g", "--thread", str(threads)]
 
     fastp_cmd += ["-h", os.path.join(out_dir, "fastp_report.html"), "-j", os.path.join(out_dir, "fastp_report.json")]
 
@@ -595,7 +608,7 @@ def run_fastp_smartseq3(r1_fastq_path, r2_fastq_path, out_dir="filtered", cut_fr
         failed_out2 = os.path.join(tmp_dir, "removed_reads2.fastq")
         fastp_cmd2 = ["fastp", "-i", r2_fastq_out_path_tmp, "-o", r2_fastq_out_path,
                           "--cut_front", "--cut_window_size", str(cut_window_size), "--cut_mean_quality", str(cut_mean_quality),
-                          "--disable_adapter_trimming", "--disable_quality_filtering", "--disable_length_filtering", "--dont_eval_duplication", "--disable_trim_poly_g",
+                          "--disable_adapter_trimming", "--disable_quality_filtering", "--disable_length_filtering", "--dont_eval_duplication", "--disable_trim_poly_g", "--thread", str(threads),
                           "-h", os.path.join(out_dir, "fastp_report2.html"), "-j", os.path.join(out_dir, "fastp_report2.json"), "--failed_out", failed_out2]
             
         subprocess.run(fastp_cmd2, check=True)
@@ -607,7 +620,7 @@ def run_fastp_smartseq3(r1_fastq_path, r2_fastq_path, out_dir="filtered", cut_fr
         os.rename(r1_fastq_out_path_tmp, r1_fastq_out_path)
         os.rename(r2_fastq_out_path_tmp, r2_fastq_out_path)
     
-def run_fastp_10xv3_ultima(r1_fastq_path, out_dir, cut_tail=False, cut_window_size=4, cut_mean_quality=15, disable_adapter_trimming=False, qualified_quality_phred=15, unqualified_percent_limit=40, average_qual=15, n_base_limit=10, disable_quality_filtering=False, length_required=31, disable_length_filtering=False, failed_out=False, r1_fastq_out_path="r1_filtered.fq"):
+def run_fastp_10xv3_ultima(r1_fastq_path, out_dir, cut_tail=False, cut_window_size=4, cut_mean_quality=15, disable_adapter_trimming=False, qualified_quality_phred=15, unqualified_percent_limit=40, average_qual=15, n_base_limit=10, disable_quality_filtering=False, length_required=31, disable_length_filtering=False, threads=2, failed_out=False, r1_fastq_out_path="r1_filtered.fq"):
     fastp_cmd = ["fastp", "-i", r1_fastq_path, "-o", r1_fastq_out_path]
         
     if cut_tail:
@@ -625,7 +638,7 @@ def run_fastp_10xv3_ultima(r1_fastq_path, out_dir, cut_tail=False, cut_window_si
     else:
         fastp_cmd += ["--length_required", str(length_required)]
 
-    fastp_cmd += ["--dont_eval_duplication", "--disable_trim_poly_g"]
+    fastp_cmd += ["--dont_eval_duplication", "--disable_trim_poly_g", "--thread", str(threads)]
 
     fastp_cmd += ["-h", os.path.join(out_dir, "fastp_report.html"), "-j", os.path.join(out_dir, "fastp_report.json")]
 
@@ -634,7 +647,7 @@ def run_fastp_10xv3_ultima(r1_fastq_path, out_dir, cut_tail=False, cut_window_si
 
     subprocess.run(fastp_cmd, check=True)
 
-def run_fastp_10xv1(r1_fastq_path, r2_fastq_path, i1_fastq_path, out_dir, cut_front=False, cut_tail=False, cut_window_size=4, cut_mean_quality=15, disable_adapter_trimming=False, qualified_quality_phred=15, unqualified_percent_limit=40, average_qual=15, n_base_limit=10, disable_quality_filtering=False, length_required=31, disable_length_filtering=False, failed_out=False, r1_fastq_out_path="r1_filtered.fq", r2_fastq_out_path="r2_filtered.fq", i1_fastq_out_path="i1_filtered.fq"):
+def run_fastp_10xv1(r1_fastq_path, r2_fastq_path, i1_fastq_path, out_dir, cut_front=False, cut_tail=False, cut_window_size=4, cut_mean_quality=15, disable_adapter_trimming=False, qualified_quality_phred=15, unqualified_percent_limit=40, average_qual=15, n_base_limit=10, disable_quality_filtering=False, length_required=31, disable_length_filtering=False, threads=2, failed_out=False, r1_fastq_out_path="r1_filtered.fq", r2_fastq_out_path="r2_filtered.fq", i1_fastq_out_path="i1_filtered.fq"):
     fastp_cmd = ["fastp", "-i", r2_fastq_path, "-o", r2_fastq_out_path]
         
     if cut_front:
@@ -656,7 +669,7 @@ def run_fastp_10xv1(r1_fastq_path, r2_fastq_path, i1_fastq_path, out_dir, cut_fr
     else:
         fastp_cmd += ["--length_required", str(length_required)]
 
-    fastp_cmd += ["--dont_eval_duplication", "--disable_trim_poly_g"]
+    fastp_cmd += ["--dont_eval_duplication", "--disable_trim_poly_g", "--thread", str(threads)]
 
     fastp_cmd += ["-h", os.path.join(out_dir, "fastp_report.html"), "-j", os.path.join(out_dir, "fastp_report.json"), "--failed_out", failed_out]
 
@@ -666,7 +679,7 @@ def run_fastp_10xv1(r1_fastq_path, r2_fastq_path, i1_fastq_path, out_dir, cut_fr
     ensure_read_agreement(i1_fastq_path, r2_fastq_path, failed_out, delete_indices_file=False, r1_fastq_out_path=i1_fastq_out_path)
 
 
-def perform_fastp_trimming_and_filtering(technology, r1_fastq_path, r2_fastq_path=None, i1_fastq_path=None, i2_fastq_path=None, out_dir="filtered", parity="single", cut_front=False, cut_tail=False, cut_window_size=4, cut_mean_quality=15, disable_adapter_trimming=False, qualified_quality_phred=15, unqualified_percent_limit=40, average_qual=15, n_base_limit=10, disable_quality_filtering=False, length_required=31, disable_length_filtering=False, dont_eval_duplication=True, disable_trim_poly_g=True, failed_out=False):
+def perform_fastp_trimming_and_filtering(technology, r1_fastq_path, r2_fastq_path=None, i1_fastq_path=None, i2_fastq_path=None, out_dir="filtered", parity="single", cut_front=False, cut_tail=False, cut_window_size=4, cut_mean_quality=15, disable_adapter_trimming=True, qualified_quality_phred=15, unqualified_percent_limit=40, average_qual=15, n_base_limit=10, disable_quality_filtering=True, length_required=31, disable_length_filtering=True, dont_eval_duplication=True, disable_trim_poly_g=True, threads=2, failed_out=False):
     """
     Perform trimming and filtering of FASTQ files using fastp.
 
@@ -680,7 +693,7 @@ def perform_fastp_trimming_and_filtering(technology, r1_fastq_path, r2_fastq_pat
     
     if all((not cut_front, not cut_tail, disable_adapter_trimming, disable_quality_filtering, disable_length_filtering, dont_eval_duplication, disable_trim_poly_g)):
         print("No trimming or filtering options selected. Exiting.")
-        return
+        return {"R1": r1_fastq_path, "R2": r2_fastq_path, "I1": i1_fastq_path, "I2": i2_fastq_path}
     
     for input_file in [r1_fastq_path, r2_fastq_path, i1_fastq_path]:
         if input_file is not None and not os.path.isfile(input_file):
@@ -705,19 +718,19 @@ def perform_fastp_trimming_and_filtering(technology, r1_fastq_path, r2_fastq_pat
         r1_fastq_path, r2_fastq_path = r2_fastq_path, r1_fastq_path  # swap R1 and R2
 
     if technology in {"BULK", "SMARTSEQ2"}:  # no barcodes or UMIs
-        run_fastp_bulk(r1_fastq_path=r1_fastq_path, r2_fastq_path=r2_fastq_path, out_dir=out_dir, parity=parity, cut_front=cut_front, cut_tail=cut_tail, cut_window_size=cut_window_size, cut_mean_quality=cut_mean_quality, disable_adapter_trimming=disable_adapter_trimming, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, average_qual=average_qual, n_base_limit=n_base_limit, disable_quality_filtering=disable_quality_filtering, length_required=length_required, disable_length_filtering=disable_length_filtering, dont_eval_duplication=dont_eval_duplication, disable_trim_poly_g=disable_trim_poly_g, failed_out=failed_out, r1_fastq_out_path=r1_fastq_out_path, r2_fastq_out_path=r2_fastq_out_path)
+        run_fastp_bulk(r1_fastq_path=r1_fastq_path, r2_fastq_path=r2_fastq_path, out_dir=out_dir, parity=parity, cut_front=cut_front, cut_tail=cut_tail, cut_window_size=cut_window_size, cut_mean_quality=cut_mean_quality, disable_adapter_trimming=disable_adapter_trimming, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, average_qual=average_qual, n_base_limit=n_base_limit, disable_quality_filtering=disable_quality_filtering, length_required=length_required, disable_length_filtering=disable_length_filtering, dont_eval_duplication=dont_eval_duplication, disable_trim_poly_g=disable_trim_poly_g, threads=threads, failed_out=failed_out, r1_fastq_out_path=r1_fastq_out_path, r2_fastq_out_path=r2_fastq_out_path)
 
     elif technology in {"10XV2, 10XV3", "BDWTA", "CELSEQ", "CELSEQ2", "INDROPSV1", "INDROPSV2", "SCRUBSEQ", "SPLIT-SEQ", "SURECELL", "VISIUM"}:
-        run_fastp_single_cell_general(r1_fastq_path=r1_fastq_path, r2_fastq_path=r2_fastq_path, out_dir=out_dir, cut_front=cut_front, cut_tail=cut_tail, cut_window_size=cut_window_size, cut_mean_quality=cut_mean_quality, disable_adapter_trimming=disable_adapter_trimming, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, average_qual=average_qual, n_base_limit=n_base_limit, disable_quality_filtering=disable_quality_filtering, failed_out=failed_out, r1_fastq_out_path=r1_fastq_out_path, r2_fastq_out_path=r2_fastq_out_path, tmp_dir=tmp_dir)
+        run_fastp_single_cell_general(r1_fastq_path=r1_fastq_path, r2_fastq_path=r2_fastq_path, out_dir=out_dir, cut_front=cut_front, cut_tail=cut_tail, cut_window_size=cut_window_size, cut_mean_quality=cut_mean_quality, disable_adapter_trimming=disable_adapter_trimming, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, average_qual=average_qual, n_base_limit=n_base_limit, disable_quality_filtering=disable_quality_filtering, threads=threads, failed_out=failed_out, r1_fastq_out_path=r1_fastq_out_path, r2_fastq_out_path=r2_fastq_out_path, tmp_dir=tmp_dir)
         
     elif technology in {"SMARTSEQ3", "STORMSEQ"}:
-        run_fastp_smartseq3(r1_fastq_path=r1_fastq_path, r2_fastq_path=r2_fastq_path, out_dir=out_dir, cut_front=cut_front, cut_tail=cut_tail, cut_window_size=cut_window_size, cut_mean_quality=cut_mean_quality, disable_adapter_trimming=disable_adapter_trimming, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, average_qual=average_qual, n_base_limit=n_base_limit, disable_quality_filtering=disable_quality_filtering, length_required=length_required, disable_length_filtering=disable_length_filtering, failed_out=failed_out, r1_fastq_out_path=r1_fastq_out_path, r2_fastq_out_path=r2_fastq_out_path, tmp_dir=tmp_dir)
+        run_fastp_smartseq3(r1_fastq_path=r1_fastq_path, r2_fastq_path=r2_fastq_path, out_dir=out_dir, cut_front=cut_front, cut_tail=cut_tail, cut_window_size=cut_window_size, cut_mean_quality=cut_mean_quality, disable_adapter_trimming=disable_adapter_trimming, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, average_qual=average_qual, n_base_limit=n_base_limit, disable_quality_filtering=disable_quality_filtering, length_required=length_required, disable_length_filtering=disable_length_filtering, threads=threads, failed_out=failed_out, r1_fastq_out_path=r1_fastq_out_path, r2_fastq_out_path=r2_fastq_out_path, tmp_dir=tmp_dir)
 
     elif technology in {"10XV3_ULTIMA"}:
-        run_fastp_10xv3_ultima(r1_fastq_path=r1_fastq_path, out_dir=out_dir, cut_tail=cut_tail, cut_window_size=cut_window_size, cut_mean_quality=cut_mean_quality, disable_adapter_trimming=disable_adapter_trimming, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, average_qual=average_qual, n_base_limit=n_base_limit, disable_quality_filtering=disable_quality_filtering, length_required=length_required, disable_length_filtering=disable_length_filtering, failed_out=failed_out, r1_fastq_out_path=r1_fastq_out_path)
+        run_fastp_10xv3_ultima(r1_fastq_path=r1_fastq_path, out_dir=out_dir, cut_tail=cut_tail, cut_window_size=cut_window_size, cut_mean_quality=cut_mean_quality, disable_adapter_trimming=disable_adapter_trimming, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, average_qual=average_qual, n_base_limit=n_base_limit, disable_quality_filtering=disable_quality_filtering, length_required=length_required, disable_length_filtering=disable_length_filtering, threads=threads, failed_out=failed_out, r1_fastq_out_path=r1_fastq_out_path)
 
     elif technology in {"10XV1", "INDROPSV3"}:
-        run_fastp_10xv1(r1_fastq_path=r1_fastq_path, r2_fastq_path=r2_fastq_path, i1_fastq_path=i1_fastq_path, out_dir=out_dir, cut_front=cut_front, cut_tail=cut_tail, cut_window_size=cut_window_size, cut_mean_quality=cut_mean_quality, disable_adapter_trimming=disable_adapter_trimming, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, average_qual=average_qual, n_base_limit=n_base_limit, disable_quality_filtering=disable_quality_filtering, length_required=length_required, disable_length_filtering=disable_length_filtering, failed_out=failed_out, r1_fastq_out_path=r1_fastq_out_path, r2_fastq_out_path=r2_fastq_out_path, i1_fastq_out_path=i1_fastq_out_path)
+        run_fastp_10xv1(r1_fastq_path=r1_fastq_path, r2_fastq_path=r2_fastq_path, i1_fastq_path=i1_fastq_path, out_dir=out_dir, cut_front=cut_front, cut_tail=cut_tail, cut_window_size=cut_window_size, cut_mean_quality=cut_mean_quality, disable_adapter_trimming=disable_adapter_trimming, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, average_qual=average_qual, n_base_limit=n_base_limit, disable_quality_filtering=disable_quality_filtering, length_required=length_required, disable_length_filtering=disable_length_filtering, threads=threads, failed_out=failed_out, r1_fastq_out_path=r1_fastq_out_path, r2_fastq_out_path=r2_fastq_out_path, i1_fastq_out_path=i1_fastq_out_path)
 
     else:
         raise ValueError(f"Technology {technology} not recognized. See all valid values with `kb --list`.")
@@ -725,4 +738,6 @@ def perform_fastp_trimming_and_filtering(technology, r1_fastq_path, r2_fastq_pat
     # delete tmp_dir
     if os.path.exists(tmp_dir):
         shutil.rmtree(tmp_dir)
+
+    return {"R1": r1_fastq_out_path, "R2": r2_fastq_out_path, "I1": i1_fastq_out_path, "I2": i2_fastq_path}
 

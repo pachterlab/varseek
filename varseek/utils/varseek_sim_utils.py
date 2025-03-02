@@ -7,7 +7,8 @@ import pyfastx
 from tqdm import tqdm
 
 from varseek.utils.logger_utils import splitext_custom
-from varseek.utils.seq_utils import fasta_to_fastq, reverse_complement, add_mutation_information
+from varseek.utils.seq_utils import (add_mutation_information, fasta_to_fastq,
+                                     reverse_complement)
 
 tqdm.pandas()
 

@@ -1,11 +1,11 @@
 """varseek ref and specific helper functions."""
 
 import inspect
+import json
+import logging
 import os
 import subprocess
 import time
-import json
-import logging
 
 import requests
 
@@ -13,17 +13,14 @@ import varseek as vk
 from varseek.utils import (
     check_file_path_is_string_with_valid_extension,
     check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal,
-    download_varseek_files,
-    get_python_or_cli_function_call,
-    is_valid_int,
-    make_function_parameter_to_value_dict,
-    report_time_elapsed,
-    save_params_to_config_file,
-    save_run_info,
-    set_up_logger,
-)
+    download_varseek_files, get_python_or_cli_function_call, is_valid_int,
+    make_function_parameter_to_value_dict, report_time_elapsed,
+    save_params_to_config_file, save_run_info, set_up_logger)
 
-from .constants import prebuilt_vk_ref_files, supported_databases_and_corresponding_reference_sequence_type, varseek_ref_only_allowable_kb_ref_arguments
+from .constants import (
+    prebuilt_vk_ref_files,
+    supported_databases_and_corresponding_reference_sequence_type,
+    varseek_ref_only_allowable_kb_ref_arguments)
 
 logger = logging.getLogger(__name__)
 COSMIC_CREDENTIAL_VALIDATION_URL = "https://varseek-server-3relpk35fa-wl.a.run.app"

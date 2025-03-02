@@ -12,7 +12,8 @@ from pdb import set_trace as st
 import pandas as pd
 
 from .__init__ import __version__
-from .constants import varseek_ref_only_allowable_kb_ref_arguments, varseek_count_only_allowable_kb_count_arguments
+from .constants import (varseek_count_only_allowable_kb_count_arguments,
+                        varseek_ref_only_allowable_kb_ref_arguments)
 from .utils import set_up_logger
 from .varseek_build import build
 from .varseek_clean import clean
@@ -1466,7 +1467,7 @@ def main():  # noqa: C901
     parser_fastqpp.add_argument(
         "-x",
         "--technology",
-        required=False,
+        required=True,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(fastqpp, "technology"),
     )
@@ -1485,16 +1486,105 @@ def main():  # noqa: C901
         help=extract_help_from_doc(fastqpp, "parity"),
     )
     parser_fastqpp.add_argument(
-        "--min_read_len",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(fastqpp, "min_read_len"),
-    )
-    parser_fastqpp.add_argument(
-        "--fastqc_and_multiqc",
+        "--quality_control_fastqs",
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(fastqpp, "fastqc_and_multiqc"),
+        help=extract_help_from_doc(fastqpp, "quality_control_fastqs"),
+    )
+    parser_fastqpp.add_argument(
+        "--cut_front",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(fastqpp, "cut_front"),
+    )
+    parser_fastqpp.add_argument(
+        "--cut_tail",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(fastqpp, "cut_tail"),
+    )
+    parser_fastqpp.add_argument(
+        "--cut_window_size",
+        type=int,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(fastqpp, "cut_window_size"),
+    )
+    parser_fastqpp.add_argument(
+        "--cut_mean_quality",
+        type=int,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(fastqpp, "cut_mean_quality"),
+    )
+    parser_fastqpp.add_argument(
+        "--disable_adapter_trimming",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(fastqpp, "disable_adapter_trimming"),
+    )
+    parser_fastqpp.add_argument(
+        "--qualified_quality_phred",
+        type=int,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(fastqpp, "qualified_quality_phred"),
+    )
+    parser_fastqpp.add_argument(
+        "--unqualified_percent_limit",
+        type=int,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(fastqpp, "unqualified_percent_limit"),
+    )
+    parser_fastqpp.add_argument(
+        "--average_qual",
+        type=int,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(fastqpp, "average_qual"),
+    )
+    parser_fastqpp.add_argument(
+        "--n_base_limit",
+        type=int,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(fastqpp, "n_base_limit"),
+    )
+    parser_fastqpp.add_argument(
+        "--disable_quality_filtering",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(fastqpp, "disable_quality_filtering"),
+    )
+    parser_fastqpp.add_argument(
+        "--length_required",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(fastqpp, "length_required"),
+    )
+    parser_fastqpp.add_argument(
+        "--disable_length_filtering",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(fastqpp, "disable_length_filtering"),
+    )
+    parser_fastqpp.add_argument(
+        "--dont_eval_duplication",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(fastqpp, "dont_eval_duplication"),
+    )
+    parser_fastqpp.add_argument(
+        "--disable_trim_poly_g",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(fastqpp, "disable_trim_poly_g"),
+    )
+    parser_fastqpp.add_argument(
+        "--failed_out",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(fastqpp, "failed_out"),
+    )
+    parser_fastqpp.add_argument(
+        "--split_reads_by_Ns_and_low_quality_bases",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(fastqpp, "split_reads_by_Ns_and_low_quality_bases"),
     )
     parser_fastqpp.add_argument(
         "--min_base_quality_for_splitting",
@@ -1502,12 +1592,6 @@ def main():  # noqa: C901
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(fastqpp, "min_base_quality_for_splitting"),
-    )
-    parser_fastqpp.add_argument(
-        "--split_reads_by_Ns_and_low_quality_bases",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(fastqpp, "split_reads_by_Ns_and_low_quality_bases"),
     )
     parser_fastqpp.add_argument(
         "--concatenate_paired_fastqs",
@@ -1543,6 +1627,12 @@ def main():  # noqa: C901
         help=extract_help_from_doc(fastqpp, "sort_fastqs", disable=True),
     )
     parser_fastqpp.add_argument(
+        "--threads",
+        type=int,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(fastqpp, "threads"),
+    )
+    parser_fastqpp.add_argument(
         "--logging_level",
         choices=["NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "0", "10", "20", "30", "40", "50", "60", None],
         required=False,
@@ -1570,16 +1660,34 @@ def main():  # noqa: C901
         help=extract_help_from_doc(fastqpp, "seqtk_path"),
     )
     parser_fastqpp.add_argument(
-        "--split_by_Ns_and_low_quality_bases_out_suffix",
+        "--quality_control_fastqs_out_dir",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(fastqpp, "split_by_Ns_and_low_quality_bases_out_suffix"),
+        help=extract_help_from_doc(fastqpp, "quality_control_fastqs_out_dir"),
     )
     parser_fastqpp.add_argument(
-        "--concatenate_paired_fastqs_out_suffix",
+        "--replace_low_quality_bases_with_N_out_dir",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(fastqpp, "concatenate_paired_fastqs_out_suffix"),
+        help=extract_help_from_doc(fastqpp, "replace_low_quality_bases_with_N_out_dir"),
+    )
+    parser_fastqpp.add_argument(
+        "--split_by_Ns_and_low_quality_bases_out_dir",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(fastqpp, "split_by_Ns_and_low_quality_bases_out_dir"),
+    )
+    parser_fastqpp.add_argument(
+        "--concatenate_paired_fastqs_out_dir",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(fastqpp, "concatenate_paired_fastqs_out_dir"),
+    )
+    parser_fastqpp.add_argument(
+        "--delete_intermediate_files",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(fastqpp, "delete_intermediate_files"),
     )
 
     # NEW PARSER
@@ -2290,12 +2398,6 @@ def main():  # noqa: C901
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(count, "reference_genome_t2g"),
-    )
-    parser_count.add_argument(
-        "--adata_reference_genome",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(count, "adata_reference_genome"),
     )
     parser_count.add_argument(
         "-o",

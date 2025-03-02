@@ -1,34 +1,27 @@
 """varseek sim and specific helper functions."""
 
+import logging
 import os
 import random
 import time
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from pathlib import Path
 from tqdm import tqdm
-import logging
 
 import varseek
 from varseek.varseek_build import accepted_build_file_types
 
-from .constants import supported_databases_and_corresponding_reference_sequence_type
-from .utils import (
-    check_file_path_is_string_with_valid_extension,
-    fasta_to_fastq,
-    introduce_sequencing_errors,
-    is_valid_int,
-    make_function_parameter_to_value_dict,
-    merge_synthetic_read_info_into_variants_metadata_df,
-    print_varseek_dry_run,
-    report_time_elapsed,
-    reverse_complement,
-    save_params_to_config_file,
-    save_run_info,
-    set_up_logger,
-    splitext_custom,
-)
+from .constants import \
+    supported_databases_and_corresponding_reference_sequence_type
+from .utils import (check_file_path_is_string_with_valid_extension,
+                    fasta_to_fastq, introduce_sequencing_errors, is_valid_int,
+                    make_function_parameter_to_value_dict,
+                    merge_synthetic_read_info_into_variants_metadata_df,
+                    print_varseek_dry_run, report_time_elapsed,
+                    reverse_complement, save_params_to_config_file,
+                    save_run_info, set_up_logger, splitext_custom)
 
 tqdm.pandas()
 logger = logging.getLogger(__name__)

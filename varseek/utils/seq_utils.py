@@ -18,12 +18,8 @@ import pyfastx
 import requests
 from tqdm import tqdm
 
-from varseek.constants import (
-    complement,
-    complement_trans,
-    fastq_extensions,
-    mutation_pattern,
-)
+from varseek.constants import (complement, complement_trans, fastq_extensions,
+                               mutation_pattern)
 from varseek.utils.logger_utils import get_printlog, splitext_custom
 
 tqdm.pandas()
@@ -773,20 +769,16 @@ def bulk_sort_order_for_kb_count_fastqs(filepath):
 
 def illumina_sort_order_for_kb_count_fastqs(filepath):
     # Define order for file types
-    # file_type_order = {"R1": 0, "R2": 1, "I1": 2, "I2": 3}
     file_type_order = {"I1": 0, "I2": 1, "R1": 2, "R2": 3}  # New Feb 2025
 
-    # Split the filepath into parts by '/'
-    path_parts = filepath.split("/")
-
-    # # Extract the parent folder (2nd to last part)
-    # parent_folder = path_parts[-2]
-
     # Extract the filename (last part of the path)
-    filename = path_parts[-1]
+    filename = filepath.split("/")[-1]
 
-    # Split filename by '_' to extract file type and lane information
+    # Split filename by '_'
     parts = filename.split("_")
+
+    # Extract sample name (everything before `_S1_`)
+    sample_name = "_".join(parts[:-4])  # Assuming format: SampleName_S1_L00X_R1_001.fastq.gz
 
     # Extract lane number; assuming lane info is of the format 'L00X'
     lane = int(parts[-3][1:4])  # e.g., extracts '001' from 'L001'
@@ -795,9 +787,10 @@ def illumina_sort_order_for_kb_count_fastqs(filepath):
     file_type = parts[-2].split(".")[0]  # e.g., extracts 'R1' from 'R1_001.fastq.gz'
 
     # Return a tuple to sort by:
-    # 1. Numerically by lane
-    # 2. Order of file type (R1, R2)
-    return (lane, file_type_order.get(file_type, 999))
+    # 1. sample name (sample1, sample2)
+    # 2. lane (L001, L002)
+    # 3. file type (I1, I2, R1, R2)
+    return (sample_name, lane, file_type_order.get(file_type, 999))
 
 
 def sort_fastq_files_for_kb_count(fastq_files, technology=None, multiplexed=None, logger=None, check_only=False, verbose=True):

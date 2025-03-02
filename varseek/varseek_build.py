@@ -1,12 +1,12 @@
 """varseek build and specific helper functions."""
 
+import json
+import logging
 import os
-from pathlib import Path
 import re
 import subprocess
 import time
-import logging
-import json
+from pathlib import Path
 
 import gget
 import numpy as np
@@ -15,31 +15,21 @@ import pyfastx
 from tqdm import tqdm
 
 from .constants import (
-    complement,
-    fasta_extensions,
-    mutation_pattern,
-    supported_databases_and_corresponding_reference_sequence_type,
-)
-from .utils import (
-    add_variant_type,
-    check_file_path_is_string_with_valid_extension,
-    convert_chromosome_value_to_int_when_possible,
-    convert_mutation_cds_locations_to_cdna,
-    create_identity_t2g,
-    generate_mutation_notation_from_vcf_columns,
-    generate_unique_ids,
-    is_valid_int,
-    make_function_parameter_to_value_dict,
-    print_varseek_dry_run,
-    report_time_elapsed,
-    reverse_complement,
-    save_params_to_config_file,
-    save_run_info,
-    set_up_logger,
-    translate_sequence,
-    vcf_to_dataframe,
-    wt_fragment_and_mutant_fragment_share_kmer,
-)
+    complement, fasta_extensions, mutation_pattern,
+    supported_databases_and_corresponding_reference_sequence_type)
+from .utils import (add_variant_type,
+                    check_file_path_is_string_with_valid_extension,
+                    convert_chromosome_value_to_int_when_possible,
+                    convert_mutation_cds_locations_to_cdna,
+                    create_identity_t2g,
+                    generate_mutation_notation_from_vcf_columns,
+                    generate_unique_ids, is_valid_int,
+                    make_function_parameter_to_value_dict,
+                    print_varseek_dry_run, report_time_elapsed,
+                    reverse_complement, save_params_to_config_file,
+                    save_run_info, set_up_logger, translate_sequence,
+                    vcf_to_dataframe,
+                    wt_fragment_and_mutant_fragment_share_kmer)
 
 tqdm.pandas()
 logger = logging.getLogger(__name__)
