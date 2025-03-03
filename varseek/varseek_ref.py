@@ -376,15 +376,15 @@ def ref(
         logger.info("columns_to_include is not None, so minimum_info_columns will be set to False")
         minimum_info_columns = False
     else:
-        if minimum_info_columns:
+        if minimum_info_columns:  # just use what I need from filter
             if isinstance(filters, str):
                 columns_to_include = filters.split(":")[0]
             else:
                 columns_to_include = tuple([item.split(":")[0] for item in filters])
-        else:
-            columns_to_include = ("number_of_variants_in_this_gene_total", "alignment_to_reference", "pseudoaligned_to_reference_despite_not_truly_aligning", "triplet_complexity")  #!! matches vk info default
-        kwargs["columns_to_include"] = columns_to_include
-
+            kwargs["columns_to_include"] = columns_to_include
+        else:  # use the default from vk info - make sure kwargs has no value for columns_to_include so that nothing gets passed in to vk info 
+            if "columns_to_include" in kwargs:
+                del kwargs["columns_to_include"]
 
     # decide whether to skip vk info and vk filter
     # filters_column_names = list({filter.split('-')[0] for filter in filters})

@@ -715,58 +715,6 @@ def make_vaf_matrix(adata_mutant_vcrs_path, adata_wt_vcrs_path, adata_vaf_output
     return adata_vaf_output
 
 
-# convert gatk output vcf to pandas df
-def vcf_to_dataframe(vcf_file, additional_columns=True, explode_alt=True, filter_empty_alt=True):
-    import pysam
-    """Convert a VCF file to a Pandas DataFrame."""
-    vcf = pysam.VariantFile(vcf_file)
-
-    # List to store VCF rows
-    vcf_data = []
-
-    # Fetch each record in the VCF
-    for record in vcf.fetch():
-        # For each record, extract the desired fields
-        alts = ",".join(record.alts) if isinstance(record.alts, tuple) else record.alts  # alternate case includes None (when it is simply ".")
-
-        vcf_row = {
-            "CHROM": record.chrom,
-            "POS": record.pos,
-            "ID": record.id,
-            "REF": record.ref,
-            "ALT": alts,  # ALT can be multiple
-        }
-
-        if additional_columns:
-            vcf_row["QUAL"] = record.qual
-            vcf_row["FILTER"] = (";".join(record.filter.keys()) if record.filter else None,)  # FILTER keys
-
-            # Add INFO fields
-            for key, value in record.info.items():
-                vcf_row[f"INFO_{key}"] = value
-
-            # Add per-sample data (FORMAT fields)
-            for sample, sample_data in record.samples.items():
-                for format_key, format_value in sample_data.items():
-                    vcf_row[f"{sample}_{format_key}"] = format_value
-
-        # Append the row to the list
-        vcf_data.append(vcf_row)
-
-    # Convert the list to a Pandas DataFrame
-    df = pd.DataFrame(vcf_data)
-
-    if filter_empty_alt:
-        df = df[~df["ALT"].isin([None, "", "."])]
-
-    if explode_alt:
-        df["ALT_ORIGINAL"] = df["ALT"]
-        df["ALT"] = df["ALT"].str.split(",")  # Split ALT column into lists
-        df = df.explode("ALT", ignore_index=True)  # Expand the DataFrame
-
-    return df
-
-
 def add_vcf_info_to_cosmic_tsv(cosmic_tsv, reference_genome_fasta, cosmic_df_out=None, cosmic_cdna_info_csv=None, mutation_source="cds"):
     import pysam
 
@@ -947,36 +895,3 @@ def write_vcfs_for_rows(adata, adata_wt_vcrs, adata_vaf, output_dir):
 
                 # Write VCF row
                 vcf_file.write(f"{chrom}\t{pos}\t{var_id}\t{ref}\t{alt}\t.\tPASS\t{info}\n")
-
-
-def generate_mutation_notation_from_vcf_columns(row):
-    pos = row["POS"]
-    ref = row["REF"]
-    alt = row["ALT"]
-
-    if not isinstance(pos, int) or not isinstance(ref, str) or not isinstance(alt, str):
-        return "g.UNKNOWN"
-
-    # Start with "g."
-    if len(ref) == 1 and len(alt) == 1:
-        return f"g.{pos}{ref}>{alt}"  # Substitution case
-
-    elif len(ref) > 1 and len(alt) == 1:  # Deletion case
-        pos_start = pos + 1 if pos != 1 else pos  # eg CAG --> C, where C is at position 40 - this is a 41_42del
-        if len(ref) == 2:
-            return f"g.{pos_start}del"
-        else:
-            pos_end = pos + len(ref) - 1
-            return f"g.{pos_start}_{pos_end}del"
-
-    elif len(ref) == 1 and len(alt) > 1:  # Insertion case
-        if pos == 1:
-            return "g.UNKNOWN"  # Can't handle insertions at the beginning of the sequence
-        inserted = alt[1:]  # The inserted sequence (excluding the common base)
-        return f"g.{pos}_{pos+1}ins{inserted}"
-    elif len(ref) > 1 and len(alt) > 1:  # Delins case
-        pos_start = pos
-        pos_end = pos + len(ref) - 1
-        return f"g.{pos_start}_{pos_end}delins{alt}"
-    else:
-        return "g.UNKNOWN"

@@ -969,7 +969,9 @@ def build(
 
     elif isinstance(mutations, str) and (mutations.endswith(".vcf") or mutations.endswith(".vcf.gz")):
         mutations = vcf_to_dataframe(mutations, additional_columns=save_variants_updated_csv, explode_alt=True, filter_empty_alt=True)  # only load in additional columns if I plan to later save this updated csv
-        mutations.rename(columns={"CHROM": seq_id_column, "ID": var_id_column}, inplace=True)
+        mutations.rename(columns={"CHROM": seq_id_column}, inplace=True)
+        if var_id_column:
+            mutations.rename(columns={"ID": var_id_column}, inplace=True)
         mutations[var_column] = mutations.apply(generate_mutation_notation_from_vcf_columns, axis=1)  #!! untested
 
     # Handle mutations passed as a list
