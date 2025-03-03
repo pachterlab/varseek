@@ -33,6 +33,7 @@ cosmic_csv_path_starting = os.path.join(reference_folder_parent, "cosmic", "Canc
 pytest_permanent_out_dir_base = test_directory / "pytest_output" / Path(__file__).stem
 current_datetime = datetime.now().strftime("date_%Y_%m_%d_time_%H%M_%S")
 
+#$ TOGGLE THIS SECTION TO HAVE THIS FILE RECOGNIZED BY PYTEST (commented out means it will be recognized, uncommented means it will be hidden)
 # If "tests/test_ref.py" is not explicitly in the command line arguments, skip this module. - notice that uncommenting this will hide it from vscode such that I can't press the debug button
 if not any("test_varseek_ref.py" in arg for arg in sys.argv):
     pytest.skip("Skipping test_varseek_ref.py due to its slow nature; run this file by explicity including the file i.e., 'pytest tests/test_varseek_ref.py'", allow_module_level=True)
@@ -44,7 +45,7 @@ def out_dir(tmp_path, request):
         current_test_function_name = request.node.name
         out = Path(f"{pytest_permanent_out_dir_base}/{current_datetime}/{current_test_function_name}")
     else:
-        out = tmp_path / "out_vk_build"
+        out = tmp_path / "out_vk_ref"
 
     out.mkdir(parents=True, exist_ok=True)  # Ensure the directory exists
     return out
@@ -111,8 +112,8 @@ def test_vk_ref(cosmic_csv_path, out_dir):
     cosmic_genome_path = os.path.join(ensembl_grch37_release93_folder, "Homo_sapiens.GRCh37.dna.primary_assembly.fa")
     cosmic_gtf_path = os.path.join(ensembl_grch37_release93_folder, "Homo_sapiens.GRCh37.87.gtf")
 
-    bowtie2_reference_genome_folder = os.path.join(reference_folder_parent, "bowtie_index_genome")
-    bowtie2_reference_transcriptome_folder = os.path.join(reference_folder_parent, "bowtie_index_transcriptome")
+    bowtie2_reference_genome_folder = os.path.join(ensembl_grch37_release93_folder, "bowtie_index_genome")
+    bowtie2_reference_transcriptome_folder = os.path.join(ensembl_grch37_release93_folder, "bowtie_index_transcriptome")
 
     # skip this run if you don't have the ground truth and are not making it
     if not os.path.exists(ground_truth_folder) or not os.listdir(ground_truth_folder):
@@ -124,12 +125,11 @@ def test_vk_ref(cosmic_csv_path, out_dir):
             pytest.skip(f"{path} not found. Please download it to continue")
 
     for directory in [bowtie2_reference_genome_folder, bowtie2_reference_transcriptome_folder]:
-        if not os.path.isdir(directory) or len(os.listdir(directory) == 0):
+        if not os.path.isdir(directory) or len(os.listdir(directory)) == 0:
             pytest.skip(f"{directory} not found. Please make this bowtie2 index to continue")
 
-    var_column = "mutation_cdna"
-    w = 54
-    k = 55
+    w = 47
+    k = 51
     columns_to_include = "all"
     threads = 2
     filters=(
@@ -146,7 +146,13 @@ def test_vk_ref(cosmic_csv_path, out_dir):
         variants = cosmic_csv_path,  # build args
         sequences = cosmic_cdna_path,
         out = out_dir,
-        var_column = var_column,
+        seq_id_column="seq_ID",
+        var_column = "mutation_cdna",
+        seq_id_cdna_column="seq_ID",
+        var_cdna_column="mutation_cdna",
+        seq_id_genome_column="chromosome",
+        var_genome_column="mutation_genome",
+        gene_name_column="gene_name",
         w = w,
         k = k,
         save_variants_updated_csv = True,

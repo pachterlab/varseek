@@ -8,6 +8,8 @@ import subprocess
 import time
 
 import requests
+import getpass
+from gget.gget_cosmic import is_valid_email
 
 import varseek as vk
 from varseek.utils import (
@@ -407,11 +409,17 @@ def ref(
 
     # download if download argument is True
     if download:
-        # $ I opt to keep it like this rather than converting the keys of prebuilt_vk_ref_files to a tuple of many arguments for user simplicity - simply document the uploaded references, but no need to differentiate - but if I do end up having multiple reference documents with the same values for variants and sequences, then switch over to this approach where the dict keys are tuples
-        file_dict = prebuilt_vk_ref_files.get(variants, {}).get(sequences, {})
+        prebuilt_vk_ref_files_key = f"variants={variants},sequences={sequences},w={w},k={k},dlist_reference_source={dlist_reference_source}"  # matches constants.py and server
+        file_dict = prebuilt_vk_ref_files.get(prebuilt_vk_ref_files_key, {})
         if file_dict:
             if file_dict["index"] == "COSMIC":
-                response = requests.post(COSMIC_CREDENTIAL_VALIDATION_URL, json={"email": cosmic_email, "password": cosmic_password, "variants": variants, "sequences": sequences})
+                if not cosmic_email:
+                    cosmic_email = input("Please enter your COSMIC email: ")
+                if not is_valid_email(cosmic_email):
+                    raise ValueError("The email address is not valid.")
+                if not cosmic_password:
+                    cosmic_password = getpass.getpass("Please enter your COSMIC password: ")
+                response = requests.post(COSMIC_CREDENTIAL_VALIDATION_URL, json={"email": cosmic_email, "password": cosmic_password, "prebuilt_vk_ref_files_key": prebuilt_vk_ref_files_key})
                 if response.status_code == 200:
                     file_dict = response.json()  # Converts JSON to dict
                     file_dict = file_dict.get("download_links")
@@ -420,7 +428,7 @@ def ref(
                 else:
                     raise ValueError(f"Failed to verify COSMIC credentials. Status code: {response.status_code}")
             logger.info(f"Downloading reference files with variants={variants}, sequences={sequences}")
-            vk_ref_output_dict = download_varseek_files(file_dict, out=out)  # TODO: replace with DOI download (will need to replace prebuilt_vk_ref_files urls with DOIs) - ensure if this is allowed with COSMIC
+            vk_ref_output_dict = download_varseek_files(file_dict, out=out)
             if index_out and vk_ref_output_dict["index"] != index_out:
                 os.rename(vk_ref_output_dict["index"], index_out)
                 vk_ref_output_dict["index"] = index_out

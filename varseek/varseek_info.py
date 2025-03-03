@@ -542,6 +542,9 @@ def info(
         mutation_metadata_df = pd.read_csv(variants_updated_csv)
         columns_original = mutation_metadata_df.columns.tolist()
 
+        columns_to_include = set(columns_to_include_possible_values.keys()) if columns_to_include == "all" else set(columns_to_include)
+        columns_to_include = list(set(columns_to_include) - set(columns_original))  # ensure that I don't try to add columns that already exist in the dataframe
+
         for column in mutation_metadata_df.columns:
             if column not in columns_to_explode + columns_NOT_to_explode:  # alternative: check if the first and last characters are '[' and ']', respectively
                 mutation_metadata_df[column] = mutation_metadata_df[column].apply(lambda x: (safe_literal_eval(x) if isinstance(x, str) and x.startswith("[") and x.endswith("]") else x))

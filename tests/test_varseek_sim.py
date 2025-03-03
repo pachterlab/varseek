@@ -21,7 +21,7 @@ def out_dir(tmp_path, request):
         current_test_function_name = request.node.name
         out = Path(f"{pytest_permanent_out_dir_base}/{current_datetime}/{current_test_function_name}")
     else:
-        out = tmp_path / "out_vk_build"
+        out = tmp_path / "out_vk_sim"
 
     out.mkdir(parents=True, exist_ok=True)  # Ensure the directory exists
     return out

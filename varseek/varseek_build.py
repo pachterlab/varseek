@@ -1312,7 +1312,7 @@ def build(
         mutations.loc[non_substitution_mask, "end_mutation_overlap_with_left_flank"] = mutations.loc[non_substitution_mask].apply(calculate_end_mutation_overlap_with_left_flank, axis=1)
 
         # for insertions and delins, make sure I see at bare minimum the full insertion context and the subseqeuent nucleotide - eg if I have c.2_3insA to become ACGTT to ACAGTT, if I only check for ACAG, then I can't distinguosh between ACAGTT, ACAGGTT, ACAGGGTT, etc. (and there are more complex examples)
-        # TODO: for duplications, required_insertion_overlap_length=None works fine; but required_insertion_overlap_length="all" causes issues (ruins symmetry)
+        # TODO: for duplications, required_insertion_overlap_length=None works fine; but required_insertion_overlap_length="all" or some number >1 causes issues (ruins symmetry)
         if required_insertion_overlap_length and required_insertion_overlap_length != 1 and insertion_and_delins_and_dup_and_inversion_mask.any():  # * new as of 11/20/24
             if required_insertion_overlap_length == "all":
                 required_insertion_overlap_length = np.inf

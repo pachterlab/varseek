@@ -121,10 +121,16 @@ codon_to_amino_acid = {
 
 default_filename_dict = {"index": "vcrs_index.idx", "t2g": "vcrs_t2g.txt"}
 
-# * add more keys here as needed (e.g., k, w, d-list, dlist_reference_source, etc)
-# * if I add modes to varseek ref, then have it be dict[variants][sequences][mode]
+# * variants, sequences, w, k, dlist_reference_source - single string, comma-separated
+# * matches varseek ref and server
 # * for cosmic, leave the value "COSMIC" in place of a link (used for authentication), and keep the links in varseek_server/validate_cosmic.py; for others, replace with a link
-prebuilt_vk_ref_files = {"cosmic_cmc": {"cdna": {"index": "COSMIC", "t2g": "COSMIC"}, "genome": {"index": "COSMIC", "t2g": "COSMIC"}}}  # leave it as "COSMIC"
+prebuilt_vk_ref_files = {"variants=cosmic_cmc,sequences=cdna,w=47,k=51,dlist_reference_source=grch37": {"index": "COSMIC", "t2g": "COSMIC"},
+                         "variants=cosmic_cmc,sequences=cdna,w=47,k=51,dlist_reference_source=t2t": {"index": "COSMIC", "t2g": "COSMIC"},
+                        #  ("variants=cosmic_cmc", "sequences=genome", "w=47", "k=51", "dlist_reference_source=grch37"): {"index": "COSMIC", "t2g": "COSMIC"},
+                        #  ("variants=cosmic_cmc", "sequences=genome", "w=47", "k=51", "dlist_reference_source=t2t"): {"index": "COSMIC", "t2g": "COSMIC"},
+                         }
+
+
 
 supported_databases_and_corresponding_reference_sequence_type = {
     "cosmic_cmc": {

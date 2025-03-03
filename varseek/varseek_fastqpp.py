@@ -167,10 +167,10 @@ def fastqpp(
 
     # Hidden arguments (part of kwargs)
     - seqtk_path                       (str) Path to seqtk. Default: "seqtk"
-    - quality_control_fastqs_out_dir       (str) Directory to save quality controlled fastq files. Default: `out`/quality_controlled
-    - replace_low_quality_bases_with_N_out_dir   (str) Directory to save fastq files with low quality bases replaced with N. Default: `out`/replaced_low_quality_with_N
-    - split_by_Ns_and_low_quality_bases_out_dir   (str) Directory to save fastq files with reads split by Ns and low quality bases. Default: `out`/split_by_Ns_and_low_quality_bases
-    - concatenate_paired_fastqs_out_dir    (str) Directory to save concatenated paired fastq files. Default: `out`/concatenated_paired_fastqs
+    - quality_control_fastqs_out_dir       (str) Directory to save quality controlled fastq files. Default: `out`/fastqs_quality_controlled
+    - replace_low_quality_bases_with_N_out_dir   (str) Directory to save fastq files with low quality bases replaced with N. Default: `out`/fastqs_replaced_low_quality_with_N
+    - split_by_Ns_and_low_quality_bases_out_dir   (str) Directory to save fastq files with reads split by Ns and low quality bases. Default: `out`/fastqs_split_by_Ns_and_low_quality_bases
+    - concatenate_paired_fastqs_out_dir    (str) Directory to save concatenated paired fastq files. Default: `out`/fastqs_concatenated_paired
     - delete_intermediate_files        (bool) If True, delete intermediate files. Default: True
     - logger                           (logging.Logger) Logger to use. Default: None
     """
@@ -226,24 +226,20 @@ def fastqpp(
     # all input files for vk fastqpp are required in the varseek workflow, so this is skipped
 
     # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
-    quality_control_fastqs_out_dir = kwargs.get("quality_control_fastqs_out_dir", os.path.join(out, "quality_controlled"))
-    replace_low_quality_bases_with_N_out_dir = kwargs.get("replace_low_quality_bases_with_N_out_dir", os.path.join(out, "replaced_low_quality_with_N"))
-    split_by_Ns_and_low_quality_bases_out_dir = kwargs.get("split_by_Ns_and_low_quality_bases_out_dir", os.path.join(out, "split_by_Ns_and_low_quality_bases"))
-    concatenate_paired_fastqs_out_dir = kwargs.get("concatenate_paired_fastqs_out_dir", os.path.join(out, "concatenated_paired_fastqs"))
+    quality_control_fastqs_out_dir = kwargs.get("quality_control_fastqs_out_dir", os.path.join(out, "fastqs_quality_controlled"))
+    replace_low_quality_bases_with_N_out_dir = kwargs.get("replace_low_quality_bases_with_N_out_dir", os.path.join(out, "fastqs_replaced_low_quality_with_N"))
+    split_by_Ns_and_low_quality_bases_out_dir = kwargs.get("split_by_Ns_and_low_quality_bases_out_dir", os.path.join(out, "fastqs_split_by_Ns_and_low_quality_bases"))
+    concatenate_paired_fastqs_out_dir = kwargs.get("concatenate_paired_fastqs_out_dir", os.path.join(out, "fastqs_concatenated_paired"))
 
     if len({quality_control_fastqs_out_dir, replace_low_quality_bases_with_N_out_dir, split_by_Ns_and_low_quality_bases_out_dir, concatenate_paired_fastqs_out_dir}) < 4:
         raise ValueError("Output directories must be unique.")
     for directory in [quality_control_fastqs_out_dir, replace_low_quality_bases_with_N_out_dir, split_by_Ns_and_low_quality_bases_out_dir, concatenate_paired_fastqs_out_dir]:
         if directory == os.path.dirname(fastqs[0]):
             raise ValueError(f"Output directory {directory} cannot be the same as the input directory {os.path.dirname(fastqs[0])}.")
-        if (os.path.exists(directory) and len(os.listdir(directory) != 0))and not overwrite:
-            raise ValueError(f"Output directory {directory} already exists. Use overwrite=True to overwrite existing files.")
+        # if (os.path.exists(directory) and len(os.listdir(directory)) != 0) and not overwrite:
+        #     raise ValueError(f"Output directory {directory} already exists. Use overwrite=True to overwrite existing files.")
 
     os.makedirs(out, exist_ok=True)
-    os.makedirs(quality_control_fastqs_out_dir, exist_ok=True)
-    os.makedirs(replace_low_quality_bases_with_N_out_dir, exist_ok=True)
-    os.makedirs(split_by_Ns_and_low_quality_bases_out_dir, exist_ok=True)
-    os.makedirs(concatenate_paired_fastqs_out_dir, exist_ok=True)
 
     # * 7. Define kwargs defaults
     seqtk = kwargs.get("seqtk_path", "seqtk")
@@ -262,7 +258,7 @@ def fastqpp(
     fastq_quality_controlled_all_files = [os.path.join(quality_control_fastqs_out_dir, os.path.basename(fastq)) for fastq in fastqs]
     fastq_more_Ns_all_files = [os.path.join(replace_low_quality_bases_with_N_out_dir, os.path.basename(fastq)) for fastq in fastqs]
     split_by_Ns_and_low_quality_bases_all_files = [os.path.join(split_by_Ns_and_low_quality_bases_out_dir, os.path.basename(fastq)) for fastq in fastqs]
-    fastq_concatenated_all_files = [os.path.join(concatenate_paired_fastqs_out_dir, os.path.basename(fastq)) for fastq in fastqs]
+    # rather than determine file names of fastq_concatenated_all_files, simply use list (too complicated otherwise)
 
     if technology.lower() != "bulk" and "smartseq" not in technology.lower():
         parity = "single"
@@ -286,6 +282,7 @@ def fastqpp(
         # check if any file in fastq_quality_controlled_all_files does not exist
         if not all(os.path.exists(f) for f in fastq_quality_controlled_all_files) or overwrite:
             logger.info("Quality controlling fastq files (trimming adaptors, trimming low-quality read edges, filtering low quality reads)")
+            os.makedirs(quality_control_fastqs_out_dir, exist_ok=True)
             if technology.upper() in {"10XV1", "INDROPSV3"}:
                 for i in range(0, len(fastqs), 3):  # assumes I1, R1, R2
                     logger.info(f"Processing {fastqs[i]} {fastqs[i+1]} {fastqs[i+2]}")
@@ -316,6 +313,7 @@ def fastqpp(
             # check if any file in fastq_more_Ns_all_files does not exist
             if not all(os.path.exists(f) for f in fastq_more_Ns_all_files) or overwrite:
                 logger.info("Replacing low quality bases with N")
+                os.makedirs(replace_low_quality_bases_with_N_out_dir, exist_ok=True)
                 fastqs = replace_low_quality_bases_with_N_list(rnaseq_fastq_files=fastqs, minimum_base_quality=min_base_quality_for_splitting, seqtk=seqtk, out_dir=out, logger=logger)
             else:
                 logger.warning("Fastq files with low quality bases replaced with N already exist. Skipping this step. Use overwrite=True to overwrite existing files.")
@@ -327,6 +325,7 @@ def fastqpp(
         # check if any file in split_by_Ns_and_low_quality_bases_all_files does not exist
         if not all(os.path.exists(f) for f in split_by_Ns_and_low_quality_bases_all_files) or overwrite:
             logger.info("Splitting reads by Ns")
+            os.makedirs(split_by_Ns_and_low_quality_bases_out_dir, exist_ok=True)
             fastqs = split_reads_by_N_list(fastqs, minimum_sequence_length=length_required, delete_original_files=delete_intermediate_files, out_dir=split_by_Ns_and_low_quality_bases_out_dir, logger=logger, seqtk=seqtk)
         else:
             logger.warning("Fastq files with reads split by N already exist. Skipping this step. Use overwrite=True to overwrite existing files.")
@@ -339,8 +338,9 @@ def fastqpp(
 
     if concatenate_paired_fastqs:
         # check if any file in fastq_concatenated_all_files does not exist
-        if not all(os.path.exists(f) for f in fastq_concatenated_all_files) or overwrite:
+        if len(concatenate_paired_fastqs_out_dir) < (len(fastqs) // 2) or overwrite:  # if not all(os.path.exists(f) for f in fastq_concatenated_all_files) or overwrite:
             logger.info("Concatenating paired fastq files")
+            os.makedirs(concatenate_paired_fastqs_out_dir, exist_ok=True)
             rnaseq_fastq_files_list_copy = []
             for i in range(0, len(fastqs), 2):
                 file1 = fastqs[i]

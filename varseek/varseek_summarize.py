@@ -146,134 +146,113 @@ def summarize(
     else:
         raise ValueError("adata must be a string (file path) or an AnnData object.")
 
+    # 1. Number of Variants with Count > 0 in any Sample/Cell, and for bulk in particular, for each sample; then list the variants
+    logger.info("1. Number of Variants with Count > 0 in any Sample/Cell, and for bulk in particular, for each sample; then list the variants")
     if "vcrs_count" not in adata.var.columns:
         adata.var["vcrs_count"] = adata.X.sum(axis=0).A1 if hasattr(adata.X, "A1") else adata.X.sum(axis=0).flatten()
 
-    # 1. Number of Variants with Count > 0 in any Sample/Cell, and for bulk in particular, for each sample; then list the variants
+    # Sort by vcrs_count
+    vcrs_count_descending = adata.var.sort_values(
+        by=["vcrs_count"],
+        ascending=False,
+    )
+
+    vcrs_count_descending_greater_than_zero = vcrs_count_descending.loc[vcrs_count_descending['vcrs_count'] > 0]  # get all values greater than zero
+    top_values_for_vcrs_count_descending = min(top_values, len(vcrs_count_descending_greater_than_zero))  # in case there are fewer than top_values variants with count > 0
+    vcrs_count_descending_top_n = vcrs_count_descending_greater_than_zero.index.tolist()[:top_values_for_vcrs_count_descending]  # get top values
+    
     with open(stats_file, "w", encoding="utf-8") as f:
-        variants_with_any_count = (adata.X > 0).sum(axis=0)
-        variants_count_any_row = (variants_with_any_count > 0).sum()
-        line = f"Total variants with count > 0 for any sample/cell: {variants_count_any_row}"
-        f.write(line)
+        f.write(f"Total variants with count > 0 for any sample/cell: {len(vcrs_count_descending_greater_than_zero)}\n")
         if technology.lower() == "bulk":
             for sample in adata.obs_names:
                 count_nonzero_variants = (adata[sample, :].X > 0).sum()
-                line = f"Sample {sample} has {count_nonzero_variants} variants with count > 0."
-                f.write(line)
+                f.write(f"Sample {sample} has {count_nonzero_variants} variants with count > 0.\n")
+        f.write(f"Variants with highest cumulative counts: {', '.join(vcrs_count_descending_top_n)}\n")
 
-    variants_with_nonzero_counts = adata.var_names[variants_with_any_count > 0]
     with open(f"{specific_stats_folder}/variants_with_any_count.txt", "w", encoding="utf-8") as f:
-        for variant in variants_with_nonzero_counts:
-            f.write(f"{variant}\n")
+        f.write("Variant\tTotal_Counts\n")
+        for variant in vcrs_count_descending_greater_than_zero.index:
+                total_counts = adata.var.loc[variant, "vcrs_count"]
+                f.write(f"{variant}\t{total_counts}\n")
 
     # 2. Variants Present Across the Most Samples
-    adata.var["number_of_samples_in_which_the_variant_is_detected"] = (adata.X > 0).sum(axis=0).A1 if hasattr(adata.X, "A1") else (adata.X > 0).sum(axis=0)
+    logger.info("2. Variants Present Across the Most Samples")
+    if "number_of_samples_in_which_the_variant_is_detected" not in adata.var.columns:
+        adata.var["number_of_samples_in_which_the_variant_is_detected"] = (adata.X > 0).sum(axis=0).A1 if hasattr(adata.X, "A1") else (adata.X > 0).sum(axis=0).A1
+    
     # Sort by number of samples and break ties with vcrs_count
-    most_common_variants = adata.var.sort_values(
+    number_of_samples_descending = adata.var.sort_values(
         by=["number_of_samples_in_which_the_variant_is_detected", "vcrs_count"],
         ascending=False,
     )
-    variant_names = most_common_variants.index.tolist()
-    variant_names_top_n = variant_names[:top_values]
+    
+    number_of_samples_descending_greater_than_zero = number_of_samples_descending.loc[number_of_samples_descending['number_of_samples_in_which_the_variant_is_detected'] > 0]  # get all values greater than zero
+    top_values_for_number_of_samples_descending = min(top_values, len(number_of_samples_descending_greater_than_zero))  # in case there are fewer than top_values variants with count > 0
+    number_of_samples_descending_top_n = number_of_samples_descending.index.tolist()[:top_values_for_number_of_samples_descending]  # get top values
+    
     with open(stats_file, "a", encoding="utf-8") as f:
-        f.write(f"Variants present across the most samples: {', '.join(variant_names_top_n)}")
+        f.write(f"Variants present across the most samples: {', '.join(number_of_samples_descending_top_n)}\n")
+    
     with open(f"{specific_stats_folder}/variants_present_across_the_most_samples.txt", "w", encoding="utf-8") as f:
         f.write("Variant\tNumber_of_Samples\tTotal_Counts\n")
-
-        # Write each variant's details
-        for variant in most_common_variants.index:
-            number_of_samples = adata.var.loc[variant, "number_of_samples_in_which_the_variant_is_detected"]
-            total_counts = adata.var.loc[variant, "vcrs_count"]
-            f.write(f"{variant}\t{number_of_samples}\t{total_counts}\n")
-
-    # 3. Top 10 Variants with Highest vcrs_count Across All Samples
-    top_variants_vcrs_count = adata.var.sort_values(by="vcrs_count", ascending=False)
-    variant_names = top_variants_vcrs_count.index.tolist()
-    variant_names_top_n = variant_names[:top_values]
-    with open(stats_file, "a", encoding="utf-8") as f:
-        f.write(f"Variants with highest counts across all samples: {', '.join(variant_names_top_n)}")
-    with open(f"{specific_stats_folder}/variants_highest_vcrs_count.txt", "w", encoding="utf-8") as f:
-        f.write("Variant\tNumber_of_Samples\tTotal_Counts\n")
-
-        # Write each variant's details
-        for variant in top_variants_vcrs_count.index:
+        for variant in number_of_samples_descending_greater_than_zero.index:
             number_of_samples = adata.var.loc[variant, "number_of_samples_in_which_the_variant_is_detected"]
             total_counts = adata.var.loc[variant, "vcrs_count"]
             f.write(f"{variant}\t{number_of_samples}\t{total_counts}\n")
 
     # --------------------------------------------------------------------------------------------------------
-    # 4. Number of Genes with Count > 0 in any Sample/Cell, and for bulk in particular, for each sample; then list the genes
     if gene_name_column:
-        with open(stats_file, "a", encoding="utf-8") as f:
-            # Sum vcrs_count for each gene
-            gene_counts = adata.var.groupby(gene_name_column)["vcrs_count"].sum()
-
-            # Count genes with non-zero vcrs_count across all samples
-            genes_count_any_row = (gene_counts > 0).sum()
-            line = f"Total genes with count > 0 in any sample/cell: {genes_count_any_row}\n"
-            f.write(line)
-
-            # For bulk technologys, calculate counts for each sample
-            if technology.lower() == "bulk":
-                for sample in adata.obs_names:
-                    # Calculate vcrs_count per gene for the specific sample
-                    gene_counts_per_sample = adata[sample, :].to_df().gt(0).groupby(adata.var[gene_name_column], axis=1).sum().gt(0).sum()
-                    line = f"Sample {sample} has {gene_counts_per_sample.sum()} genes with count > 0.\n"
-                    f.write(line)
-
-        # List of genes with non-zero vcrs_count across all samples
-        genes_with_nonzero_counts = gene_counts[gene_counts > 0].index
-        with open(f"{specific_stats_folder}/genes_with_any_count.txt", "w", encoding="utf-8") as f:
-            for gene in genes_with_nonzero_counts:
-                f.write(f"{gene}\n")
-
-        # 5. Genes Present Across the Most Samples
-        # Calculate the number of samples where each gene has at least one variant with count > 0
-        adata.var["detected"] = (adata.X > 0).astype(int)  # Binary matrix indicating presence per sample
-        gene_sample_count = adata.var.groupby(gene_name_column)["detected"].sum()  # Sum across variants per gene
-
-        # Add the total vcrs_count per gene (summing across all variants for that gene)
-        gene_vcrs_count = adata.var.groupby(gene_name_column)["vcrs_count"].sum()
-
-        # Combine both into a DataFrame for sorting
-        gene_presence_df = pd.DataFrame(
-            {
-                "number_of_samples_in_which_the_gene_is_detected": gene_sample_count.max(axis=1),
-                "total_vcrs_count": gene_vcrs_count,
-            }
-        )
-
-        # Sort by number of samples and break ties with total vcrs_count
-        most_common_genes = gene_presence_df.sort_values(
-            by=["number_of_samples_in_which_the_gene_is_detected", "total_vcrs_count"],
+        gene_counts = adata.var.groupby(gene_name_column)["vcrs_count"].sum()
+        
+        # 3. Number of Genes with Count > 0 in any Sample/Cell, and for bulk in particular, for each sample; then list the genes
+        logger.info("3. Number of Genes with Count > 0 in any Sample/Cell, and for bulk in particular, for each sample; then list the genes")
+        # Sort by vcrs_count
+        vcrs_count_descending = gene_counts.var.sort_values(
+            by=["vcrs_count"],
             ascending=False,
         )
 
-        # Write results to file
+        vcrs_count_descending_greater_than_zero = vcrs_count_descending.loc[vcrs_count_descending['vcrs_count'] > 0]  # get all values greater than zero
+        top_values_for_vcrs_count_descending = min(top_values, len(vcrs_count_descending_greater_than_zero))  # in case there are fewer than top_values variants with count > 0
+        vcrs_count_descending_top_n = vcrs_count_descending_greater_than_zero.index.tolist()[:top_values_for_vcrs_count_descending]  # get top values
+        
         with open(stats_file, "a", encoding="utf-8") as f:
-            gene_names_top_n = most_common_genes.index[:top_values].tolist()
-            f.write(f"Genes present across the most samples: {', '.join(gene_names_top_n)}\n")
+            f.write(f"Total genes with count > 0 for any sample/cell: {len(vcrs_count_descending_greater_than_zero)}\n")
+            if technology.lower() == "bulk":
+                for sample in gene_counts.obs_names:  #!!! make sure this is right
+                    count_nonzero_variants = (gene_counts[sample, :].X > 0).sum()
+                    f.write(f"Sample {sample} has {count_nonzero_variants} genes with count > 0.\n")
+            f.write(f"Genes with highest cumulative counts: {', '.join(vcrs_count_descending_top_n)}\n")
 
+        with open(f"{specific_stats_folder}/genes_with_any_count.txt", "w", encoding="utf-8") as f:
+            f.write("Gene\tTotal_Counts\n")
+            for gene in vcrs_count_descending_greater_than_zero.index:
+                    total_counts = adata.var.loc[gene, "vcrs_count"]
+                    f.write(f"{gene}\t{total_counts}\n")
+
+        # 4. Genes Present Across the Most Samples
+        logger.info("4. Genes Present Across the Most Samples")
+        
+        number_of_samples_descending = gene_counts.var.sort_values(
+            by=["number_of_samples_in_which_the_variant_is_detected", "vcrs_count"],
+            ascending=False,
+        )
+        
+        number_of_samples_descending_greater_than_zero = number_of_samples_descending.loc[number_of_samples_descending['number_of_samples_in_which_the_variant_is_detected'] > 0]  # get all values greater than zero
+        top_values_for_number_of_samples_descending = min(top_values, len(number_of_samples_descending_greater_than_zero))  # in case there are fewer than top_values variants with count > 0
+        number_of_samples_descending_top_n = number_of_samples_descending.index.tolist()[:top_values_for_number_of_samples_descending]  # get top values
+
+        with open(stats_file, "a", encoding="utf-8") as f:
+            f.write(f"Genes present across the most samples: {', '.join(number_of_samples_descending_top_n)}\n")
+        
         with open(f"{specific_stats_folder}/genes_present_across_the_most_samples.txt", "w", encoding="utf-8") as f:
-            f.write("Gene\tNumber_of_Samples\tTotal_vcrs_count\n")
-            for gene, row in most_common_genes.iterrows():
-                f.write(f"{gene}\t{row['number_of_samples_in_which_the_gene_is_detected']}\t{row['total_vcrs_count']}\n")
+            f.write("Variant\tNumber_of_Samples\tTotal_Counts\n")
+            for variant in number_of_samples_descending_greater_than_zero.index:
+                number_of_samples = gene_counts.var.loc[variant, "number_of_samples_in_which_the_variant_is_detected"]
+                total_counts = gene_counts.var.loc[variant, "vcrs_count"]
+                f.write(f"{variant}\t{number_of_samples}\t{total_counts}\n")
 
-        # 6. Top 10 Genes with Highest vcrs_count Across All Samples
-        # Sort genes by total vcrs_count
-        top_genes_vcrs_count = gene_presence_df.sort_values(by="total_vcrs_count", ascending=False)
-
-        # Write top genes with highest vcrs_count to stats file and detailed file
-        with open(stats_file, "a", encoding="utf-8") as f:
-            gene_names_top_n = top_genes_vcrs_count.index[:top_values].tolist()
-            f.write(f"Genes with highest vcrs_count across all samples: {', '.join(gene_names_top_n)}\n")
-
-        with open(f"{specific_stats_folder}/genes_highest_vcrs_count.txt", "w", encoding="utf-8") as f:
-            f.write("Gene\tNumber_of_Samples\tTotal_vcrs_count\n")
-            for gene, row in top_genes_vcrs_count.iterrows():
-                f.write(f"{gene}\t{row['number_of_samples_in_which_the_gene_is_detected']}\t{row['total_vcrs_count']}\n")
-
-        report_time_elapsed(start_time, logger=logger, function_name="summarize")
+    report_time_elapsed(start_time, logger=logger, function_name="summarize")
 
     # TODO: things to add
     # differentially expressed variants/mutated genes

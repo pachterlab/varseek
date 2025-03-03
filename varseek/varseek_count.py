@@ -273,17 +273,15 @@ def count(
 
     # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
     if not kb_count_vcrs_out_dir:
-        kb_count_vcrs_out_dir = f"{out}/kb_count_out_vcrs"
+        kb_count_vcrs_out_dir = os.path.join(out, "kb_count_out_vcrs") if not kwargs.get("kb_count_vcrs_dir") else kwargs["kb_count_vcrs_dir"]
     if not kb_count_reference_genome_out_dir:
-        kb_count_reference_genome_out_dir = f"{out}/kb_count_out_reference_genome"
+        kb_count_reference_genome_out_dir = os.path.join(out, "kb_count_out_reference_genome") if not kwargs.get("kb_count_reference_genome_dir") else kwargs["kb_count_reference_genome_dir"]
     if not vk_summarize_out_dir:
-        vk_summarize_out_dir = f"{out}/vk_summarize"
+        vk_summarize_out_dir = os.path.join(out, "vk_summarize")    
 
     if not dry_run:
         os.makedirs(out, exist_ok=True)
         os.makedirs(kb_count_vcrs_out_dir, exist_ok=True)
-        os.makedirs(kb_count_reference_genome_out_dir, exist_ok=True)
-        os.makedirs(vk_summarize_out_dir, exist_ok=True)
 
     # for kb count --> vk clean
     kb_count_vcrs_out_dir, kwargs['kb_count_vcrs_dir'] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(kb_count_vcrs_out_dir, kwargs.get("kb_count_vcrs_dir"))  # check that, if kb_count_vcrs_dir and kb_count_vcrs_out_dir are both provided, they are the same directory; otherwise, if only one is provided, then make them equal to each other
@@ -325,8 +323,9 @@ def count(
             logger.warning(f"Automatic FASTQ argument order sorting for kb count could not recognize FASTQ file name format. Skipping argument order sorting.")
 
     if technology.lower() != "bulk" and "smartseq" not in technology.lower():
-        logger.info("Technology %s does not support paired end data. Setting parity to 'single'.", technology)
-        parity = "single"
+        if parity != "single":
+            logger.info("Technology %s does not support paired end data. Setting parity to 'single'.", technology)
+            parity = "single"
 
     # so parity_vcrs is set correctly - copied from fastqpp
     concatenate_paired_fastqs = kwargs.get("concatenate_paired_fastqs", False)
@@ -345,6 +344,7 @@ def count(
         qc_against_gene_matrix = False  # disable_clean gets priority
 
     if not kwargs.get("length_required"):
+        logger.info("Setting length_required to %s if fastqpp is run", k)
         kwargs["length_required"] = k
 
     # define the vk fastqpp, clean, and summarize arguments (explicit arguments and allowable kwargs)
@@ -362,7 +362,8 @@ def count(
     all_parameter_names_set_vk_summarize = explicit_parameters_vk_summarize | allowable_kwargs_vk_summarize
 
     # vk fastqpp
-    if not any([kwargs[fastqpp_param] for fastqpp_param in ["split_reads_by_Ns_and_low_quality_bases", "concatenate_paired_fastqs"]]):
+    if not any([kwargs.get(fastqpp_param) for fastqpp_param in ["quality_control_fastqs", "split_reads_by_Ns_and_low_quality_bases", "concatenate_paired_fastqs"]]):
+        disable_fastqpp_original = disable_fastqpp
         disable_fastqpp = True
 
     if not disable_fastqpp:  # don't do the whole overwrite thing here because it is the first function, and a user should know if they are overwriting their fastqs
@@ -371,6 +372,8 @@ def count(
         # eg kwargs_vk_summarize['mykwarg'] = mykwarg
 
         logger.info("Running vk fastqpp")
+        if dry_run:
+            logger.warning("Note: during dry run, the fastq's passed into kb count will be the default fastqs, not any updated fastqs from fastqpp")
         fastqpp_dict = vk.fastqpp(
                             fastqs,
                             technology=technology,
@@ -389,7 +392,10 @@ def count(
         fastqs_vcrs = fastqpp_dict["final"]
         fastqs_reference_genome = fastqpp_dict["quality_controlled"] if "quality_controlled" in fastqpp_dict else fastqs
     else:
-        logger.warning("Skipping vk fastqpp because disable_fastqpp=True")
+        if disable_fastqpp_original:
+            logger.info("Skipping vk fastqpp because disable_fastqpp=True")
+        else:
+            logger.info("Skipping vk fastqpp because there was no use for it")
         fastqs_vcrs = fastqs
         fastqs_reference_genome = fastqs
     fastqs = fastqs_vcrs  # so that the correct fastqs get passed into vk clean
@@ -459,14 +465,17 @@ def count(
             logger.info(f"Running kb count with command: {' '.join(kb_count_command)}")
             subprocess.run(kb_count_command, check=True)
     else:
-        logger.warning(f"Skipping kb count because file {file_signifying_successful_kb_count_vcrs_completion} already exists and overwrite=False")
+        logger.info(f"Skipping kb count because file {file_signifying_successful_kb_count_vcrs_completion} already exists and overwrite=False")
 
-    if ((not os.path.exists(file_signifying_successful_kb_count_reference_genome_completion)) and (technology not in non_single_cell_technologies) and any(params_dict_kb_count_vcrs.get(value, False) for value in needs_for_normal_genome_matrix)) or (qc_against_gene_matrix and len(os.listdir(kb_count_reference_genome_out_dir)) == 0):  # align to this genome if either (1) adata doesn't exist and I do downstream analysis with the normal gene count matrix for scRNA-seq data (ie not bulk) or (2) [qc_against_gene_matrix=True and kb_count_reference_genome_out_dir is empty (because I need the BUS file for this)]  # purposely omitted overwrite because it is reasonable to expect that someone has pre-computed this matrix and doesn't want it recomputed under any circumstances (and if they did, then simply point to a different directory)
+    # # kb count, reference genome
+    if ((not os.path.exists(file_signifying_successful_kb_count_reference_genome_completion)) and (technology not in non_single_cell_technologies) and any(kwargs.get(value, False) for value in needs_for_normal_genome_matrix)) or (qc_against_gene_matrix and len(os.listdir(kb_count_reference_genome_out_dir)) == 0):  # align to this genome if either (1) adata doesn't exist and I do downstream analysis with the normal gene count matrix for scRNA-seq data (ie not bulk) or (2) [qc_against_gene_matrix=True and kb_count_reference_genome_out_dir is empty (because I need the BUS file for this)]  # purposely omitted overwrite because it is reasonable to expect that someone has pre-computed this matrix and doesn't want it recomputed under any circumstances (and if they did, then simply point to a different directory)
         reference_genome_index = reference_genome_index if reference_genome_index else os.path.join(out, "reference_genome_index.idx")
         reference_genome_t2g = reference_genome_t2g if reference_genome_t2g else os.path.join(out, "reference_genome_t2g.t2g")
 
         if not os.path.exists(reference_genome_index) or not os.path.exists(reference_genome_t2g):  # download reference if does not exist
             raise ValueError(f"Reference genome index {reference_genome_index} or t2g {reference_genome_t2g} does not exist. Please provide a valid reference genome index and t2g file created with the `kb ref` command (a standard reference genome index/t2g, *not* a variant reference).")
+        
+        os.makedirs(kb_count_reference_genome_out_dir, exist_ok=True)
 
         #!!! WT vcrs alignment, copied from previous notebook 1_2 (still not implemented in here correctly)
         # if os.path.exists(wt_vcrs_index) and (not os.path.exists(kb_count_out_wt_vcrs) or len(os.listdir(kb_count_out_wt_vcrs)) == 0):
@@ -525,6 +534,9 @@ def count(
     else:
         logger.info(f"Skipping kb count for reference genome because the reference genome adata object was not needed and/or the file '{file_signifying_successful_kb_count_reference_genome_completion}' already exists. Note that even setting overwrite=True will still not overwrite this particular directory")
 
+    if not os.path.exists(kb_count_reference_genome_out_dir) or len(os.listdir(kb_count_reference_genome_out_dir)) == 0:
+        kb_count_reference_genome_out_dir, kwargs['kb_count_reference_genome_dir'] = None, None  # don't pass anything into clean if they're empty
+
     # vk clean
     if not disable_clean:
         if not os.path.exists(file_signifying_successful_vk_clean_completion) or overwrite:
@@ -555,10 +567,10 @@ def count(
                     **kwargs_vk_clean
             )
         else:
-            logger.warning(f"Skipping vk clean because file {file_signifying_successful_vk_clean_completion} already exists and overwrite=False")
+            logger.info(f"Skipping vk clean because file {file_signifying_successful_vk_clean_completion} already exists and overwrite=False")
         adata = adata_vcrs_clean_out  # for vk summarize
     else:
-        logger.warning("Skipping vk clean because disable_clean=True")
+        logger.info("Skipping vk clean because disable_clean=True")
         adata = adata_vcrs  # for vk summarize
 
     # # vk summarize
@@ -569,30 +581,35 @@ def count(
             # eg kwargs_vk_summarize['mykwarg'] = mykwarg
 
             logger.info("Running vk summarize")
-            _ = vk.summarize(
-                    adata=adata,
-                    technology=technology,
-                    out=vk_summarize_out_dir,
-                    dry_run=dry_run,
-                    overwrite=True,
-                    logging_level=logging_level,
-                    save_logs=save_logs,
-                    log_out_dir=log_out_dir,
-                    **kwargs_vk_summarize
-            )
+            try:
+                _ = vk.summarize(
+                        adata=adata,
+                        technology=technology,
+                        out=vk_summarize_out_dir,
+                        dry_run=dry_run,
+                        overwrite=True,
+                        logging_level=logging_level,
+                        save_logs=save_logs,
+                        log_out_dir=log_out_dir,
+                        **kwargs_vk_summarize
+                )
+            except Exception as e:
+                os.remove(file_signifying_successful_vk_summarize_completion)  # remove the file vk summarize stats file so that the vk count can be rerun
+                logger.error(f"Error in vk summarize: {e}")
+                raise e
         else:
-            logger.warning(f"Skipping vk summarize because file {file_signifying_successful_vk_summarize_completion} already exists and overwrite=False")
+            logger.info(f"Skipping vk summarize because file {file_signifying_successful_vk_summarize_completion} already exists and overwrite=False")
     else:
-        logger.warning("Skipping vk summarize because disable_summarize=True")
+        logger.info("Skipping vk summarize because disable_summarize=True")
 
     vk_count_output_dict = {}
-    vk_count_output_dict["adata_path_unprocessed"] = os.path.abspath(adata_vcrs)
-    vk_count_output_dict["adata_path_reference_genome_unprocessed"] = os.path.abspath(adata_reference_genome)
-    vk_count_output_dict["adata_path"] = os.path.abspath(adata_vcrs_clean_out)
-    vk_count_output_dict["adata_path_reference_genome"] = os.path.abspath(adata_reference_genome_clean_out)
+    vk_count_output_dict["adata_path_unprocessed"] = os.path.abspath(adata_vcrs) if os.path.isfile(os.path.abspath(adata_vcrs)) else None
+    vk_count_output_dict["adata_path_reference_genome_unprocessed"] = os.path.abspath(adata_reference_genome) if os.path.isfile(os.path.abspath(adata_reference_genome)) else None
+    vk_count_output_dict["adata_path"] = os.path.abspath(adata_vcrs_clean_out) if os.path.isfile(os.path.abspath(adata_vcrs_clean_out)) else None
+    vk_count_output_dict["adata_path_reference_genome"] = os.path.abspath(adata_reference_genome_clean_out) if os.path.isfile(os.path.abspath(adata_reference_genome_clean_out)) else None
 
-    vk_count_output_dict["vcf"] = os.path.abspath(vcf_out)
-    vk_count_output_dict["vk_summarize_output_dir"] = os.path.abspath(vk_summarize_out_dir)
+    vk_count_output_dict["vcf"] = os.path.abspath(vcf_out) if os.path.isfile(os.path.abspath(vcf_out)) else None
+    vk_count_output_dict["vk_summarize_output_dir"] = os.path.abspath(vk_summarize_out_dir) if os.path.isfile(os.path.abspath(vk_summarize_out_dir)) else None
 
     if not dry_run:
         report_time_elapsed(start_time, logger=logger, function_name="count")

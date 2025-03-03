@@ -3,6 +3,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 
 import pyfastx
 from tqdm import tqdm
@@ -532,8 +533,8 @@ def run_fastp_single_cell_general(r1_fastq_path, r2_fastq_path, out_dir="filtere
 
         subprocess.run(fastp_cmd1, check=True) 
     else:
-        r1_fastq_out_path_tmp = r1_fastq_path
-        r2_fastq_out_path_tmp = r2_fastq_path
+        shutil.copy(r1_fastq_path, r1_fastq_out_path_tmp)
+        shutil.copy(r2_fastq_path, r2_fastq_out_path_tmp)
         
     # edge trimming
     if cut_front or cut_tail or not disable_adapter_trimming:
@@ -566,6 +567,8 @@ def run_fastp_single_cell_general(r1_fastq_path, r2_fastq_path, out_dir="filtere
         if os.path.getsize(failed_out2) > 0:
             print(f"Removing reads from {r1_fastq_out_path} removed solely from {r2_fastq_out_path} during trimming")
             ensure_read_agreement(r1_fastq_out_path_tmp, r2_fastq_out_path_tmp, failed_out2, r1_fastq_out_path=r1_fastq_out_path)
+        else:
+            os.rename(r1_fastq_out_path_tmp, r1_fastq_out_path)
     else:
         os.rename(r1_fastq_out_path_tmp, r1_fastq_out_path)
         os.rename(r2_fastq_out_path_tmp, r2_fastq_out_path)
@@ -616,6 +619,8 @@ def run_fastp_smartseq3(r1_fastq_path, r2_fastq_path, out_dir="filtered", cut_fr
         if os.path.getsize(failed_out2) > 0:
             print(f"Removing reads from {r1_fastq_out_path} removed solely from {r2_fastq_out_path} during trimming")
             ensure_read_agreement(r1_fastq_out_path_tmp, r2_fastq_out_path_tmp, failed_out2, r1_fastq_out_path=r1_fastq_out_path)
+        else:
+            os.rename(r1_fastq_out_path_tmp, r1_fastq_out_path)
     else:
         os.rename(r1_fastq_out_path_tmp, r1_fastq_out_path)
         os.rename(r2_fastq_out_path_tmp, r2_fastq_out_path)
@@ -704,9 +709,6 @@ def perform_fastp_trimming_and_filtering(technology, r1_fastq_path, r2_fastq_pat
     r2_fastq_out_path = os.path.join(out_dir, os.path.basename(r2_fastq_path)) if r2_fastq_path else None
     i1_fastq_out_path = os.path.join(out_dir, os.path.basename(i1_fastq_path)) if i1_fastq_path else None
 
-    tmp_dir = os.path.join(out_dir, "tmp")
-    os.makedirs(tmp_dir, exist_ok=True)
-
     if technology in {"10XV1", "INDROPSV3"}:
         failed_out = True
 
@@ -717,23 +719,27 @@ def perform_fastp_trimming_and_filtering(technology, r1_fastq_path, r2_fastq_pat
     if technology in {"INDROPSV2", "SPLIT-SEQ", "STORMSEQ"}:  # a technology where the latter file has the barcode/UMI-type information
         r1_fastq_path, r2_fastq_path = r2_fastq_path, r1_fastq_path  # swap R1 and R2
 
-    if technology in {"BULK", "SMARTSEQ2"}:  # no barcodes or UMIs
-        run_fastp_bulk(r1_fastq_path=r1_fastq_path, r2_fastq_path=r2_fastq_path, out_dir=out_dir, parity=parity, cut_front=cut_front, cut_tail=cut_tail, cut_window_size=cut_window_size, cut_mean_quality=cut_mean_quality, disable_adapter_trimming=disable_adapter_trimming, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, average_qual=average_qual, n_base_limit=n_base_limit, disable_quality_filtering=disable_quality_filtering, length_required=length_required, disable_length_filtering=disable_length_filtering, dont_eval_duplication=dont_eval_duplication, disable_trim_poly_g=disable_trim_poly_g, threads=threads, failed_out=failed_out, r1_fastq_out_path=r1_fastq_out_path, r2_fastq_out_path=r2_fastq_out_path)
+    # tmp_dir = os.path.join(out_dir, "tmp")
+    # os.makedirs(tmp_dir, exist_ok=True)
 
-    elif technology in {"10XV2, 10XV3", "BDWTA", "CELSEQ", "CELSEQ2", "INDROPSV1", "INDROPSV2", "SCRUBSEQ", "SPLIT-SEQ", "SURECELL", "VISIUM"}:
-        run_fastp_single_cell_general(r1_fastq_path=r1_fastq_path, r2_fastq_path=r2_fastq_path, out_dir=out_dir, cut_front=cut_front, cut_tail=cut_tail, cut_window_size=cut_window_size, cut_mean_quality=cut_mean_quality, disable_adapter_trimming=disable_adapter_trimming, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, average_qual=average_qual, n_base_limit=n_base_limit, disable_quality_filtering=disable_quality_filtering, threads=threads, failed_out=failed_out, r1_fastq_out_path=r1_fastq_out_path, r2_fastq_out_path=r2_fastq_out_path, tmp_dir=tmp_dir)
-        
-    elif technology in {"SMARTSEQ3", "STORMSEQ"}:
-        run_fastp_smartseq3(r1_fastq_path=r1_fastq_path, r2_fastq_path=r2_fastq_path, out_dir=out_dir, cut_front=cut_front, cut_tail=cut_tail, cut_window_size=cut_window_size, cut_mean_quality=cut_mean_quality, disable_adapter_trimming=disable_adapter_trimming, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, average_qual=average_qual, n_base_limit=n_base_limit, disable_quality_filtering=disable_quality_filtering, length_required=length_required, disable_length_filtering=disable_length_filtering, threads=threads, failed_out=failed_out, r1_fastq_out_path=r1_fastq_out_path, r2_fastq_out_path=r2_fastq_out_path, tmp_dir=tmp_dir)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        if technology in {"BULK", "SMARTSEQ2"}:  # no barcodes or UMIs
+            run_fastp_bulk(r1_fastq_path=r1_fastq_path, r2_fastq_path=r2_fastq_path, out_dir=out_dir, parity=parity, cut_front=cut_front, cut_tail=cut_tail, cut_window_size=cut_window_size, cut_mean_quality=cut_mean_quality, disable_adapter_trimming=disable_adapter_trimming, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, average_qual=average_qual, n_base_limit=n_base_limit, disable_quality_filtering=disable_quality_filtering, length_required=length_required, disable_length_filtering=disable_length_filtering, dont_eval_duplication=dont_eval_duplication, disable_trim_poly_g=disable_trim_poly_g, threads=threads, failed_out=failed_out, r1_fastq_out_path=r1_fastq_out_path, r2_fastq_out_path=r2_fastq_out_path)
 
-    elif technology in {"10XV3_ULTIMA"}:
-        run_fastp_10xv3_ultima(r1_fastq_path=r1_fastq_path, out_dir=out_dir, cut_tail=cut_tail, cut_window_size=cut_window_size, cut_mean_quality=cut_mean_quality, disable_adapter_trimming=disable_adapter_trimming, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, average_qual=average_qual, n_base_limit=n_base_limit, disable_quality_filtering=disable_quality_filtering, length_required=length_required, disable_length_filtering=disable_length_filtering, threads=threads, failed_out=failed_out, r1_fastq_out_path=r1_fastq_out_path)
+        elif technology in {"10XV2", "10XV3", "BDWTA", "CELSEQ", "CELSEQ2", "INDROPSV1", "INDROPSV2", "SCRUBSEQ", "SPLIT-SEQ", "SURECELL", "VISIUM"}:
+            run_fastp_single_cell_general(r1_fastq_path=r1_fastq_path, r2_fastq_path=r2_fastq_path, out_dir=out_dir, cut_front=cut_front, cut_tail=cut_tail, cut_window_size=cut_window_size, cut_mean_quality=cut_mean_quality, disable_adapter_trimming=disable_adapter_trimming, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, average_qual=average_qual, n_base_limit=n_base_limit, disable_quality_filtering=disable_quality_filtering, threads=threads, failed_out=failed_out, r1_fastq_out_path=r1_fastq_out_path, r2_fastq_out_path=r2_fastq_out_path, tmp_dir=tmp_dir)
+            
+        elif technology in {"SMARTSEQ3", "STORMSEQ"}:
+            run_fastp_smartseq3(r1_fastq_path=r1_fastq_path, r2_fastq_path=r2_fastq_path, out_dir=out_dir, cut_front=cut_front, cut_tail=cut_tail, cut_window_size=cut_window_size, cut_mean_quality=cut_mean_quality, disable_adapter_trimming=disable_adapter_trimming, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, average_qual=average_qual, n_base_limit=n_base_limit, disable_quality_filtering=disable_quality_filtering, length_required=length_required, disable_length_filtering=disable_length_filtering, threads=threads, failed_out=failed_out, r1_fastq_out_path=r1_fastq_out_path, r2_fastq_out_path=r2_fastq_out_path, tmp_dir=tmp_dir)
 
-    elif technology in {"10XV1", "INDROPSV3"}:
-        run_fastp_10xv1(r1_fastq_path=r1_fastq_path, r2_fastq_path=r2_fastq_path, i1_fastq_path=i1_fastq_path, out_dir=out_dir, cut_front=cut_front, cut_tail=cut_tail, cut_window_size=cut_window_size, cut_mean_quality=cut_mean_quality, disable_adapter_trimming=disable_adapter_trimming, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, average_qual=average_qual, n_base_limit=n_base_limit, disable_quality_filtering=disable_quality_filtering, length_required=length_required, disable_length_filtering=disable_length_filtering, threads=threads, failed_out=failed_out, r1_fastq_out_path=r1_fastq_out_path, r2_fastq_out_path=r2_fastq_out_path, i1_fastq_out_path=i1_fastq_out_path)
+        elif technology in {"10XV3_ULTIMA"}:
+            run_fastp_10xv3_ultima(r1_fastq_path=r1_fastq_path, out_dir=out_dir, cut_tail=cut_tail, cut_window_size=cut_window_size, cut_mean_quality=cut_mean_quality, disable_adapter_trimming=disable_adapter_trimming, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, average_qual=average_qual, n_base_limit=n_base_limit, disable_quality_filtering=disable_quality_filtering, length_required=length_required, disable_length_filtering=disable_length_filtering, threads=threads, failed_out=failed_out, r1_fastq_out_path=r1_fastq_out_path)
 
-    else:
-        raise ValueError(f"Technology {technology} not recognized. See all valid values with `kb --list`.")
+        elif technology in {"10XV1", "INDROPSV3"}:
+            run_fastp_10xv1(r1_fastq_path=r1_fastq_path, r2_fastq_path=r2_fastq_path, i1_fastq_path=i1_fastq_path, out_dir=out_dir, cut_front=cut_front, cut_tail=cut_tail, cut_window_size=cut_window_size, cut_mean_quality=cut_mean_quality, disable_adapter_trimming=disable_adapter_trimming, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, average_qual=average_qual, n_base_limit=n_base_limit, disable_quality_filtering=disable_quality_filtering, length_required=length_required, disable_length_filtering=disable_length_filtering, threads=threads, failed_out=failed_out, r1_fastq_out_path=r1_fastq_out_path, r2_fastq_out_path=r2_fastq_out_path, i1_fastq_out_path=i1_fastq_out_path)
+
+        else:
+            raise ValueError(f"Technology {technology} not recognized. See all valid values with `kb --list`.")
     
     # delete tmp_dir
     if os.path.exists(tmp_dir):

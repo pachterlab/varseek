@@ -1,5 +1,5 @@
-numpy>=1.26.4,<2.0.0
-pandas>=1.5.3,<2.0.0
+numpy>=1.26.4,<2.3.0
+pandas>=1.5.3,<2.3.0
 matplotlib>=3.9.0
 tqdm>=4.66.4
 anndata>=0.8.0

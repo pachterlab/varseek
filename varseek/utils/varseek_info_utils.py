@@ -1027,7 +1027,6 @@ def collapse_df(
     return mutation_metadata_df, columns_to_explode
 
 
-# TODO: save in txt file
 def fasta_summary_stats(fa, output_file=None):
     try:
         if isinstance(fa, str):

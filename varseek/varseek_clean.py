@@ -230,7 +230,7 @@ def clean(
     adata_vcrs_clean_out=None,
     adata_reference_genome_clean_out=None,
     vcf_out=None,
-    save_vcf=True,  # optional saves
+    save_vcf=False,  # optional saves
     dry_run=False,  # general
     overwrite=False,
     threads=2,
@@ -414,11 +414,12 @@ def clean(
     if apply_dlist_correction and not dlist_fasta:
         raise ValueError("dlist_fasta must be provided if apply_dlist_correction is True.")
 
-    try:
-        fastqs = sort_fastq_files_for_kb_count(fastqs, technology=technology, multiplexed=multiplexed, logger=logger, check_only=(not sort_fastqs))
-    except Exception:
-        if sort_fastqs:
-            logger.warning(f"Automatic FASTQ argument order sorting for kb count could not recognize FASTQ file name format. Skipping argument order sorting.")
+    if fastqs:
+        try:
+            fastqs = sort_fastq_files_for_kb_count(fastqs, technology=technology, multiplexed=multiplexed, logger=logger, check_only=(not sort_fastqs))
+        except Exception:
+            if sort_fastqs:
+                logger.warning(f"Automatic FASTQ argument order sorting for kb count could not recognize FASTQ file name format. Skipping argument order sorting.")
 
     if not kallisto:
         kallisto_binary_path_command = "kb info | grep 'kallisto:' | awk '{print $3}' | sed 's/[()]//g'"
@@ -457,6 +458,7 @@ def clean(
     else:
         adata.var["vcrs_header"] = adata.var.index
 
+    adata.var.index.name = "variant"
     original_var_names = adata.var_names.copy()
 
     variants_updated_csv_columns_to_merge = kwargs.get("variants_updated_csv_columns_to_merge", None)
@@ -472,7 +474,7 @@ def clean(
     if variants_updated_csv_columns_to_merge is not None and not os.path.isfile(variants_updated_csv):
         raise ValueError(f"variants_updated_csv_columns_to_merge is not None, but variants_updated_csv does not exist.")
 
-    if os.path.isfile(variants_updated_csv) and variants_updated_csv_columns_to_merge is not None:
+    if variants_updated_csv and os.path.isfile(variants_updated_csv) and variants_updated_csv_columns_to_merge is not None:
         variants_updated_df = pd.read_csv(variants_updated_csv, index_col=0, usecols=list(variants_updated_csv_columns_to_merge))
         merging_column = "vcrs_header"
         if merging_column not in variants_updated_csv_columns_to_merge:

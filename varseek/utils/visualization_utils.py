@@ -246,7 +246,7 @@ def compute_grouped_metric(grouped_df, y_metric, crude=False):
         TN_column = "TN"
 
     if y_metric == "accuracy":
-        grouped_df[y_metric] = (grouped_df[TP_column] + grouped_df[TN_column]) / (grouped_df[TP_column] + grouped_df[TN_column] + grouped_df[FP_column] + grouped_df[FN_column])  # * TODO: replace with len(grouped_df)
+        grouped_df[y_metric] = (grouped_df[TP_column] + grouped_df[TN_column]) / (grouped_df[TP_column] + grouped_df[TN_column] + grouped_df[FP_column] + grouped_df[FN_column])  # len(grouped_df)
     elif y_metric == "sensitivity":
         grouped_df[y_metric] = grouped_df[TP_column] / (grouped_df[TP_column] + grouped_df[FN_column])
         grouped_df.loc[(grouped_df[TP_column] + grouped_df[FN_column]) == 0, y_metric] = 1.0
@@ -491,7 +491,7 @@ def plot_histogram(
     y_axis_label=None,
     title=None,
     out_path=None,
-    show=True
+    show=False
 ):
     """
     Plot a histogram of the specified column in the DataFrame with custom bins and log x-axis.
@@ -616,7 +616,7 @@ def plot_basic_bar_plot_from_dict(my_dict, y_axis, log_scale=False, output_file=
     plt.close()
 
 
-def plot_descending_bar_plot(gene_counts, x_label, y_label, tick_interval=None, output_file=None, show=True):
+def plot_descending_bar_plot(gene_counts, x_label, y_label, tick_interval=None, output_file=None, show=False):
     # Plot a histogram of gene names in descending order
     plt.figure(figsize=(10, 6))
     gene_counts.plot(kind="bar", color="skyblue")

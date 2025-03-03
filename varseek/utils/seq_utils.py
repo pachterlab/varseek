@@ -803,10 +803,10 @@ def sort_fastq_files_for_kb_count(fastq_files, technology=None, multiplexed=None
             message = f"File {fastq_file} does not have a valid FASTQ extension of one of the following: {fastq_extensions}."
             raise ValueError(message)  # invalid regardless of order
 
-        if bool(rnaseq_fastq_filename_pattern_bulk.match(fastq_file)):
-            file_name_format = "bulk"
-        elif bool(rnaseq_fastq_filename_pattern_illumina.match(fastq_file)):  # check for Illumina file naming convention
+        if bool(rnaseq_fastq_filename_pattern_illumina.match(os.path.basename(fastq_file))):  # check for Illumina file naming convention
             file_name_format = "illumina"
+        elif bool(rnaseq_fastq_filename_pattern_bulk.match(os.path.basename(fastq_file))):
+            file_name_format = "bulk"
         else:
             message = f"File {fastq_file} does not match the expected bulk file naming convention of SAMPLE_PAIR.EXT where SAMPLE is sample name, PAIR is 1/2, and EXT is a fastq extension - or the Illumina file naming convention of SAMPLE_LANE_R[12]_001.fastq.gz, where SAMPLE is letters, numbers, underscores; LANE is numbers with optional leading 0s; pair is either R1 or R2; and it has .fq or .fastq extension (or .fq.gz or .fastq.gz)."
             if check_only:
@@ -847,16 +847,19 @@ def sort_fastq_files_for_kb_count(fastq_files, technology=None, multiplexed=None
 def load_in_fastqs(fastqs):
     if not isinstance(fastqs, (str, list, tuple)):
         raise ValueError(f"fastqs must be a string, list, or tuple, not {type(fastqs)}")
-    if isinstance(fastqs, (list, tuple)) and len(fastqs) > 1:
-        return fastqs
-    fastqs = fastqs[0]
+    if isinstance(fastqs, (list, tuple)):
+        if len(fastqs) > 1:
+            return fastqs
+        else:
+            fastqs = fastqs[0]
     if not os.path.exists(fastqs):
         raise ValueError(f"File/folder {fastqs} does not exist")
+    
     if os.path.isdir(fastqs):
         files = []
         for file in os.listdir(fastqs):  # make fastqs list from fastq files in immediate child directory
             if (os.path.isfile(os.path.join(fastqs, file))) and (any(file.lower().endswith((ext, f"{ext}.zip", f"{ext}.gz")) for ext in fastq_extensions)):
-                files.append(file)
+                files.append(os.path.join(fastqs, file))
         if len(files) == 0:
             raise ValueError(f"No fastq files found in {fastqs}")  # redundant with type-checking below, but prints a different error message (informs that the directory has no fastqs, rather than simply telling the user that no fastqs were provided)
     elif os.path.isfile(fastqs):
