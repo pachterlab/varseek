@@ -114,7 +114,8 @@ def ref(
         "num_distinct_triplets:greater_than=2",  # filters out VCRSs with <= 2 unique triplets
     ),
     dlist=None,
-    dlist_reference_source="T2T",
+    dlist_reference_source="t2t",
+    dlist_reference_ensembl_release=111,
     var_column="mutation",
     seq_id_column="seq_ID",
     var_id_column=None,
@@ -193,7 +194,8 @@ def ref(
     - k             (int) The length of each k-mer in the kallisto reference index construction. Accordingly corresponds to the length of the k-mers to be considered in vk build's remove_seqs_with_wt_kmers, and the default minimum value for vk build's minimum sequence length (which can be changed with 'min_seq_len'). Must be greater than the value passed in for w. Default: 59.
     - filters       (str or list[str]) List of filters to apply to the variants. See varseek filter documentation for more information.
     - dlist         (str) Specifies whether ones wants to d-list against the genome, transcriptome, or both. Possible values are "genome", "transcriptome", "genome_and_transcriptome", or None. Default: None.
-    - dlist_reference_source (str) Specifies whether to use the T2T, grch37, or grch38 reference genome during alignment of VCRS k-mers to the reference genome/transcriptome and any possible d-list construction. However, no d-list is used during the creation of the VCRS reference index unless `dlist` is not None. Default: "T2T".
+    - dlist_reference_source (str) Specifies whether to use the t2t, grch37, or grch38 reference genome during alignment of VCRS k-mers to the reference genome/transcriptome and any possible d-list construction. However, no d-list is used during the creation of the VCRS reference index unless `dlist` is not None. Default: "t2t".
+    - dlist_reference_ensembl_release    (int) Ensembl release number for the d-list reference genome and transcriptome if dlist_reference_source in {"grch37", "grch38"}. Default: 111. (will automatically download the Ensembl reference genome files to `reference_out_dir`)
 
     # Optional output file paths: (only needed if changing/customizing file names or locations):
     - out           (str) Output directory. Default: ".".
@@ -510,7 +512,7 @@ def ref(
             # eg kwargs_vk_info['mykwarg'] = mykwarg
 
             logger.info("Running vk info")
-            _ = vk.info(k=k, dlist_reference_source=dlist_reference_source, seq_id_column=seq_id_column, var_column=var_column, out=out, reference_out_dir=reference_out_dir, dry_run=dry_run, overwrite=True, threads=threads, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir, verbose=verbose, variants=variants, w=w, **kwargs_vk_info)  # overwrite=True rather than overwrite=overwrite because I only enter this condition if the file signifying success does not exist and/or overwrite is True anyways - this allows me to overwrite half-completed functions  # a kwargs of vk info but explicit in vk ref  # a kwargs of vk info but explicit in vk ref  # including input_dir
+            _ = vk.info(k=k, dlist_reference_source=dlist_reference_source, dlist_reference_ensembl_release=dlist_reference_ensembl_release, seq_id_column=seq_id_column, var_column=var_column, out=out, reference_out_dir=reference_out_dir, dry_run=dry_run, overwrite=True, threads=threads, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir, verbose=verbose, variants=variants, w=w, **kwargs_vk_info)  # overwrite=True rather than overwrite=overwrite because I only enter this condition if the file signifying success does not exist and/or overwrite is True anyways - this allows me to overwrite half-completed functions  # a kwargs of vk info but explicit in vk ref  # a kwargs of vk info but explicit in vk ref  # including input_dir
         else:
             logger.warning(f"Skipping vk info because {file_signifying_successful_vk_info_completion} already exists and overwrite=False")
 

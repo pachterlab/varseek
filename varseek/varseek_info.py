@@ -191,7 +191,7 @@ def validate_input_info(params_dict):
         raise ValueError(f"Invalid value for pseudoalignment_workflow: {params_dict.get('pseudoalignment_workflow')}. Expected 'standard' or 'nac'.")
 
 
-supported_dlist_reference_values = {"T2T", "grch37", "grch38"}
+supported_dlist_reference_values = {"t2t", "grch37", "grch38"}
 
 # {column_name, (description, list_of_utilized_parameters)}
 columns_to_include_possible_values = OrderedDict(
@@ -248,7 +248,7 @@ def info(
     k=59,
     max_ambiguous_vcrs=0,
     max_ambiguous_reference=0,
-    dlist_reference_source="T2T",
+    dlist_reference_source="t2t",
     dlist_reference_ensembl_release=111,
     vcrs_fasta=None,
     variants_updated_csv=None,
@@ -296,7 +296,7 @@ def info(
     - k                                  (int) Length of the k-mers utilized by kallisto | bustools. Only used by the following columns: 'nearby_variants', 'nearby_variants_count', 'has_a_nearby_variant', 'alignment_to_reference', 'alignment_to_reference_cdna', 'alignment_to_reference_genome', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_cdna', 'substring_alignment_to_reference_genome', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome', 'pseudoaligned_to_reference', 'pseudoaligned_to_reference_despite_not_truly_aligning', 'number_of_kmers_with_overlap_to_other_VCRSs', 'number_of_other_VCRSs_with_overlapping_kmers', 'VCRSs_with_overlapping_kmers', 'kmer_overlap_with_other_VCRSs'; and when make_kat_histogram==True. Default: 59.
     - max_ambiguous_vcrs                 (int) Maximum number of 'N' characters allowed in the VCRS when considering alignment to the reference genome/transcriptome. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome'. Default: 0.
     - max_ambiguous_reference            (int) Maximum number of 'N' characters allowed in the aligned reference genome portion when considering alignment to the reference genome/transcriptome. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_cdna', 'alignment_to_reference_genome', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_cdna', 'substring_alignment_to_reference_genome', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome'. Default: 0.
-    - dlist_reference_source             (str) Source of the d-list reference genome and transcriptome if files are not provided by `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, and `dlist_reference_gtf`. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_cdna', 'alignment_to_reference_genome', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_cdna', 'substring_alignment_to_reference_genome', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome', 'pseudoaligned_to_reference', 'pseudoaligned_to_reference_despite_not_truly_aligning'. Possible values are {supported_dlist_reference_values}. Ignored if values for `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, and `dlist_reference_gtf` are provided. Default: "T2T". (will automatically download the T2T reference genome files to `reference_out_dir`)
+    - dlist_reference_source             (str) Source of the d-list reference genome and transcriptome if files are not provided by `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, and `dlist_reference_gtf`. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_cdna', 'alignment_to_reference_genome', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_cdna', 'substring_alignment_to_reference_genome', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome', 'pseudoaligned_to_reference', 'pseudoaligned_to_reference_despite_not_truly_aligning'. Possible values are {supported_dlist_reference_values}. Ignored if values for `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, and `dlist_reference_gtf` are provided. Default: "t2t". (will automatically download the t2t reference genome files to `reference_out_dir`)
     - dlist_reference_ensembl_release    (int) Ensembl release number for the d-list reference genome and transcriptome if files are not provided by `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, and `dlist_reference_gtf`. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_cdna', 'alignment_to_reference_genome', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_cdna', 'substring_alignment_to_reference_genome', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome', 'pseudoaligned_to_reference', 'pseudoaligned_to_reference_despite_not_truly_aligning'. Only used if `dlist_reference_source`, `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, `dlist_reference_gtf` is grch37 or grch38. Default: 111. (will automatically download the Ensembl reference genome files to `reference_out_dir`)
 
     # Optional input file paths: (only needed if changing/customizing file names or locations):
@@ -480,8 +480,8 @@ def info(
         if not dlist_reference_gtf:
             dlist_reference_gtf = dlist_reference_source
 
-    if dlist_reference_genome_fasta == "T2T" or dlist_reference_cdna_fasta == "T2T" or dlist_reference_gtf == "T2T":
-        dlist_reference_dir = os.path.join(reference_out_dir, "T2T")
+    if dlist_reference_genome_fasta == "t2t" or dlist_reference_cdna_fasta == "t2t" or dlist_reference_gtf == "t2t":
+        dlist_reference_dir = os.path.join(reference_out_dir, "t2t")
         dlist_reference_genome_fasta, dlist_reference_cdna_fasta, dlist_reference_gtf = download_t2t_reference_files(dlist_reference_dir)
     elif dlist_reference_genome_fasta == "grch37" or dlist_reference_cdna_fasta == "grch37" or dlist_reference_gtf == "grch37":
         dlist_reference_dir = os.path.join(reference_out_dir, f"ensembl_grch37_release{dlist_reference_ensembl_release}")  # matches vk build

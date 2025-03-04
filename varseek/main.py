@@ -703,6 +703,7 @@ def main():  # noqa: C901
     parser_info.add_argument(
         "--dlist_reference_source",
         required=False,
+        choices=["grch37", "grch38", "t2t"],
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(info, "dlist_reference_source"),
     )
@@ -2221,6 +2222,37 @@ def main():  # noqa: C901
         help=extract_help_from_doc(ref, "dlist"),
     )
     parser_ref.add_argument(
+        "--dlist_reference_source",
+        required=False,
+        choices=["grch37", "grch38", "t2t"],
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(ref, "dlist_reference_source"),
+    )
+    parser_ref.add_argument(
+        "--dlist_reference_ensembl_release",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(ref, "dlist_reference_ensembl_release"),
+    )
+    parser_ref.add_argument(
+        "--var_column",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(ref, "var_column"),
+    )
+    parser_ref.add_argument(
+        "--seq_id_column",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(ref, "seq_id_column"),
+    )
+    parser_ref.add_argument(
+        "--var_id_column",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(ref, "var_id_column"),
+    )
+    parser_ref.add_argument(
         "-o",
         "--out",
         type=str,
@@ -2308,6 +2340,12 @@ def main():  # noqa: C901
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(ref, "log_out_dir"),
+    )
+    parser_ref.add_argument(
+        "--verbose",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(ref, "verbose"),
     )
 
     # NEW PARSER
