@@ -119,7 +119,7 @@ codon_to_amino_acid = {
 
 # a dictionary that maps from dict[variants][sequences] to a dict of files {"index": index_url, "t2g": t2g_url}
 
-default_filename_dict = {"index": "vcrs_index.idx", "t2g": "vcrs_t2g.txt"}
+default_filename_dict = {"index": "vcrs_index.idx", "t2g": "vcrs_t2g.txt", "fasta": "vcrs_fasta.fa"}
 
 # * variants, sequences, w, k, dlist_reference_source - single string, comma-separated
 # * matches varseek ref and server
