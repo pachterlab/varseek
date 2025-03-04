@@ -11,12 +11,19 @@ import scipy.sparse as sp
 from scipy.sparse import csr_matrix
 from tqdm import tqdm
 
-from varseek.constants import (complement, fastq_extensions,
-                               technology_barcode_and_umi_dict)
+from varseek.constants import (
+    complement,
+    fastq_extensions,
+    technology_barcode_and_umi_dict,
+)
 from varseek.utils.seq_utils import (
-    add_variant_type, add_vcrs_variant_type,
+    add_variant_type,
+    add_vcrs_variant_type,
     create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting,
-    get_header_set_from_fastq, make_mapping_dict, safe_literal_eval)
+    get_header_set_from_fastq,
+    make_mapping_dict,
+    safe_literal_eval,
+)
 
 tqdm.pandas()
 

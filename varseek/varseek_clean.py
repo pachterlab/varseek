@@ -17,11 +17,22 @@ from varseek.utils import (
     adjust_variant_adata_by_normal_gene_matrix,
     check_file_path_is_string_with_valid_extension,
     decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_mode,
-    increment_adata_based_on_dlist_fns, is_valid_int, load_in_fastqs,
-    make_function_parameter_to_value_dict, match_adata_orders, plot_knee_plot,
-    print_varseek_dry_run, remove_adata_columns, report_time_elapsed,
-    save_params_to_config_file, save_run_info, set_up_logger,
-    sort_fastq_files_for_kb_count, write_to_vcf, write_vcfs_for_rows)
+    increment_adata_based_on_dlist_fns,
+    is_valid_int,
+    load_in_fastqs,
+    make_function_parameter_to_value_dict,
+    match_adata_orders,
+    plot_knee_plot,
+    print_varseek_dry_run,
+    remove_adata_columns,
+    report_time_elapsed,
+    save_params_to_config_file,
+    save_run_info,
+    set_up_logger,
+    sort_fastq_files_for_kb_count,
+    write_to_vcf,
+    write_vcfs_for_rows,
+)
 
 from .constants import non_single_cell_technologies, technology_valid_values
 
@@ -51,7 +62,9 @@ def prepare_set(vcrs_id_set_to_exclusively_keep):
         raise ValueError("Invalid input: must be None, a list, tuple, set, or a path to a text file")
 
 
-scanpy_conditions = ['filter_cells_by_min_counts', 'filter_cells_by_min_genes', 'filter_genes_by_min_cells', 'filter_cells_by_max_mt_content', 'doublet_detection']
+scanpy_conditions = ["filter_cells_by_min_counts", "filter_cells_by_min_genes", "filter_genes_by_min_cells", "filter_cells_by_max_mt_content", "doublet_detection"]
+
+
 def validate_input_clean(params_dict):
     # check if adata_vcrs is of type Anndata
     adata_vcrs = params_dict["adata_vcrs"]
@@ -79,16 +92,13 @@ def validate_input_clean(params_dict):
 
     if params_dict.get("cpm_normalization") and (not params_dict.get("adata_reference_genome") and not params_dict.get("kb_count_reference_genome_dir")):
         raise ValueError("adata_reference_genome or kb_count_reference_genome_dir must be provided if cpm_normalization=True.")
-    
+
     if technology not in non_single_cell_technologies:
         if params_dict.get("filter_cells_by_min_counts") is True:
             try:
                 from kneed import KneeLocator
             except ImportError:
-                raise ImportError(
-                    "kneed is required for filter_cells_by_min_counts=True. See pyproject.toml project.optional-dependencies for version recommendation. Install it with:\n"
-                    "  pip install kneed"
-                )
+                raise ImportError("kneed is required for filter_cells_by_min_counts=True. See pyproject.toml project.optional-dependencies for version recommendation. Install it with:\n" "  pip install kneed")
         for condition in scanpy_conditions:
             if params_dict.get(condition):
                 if not params_dict.get("adata_reference_genome") and not params_dict.get("kb_count_reference_genome_dir"):
@@ -96,11 +106,8 @@ def validate_input_clean(params_dict):
                 try:
                     import scanpy as sc
                 except ImportError:
-                    raise ImportError(
-                        "Scanpy is required for this function. See pyproject.toml project.optional-dependencies for version recommendation. Install it with:\n"
-                        "  pip install scanpy"
-                    )
-    
+                    raise ImportError("Scanpy is required for this function. See pyproject.toml project.optional-dependencies for version recommendation. Install it with:\n" "  pip install scanpy")
+
     # filter_cells_by_min_counts - gets special treatment because it can also be True for automatic calculation
     filter_cells_by_min_counts = params_dict.get("filter_cells_by_min_counts", None)
     if filter_cells_by_min_counts is not None and not is_valid_int(filter_cells_by_min_counts, ">=", 1):
@@ -168,7 +175,7 @@ def validate_input_clean(params_dict):
             raise ValueError(f"Directory {params_dict.get(param_name)} does not exist")
     if not isinstance(params_dict.get("out"), (str, Path)):
         raise ValueError(f"Out directory {params_dict.get('out')} is not a string")
-    
+
     if params_dict.get("qc_against_gene_matrix"):
         for arg in ["kb_count_vcrs_dir", "kb_count_reference_genome_dir"]:
             kb_count_normal_dir = params_dict.get(arg)
@@ -378,7 +385,7 @@ def clean(
     # if someone specifies an output path, then it should be saved
     if vcf_out:
         save_vcf = True
-    
+
     output_figures_dir = os.path.join(out, "vk_clean_figures")
 
     adata_vcrs_clean_out = os.path.join(out, "adata_cleaned.h5ad") if not adata_vcrs_clean_out else adata_vcrs_clean_out

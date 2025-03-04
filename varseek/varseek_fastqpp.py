@@ -7,17 +7,26 @@ import time
 from pathlib import Path
 
 from .constants import technology_valid_values
-from .utils import (check_file_path_is_string_with_valid_extension,
-                    concatenate_fastqs, get_printlog, is_program_installed,
-                    is_valid_int, load_in_fastqs,
-                    make_function_parameter_to_value_dict,
-                    perform_fastp_trimming_and_filtering,
-                    print_varseek_dry_run,
-                    replace_low_quality_bases_with_N_list, report_time_elapsed,
-                    run_fastqc_and_multiqc, save_params_to_config_file,
-                    save_run_info, set_up_logger,
-                    sort_fastq_files_for_kb_count, split_reads_by_N_list,
-                    trim_edges_off_reads_fastq_list)
+from .utils import (
+    check_file_path_is_string_with_valid_extension,
+    concatenate_fastqs,
+    get_printlog,
+    is_program_installed,
+    is_valid_int,
+    load_in_fastqs,
+    make_function_parameter_to_value_dict,
+    perform_fastp_trimming_and_filtering,
+    print_varseek_dry_run,
+    replace_low_quality_bases_with_N_list,
+    report_time_elapsed,
+    run_fastqc_and_multiqc,
+    save_params_to_config_file,
+    save_run_info,
+    set_up_logger,
+    sort_fastq_files_for_kb_count,
+    split_reads_by_N_list,
+    trim_edges_off_reads_fastq_list,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +86,7 @@ def validate_input_fastqpp(params_dict):
 
     if not is_valid_int(params_dict["length_required"], ">=", 1, optional=False) and params_dict["length_required"] is not None:
         raise ValueError(f"length_required must be an integer >= 1 or None. Got {params_dict.get('length_required')}.")
-    
+
     # boolean
     for param_name in ["quality_control_fastqs", "split_reads_by_Ns_and_low_quality_bases", "concatenate_paired_fastqs", "cut_front", "cut_tail", "disable_adapter_trimming", "disable_quality_filtering", "disable_length_filtering", "dont_eval_duplication", "disable_trim_poly_g", "dry_run", "overwrite", "sort_fastqs"]:
         if not isinstance(params_dict.get(param_name), bool):
@@ -88,7 +97,7 @@ def validate_input_fastqpp(params_dict):
 
     if not isinstance(params_dict.get("multiplexed"), bool) and params_dict.get("multiplexed") is not None:
         raise ValueError(f"multiplexed must be a boolean or None. Got {params_dict.get('multiplexed')} of type {type(params_dict.get('multiplexed'))}.")
-    
+
     if not isinstance(params_dict.get("failed_out"), (bool, str)):
         raise ValueError(f"failed_out must be a boolean or string. Got {params_dict.get('failed_out')} of type {type(params_dict.get('failed_out'))}.")
 
@@ -278,7 +287,7 @@ def fastqpp(
     if quality_control_fastqs:
         if not is_program_installed("fastp"):
             raise ValueError(f"fastp must be installed to run quality_control_fastqs. Please install and try again, or set quality_control_fastqs=False.")  # opting for an exception rather than a warning because I think the user would be more frustrated with incorrect results with a log message that could be easy to miss than having to restart their run
-        
+
         # check if any file in fastq_quality_controlled_all_files does not exist
         if not all(os.path.exists(f) for f in fastq_quality_controlled_all_files) or overwrite:
             logger.info("Quality controlling fastq files (trimming adaptors, trimming low-quality read edges, filtering low quality reads)")
@@ -286,7 +295,7 @@ def fastqpp(
             if technology.upper() in {"10XV1", "INDROPSV3"}:
                 for i in range(0, len(fastqs), 3):  # assumes I1, R1, R2
                     logger.info(f"Processing {fastqs[i]} {fastqs[i+1]} {fastqs[i+2]}")
-                    _ = perform_fastp_trimming_and_filtering(technology=technology, r1_fastq_path=fastqs[i+1], r2_fastq_path=fastqs[i+2], i1_fastq_path=fastqs[i], out_dir=quality_control_fastqs_out_dir, parity=parity, cut_front=cut_front, cut_tail=cut_tail, cut_window_size=cut_window_size, cut_mean_quality=cut_mean_quality, disable_adapter_trimming=disable_adapter_trimming, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, average_qual=average_qual, n_base_limit=n_base_limit, disable_quality_filtering=disable_quality_filtering, length_required=length_required, disable_length_filtering=disable_length_filtering, dont_eval_duplication=dont_eval_duplication, disable_trim_poly_g=disable_trim_poly_g, threads=threads, failed_out=failed_out)
+                    _ = perform_fastp_trimming_and_filtering(technology=technology, r1_fastq_path=fastqs[i + 1], r2_fastq_path=fastqs[i + 2], i1_fastq_path=fastqs[i], out_dir=quality_control_fastqs_out_dir, parity=parity, cut_front=cut_front, cut_tail=cut_tail, cut_window_size=cut_window_size, cut_mean_quality=cut_mean_quality, disable_adapter_trimming=disable_adapter_trimming, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, average_qual=average_qual, n_base_limit=n_base_limit, disable_quality_filtering=disable_quality_filtering, length_required=length_required, disable_length_filtering=disable_length_filtering, dont_eval_duplication=dont_eval_duplication, disable_trim_poly_g=disable_trim_poly_g, threads=threads, failed_out=failed_out)
             elif technology.upper() == "BULK" and parity == "single":
                 for i in range(len(fastqs)):  # I could just iterate through fastqs, but this parallels the other branches
                     logger.info(f"Processing {fastqs[i]}")
@@ -294,7 +303,7 @@ def fastqpp(
             else:
                 for i in range(0, len(fastqs), 2):
                     logger.info(f"Processing {fastqs[i]} {fastqs[i+1]}")
-                    _ = perform_fastp_trimming_and_filtering(technology=technology, r1_fastq_path=fastqs[i], r2_fastq_path=fastqs[i+1], out_dir=quality_control_fastqs_out_dir, parity=parity, cut_front=cut_front, cut_tail=cut_tail, cut_window_size=cut_window_size, cut_mean_quality=cut_mean_quality, disable_adapter_trimming=disable_adapter_trimming, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, average_qual=average_qual, n_base_limit=n_base_limit, disable_quality_filtering=disable_quality_filtering, length_required=length_required, disable_length_filtering=disable_length_filtering, dont_eval_duplication=dont_eval_duplication, disable_trim_poly_g=disable_trim_poly_g, threads=threads, failed_out=failed_out)
+                    _ = perform_fastp_trimming_and_filtering(technology=technology, r1_fastq_path=fastqs[i], r2_fastq_path=fastqs[i + 1], out_dir=quality_control_fastqs_out_dir, parity=parity, cut_front=cut_front, cut_tail=cut_tail, cut_window_size=cut_window_size, cut_mean_quality=cut_mean_quality, disable_adapter_trimming=disable_adapter_trimming, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, average_qual=average_qual, n_base_limit=n_base_limit, disable_quality_filtering=disable_quality_filtering, length_required=length_required, disable_length_filtering=disable_length_filtering, dont_eval_duplication=dont_eval_duplication, disable_trim_poly_g=disable_trim_poly_g, threads=threads, failed_out=failed_out)
         else:
             logger.warning("Quality controlled fastq files already exist. Skipping quality control step. Use overwrite=True to overwrite existing files.")
 

@@ -36,17 +36,17 @@ def set_up_logger(logger, logging_level=None, save_logs=False, log_dir=None):
         raise TypeError(f"log_dir must be a string or Path or None, got {type(log_dir)}")
     if log_dir is not None:
         save_logs = True  # if someone provides a log_dir, they want to save logs
-    
+
     # retrieve logging_level and check value
     if logging_level is None:
         logging_level = os.getenv("VARSEEK_LOGGING_LEVEL", "INFO")
-    if str(logging_level) not in {"NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", '0', '10', '20', '30', '40', '50', '60'}:  # unknown log level
+    if str(logging_level) not in {"NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "0", "10", "20", "30", "40", "50", "60"}:  # unknown log level
         print(f"Unknown log level: {logging_level}. Defaulting to INFO.")
         logging_level = logging.INFO
 
-    if logging_level in {'0', '10', '20', '30', '40', '50', '60'}:
+    if logging_level in {"0", "10", "20", "30", "40", "50", "60"}:
         logging_level = int(logging_level)
-    
+
     # logger = logging.getLogger(__name__)  # leave commented out and run in each module individually
     logger.setLevel(logging_level)
 
@@ -126,6 +126,7 @@ def check_file_path_is_string_with_valid_extension(file_path, variable_name, fil
         if required:
             raise ValueError(f"{file_type} file path is required")
 
+
 def make_function_parameter_to_value_dict(levels_up=1, explicit_only=False):
     # Collect parameters in a dictionary
     params = OrderedDict()
@@ -166,6 +167,7 @@ def report_time_elapsed(start_time, logger=None, function_name=None):
     else:
         print(time_elapsed_message)
 
+
 def convert_value_for_json(value):
     if isinstance(value, Path):
         return str(value)
@@ -186,12 +188,13 @@ def convert_value_for_json(value):
     elif isinstance(value, (set, frozenset)):
         return list(value)
     elif isinstance(value, bytes):
-        return value.decode('utf-8', errors='replace')
+        return value.decode("utf-8", errors="replace")
     elif isinstance(value, logging.Logger):
         return f"Logger Object with name {value.name}"
     # Add more conversions as needed
     else:
         return value
+
 
 def save_params_to_config_file(params=None, out_file="run_config.json", remove_passwords=True):
     out_file_directory = os.path.dirname(out_file)
@@ -322,7 +325,7 @@ def download_varseek_files(urls_dict, out="."):
 
             filetype_to_filename_dict[filetype] = output_file_path
 
-            print(f"File downloaded successfully as '{output_file_path.name}'")
+            print(f"File downloaded successfully as '{output_file_path}'")
         else:
             print(f"Failed to download file. Status code: {response.status_code}")
 
@@ -333,20 +336,20 @@ def is_program_installed(program):
     return shutil.which(program) is not None or os.path.exists(program)
 
 
-
 # # if I want to remove shell below:
 # command = ["/usr/bin/time", time_flag, "python3", script_path]
 # if argparse_flags:
-    # command.extend(shlex.split(argparse_flags))
+# command.extend(shlex.split(argparse_flags))
 # try:
-    # result = subprocess.run(command, text=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE, check=True)
+# result = subprocess.run(command, text=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE, check=True)
+
 
 def report_time_and_memory_of_script(script_path, argparse_flags=None, output_file=None):
     # Run the command and capture stderr, where `/usr/bin/time -l` outputs its results
     system = os.uname().sysname
     time_flag = "-v" if system == "Linux" else "-l"
     command = f"/usr/bin/time {time_flag} python3 {script_path}"
-    
+
     if argparse_flags:
         command += f" {argparse_flags}"
 
@@ -852,8 +855,9 @@ def get_python_or_cli_function_call():
 
 
 def save_run_info(out_file="run_info.txt", remove_passwords=True):
-    from varseek import \
-        __version__  # keep internal to this function to avoid circular import
+    from varseek import (
+        __version__,  # keep internal to this function to avoid circular import
+    )
 
     out_file_directory = os.path.dirname(out_file)
     if not out_file_directory:
@@ -866,11 +870,11 @@ def save_run_info(out_file="run_info.txt", remove_passwords=True):
     if remove_passwords:
         # for python calls
         python_password_pattern = re.compile(r'(\b\w*password\w*\s*=\s*)(["\'].*?["\'])', re.IGNORECASE)
-        function_call = python_password_pattern.sub(r'\1"******"', function_call)  
+        function_call = python_password_pattern.sub(r'\1"******"', function_call)
 
         # for CLI calls
-        cli_password_pattern = re.compile(r'(--\w*password\w*\s+)(\S+)', re.IGNORECASE)
-        function_call = cli_password_pattern.sub(r'\1******', function_call)
+        cli_password_pattern = re.compile(r"(--\w*password\w*\s+)(\S+)", re.IGNORECASE)
+        function_call = cli_password_pattern.sub(r"\1******", function_call)
 
     # Get the current date and time
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -909,6 +913,7 @@ def splitext_custom(file_path):
     base = str(file_path).replace("".join(file_path.suffixes), "")
     ext = "".join(file_path.suffixes)
     return base, ext
+
 
 def get_file_name_without_extensions_or_full_path(file_path):
     return str(file_path).split("/")[-1].split(".")[0]

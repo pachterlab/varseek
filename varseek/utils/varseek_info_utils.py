@@ -19,16 +19,26 @@ from tqdm import tqdm
 tqdm.pandas()
 
 from varseek.utils.logger_utils import (
-    get_file_name_without_extensions_or_full_path, get_printlog,
-    splitext_custom)
+    get_file_name_without_extensions_or_full_path,
+    get_printlog,
+    splitext_custom,
+)
 from varseek.utils.seq_utils import (
     create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting,
-    fasta_to_fastq, filter_fasta, get_header_set_from_fastq, make_mapping_dict,
-    reverse_complement, safe_literal_eval)
+    fasta_to_fastq,
+    filter_fasta,
+    get_header_set_from_fastq,
+    make_mapping_dict,
+    reverse_complement,
+    safe_literal_eval,
+)
 from varseek.utils.visualization_utils import (
-    plot_basic_bar_plot_from_dict, plot_descending_bar_plot,
-    plot_histogram_notebook_1, plot_histogram_of_nearby_mutations_7_5,
-    print_column_summary_stats)
+    plot_basic_bar_plot_from_dict,
+    plot_descending_bar_plot,
+    plot_histogram_notebook_1,
+    plot_histogram_of_nearby_mutations_7_5,
+    print_column_summary_stats,
+)
 
 tqdm.pandas()
 
@@ -70,7 +80,6 @@ def remove_dlist_duplicates(input_file, output_file=None):
         if os.path.exists(output_file):
             os.remove(output_file)
         raise e
-        
 
 
 def capitalize_sequences(input_file, output_file=None):
@@ -89,20 +98,9 @@ def capitalize_sequences(input_file, output_file=None):
         if os.path.exists(output_file):
             os.remove(output_file)
         raise e
-            
 
 
-def parse_sam_and_extract_sequences(
-    sam_file,
-    ref_genome_file,
-    output_fasta_file,
-    k=31,
-    dfk_length=None,
-    capitalize=True,
-    remove_duplicates=False,
-    check_for_bad_cigars=True,
-    logger=None
-):
+def parse_sam_and_extract_sequences(sam_file, ref_genome_file, output_fasta_file, k=31, dfk_length=None, capitalize=True, remove_duplicates=False, check_for_bad_cigars=True, logger=None):
     logger_info = get_printlog(logger=logger)
 
     if dfk_length is None:
@@ -150,6 +148,7 @@ def parse_sam_and_extract_sequences(
         logger_info("Removing duplicate sequences")
         remove_dlist_duplicates(output_fasta_file)
 
+
 def process_sam_file(sam_file):
     with open(sam_file, "r", encoding="utf-8") as sam:
         for line in sam:
@@ -195,6 +194,7 @@ def sequence_match(vcrs_sequence, dlist_sequence, strandedness=False):
         # Check both forward and reverse complement
         return (vcrs_sequence in dlist_sequence) or (vcrs_sequence in reverse_complement(dlist_sequence))
 
+
 def select_contiguous_substring(sequence, kmer, read_length=150):
     sequence_length = len(sequence)
     kmer_length = len(kmer)
@@ -232,14 +232,14 @@ def remove_Ns_fasta(fasta_file, max_ambiguous_reference=0, logger=None):
                     outfile.write(f">{header}\n{sequence}\n")
                 else:
                     i += 1
-        
+
         os.replace(fasta_file_temp, fasta_file)
         logger_info(f"Removed {i} sequences with Ns from {fasta_file}")
     except Exception as e:
         if os.path.exists(fasta_file_temp):
             os.remove(fasta_file_temp)
         raise e
-    
+
 
 # there used to be a count_nearby_mutations_efficient function that I erased on 2/25/25
 def count_nearby_mutations_efficient_with_identifiers(df, k, fasta_entry_column, start_column, end_column, header_column):
@@ -766,24 +766,7 @@ def triplet_stats(sequence):
     return len(distinct_triplets), total_triplets, triplet_complexity
 
 
-def get_vcrss_that_pseudoalign_but_arent_dlisted(
-    mutation_metadata_df,
-    vcrs_id_column,
-    vcrs_fa,
-    sequence_names_set,
-    human_reference_genome_fa,
-    human_reference_gtf,
-    out_dir_notebook=".",
-    ref_folder_kb=None,
-    header_column_name="vcrs_id",
-    additional_kb_extract_filtering_workflow="nac",
-    k=31,
-    threads=2,
-    strandedness=False,
-    column_name="pseudoaligned_to_human_reference_despite_not_truly_aligning",
-    kallisto=None,
-    bustools=None
-):
+def get_vcrss_that_pseudoalign_but_arent_dlisted(mutation_metadata_df, vcrs_id_column, vcrs_fa, sequence_names_set, human_reference_genome_fa, human_reference_gtf, out_dir_notebook=".", ref_folder_kb=None, header_column_name="vcrs_id", additional_kb_extract_filtering_workflow="nac", k=31, threads=2, strandedness=False, column_name="pseudoaligned_to_human_reference_despite_not_truly_aligning", kallisto=None, bustools=None):
     if ref_folder_kb is None:
         ref_folder_kb = out_dir_notebook
     vcrs_fa_base, vcrs_fa_ext = splitext_custom(vcrs_fa)
@@ -875,7 +858,7 @@ def get_vcrss_that_pseudoalign_but_arent_dlisted(
         kb_extract_command.extend(["--kallisto", kallisto])
     if bustools:
         kb_extract_command.extend(["--bustools", bustools])
-    
+
     kb_extract_command.append(vcrs_fQ_filtered_bowtie)
 
     # don't wrap in try-except block since I do this outside the function
@@ -1000,10 +983,7 @@ def explode_df(mutation_metadata_df, columns_to_explode=None, verbose=False, log
     return mutation_metadata_df_exploded
 
 
-def collapse_df(
-    mutation_metadata_df_exploded,
-    columns_to_explode=None
-):
+def collapse_df(mutation_metadata_df_exploded, columns_to_explode=None):
     if columns_to_explode is None:
         columns_to_explode = ["header", "order"]
     else:  # * remove with set
@@ -1159,13 +1139,7 @@ def find_closest_distance(position, positions_list):
     return min_distance
 
 
-def compute_distance_to_closest_splice_junction(
-    mutation_metadata_df_exploded,
-    reference_genome_gtf,
-    columns_to_explode=None,
-    near_splice_junction_threshold=10,
-    seq_id_genome_column="chromosome"
-):
+def compute_distance_to_closest_splice_junction(mutation_metadata_df_exploded, reference_genome_gtf, columns_to_explode=None, near_splice_junction_threshold=10, seq_id_genome_column="chromosome"):
     """
     Compute the distance to the closest splice junction for each mutation.
 
@@ -1260,20 +1234,7 @@ def run_bowtie_build_dlist(ref_fa, ref_folder, ref_prefix, bowtie2_build, thread
         logger_info("Bowtie2 build complete")
 
 
-def run_bowtie_alignment_dlist(
-    output_sam_file,
-    read_fa,
-    ref_folder,
-    ref_prefix,
-    bowtie2,
-    threads=2,
-    k=31,
-    strandedness=False,
-    N_penalty=1,
-    max_ambiguous_vcrs=0,
-    output_stat_file=None,
-    logger=None
-):
+def run_bowtie_alignment_dlist(output_sam_file, read_fa, ref_folder, ref_prefix, bowtie2, threads=2, k=31, strandedness=False, N_penalty=1, max_ambiguous_vcrs=0, output_stat_file=None, logger=None):
     logger_info = get_printlog(logger=logger)
     if not os.path.exists(output_sam_file):
         logger_info("Running bowtie2 alignment")
@@ -1403,17 +1364,7 @@ def calculate_total_gene_info(
     return mutation_metadata_df_exploded, columns_to_explode
 
 
-def calculate_nearby_mutations(
-    variant_source_column,
-    k,
-    output_plot_folder,
-    variant_source,
-    mutation_metadata_df_exploded,
-    columns_to_explode=None,
-    seq_id_cdna_column="seq_ID",
-    seq_id_genome_column="chromosome",
-    logger=None
-):
+def calculate_nearby_mutations(variant_source_column, k, output_plot_folder, variant_source, mutation_metadata_df_exploded, columns_to_explode=None, seq_id_cdna_column="seq_ID", seq_id_genome_column="chromosome", logger=None):
     logger_info = get_printlog(logger=logger)
     if columns_to_explode is None:
         columns_to_explode = ["header", "order"]
@@ -1566,20 +1517,7 @@ def align_to_normal_genome_and_build_dlist(
         )
 
     if not os.path.exists(output_sam_file_genome):
-        run_bowtie_alignment_dlist(
-            output_sam_file=output_sam_file_genome,
-            read_fa=mutations,
-            ref_folder=ref_folder_genome_bowtie,
-            ref_prefix=ref_prefix_genome_full,
-            k=k,
-            bowtie2=bowtie2,
-            threads=threads,
-            strandedness=strandedness,
-            N_penalty=N_penalty,
-            max_ambiguous_vcrs=max_ambiguous_vcrs,
-            output_stat_file=bowtie_stat_file,
-            logger=logger
-        )
+        run_bowtie_alignment_dlist(output_sam_file=output_sam_file_genome, read_fa=mutations, ref_folder=ref_folder_genome_bowtie, ref_prefix=ref_prefix_genome_full, k=k, bowtie2=bowtie2, threads=threads, strandedness=strandedness, N_penalty=N_penalty, max_ambiguous_vcrs=max_ambiguous_vcrs, output_stat_file=bowtie_stat_file, logger=logger)
 
     dlist_genome_df = create_df_of_dlist_headers(output_sam_file_genome, header_column_name=vcrs_id_column, k=k)
     dlist_genome_df.rename(columns={"alignment_to_reference_count_total": "alignment_to_reference_count_genome"}, inplace=True)
@@ -1587,15 +1525,7 @@ def align_to_normal_genome_and_build_dlist(
     if not dlist_fasta_file_genome_full:
         dlist_fasta_file_genome_full = f"{out_dir_notebook}/dlist_genome.fa"
     if not os.path.exists(dlist_fasta_file_genome_full):
-        parse_sam_and_extract_sequences(
-            output_sam_file_genome,
-            dlist_reference_genome_fasta,
-            dlist_fasta_file_genome_full,
-            k=k,
-            capitalize=True,
-            remove_duplicates=False,
-            logger=logger
-        )
+        parse_sam_and_extract_sequences(output_sam_file_genome, dlist_reference_genome_fasta, dlist_fasta_file_genome_full, k=k, capitalize=True, remove_duplicates=False, logger=logger)
 
     dlist_substring_genome_df = get_vcrs_headers_that_are_substring_dlist(
         mutation_reference_file_fasta=mutations,
@@ -1617,30 +1547,10 @@ def align_to_normal_genome_and_build_dlist(
     output_sam_file_cdna = f"{out_dir_notebook}/bowtie_vcrs_kmers_to_transcriptome/alignment.sam"
 
     if not os.path.exists(ref_folder_cdna_bowtie) or not os.listdir(ref_folder_cdna_bowtie):
-        run_bowtie_build_dlist(
-            ref_fa=dlist_reference_cdna_fasta,
-            ref_folder=ref_folder_cdna_bowtie,
-            ref_prefix=ref_prefix_cdna_full,
-            bowtie2_build=bowtie2_build,
-            threads=threads,
-            logger=logger
-        )
+        run_bowtie_build_dlist(ref_fa=dlist_reference_cdna_fasta, ref_folder=ref_folder_cdna_bowtie, ref_prefix=ref_prefix_cdna_full, bowtie2_build=bowtie2_build, threads=threads, logger=logger)
 
     if not os.path.exists(output_sam_file_cdna):
-        run_bowtie_alignment_dlist(
-            output_sam_file=output_sam_file_cdna,
-            read_fa=mutations,
-            ref_folder=ref_folder_cdna_bowtie,
-            ref_prefix=ref_prefix_cdna_full,
-            k=k,
-            bowtie2=bowtie2,
-            threads=threads,
-            strandedness=strandedness,
-            N_penalty=N_penalty,
-            max_ambiguous_vcrs=max_ambiguous_vcrs,
-            output_stat_file=bowtie_stat_file,
-            logger=logger
-        )
+        run_bowtie_alignment_dlist(output_sam_file=output_sam_file_cdna, read_fa=mutations, ref_folder=ref_folder_cdna_bowtie, ref_prefix=ref_prefix_cdna_full, k=k, bowtie2=bowtie2, threads=threads, strandedness=strandedness, N_penalty=N_penalty, max_ambiguous_vcrs=max_ambiguous_vcrs, output_stat_file=bowtie_stat_file, logger=logger)
 
     dlist_cdna_df = create_df_of_dlist_headers(output_sam_file_cdna, header_column_name=vcrs_id_column, k=k)
     dlist_cdna_df.rename(columns={"alignment_to_reference_count_total": "alignment_to_reference_count_cdna"}, inplace=True)
@@ -1648,15 +1558,7 @@ def align_to_normal_genome_and_build_dlist(
     if not dlist_fasta_file_cdna_full:
         dlist_fasta_file_cdna_full = f"{out_dir_notebook}/dlist_cdna.fa"
     if not os.path.exists(dlist_fasta_file_cdna_full):
-        parse_sam_and_extract_sequences(
-            output_sam_file_cdna,
-            dlist_reference_cdna_fasta,
-            dlist_fasta_file_cdna_full,
-            k=k,
-            capitalize=True,
-            remove_duplicates=False,
-            logger=logger
-        )
+        parse_sam_and_extract_sequences(output_sam_file_cdna, dlist_reference_cdna_fasta, dlist_fasta_file_cdna_full, k=k, capitalize=True, remove_duplicates=False, logger=logger)
 
     dlist_substring_cdna_df = get_vcrs_headers_that_are_substring_dlist(
         mutation_reference_file_fasta=mutations,
@@ -1715,16 +1617,16 @@ def align_to_normal_genome_and_build_dlist(
 
     mutation_metadata_df["alignment_to_reference_cdna"] = mutation_metadata_df["alignment_to_reference_cdna"].fillna(False).astype(bool)
     mutation_metadata_df["alignment_to_reference_genome"] = mutation_metadata_df["alignment_to_reference_genome"].fillna(False).astype(bool)
-    mutation_metadata_df['alignment_to_reference'] = (mutation_metadata_df['alignment_to_reference_cdna'] | mutation_metadata_df['alignment_to_reference_genome']).astype(bool)
+    mutation_metadata_df["alignment_to_reference"] = (mutation_metadata_df["alignment_to_reference_cdna"] | mutation_metadata_df["alignment_to_reference_genome"]).astype(bool)
 
     mutation_metadata_df["substring_alignment_to_reference_cdna"] = mutation_metadata_df["substring_alignment_to_reference_cdna"].fillna(False).astype(bool)
     mutation_metadata_df["substring_alignment_to_reference_genome"] = mutation_metadata_df["substring_alignment_to_reference_genome"].fillna(False).astype(bool)
-    mutation_metadata_df['substring_alignment_to_reference'] = (mutation_metadata_df['substring_alignment_to_reference_cdna'] | mutation_metadata_df['substring_alignment_to_reference_genome']).astype(bool)
+    mutation_metadata_df["substring_alignment_to_reference"] = (mutation_metadata_df["substring_alignment_to_reference_cdna"] | mutation_metadata_df["substring_alignment_to_reference_genome"]).astype(bool)
 
     mutation_metadata_df["alignment_to_reference_count_cdna"] = mutation_metadata_df["alignment_to_reference_count_cdna"].fillna(0).astype(int)
     mutation_metadata_df["alignment_to_reference_count_genome"] = mutation_metadata_df["alignment_to_reference_count_genome"].fillna(0).astype(int)
     mutation_metadata_df["alignment_to_reference_count_total"] = mutation_metadata_df["alignment_to_reference_count_cdna"] + mutation_metadata_df["alignment_to_reference_count_genome"]
-    
+
     mutation_metadata_df["substring_alignment_to_reference_count_cdna"] = mutation_metadata_df["substring_alignment_to_reference_count_cdna"].fillna(0).astype(int)
     mutation_metadata_df["substring_alignment_to_reference_count_genome"] = mutation_metadata_df["substring_alignment_to_reference_count_genome"].fillna(0).astype(int)
     mutation_metadata_df["substring_alignment_to_reference_count_total"] = mutation_metadata_df["substring_alignment_to_reference_count_cdna"] + mutation_metadata_df["substring_alignment_to_reference_count_genome"]
@@ -1768,7 +1670,7 @@ def align_to_normal_genome_and_build_dlist(
     return (mutation_metadata_df, sequence_names_set_union_genome_and_cdna)
 
 
-def identify_variant_source(mutation_metadata_df_exploded, variant_source_column = "variant_source"):
+def identify_variant_source(mutation_metadata_df_exploded, variant_source_column="variant_source"):
     # intentionally modifies mutation_metadata_df_exploded in-place
     choices = ["cdna", "genome"]
 
@@ -1777,6 +1679,4 @@ def identify_variant_source(mutation_metadata_df_exploded, variant_source_column
         mutation_metadata_df_exploded["variant_used_for_vcrs"].str.startswith("g.", na=False),
     ]  # if it finds ":c.", make it "cdna"; if it finds ":g.", make it "genome"; if it finds both or neither, make it "unknown"
 
-    mutation_metadata_df_exploded[variant_source_column] = np.select(
-        conditions, choices, default="unknown"
-    )
+    mutation_metadata_df_exploded[variant_source_column] = np.select(conditions, choices, default="unknown")

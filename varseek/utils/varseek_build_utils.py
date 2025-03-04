@@ -21,11 +21,13 @@ def convert_chromosome_value_to_int_when_possible(val):
         # If conversion fails, keep the value as it is
         return str(val)
 
+
 # Function to ensure unique IDs
 def generate_unique_ids(num_ids):
     num_digits = len(str(num_ids))
     generated_ids = [f"vcrs_{i+1:0{num_digits}}" for i in range(num_ids)]
     return list(generated_ids)
+
 
 def translate_sequence(sequence, start, end):
     amino_acid_sequence = ""
@@ -49,6 +51,7 @@ def wt_fragment_and_mutant_fragment_share_kmer(mutated_fragment: str, wildtype_f
             return True
     return False
 
+
 def return_pyfastx_index_object_with_header_versions_removed(fasta_path, logger=None):
     logger_info = get_printlog(logger=logger)
     logger_info(f"Removing version numbers in in fasta headers for {fasta_path}")
@@ -64,13 +67,16 @@ def return_pyfastx_index_object_with_header_versions_removed(fasta_path, logger=
         fa = pyfastx.Fasta(temp_fasta_path, build_index=True)
     return fa, temp_fasta_index_path
 
+
 # Helper function to find starting position of CDS in cDNA
 def find_cds_position(cdna_seq, cds_seq):
     pos = cdna_seq.find(cds_seq)
     return pos if pos != -1 else None
 
+
 def count_leading_Ns(seq):
     return len(seq) - len(seq.lstrip("N"))
+
 
 def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_fasta_path, output_csv_path, logger=None, verbose=True):
     logger_info = get_printlog(logger=logger)
@@ -162,7 +168,7 @@ def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_
                     seq_id_found_in_cdna_and_cds = True
                 else:
                     seq_id_found_in_cdna_and_cds = False
-            
+
             if (not seq_id_found_in_cdna_and_cds) or (cds_start_pos is None):
                 df.at[index, "mutation_cdna"] = None
                 number_bad += 1
@@ -183,7 +189,7 @@ def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_
 
         logger_info(f"Number of bad mutations: {number_bad}")
         logger_info("Merging dfs")
-        
+
         if (df_original.duplicated(subset=["seq_ID", "mutation"]).sum() == 0) and (df.duplicated(subset=["seq_ID", "mutation"]).sum() == 0):  # this condition should be True if downloading with default gget cosmic, but in case the user wants duplicate rows then I'll give both options
             df_merged = df_original.set_index(["seq_ID", "mutation"]).join(df.set_index(["seq_ID", "mutation"])[["mutation_cdna"]], how="left").reset_index()
         else:
@@ -195,7 +201,7 @@ def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_
             df_merged.to_csv(output_csv_path, index=False)  # new as of Feb 2025 (replaced df.to_csv with df_merged.to_csv)
 
         return df_merged, bad_mutations_dict
-    
+
     except Exception as e:
         raise RuntimeError(f"Error converting CDS to cDNA: {e}") from e
     finally:

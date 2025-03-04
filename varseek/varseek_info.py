@@ -14,29 +14,43 @@ import pyfastx
 from tqdm import tqdm
 
 from varseek.constants import HGVS_pattern, mutation_pattern
-from varseek.utils import (add_mutation_information, add_variant_type,
-                           add_vcrs_variant_type,
-                           align_to_normal_genome_and_build_dlist,
-                           calculate_nearby_mutations,
-                           calculate_total_gene_info,
-                           check_file_path_is_string_with_valid_extension,
-                           collapse_df, compare_cdna_and_genome,
-                           compute_distance_to_closest_splice_junction,
-                           create_df_of_vcrs_to_self_headers,
-                           download_ensembl_reference_files,
-                           download_t2t_reference_files, explode_df,
-                           fasta_summary_stats, get_df_overlap,
-                           get_vcrss_that_pseudoalign_but_arent_dlisted,
-                           identify_variant_source, is_program_installed,
-                           is_valid_int, longest_homopolymer,
-                           make_function_parameter_to_value_dict,
-                           make_mapping_dict,
-                           plot_histogram_of_nearby_mutations_7_5,
-                           plot_kat_histogram, print_varseek_dry_run,
-                           report_time_elapsed, reverse_complement,
-                           safe_literal_eval, save_params_to_config_file,
-                           save_run_info, set_up_logger, splitext_custom,
-                           swap_ids_for_headers_in_fasta, triplet_stats)
+from varseek.utils import (
+    add_mutation_information,
+    add_variant_type,
+    add_vcrs_variant_type,
+    align_to_normal_genome_and_build_dlist,
+    calculate_nearby_mutations,
+    calculate_total_gene_info,
+    check_file_path_is_string_with_valid_extension,
+    collapse_df,
+    compare_cdna_and_genome,
+    compute_distance_to_closest_splice_junction,
+    create_df_of_vcrs_to_self_headers,
+    download_ensembl_reference_files,
+    download_t2t_reference_files,
+    explode_df,
+    fasta_summary_stats,
+    get_df_overlap,
+    get_vcrss_that_pseudoalign_but_arent_dlisted,
+    identify_variant_source,
+    is_program_installed,
+    is_valid_int,
+    longest_homopolymer,
+    make_function_parameter_to_value_dict,
+    make_mapping_dict,
+    plot_histogram_of_nearby_mutations_7_5,
+    plot_kat_histogram,
+    print_varseek_dry_run,
+    report_time_elapsed,
+    reverse_complement,
+    safe_literal_eval,
+    save_params_to_config_file,
+    save_run_info,
+    set_up_logger,
+    splitext_custom,
+    swap_ids_for_headers_in_fasta,
+    triplet_stats,
+)
 
 tqdm.pandas()
 logger = logging.getLogger(__name__)
@@ -88,7 +102,7 @@ def validate_input_info(params_dict):
         raise ValueError(f"Invalid value for out: {params_dict.get('out')}")
     if params_dict.get("reference_out_dir") and (not isinstance(params_dict.get("reference_out_dir"), (str, Path)) or not os.path.isdir(params_dict.get("reference_out_dir"))):
         raise ValueError(f"Invalid value for reference_out_dir: {params_dict.get('reference_out_dir')}")
-    
+
     gtf = params_dict.get("gtf")  # gtf gets special treatment because it can be a bool - and check for {"True", "False"} because of CLI passing
     if gtf is not None and not isinstance(gtf, bool) and gtf not in {"True", "False"} and not gtf.lower().endswith(("gtf", "gtf.zip", "gtf.gz")):
         raise ValueError(f"Invalid value for gtf: {gtf}. Expected gtf filepath string, bool, or None.")
@@ -128,7 +142,7 @@ def validate_input_info(params_dict):
             raise ValueError(f"Invalid column name: {params_dict.get(column)}")
     if params_dict.get("variant_source_column") is None:
         raise ValueError("variant_source_column must be provided.")
-    
+
     if params_dict.get("var_id_column") is not None and (params_dict.get("variants_updated_csv") is None or params_dict.get("variants") is None):
         raise ValueError("variants_updated_csv or variants must be provided when var_id_column is not None.")
 
@@ -168,11 +182,11 @@ def validate_input_info(params_dict):
         param_value = params_dict.get(param_name)
         if not isinstance(param_value, bool):
             raise ValueError(f"{param_name} must be a boolean. Got {param_value} of type {type(param_value)}.")
-        
+
     # Optional boolean
     if params_dict.get("vcrs_strandedness") is not None and not isinstance(params_dict.get("vcrs_strandedness"), bool):
         raise ValueError(f"vcrs_strandedness must be a boolean. Got {params_dict.get('vcrs_strandedness')} of type {type(params_dict.get('vcrs_strandedness'))}.")
-    
+
     if params_dict.get("pseudoalignment_workflow") and params_dict.get("pseudoalignment_workflow") not in {"standard", "nac"}:
         raise ValueError(f"Invalid value for pseudoalignment_workflow: {params_dict.get('pseudoalignment_workflow')}. Expected 'standard' or 'nac'.")
 
@@ -226,6 +240,7 @@ columns_to_include_possible_values = OrderedDict(
     ]
 )
 
+
 # TODO: finish implementing the cdna/genome column stuff, and remove hard-coding of some column names
 def info(
     input_dir,
@@ -244,7 +259,7 @@ def info(
     dlist_reference_gtf=None,
     var_id_column=None,
     gene_name_column=None,
-    variant_source_column='variant_source',  # if input df has concatenated cdna and header VCRS's, then I want to know whether it came from cdna or genome
+    variant_source_column="variant_source",  # if input df has concatenated cdna and header VCRS's, then I want to know whether it came from cdna or genome
     var_cdna_column=None,
     seq_id_cdna_column=None,
     var_genome_column=None,
@@ -388,7 +403,7 @@ def info(
     run_info_file = os.path.join(out, "config", "vk_info_run_info.txt")
     save_run_info(run_info_file)
 
-    # * 5. Set up default folder/file input paths, and make sure the necessary ones exist    
+    # * 5. Set up default folder/file input paths, and make sure the necessary ones exist
     if not vcrs_fasta:
         vcrs_fasta = os.path.join(input_dir, "vcrs.fa")
     if not os.path.isfile(vcrs_fasta):
@@ -559,13 +574,25 @@ def info(
         mutation_metadata_df_exploded = explode_df(mutation_metadata_df, columns_to_explode, verbose=verbose, logger=logger)  # will add columns 'header' and 'order'
     else:
         mutation_metadata_df_exploded = mutation_metadata_df
-        mutation_metadata_df_exploded['header'] = mutation_metadata_df_exploded['vcrs_header']
-        mutation_metadata_df_exploded['order'] = [0]
+        mutation_metadata_df_exploded["header"] = mutation_metadata_df_exploded["vcrs_header"]
+        mutation_metadata_df_exploded["order"] = [0]
 
     if var_id_column is not None:
-        mutation_metadata_df_exploded.rename(columns={'header': var_id_column}, inplace=True)
+        mutation_metadata_df_exploded.rename(columns={"header": var_id_column}, inplace=True)
         seq_id_column = kwargs.get("seq_id_column", None)
         var_column = kwargs.get("var_column", None)
+
+        if not seq_id_column:
+            if seq_id_cdna_column and not seq_id_genome_column:
+                seq_id_column = seq_id_cdna_column
+            elif seq_id_genome_column and not seq_id_cdna_column:
+                seq_id_column = seq_id_genome_column
+        if not var_column:
+            if var_cdna_column and not var_genome_column:
+                var_column = var_cdna_column
+            elif var_genome_column and not var_cdna_column:
+                var_column = var_genome_column
+
         if not seq_id_column and not var_column:
             raise ValueError("seq_id_column and var_column must be provided if var_id_column is provided.")
         if seq_id_column not in mutation_metadata_df_exploded.columns or var_column not in mutation_metadata_df_exploded.columns:
@@ -659,7 +686,6 @@ def info(
                 mutation_metadata_df_exploded, columns_to_explode = calculate_total_gene_info(
                     mutation_metadata_df_exploded,
                     vcrs_id_column="vcrs_id",
-                    
                     gene_name_column=gene_name_column,
                     output_stat_file=total_genes_output_stat_file,
                     output_plot_folder=output_plot_folder,
@@ -682,17 +708,7 @@ def info(
     if columns_to_include == "all" or ("nearby_variants" in columns_to_include or "nearby_variants_count" in columns_to_include or "has_a_nearby_variant" in columns_to_include):
         try:
             logger.info("Calculating nearby variants")
-            mutation_metadata_df_exploded, columns_to_explode = calculate_nearby_mutations(
-                variant_source_column=variant_source_column,
-                k=k,
-                output_plot_folder=output_plot_folder,
-                variant_source=variant_source,
-                mutation_metadata_df_exploded=mutation_metadata_df_exploded,
-                columns_to_explode=columns_to_explode,
-                seq_id_cdna_column=seq_id_cdna_column,
-                seq_id_genome_column=seq_id_genome_column,
-                logger=logger
-            )
+            mutation_metadata_df_exploded, columns_to_explode = calculate_nearby_mutations(variant_source_column=variant_source_column, k=k, output_plot_folder=output_plot_folder, variant_source=variant_source, mutation_metadata_df_exploded=mutation_metadata_df_exploded, columns_to_explode=columns_to_explode, seq_id_cdna_column=seq_id_cdna_column, seq_id_genome_column=seq_id_genome_column, logger=logger)
         except Exception as e:
             logger.error(f"Error calculating nearby variants: {e}")
             columns_not_successfully_added.extend(["nearby_variants", "nearby_variants_count", "has_a_nearby_variant"])
@@ -771,9 +787,8 @@ def info(
             columns_not_successfully_added.extend(
                 [
                     "alignment_to_reference",
-                    "alignment_to_reference_cdna", 
-                    "alignment_to_reference_genome"
-                    "alignment_to_reference_count_total",
+                    "alignment_to_reference_cdna",
+                    "alignment_to_reference_genome" "alignment_to_reference_count_total",
                     "alignment_to_reference_count_cdna",
                     "alignment_to_reference_count_genome",
                     "substring_alignment_to_reference",
@@ -840,7 +855,7 @@ def info(
         except Exception as e:
             logger.error(f"Error getting VCRSs that pseudoalign: {e}")
             columns_not_successfully_added.append("pseudoaligned_to_reference")
-    
+
     if columns_to_include == "all" or ("pseudoaligned_to_reference_despite_not_truly_aligning" in columns_to_include):
         if "alignment_to_reference" not in mutation_metadata_df.columns:
             logger.warning("alignment_to_reference not found in dataframe. Skipping pseudoalignment to reference.")
@@ -848,10 +863,7 @@ def info(
         else:
             ref_folder_kb = f"{reference_out_dir}/kb_index_for_vcrs_pseudoalignment_to_reference_genome_without_true_alignment_vcrss"
             if "pseudoaligned_to_reference" in mutation_metadata_df.columns:  #!! untested
-                mutation_metadata_df["pseudoaligned_to_reference_despite_not_truly_aligning"] = (
-                    (~mutation_metadata_df["alignment_to_reference"]) &
-                    (mutation_metadata_df["pseudoaligned_to_reference"])
-                )
+                mutation_metadata_df["pseudoaligned_to_reference_despite_not_truly_aligning"] = (~mutation_metadata_df["alignment_to_reference"]) & (mutation_metadata_df["pseudoaligned_to_reference"])
             else:
                 try:
                     logger.info("Getting VCRSs that pseudoalign but aren't dlisted")

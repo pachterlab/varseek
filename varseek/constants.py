@@ -124,12 +124,12 @@ default_filename_dict = {"index": "vcrs_index.idx", "t2g": "vcrs_t2g.txt"}
 # * variants, sequences, w, k, dlist_reference_source - single string, comma-separated
 # * matches varseek ref and server
 # * for cosmic, leave the value "COSMIC" in place of a link (used for authentication), and keep the links in varseek_server/validate_cosmic.py; for others, replace with a link
-prebuilt_vk_ref_files = {"variants=cosmic_cmc,sequences=cdna,w=47,k=51,dlist_reference_source=grch37": {"index": "COSMIC", "t2g": "COSMIC"},
-                         "variants=cosmic_cmc,sequences=cdna,w=47,k=51,dlist_reference_source=t2t": {"index": "COSMIC", "t2g": "COSMIC"},
-                        #  ("variants=cosmic_cmc", "sequences=genome", "w=47", "k=51", "dlist_reference_source=grch37"): {"index": "COSMIC", "t2g": "COSMIC"},
-                        #  ("variants=cosmic_cmc", "sequences=genome", "w=47", "k=51", "dlist_reference_source=t2t"): {"index": "COSMIC", "t2g": "COSMIC"},
-                         }
-
+prebuilt_vk_ref_files = {
+    "variants=cosmic_cmc,sequences=cdna,w=47,k=51,dlist_reference_source=grch37": {"index": "COSMIC", "t2g": "COSMIC"},
+    "variants=cosmic_cmc,sequences=cdna,w=47,k=51,dlist_reference_source=t2t": {"index": "COSMIC", "t2g": "COSMIC"},
+    #  ("variants=cosmic_cmc", "sequences=genome", "w=47", "k=51", "dlist_reference_source=grch37"): {"index": "COSMIC", "t2g": "COSMIC"},
+    #  ("variants=cosmic_cmc", "sequences=genome", "w=47", "k=51", "dlist_reference_source=t2t"): {"index": "COSMIC", "t2g": "COSMIC"},
+}
 
 
 supported_databases_and_corresponding_reference_sequence_type = {
@@ -149,15 +149,15 @@ supported_databases_and_corresponding_reference_sequence_type = {
         "database_version_to_reference_assembly_build": defaultdict(lambda: ("37",), {"100": ("37",), "101": ("37",)}),  # sets default to ("37",)
         "variant_file_name": "CancerMutationCensus_AllData_Tsv_vCOSMIC_RELEASE_GRChGRCH_NUMBER/CancerMutationCensus_AllData_vCOSMIC_RELEASE_GRChGRCH_NUMBER_mutation_workflow.csv",
         "column_names": {
-            "seq_id_genome_column": "chromosome", 
-            "var_genome_column": "mutation_genome", 
-            "seq_id_cdna_column": "seq_ID", 
-            "var_cdna_column": "mutation_cdna", 
+            "seq_id_genome_column": "chromosome",
+            "var_genome_column": "mutation_genome",
+            "seq_id_cdna_column": "seq_ID",
+            "var_cdna_column": "mutation_cdna",
             "seq_id_cds_column": "seq_ID",
             "var_cds_column": "mutation",
             "var_id_column": "mutation_id",
             "gene_name_column": "gene_name",
-        }
+        },
     }
 }
 
@@ -182,15 +182,10 @@ technology_barcode_and_umi_dict = {
 }
 
 
-varseek_ref_only_allowable_kb_ref_arguments = {
-    "zero_arguments": {"--keep-tmp", "--verbose", "--aa"},
-    "one_argument": {"--tmp", "--kallisto", "--bustools"},
-    "multiple_arguments": set()
-}  # don't include d-list, t, i, k, workflow, overwrite here because I do it myself later
+varseek_ref_only_allowable_kb_ref_arguments = {"zero_arguments": {"--keep-tmp", "--verbose", "--aa"}, "one_argument": {"--tmp", "--kallisto", "--bustools"}, "multiple_arguments": set()}  # don't include d-list, t, i, k, workflow, overwrite here because I do it myself later
 
 varseek_count_only_allowable_kb_count_arguments = {
     "zero_arguments": {"--keep-tmp", "--verbose", "--tcc", "--cellranger", "--gene-names", "--report", "--long", "--opt-off", "--matrix-to-files", "--matrix-to-directories"},
     "one_argument": {"--tmp", "--kallisto", "--bustools", "-w", "-r", "-m", "--inleaved", "--filter", "--filter-threshold", "-N", "--threshold", "--platform"},
     "multiple_arguments": set(),
 }  # don't include d-list, t, i, k, workflow here because I do it myself later
-

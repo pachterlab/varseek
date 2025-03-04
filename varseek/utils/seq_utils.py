@@ -9,7 +9,6 @@ import re
 import shutil
 import subprocess
 from collections import OrderedDict
-from typing import Callable
 
 import anndata as ad
 import numpy as np
@@ -18,8 +17,12 @@ import pyfastx
 import requests
 from tqdm import tqdm
 
-from varseek.constants import (complement, complement_trans, fastq_extensions,
-                               mutation_pattern)
+from varseek.constants import (
+    complement,
+    complement_trans,
+    fastq_extensions,
+    mutation_pattern,
+)
 from varseek.utils.logger_utils import get_printlog, splitext_custom
 
 tqdm.pandas()
@@ -194,7 +197,6 @@ def filter_fasta(input_fasta, output_fasta=None, sequence_names_set=None, keep="
                     if condition(header):
                         outfile.write(f">{header}\n{sequence}\n")
 
-
         if output_fasta == input_fasta + ".tmp":
             os.replace(output_fasta, input_fasta)
     except Exception as e:
@@ -255,6 +257,7 @@ def check_if_header_is_in_set(headers_concatenated, header_set_from_mutation_fas
         if headers_concatenated in header:
             return header  # Return the first match where it's a substring
     return headers_concatenated
+
 
 # Not used
 def convert_nonsemicolon_headers_to_semicolon_joined_headers(nonsemicolon_read_headers_set, semicolon_reference_headers_set):
@@ -558,7 +561,7 @@ def download_t2t_reference_files(reference_out_dir_sequences_dlist):
 
     if os.path.exists(ref_dlist_fa_genome) and os.path.exists(ref_dlist_fa_cdna) and os.path.exists(ref_dlist_gtf):
         return ref_dlist_fa_genome, ref_dlist_fa_cdna, ref_dlist_gtf
-    
+
     print("Downloading T2T reference files...")
 
     # Step 1: Download the ZIP file using wget
@@ -585,12 +588,14 @@ def download_t2t_reference_files(reference_out_dir_sequences_dlist):
 
     return ref_dlist_fa_genome, ref_dlist_fa_cdna, ref_dlist_gtf
 
+
 def get_gtf_release(true_release, ensembl_grch37_true_release_to_gtf_release_dict):
     for (low, high), mapped_release in ensembl_grch37_true_release_to_gtf_release_dict.items():
         if low <= int(true_release) <= high:
             return mapped_release
     print(f"No gtf mapping found for release {true_release}. Using the true release.")
     return true_release
+
 
 def download_ensembl_reference_files(reference_out_dir_sequences_dlist, grch="37", ensembl_release="93"):
     ensembl_grch37_true_release_to_gtf_release_dict = {
@@ -601,7 +606,7 @@ def download_ensembl_reference_files(reference_out_dir_sequences_dlist, grch="37
     }
 
     get_gtf_release(ensembl_release, ensembl_grch37_true_release_to_gtf_release_dict)
-    
+
     grch = str(grch)
     ensembl_release = str(ensembl_release)
     ensembl_species_gget = "human_grch37" if grch == "37" else "human"
@@ -854,7 +859,7 @@ def load_in_fastqs(fastqs):
             fastqs = fastqs[0]
     if not os.path.exists(fastqs):
         raise ValueError(f"File/folder {fastqs} does not exist")
-    
+
     if os.path.isdir(fastqs):
         files = []
         for file in os.listdir(fastqs):  # make fastqs list from fastq files in immediate child directory
@@ -890,7 +895,7 @@ def calculate_end_position(pos, cigar):
     consume_ref = {"M", "D", "N", "EQ", "X"}
 
     # Parse CIGAR string
-    operations = re.findall(r'(\d+)([MIDNSHP=X])', cigar)
+    operations = re.findall(r"(\d+)([MIDNSHP=X])", cigar)
 
     # Compute alignment length
     alignment_length = sum(int(length) for length, op in operations if op in consume_ref)
@@ -914,7 +919,7 @@ def add_mutation_information(mutation_metadata_df, mutation_column="mutation", v
     else:
         mutation_metadata_df[f"end_variant_position{variant_source}"] = mutation_metadata_df[f"start_variant_position{variant_source}"]
 
-    mutation_metadata_df[[f"start_variant_position{variant_source}", f"end_variant_position{variant_source}"]] = mutation_metadata_df[[f"start_variant_position{variant_source}", f"end_variant_position{variant_source}"]].astype("Int64")        
+    mutation_metadata_df[[f"start_variant_position{variant_source}", f"end_variant_position{variant_source}"]] = mutation_metadata_df[[f"start_variant_position{variant_source}", f"end_variant_position{variant_source}"]].astype("Int64")
 
     return mutation_metadata_df
 
@@ -922,6 +927,7 @@ def add_mutation_information(mutation_metadata_df, mutation_column="mutation", v
 # convert vcf to pandas df
 def vcf_to_dataframe(vcf_file, additional_columns=True, explode_alt=True, filter_empty_alt=True):
     import pysam
+
     """Convert a VCF file to a Pandas DataFrame."""
     vcf = pysam.VariantFile(vcf_file)
 

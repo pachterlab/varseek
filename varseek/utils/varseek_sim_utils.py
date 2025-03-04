@@ -7,8 +7,11 @@ import pyfastx
 from tqdm import tqdm
 
 from varseek.utils.logger_utils import splitext_custom
-from varseek.utils.seq_utils import (add_mutation_information, fasta_to_fastq,
-                                     reverse_complement)
+from varseek.utils.seq_utils import (
+    add_mutation_information,
+    fasta_to_fastq,
+    reverse_complement,
+)
 
 tqdm.pandas()
 
@@ -207,7 +210,7 @@ def build_random_genome_read_df(
     if f"start_variant_position_{input_type}" not in mutation_metadata_df.columns or f"end_variant_position_{input_type}" not in mutation_metadata_df.columns:
         add_mutation_information(mutation_metadata_df, mutation_column=var_column, variant_source=input_type)
     mutation_metadata_df[f"start_position_for_which_read_contains_mutation_{input_type}"] = mutation_metadata_df[f"start_variant_position_{input_type}"] - read_length + 1
-    
+
     # Collect all headers and sequences from the FASTA file
     fastq_output_path_base, fastq_output_path_ext = splitext_custom(fastq_output_path)
     fasta_output_path_temp = fastq_output_path_base + "_temp.fa"

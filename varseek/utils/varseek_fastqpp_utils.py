@@ -410,20 +410,19 @@ def split_reads_by_N_list(rnaseq_fastq_files_replace_low_quality_bases_with_N, m
     return rnaseq_fastq_files_split_reads_by_N
 
 
-
 import pyfastx
 
 
 def ensure_read_agreement(r1_unfiltered_fastq_path, r2_unfiltered_fastq_path, removed_reads_fastq_path, r1_fastq_out_path=None, indices_file_path=None, delete_indices_file=True):
     # assumes that I ran fastp on r2_unfiltered_fastq_path (transcripts) with some unintended filtering using --failed_out removed_reads_fastq_path, and I want to filter the same reads out of r1_unfiltered_fastq_path (barcodes/UMIs)
-    
+
     if os.path.getsize(removed_reads_fastq_path) == 0:
         print("No reads were removed from the transcripts. No need to filter the barcodes/UMIs.")
         return
 
     if not r1_fastq_out_path:
         r1_fastq_out_path = r1_unfiltered_fastq_path  # overwrite the original file
-    
+
     removed_indices_out_file_tmp = indices_file_path if indices_file_path else "removed_indices_tmp.txt"
 
     if not os.path.isfile(removed_indices_out_file_tmp):
@@ -441,15 +440,7 @@ def ensure_read_agreement(r1_unfiltered_fastq_path, r2_unfiltered_fastq_path, re
 
     try:
         # Remove the reads from the gathered indices from R1
-        awk_command = [
-            "awk",
-            'NR==FNR {omit[$1]; next} '
-            'FNR % 4 == 1 { i++; if ((i-1) in omit) { skip=4 } else { skip=0 } } '
-            'skip > 0 { skip--; next } '
-            '{ print }',
-            removed_indices_out_file_tmp,
-            r1_unfiltered_fastq_path
-        ]
+        awk_command = ["awk", "NR==FNR {omit[$1]; next} " "FNR % 4 == 1 { i++; if ((i-1) in omit) { skip=4 } else { skip=0 } } " "skip > 0 { skip--; next } " "{ print }", removed_indices_out_file_tmp, r1_unfiltered_fastq_path]
 
         with open(r1_fastq_out_path, "w") as output_file:
             subprocess.run(awk_command, stdout=output_file, check=True)
@@ -460,13 +451,12 @@ def ensure_read_agreement(r1_unfiltered_fastq_path, r2_unfiltered_fastq_path, re
             os.remove(removed_indices_out_file_tmp)
 
 
-
 def run_fastp_bulk(r1_fastq_path, r2_fastq_path=None, out_dir="filtered", parity="single", cut_front=False, cut_tail=False, cut_window_size=4, cut_mean_quality=15, disable_adapter_trimming=False, qualified_quality_phred=15, unqualified_percent_limit=40, average_qual=15, n_base_limit=10, disable_quality_filtering=False, length_required=31, disable_length_filtering=False, dont_eval_duplication=True, disable_trim_poly_g=True, threads=2, failed_out=False, r1_fastq_out_path="r1_filtered.fq", r2_fastq_out_path="r2_filtered.fq"):
     fastp_cmd = ["fastp", "-i", r1_fastq_path, "-o", r1_fastq_out_path]
-        
+
     if parity == "paired":
         fastp_cmd += ["-I", r2_fastq_path, "-O", r2_fastq_out_path]
-            #? consider adding --merged (can merge overlapping reads from paired end data)
+        # ? consider adding --merged (can merge overlapping reads from paired end data)
     if cut_front:
         fastp_cmd += ["--cut_front"]
     if cut_tail:
@@ -478,7 +468,7 @@ def run_fastp_bulk(r1_fastq_path, r2_fastq_path=None, out_dir="filtered", parity
     else:
         if parity == "paired":
             fastp_cmd += ["--detect_adapter_for_pe"]
-        
+
     if disable_quality_filtering:
         fastp_cmd += ["--disable_quality_filtering"]
     else:
@@ -488,7 +478,7 @@ def run_fastp_bulk(r1_fastq_path, r2_fastq_path=None, out_dir="filtered", parity
         fastp_cmd += ["--disable_length_filtering"]
     else:
         fastp_cmd += ["--length_required", str(length_required)]
-        
+
     if dont_eval_duplication:
         fastp_cmd += ["--dont_eval_duplication"]
     if disable_trim_poly_g:
@@ -503,43 +493,33 @@ def run_fastp_bulk(r1_fastq_path, r2_fastq_path=None, out_dir="filtered", parity
 
     subprocess.run(fastp_cmd, check=True)
 
+
 def run_fastp_single_cell_general(r1_fastq_path, r2_fastq_path, out_dir="filtered", cut_front=False, cut_tail=False, cut_window_size=4, cut_mean_quality=15, disable_adapter_trimming=False, qualified_quality_phred=15, unqualified_percent_limit=40, average_qual=15, n_base_limit=10, disable_quality_filtering=False, threads=2, failed_out=False, r1_fastq_out_path="r1_filtered.fq", r2_fastq_out_path="r2_filtered.fq", tmp_dir="tmp"):
-    #* rather than doing fastp twice as I do below (once for quality filtering and once for edge trimming), I could do it all in one go, but that would require running ensure_read_agreement, which I haven't thoroughly debugged or benchmarked for runtime compared to another fastp command - if I debug ensure_read_agreement and either (1) find ensure_read_agreement is much faster than another fastp OR (2) find that I am running ensure_read_agreement with the current setup anyways, then replace the current setup with a single fastp call that combiens both read filtering and edge trimming, followed by ensure_read_agreement (this has the added benefit of being 100% sure that I don't factor barcode/UMI information in at all when filtering - plus, I could include length filtering again)
+    # * rather than doing fastp twice as I do below (once for quality filtering and once for edge trimming), I could do it all in one go, but that would require running ensure_read_agreement, which I haven't thoroughly debugged or benchmarked for runtime compared to another fastp command - if I debug ensure_read_agreement and either (1) find ensure_read_agreement is much faster than another fastp OR (2) find that I am running ensure_read_agreement with the current setup anyways, then replace the current setup with a single fastp call that combiens both read filtering and edge trimming, followed by ensure_read_agreement (this has the added benefit of being 100% sure that I don't factor barcode/UMI information in at all when filtering - plus, I could include length filtering again)
     if average_qual < cut_mean_quality:
         print("Warning: average_qual is less than cut_mean_quality. This means that ensure_read_agreement might need to run.")
 
     if not disable_quality_filtering:
         r1_fastq_out_path_tmp = os.path.join(tmp_dir, os.path.basename(r1_fastq_path))
         r2_fastq_out_path_tmp = os.path.join(tmp_dir, os.path.basename(r2_fastq_path))
-        
+
         # low quality read removal
-        fastp_cmd1 = ["fastp", "-i", r1_fastq_path, "-I", r2_fastq_path, "-o", r1_fastq_out_path_tmp, "-O", r2_fastq_out_path_tmp,
-                          "--disable_adapter_trimming",
-                          "--qualified_quality_phred", str(qualified_quality_phred),
-                          "--unqualified_percent_limit", str(unqualified_percent_limit),
-                          "--average_qual", str(average_qual),
-                          "--n_base_limit", str(n_base_limit),
-                          "--disable_length_filtering",
-                          "--dont_eval_duplication",
-                          "--disable_trim_poly_g",
-                          "-h", os.path.join(out_dir, "fastp_report.html"),
-                          "-j", os.path.join(out_dir, "fastp_report.json")
-                          ]
-        
+        fastp_cmd1 = ["fastp", "-i", r1_fastq_path, "-I", r2_fastq_path, "-o", r1_fastq_out_path_tmp, "-O", r2_fastq_out_path_tmp, "--disable_adapter_trimming", "--qualified_quality_phred", str(qualified_quality_phred), "--unqualified_percent_limit", str(unqualified_percent_limit), "--average_qual", str(average_qual), "--n_base_limit", str(n_base_limit), "--disable_length_filtering", "--dont_eval_duplication", "--disable_trim_poly_g", "-h", os.path.join(out_dir, "fastp_report.html"), "-j", os.path.join(out_dir, "fastp_report.json")]
+
         fastp_cmd1 += ["--thread", str(threads)]
 
         if failed_out:
             fastp_cmd1 += ["--failed_out", failed_out]
 
-        subprocess.run(fastp_cmd1, check=True) 
+        subprocess.run(fastp_cmd1, check=True)
     else:
         shutil.copy(r1_fastq_path, r1_fastq_out_path_tmp)
         shutil.copy(r2_fastq_path, r2_fastq_out_path_tmp)
-        
+
     # edge trimming
     if cut_front or cut_tail or not disable_adapter_trimming:
         fastp_cmd2 = ["fastp", "-i", r2_fastq_out_path_tmp, "-o", r2_fastq_out_path]
-            
+
         if cut_front:
             fastp_cmd2 += ["--cut_front"]
         if cut_tail:
@@ -548,18 +528,18 @@ def run_fastp_single_cell_general(r1_fastq_path, r2_fastq_path, out_dir="filtere
             fastp_cmd2 += ["--cut_window_size", str(cut_window_size), "--cut_mean_quality", str(cut_mean_quality)]
         if disable_adapter_trimming:
             fastp_cmd2 += ["--disable_adapter_trimming"]
-            
+
         fastp_cmd2 += ["--disable_quality_filtering", "--disable_length_filtering", "--dont_eval_duplication", "--disable_trim_poly_g"]
 
         fastp_cmd2 += ["--thread", str(threads)]
-            
+
         if failed_out:
             failed_out2 = os.path.join(out_dir, "removed_reads2.fastq")
         else:
             failed_out2 = os.path.join(tmp_dir, "removed_reads2.fastq")  # tmp
-            
+
         fastp_cmd2 += ["--failed_out", failed_out2]
-            
+
         fastp_cmd2 += ["-h", os.path.join(out_dir, "fastp_report2.html"), "-j", os.path.join(out_dir, "fastp_report2.json")]
 
         subprocess.run(fastp_cmd2, check=True)
@@ -573,21 +553,22 @@ def run_fastp_single_cell_general(r1_fastq_path, r2_fastq_path, out_dir="filtere
         os.rename(r1_fastq_out_path_tmp, r1_fastq_out_path)
         os.rename(r2_fastq_out_path_tmp, r2_fastq_out_path)
 
+
 def run_fastp_smartseq3(r1_fastq_path, r2_fastq_path, out_dir="filtered", cut_front=False, cut_tail=False, cut_window_size=4, cut_mean_quality=15, disable_adapter_trimming=False, qualified_quality_phred=15, unqualified_percent_limit=40, average_qual=15, n_base_limit=10, disable_quality_filtering=False, length_required=31, disable_length_filtering=False, threads=2, failed_out=False, r1_fastq_out_path="r1_filtered.fq", r2_fastq_out_path="r2_filtered.fq", tmp_dir="tmp"):
     if average_qual < cut_mean_quality:
         print("Warning: average_qual is less than cut_mean_quality. This means that ensure_read_agreement might need to run.")
-    
+
     r1_fastq_out_path_tmp = os.path.join(tmp_dir, os.path.basename(r1_fastq_path))
     r2_fastq_out_path_tmp = os.path.join(tmp_dir, os.path.basename(r2_fastq_path))
     fastp_cmd = ["fastp", "-i", r1_fastq_path, "-I", r2_fastq_path, "-o", r1_fastq_out_path_tmp, "-O", r2_fastq_out_path_tmp]
-        
+
     if cut_tail:
         fastp_cmd += ["--cut_tail", "--cut_window_size", str(cut_window_size), "--cut_mean_quality", str(cut_mean_quality)]
     if disable_adapter_trimming:
         fastp_cmd += ["--disable_adapter_trimming"]
     else:
         fastp_cmd += ["--detect_adapter_for_pe"]
-        
+
     if disable_quality_filtering:
         fastp_cmd += ["--disable_quality_filtering"]
     else:
@@ -597,7 +578,7 @@ def run_fastp_smartseq3(r1_fastq_path, r2_fastq_path, out_dir="filtered", cut_fr
         fastp_cmd += ["--disable_length_filtering"]
     else:
         fastp_cmd += ["--length_required", str(length_required)]
-        
+
     fastp_cmd += ["--dont_eval_duplication", "--disable_trim_poly_g", "--thread", str(threads)]
 
     fastp_cmd += ["-h", os.path.join(out_dir, "fastp_report.html"), "-j", os.path.join(out_dir, "fastp_report.json")]
@@ -609,11 +590,8 @@ def run_fastp_smartseq3(r1_fastq_path, r2_fastq_path, out_dir="filtered", cut_fr
 
     if cut_front:
         failed_out2 = os.path.join(tmp_dir, "removed_reads2.fastq")
-        fastp_cmd2 = ["fastp", "-i", r2_fastq_out_path_tmp, "-o", r2_fastq_out_path,
-                          "--cut_front", "--cut_window_size", str(cut_window_size), "--cut_mean_quality", str(cut_mean_quality),
-                          "--disable_adapter_trimming", "--disable_quality_filtering", "--disable_length_filtering", "--dont_eval_duplication", "--disable_trim_poly_g", "--thread", str(threads),
-                          "-h", os.path.join(out_dir, "fastp_report2.html"), "-j", os.path.join(out_dir, "fastp_report2.json"), "--failed_out", failed_out2]
-            
+        fastp_cmd2 = ["fastp", "-i", r2_fastq_out_path_tmp, "-o", r2_fastq_out_path, "--cut_front", "--cut_window_size", str(cut_window_size), "--cut_mean_quality", str(cut_mean_quality), "--disable_adapter_trimming", "--disable_quality_filtering", "--disable_length_filtering", "--dont_eval_duplication", "--disable_trim_poly_g", "--thread", str(threads), "-h", os.path.join(out_dir, "fastp_report2.html"), "-j", os.path.join(out_dir, "fastp_report2.json"), "--failed_out", failed_out2]
+
         subprocess.run(fastp_cmd2, check=True)
 
         if os.path.getsize(failed_out2) > 0:
@@ -624,15 +602,16 @@ def run_fastp_smartseq3(r1_fastq_path, r2_fastq_path, out_dir="filtered", cut_fr
     else:
         os.rename(r1_fastq_out_path_tmp, r1_fastq_out_path)
         os.rename(r2_fastq_out_path_tmp, r2_fastq_out_path)
-    
+
+
 def run_fastp_10xv3_ultima(r1_fastq_path, out_dir, cut_tail=False, cut_window_size=4, cut_mean_quality=15, disable_adapter_trimming=False, qualified_quality_phred=15, unqualified_percent_limit=40, average_qual=15, n_base_limit=10, disable_quality_filtering=False, length_required=31, disable_length_filtering=False, threads=2, failed_out=False, r1_fastq_out_path="r1_filtered.fq"):
     fastp_cmd = ["fastp", "-i", r1_fastq_path, "-o", r1_fastq_out_path]
-        
+
     if cut_tail:
         fastp_cmd += ["--cut_tail", "--cut_window_size", str(cut_window_size), "--cut_mean_quality", str(cut_mean_quality)]
     if disable_adapter_trimming:
         fastp_cmd += ["--disable_adapter_trimming"]
-        
+
     if disable_quality_filtering:
         fastp_cmd += ["--disable_quality_filtering"]
     else:
@@ -652,9 +631,10 @@ def run_fastp_10xv3_ultima(r1_fastq_path, out_dir, cut_tail=False, cut_window_si
 
     subprocess.run(fastp_cmd, check=True)
 
+
 def run_fastp_10xv1(r1_fastq_path, r2_fastq_path, i1_fastq_path, out_dir, cut_front=False, cut_tail=False, cut_window_size=4, cut_mean_quality=15, disable_adapter_trimming=False, qualified_quality_phred=15, unqualified_percent_limit=40, average_qual=15, n_base_limit=10, disable_quality_filtering=False, length_required=31, disable_length_filtering=False, threads=2, failed_out=False, r1_fastq_out_path="r1_filtered.fq", r2_fastq_out_path="r2_filtered.fq", i1_fastq_out_path="i1_filtered.fq"):
     fastp_cmd = ["fastp", "-i", r2_fastq_path, "-o", r2_fastq_out_path]
-        
+
     if cut_front:
         fastp_cmd += ["--cut_front"]
     if cut_tail:
@@ -663,7 +643,7 @@ def run_fastp_10xv1(r1_fastq_path, r2_fastq_path, i1_fastq_path, out_dir, cut_fr
         fastp_cmd += ["--cut_window_size", str(cut_window_size), "--cut_mean_quality", str(cut_mean_quality)]
     if disable_adapter_trimming:
         fastp_cmd += ["--disable_adapter_trimming"]
-        
+
     if disable_quality_filtering:
         fastp_cmd += ["--disable_quality_filtering"]
     else:
@@ -695,15 +675,15 @@ def perform_fastp_trimming_and_filtering(technology, r1_fastq_path, r2_fastq_pat
     - i1_fastq_path                 (str): For single-cell, path to the I1 FASTQ file. For bulk, path to the third FASTQ file if paired.
     ...
     """
-    
+
     if all((not cut_front, not cut_tail, disable_adapter_trimming, disable_quality_filtering, disable_length_filtering, dont_eval_duplication, disable_trim_poly_g)):
         print("No trimming or filtering options selected. Exiting.")
         return {"R1": r1_fastq_path, "R2": r2_fastq_path, "I1": i1_fastq_path, "I2": i2_fastq_path}
-    
+
     for input_file in [r1_fastq_path, r2_fastq_path, i1_fastq_path]:
         if input_file is not None and not os.path.isfile(input_file):
             raise FileNotFoundError(f"Input file {input_file} does not exist.")
-    
+
     os.makedirs(out_dir, exist_ok=True)
     r1_fastq_out_path = os.path.join(out_dir, os.path.basename(r1_fastq_path))
     r2_fastq_out_path = os.path.join(out_dir, os.path.basename(r2_fastq_path)) if r2_fastq_path else None
@@ -728,7 +708,7 @@ def perform_fastp_trimming_and_filtering(technology, r1_fastq_path, r2_fastq_pat
 
         elif technology in {"10XV2", "10XV3", "BDWTA", "CELSEQ", "CELSEQ2", "INDROPSV1", "INDROPSV2", "SCRUBSEQ", "SPLIT-SEQ", "SURECELL", "VISIUM"}:
             run_fastp_single_cell_general(r1_fastq_path=r1_fastq_path, r2_fastq_path=r2_fastq_path, out_dir=out_dir, cut_front=cut_front, cut_tail=cut_tail, cut_window_size=cut_window_size, cut_mean_quality=cut_mean_quality, disable_adapter_trimming=disable_adapter_trimming, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, average_qual=average_qual, n_base_limit=n_base_limit, disable_quality_filtering=disable_quality_filtering, threads=threads, failed_out=failed_out, r1_fastq_out_path=r1_fastq_out_path, r2_fastq_out_path=r2_fastq_out_path, tmp_dir=tmp_dir)
-            
+
         elif technology in {"SMARTSEQ3", "STORMSEQ"}:
             run_fastp_smartseq3(r1_fastq_path=r1_fastq_path, r2_fastq_path=r2_fastq_path, out_dir=out_dir, cut_front=cut_front, cut_tail=cut_tail, cut_window_size=cut_window_size, cut_mean_quality=cut_mean_quality, disable_adapter_trimming=disable_adapter_trimming, qualified_quality_phred=qualified_quality_phred, unqualified_percent_limit=unqualified_percent_limit, average_qual=average_qual, n_base_limit=n_base_limit, disable_quality_filtering=disable_quality_filtering, length_required=length_required, disable_length_filtering=disable_length_filtering, threads=threads, failed_out=failed_out, r1_fastq_out_path=r1_fastq_out_path, r2_fastq_out_path=r2_fastq_out_path, tmp_dir=tmp_dir)
 
@@ -740,10 +720,9 @@ def perform_fastp_trimming_and_filtering(technology, r1_fastq_path, r2_fastq_pat
 
         else:
             raise ValueError(f"Technology {technology} not recognized. See all valid values with `kb --list`.")
-    
+
     # delete tmp_dir
     if os.path.exists(tmp_dir):
         shutil.rmtree(tmp_dir)
 
     return {"R1": r1_fastq_out_path, "R2": r2_fastq_out_path, "I1": i1_fastq_out_path, "I2": i2_fastq_path}
-

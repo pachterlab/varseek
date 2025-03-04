@@ -9,11 +9,16 @@ import anndata
 import anndata as ad
 import pandas as pd
 
-from varseek.utils import (check_file_path_is_string_with_valid_extension,
-                           is_valid_int, make_function_parameter_to_value_dict,
-                           print_varseek_dry_run, report_time_elapsed,
-                           save_params_to_config_file, save_run_info,
-                           set_up_logger)
+from varseek.utils import (
+    check_file_path_is_string_with_valid_extension,
+    is_valid_int,
+    make_function_parameter_to_value_dict,
+    print_varseek_dry_run,
+    report_time_elapsed,
+    save_params_to_config_file,
+    save_run_info,
+    set_up_logger,
+)
 
 from .constants import technology_valid_values
 
@@ -25,7 +30,7 @@ def validate_input_summarize(params_dict):
     if not isinstance(adata, (str, Path, anndata.AnnData)):
         raise TypeError("adata must be a string (file path) or an AnnData object.")
     if isinstance(adata, (str, Path)):
-        check_file_path_is_string_with_valid_extension(adata, "adata", "h5ad")    # I will enforce that adata exists later, as otherwise it will throw an error when I call this through vk count before kb count/vk clean can run
+        check_file_path_is_string_with_valid_extension(adata, "adata", "h5ad")  # I will enforce that adata exists later, as otherwise it will throw an error when I call this through vk count before kb count/vk clean can run
 
     if not is_valid_int(params_dict["top_values"], ">=", 1):
         raise ValueError(f"top_values must be an positive integer. Got {params_dict.get('top_values')}.")
@@ -38,7 +43,7 @@ def validate_input_summarize(params_dict):
 
     if not isinstance(params_dict["gene_name_column"], (str, type(None))):
         raise ValueError("gene_name_column must be a string or None. Got {params_dict.get('gene_name_column')}.")
-    
+
     if not isinstance(params_dict["out"], (str, Path)):
         raise ValueError("out must be a string or Path object.")
 
@@ -118,7 +123,7 @@ def summarize(
     # * 5. Set up default folder/file input paths, and make sure the necessary ones exist
     # all input files for vk summarize are required in the varseek workflow, so this is skipped
 
-    # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True   
+    # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
     stats_file = os.path.join(out, "varseek_summarize_stats.txt") if not kwargs.get("stats_file") else kwargs["stats_file"]
     specific_stats_folder = os.path.join(out, "specific_stats") if not kwargs.get("specific_stats_folder") else kwargs["specific_stats_folder"]
     plots_folder = os.path.join(out, "plots") if not kwargs.get("plots_folder") else kwargs["plots_folder"]
@@ -157,10 +162,10 @@ def summarize(
         ascending=False,
     )
 
-    vcrs_count_descending_greater_than_zero = vcrs_count_descending.loc[vcrs_count_descending['vcrs_count'] > 0]  # get all values greater than zero
+    vcrs_count_descending_greater_than_zero = vcrs_count_descending.loc[vcrs_count_descending["vcrs_count"] > 0]  # get all values greater than zero
     top_values_for_vcrs_count_descending = min(top_values, len(vcrs_count_descending_greater_than_zero))  # in case there are fewer than top_values variants with count > 0
     vcrs_count_descending_top_n = vcrs_count_descending_greater_than_zero.index.tolist()[:top_values_for_vcrs_count_descending]  # get top values
-    
+
     with open(stats_file, "w", encoding="utf-8") as f:
         f.write(f"Total variants with count > 0 for any sample/cell: {len(vcrs_count_descending_greater_than_zero)}\n")
         if technology.lower() == "bulk":
@@ -172,27 +177,27 @@ def summarize(
     with open(f"{specific_stats_folder}/variants_with_any_count.txt", "w", encoding="utf-8") as f:
         f.write("Variant\tTotal_Counts\n")
         for variant in vcrs_count_descending_greater_than_zero.index:
-                total_counts = adata.var.loc[variant, "vcrs_count"]
-                f.write(f"{variant}\t{total_counts}\n")
+            total_counts = adata.var.loc[variant, "vcrs_count"]
+            f.write(f"{variant}\t{total_counts}\n")
 
     # 2. Variants Present Across the Most Samples
     logger.info("2. Variants Present Across the Most Samples")
     if "number_of_samples_in_which_the_variant_is_detected" not in adata.var.columns:
         adata.var["number_of_samples_in_which_the_variant_is_detected"] = (adata.X > 0).sum(axis=0).A1 if hasattr(adata.X, "A1") else (adata.X > 0).sum(axis=0).A1
-    
+
     # Sort by number of samples and break ties with vcrs_count
     number_of_samples_descending = adata.var.sort_values(
         by=["number_of_samples_in_which_the_variant_is_detected", "vcrs_count"],
         ascending=False,
     )
-    
-    number_of_samples_descending_greater_than_zero = number_of_samples_descending.loc[number_of_samples_descending['number_of_samples_in_which_the_variant_is_detected'] > 0]  # get all values greater than zero
+
+    number_of_samples_descending_greater_than_zero = number_of_samples_descending.loc[number_of_samples_descending["number_of_samples_in_which_the_variant_is_detected"] > 0]  # get all values greater than zero
     top_values_for_number_of_samples_descending = min(top_values, len(number_of_samples_descending_greater_than_zero))  # in case there are fewer than top_values variants with count > 0
     number_of_samples_descending_top_n = number_of_samples_descending.index.tolist()[:top_values_for_number_of_samples_descending]  # get top values
-    
+
     with open(stats_file, "a", encoding="utf-8") as f:
         f.write(f"Variants present across the most samples: {', '.join(number_of_samples_descending_top_n)}\n")
-    
+
     with open(f"{specific_stats_folder}/variants_present_across_the_most_samples.txt", "w", encoding="utf-8") as f:
         f.write("Variant\tNumber_of_Samples\tTotal_Counts\n")
         for variant in number_of_samples_descending_greater_than_zero.index:
@@ -203,7 +208,7 @@ def summarize(
     # --------------------------------------------------------------------------------------------------------
     if gene_name_column:
         gene_counts = adata.var.groupby(gene_name_column)["vcrs_count"].sum()
-        
+
         # 3. Number of Genes with Count > 0 in any Sample/Cell, and for bulk in particular, for each sample; then list the genes
         logger.info("3. Number of Genes with Count > 0 in any Sample/Cell, and for bulk in particular, for each sample; then list the genes")
         # Sort by vcrs_count
@@ -212,10 +217,10 @@ def summarize(
             ascending=False,
         )
 
-        vcrs_count_descending_greater_than_zero = vcrs_count_descending.loc[vcrs_count_descending['vcrs_count'] > 0]  # get all values greater than zero
+        vcrs_count_descending_greater_than_zero = vcrs_count_descending.loc[vcrs_count_descending["vcrs_count"] > 0]  # get all values greater than zero
         top_values_for_vcrs_count_descending = min(top_values, len(vcrs_count_descending_greater_than_zero))  # in case there are fewer than top_values variants with count > 0
         vcrs_count_descending_top_n = vcrs_count_descending_greater_than_zero.index.tolist()[:top_values_for_vcrs_count_descending]  # get top values
-        
+
         with open(stats_file, "a", encoding="utf-8") as f:
             f.write(f"Total genes with count > 0 for any sample/cell: {len(vcrs_count_descending_greater_than_zero)}\n")
             if technology.lower() == "bulk":
@@ -227,24 +232,24 @@ def summarize(
         with open(f"{specific_stats_folder}/genes_with_any_count.txt", "w", encoding="utf-8") as f:
             f.write("Gene\tTotal_Counts\n")
             for gene in vcrs_count_descending_greater_than_zero.index:
-                    total_counts = adata.var.loc[gene, "vcrs_count"]
-                    f.write(f"{gene}\t{total_counts}\n")
+                total_counts = adata.var.loc[gene, "vcrs_count"]
+                f.write(f"{gene}\t{total_counts}\n")
 
         # 4. Genes Present Across the Most Samples
         logger.info("4. Genes Present Across the Most Samples")
-        
+
         number_of_samples_descending = gene_counts.var.sort_values(
             by=["number_of_samples_in_which_the_variant_is_detected", "vcrs_count"],
             ascending=False,
         )
-        
-        number_of_samples_descending_greater_than_zero = number_of_samples_descending.loc[number_of_samples_descending['number_of_samples_in_which_the_variant_is_detected'] > 0]  # get all values greater than zero
+
+        number_of_samples_descending_greater_than_zero = number_of_samples_descending.loc[number_of_samples_descending["number_of_samples_in_which_the_variant_is_detected"] > 0]  # get all values greater than zero
         top_values_for_number_of_samples_descending = min(top_values, len(number_of_samples_descending_greater_than_zero))  # in case there are fewer than top_values variants with count > 0
         number_of_samples_descending_top_n = number_of_samples_descending.index.tolist()[:top_values_for_number_of_samples_descending]  # get top values
 
         with open(stats_file, "a", encoding="utf-8") as f:
             f.write(f"Genes present across the most samples: {', '.join(number_of_samples_descending_top_n)}\n")
-        
+
         with open(f"{specific_stats_folder}/genes_present_across_the_most_samples.txt", "w", encoding="utf-8") as f:
             f.write("Variant\tNumber_of_Samples\tTotal_Counts\n")
             for variant in number_of_samples_descending_greater_than_zero.index:

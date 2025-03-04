@@ -12,8 +12,10 @@ from pdb import set_trace as st
 import pandas as pd
 
 from .__init__ import __version__
-from .constants import (varseek_count_only_allowable_kb_count_arguments,
-                        varseek_ref_only_allowable_kb_ref_arguments)
+from .constants import (
+    varseek_count_only_allowable_kb_count_arguments,
+    varseek_ref_only_allowable_kb_ref_arguments,
+)
 from .utils import set_up_logger
 from .varseek_build import build
 from .varseek_clean import clean
@@ -82,7 +84,8 @@ def extract_help_from_doc(module, arg_name, disable=False):
     return "Help message not found in docstring."
     # raise ValueError(f"Argument '{arg_name}' not found in the docstring of the module '{module}'.")
 
-def replace_old_arg_names_with_new_arg_names_in_params_dict_and_combine_with_kwargs(params_dict, python_arg_to_cli_arg_dict, kwargs = None):
+
+def replace_old_arg_names_with_new_arg_names_in_params_dict_and_combine_with_kwargs(params_dict, python_arg_to_cli_arg_dict, kwargs=None):
     if python_arg_to_cli_arg_dict:
         for python_arg, cli_arg in python_arg_to_cli_arg_dict.items():
             if cli_arg in params_dict:
@@ -91,10 +94,11 @@ def replace_old_arg_names_with_new_arg_names_in_params_dict_and_combine_with_kwa
     # combine params_dict and kwargs - params_dict takes precedence
     if kwargs:
         params_dict = {**kwargs, **params_dict}
-    
+
     return params_dict
 
-#* important rules: make sure to specify all positional arguments and all requirement arguments within dest_parser (e.g., vk ref/count) - this function will look at any parameters not in dest_parser and convert positional --> keyword (eg adata --> --adata), and will make required=False
+
+# * important rules: make sure to specify all positional arguments and all requirement arguments within dest_parser (e.g., vk ref/count) - this function will look at any parameters not in dest_parser and convert positional --> keyword (eg adata --> --adata), and will make required=False
 def copy_arguments(src_parser_list, dest_parser):
     if not isinstance(src_parser_list, (list, tuple)):
         src_parser_list = [src_parser_list]
@@ -112,31 +116,34 @@ def copy_arguments(src_parser_list, dest_parser):
 
                 # Add optional arguments based on action type
                 if isinstance(action, argparse._StoreAction):  # Normal --arg val
-                    kwargs.update({
-                        "type": action.type,
-                        "choices": action.choices,
-                        "nargs": action.nargs,
-                        "metavar": action.metavar,
-                    })
+                    kwargs.update(
+                        {
+                            "type": action.type,
+                            "choices": action.choices,
+                            "nargs": action.nargs,
+                            "metavar": action.metavar,
+                        }
+                    )
                 elif isinstance(action, argparse._StoreConstAction) and not isinstance(action, (argparse._StoreTrueAction, argparse._StoreFalseAction)):
                     kwargs["const"] = action.const
                 elif isinstance(action, (argparse._StoreTrueAction, argparse._StoreFalseAction)):
                     pass  # No extra kwargs needed for store_true/store_false
 
                 if not action.option_strings:  # convert positional --> keyword argument
-                    option_strings = ['--' + action.dest]
+                    option_strings = ["--" + action.dest]
                 else:  # keep keyword argument as-is
                     option_strings = action.option_strings
 
                     # Remove conflicting short flags
                     for flag in option_strings.copy():
                         # Identify short flags: e.g. "-x" (starts with a single dash and is 2 characters long)
-                        if flag.startswith('-') and not flag.startswith('--'):  # and len(flag) == 2:
+                        if flag.startswith("-") and not flag.startswith("--"):  # and len(flag) == 2:
                             if flag in dest_parser._option_string_actions:
                                 option_strings.remove(flag)
 
                 # Add the argument to the destination parser
                 dest_parser.add_argument(*option_strings, action=action.__class__, **kwargs)
+
 
 # Custom formatter for help messages that preserved the text formatting and adds the default value to the end of the help message
 class CustomHelpFormatter(argparse.RawTextHelpFormatter):
@@ -2165,15 +2172,7 @@ def main():  # noqa: C901
 
     # NEW PARSER
     ref_desc = "Create a reference index and t2g file for variant screening with varseek count. Wraps around varseek build, varseek info, varseek filter, and kb ref."
-    parser_ref = parent_subparsers.add_parser(
-        "ref",
-        parents=[parent],
-        description=ref_desc,
-        help=ref_desc,
-        add_help=True,
-        formatter_class=CustomHelpFormatter,
-        epilog="To see the full list of allowable arguments, please explore vk build, vk info, vk filter, and (kallisto-bustools') kb ref"
-    )
+    parser_ref = parent_subparsers.add_parser("ref", parents=[parent], description=ref_desc, help=ref_desc, add_help=True, formatter_class=CustomHelpFormatter, epilog="To see the full list of allowable arguments, please explore vk build, vk info, vk filter, and (kallisto-bustools') kb ref")
     parser_ref.add_argument(
         "-s",
         "--sequences",
@@ -2313,15 +2312,7 @@ def main():  # noqa: C901
 
     # NEW PARSER
     count_desc = "Perform variant screening on sequencing data. Wraps around varseek fastqpp, kb count, varseek clean, and vk summarize."
-    parser_count = parent_subparsers.add_parser(
-        "count",
-        parents=[parent],
-        description=count_desc,
-        help=count_desc,
-        add_help=True,
-        formatter_class=CustomHelpFormatter,
-        epilog="To see the full list of allowable arguments, please explore vk fastqpp, vk clean, vk summarize, and (kallisto-bustools') kb count"
-    )
+    parser_count = parent_subparsers.add_parser("count", parents=[parent], description=count_desc, help=count_desc, add_help=True, formatter_class=CustomHelpFormatter, epilog="To see the full list of allowable arguments, please explore vk fastqpp, vk clean, vk summarize, and (kallisto-bustools') kb count")
     parser_count.add_argument(
         "fastqs",
         nargs="+",
@@ -2505,12 +2496,12 @@ def main():  # noqa: C901
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(count, "parity_kb_count"),
     )
-    
+
     copy_arguments([parser_build, parser_info, parser_filter], parser_ref)  # allows parser_ref to accept all arguments from parser_build, parser_info, and parser_filter - if parser_ref does not already contain the argument, then it will inherent from the other functions, notably with positional args converted into keyword args, required False (since vk ref will necessarily handle this internally), and no help message displayed
     copy_arguments([parser_fastqpp, parser_clean, parser_summarize], parser_count)
 
     # kb count args with 1 value - note that because varseek count has the positional fastqs with nargs="+", unknown_args only works with a flag with no following value (if an unknown flag has a following value, then it assumes this refers to the fastqs) - so for varseek ref (all kb args), and for varseek count with kb's store_true args, I don't need to add anything to main (kwargs will handle it)
-    for flag in varseek_count_only_allowable_kb_count_arguments['one_argument']:
+    for flag in varseek_count_only_allowable_kb_count_arguments["one_argument"]:
         if flag not in parser_count._option_string_actions:  # Skip if already present
             parser_count.add_argument(
                 flag,
@@ -2518,11 +2509,9 @@ def main():  # noqa: C901
                 default=argparse.SUPPRESS,  # Remove from args if not provided
                 help=argparse.SUPPRESS,  # don't show help
             )
-    
-    #$ to continue adding support for future kb ref/count args, simply update the dicts varseek_ref_only_allowable_kb_ref_arguments and varseek_count_only_allowable_kb_count_arguments, and ensure that they follow the current rules (0 args is store_true as handled by kwargs, 1 arg is a single string, 2+ args is a list of strings) - and if anything differs from here, then in addition to adding to the dict, then also add the logic custom here
-    # manually add any non-standard flags from kb ref/count to varseek ref/count here (e.g., store_false)
-    
 
+    # $ to continue adding support for future kb ref/count args, simply update the dicts varseek_ref_only_allowable_kb_ref_arguments and varseek_count_only_allowable_kb_count_arguments, and ensure that they follow the current rules (0 args is store_true as handled by kwargs, 1 arg is a single string, 2+ args is a list of strings) - and if anything differs from here, then in addition to adding to the dict, then also add the logic custom here
+    # manually add any non-standard flags from kb ref/count to varseek ref/count here (e.g., store_false)
 
     # * Define return values
     args, unknown_args = parent_parser.parse_known_args()
@@ -2613,14 +2602,14 @@ def main():  # noqa: C901
         else:
             variants = args.variants
 
-        #* ensure that all keys in params_dict correspond to the python parameters, and the values correspond to the command line values - the default is to pull from args
-        #* I must override cases where I modify a variable outside of args (e.g., how I set sequences and variants above):
-        #* I used to call replace_old_arg_names_with_new_arg_names_in_params_dict_and_combine_with_kwargs to update command line name with python name, but now I just have dest handle this for each argument (dest is the python argument name)
-        #* I also use default=argparse.SUPPRESS to remove the argument from the args if not provided
-        
+        # * ensure that all keys in params_dict correspond to the python parameters, and the values correspond to the command line values - the default is to pull from args
+        # * I must override cases where I modify a variable outside of args (e.g., how I set sequences and variants above):
+        # * I used to call replace_old_arg_names_with_new_arg_names_in_params_dict_and_combine_with_kwargs to update command line name with python name, but now I just have dest handle this for each argument (dest is the python argument name)
+        # * I also use default=argparse.SUPPRESS to remove the argument from the args if not provided
+
         # modify variable outside of args
-        params_dict['sequences'] = sequences
-        params_dict['variants'] = variants
+        params_dict["sequences"] = sequences
+        params_dict["variants"] = variants
 
         # combine with kwargs (if both params_dict and kwargs have the same key, params_dict takes precedence)
         params_dict = {**kwargs, **params_dict}
@@ -2638,10 +2627,10 @@ def main():  # noqa: C901
 
     # * info return
     if args.command == "info":
-        #* ensure that all keys in params_dict correspond to the python parameters, and the values correspond to the command line values - see the vk build section in main for more details
+        # * ensure that all keys in params_dict correspond to the python parameters, and the values correspond to the command line values - see the vk build section in main for more details
 
         # (1) modify variable outside of args
-        
+
         # combine with kwargs (if both params_dict and kwargs have the same key, params_dict takes precedence)
         params_dict = {**kwargs, **params_dict}
 
@@ -2655,10 +2644,10 @@ def main():  # noqa: C901
 
     # * filter return
     if args.command == "filter":
-        #* ensure that all keys in params_dict correspond to the python parameters, and the values correspond to the command line values - see the vk build section in main for more details
+        # * ensure that all keys in params_dict correspond to the python parameters, and the values correspond to the command line values - see the vk build section in main for more details
 
         # (1) modify variable outside of args
-        
+
         # combine with kwargs (if both params_dict and kwargs have the same key, params_dict takes precedence)
         params_dict = {**kwargs, **params_dict}
 
@@ -2672,10 +2661,10 @@ def main():  # noqa: C901
 
     # * sim return
     if args.command == "sim":
-        #* ensure that all keys in params_dict correspond to the python parameters, and the values correspond to the command line values - see the vk build section in main for more details
+        # * ensure that all keys in params_dict correspond to the python parameters, and the values correspond to the command line values - see the vk build section in main for more details
 
         # (1) modify variable outside of args
-        
+
         # combine with kwargs (if both params_dict and kwargs have the same key, params_dict takes precedence)
         params_dict = {**kwargs, **params_dict}
 
@@ -2689,10 +2678,10 @@ def main():  # noqa: C901
 
     # * fastqpp return
     if args.command == "fastqpp":
-        #* ensure that all keys in params_dict correspond to the python parameters, and the values correspond to the command line values - see the vk build section in main for more details
+        # * ensure that all keys in params_dict correspond to the python parameters, and the values correspond to the command line values - see the vk build section in main for more details
 
         # (1) modify variable outside of args
-        
+
         # combine with kwargs (if both params_dict and kwargs have the same key, params_dict takes precedence)
         params_dict = {**kwargs, **params_dict}
 
@@ -2706,10 +2695,10 @@ def main():  # noqa: C901
 
     # * clean return
     if args.command == "clean":
-        #* ensure that all keys in params_dict correspond to the python parameters, and the values correspond to the command line values - see the vk build section in main for more details
+        # * ensure that all keys in params_dict correspond to the python parameters, and the values correspond to the command line values - see the vk build section in main for more details
 
         # (1) modify variable outside of args
-        
+
         # combine with kwargs (if both params_dict and kwargs have the same key, params_dict takes precedence)
         params_dict = {**kwargs, **params_dict}
 
@@ -2723,10 +2712,10 @@ def main():  # noqa: C901
 
     # * summarize return
     if args.command == "summarize":
-        #* ensure that all keys in params_dict correspond to the python parameters, and the values correspond to the command line values - see the vk build section in main for more details
+        # * ensure that all keys in params_dict correspond to the python parameters, and the values correspond to the command line values - see the vk build section in main for more details
 
         # (1) modify variable outside of args
-        
+
         # combine with kwargs (if both params_dict and kwargs have the same key, params_dict takes precedence)
         params_dict = {**kwargs, **params_dict}
 
@@ -2750,12 +2739,12 @@ def main():  # noqa: C901
         else:
             variants = args.variants
 
-        #* ensure that all keys in params_dict correspond to the python parameters, and the values correspond to the command line values - see the vk build section in main for more details
+        # * ensure that all keys in params_dict correspond to the python parameters, and the values correspond to the command line values - see the vk build section in main for more details
 
         # (1) modify variable outside of args
-        params_dict['sequences'] = sequences
-        params_dict['variants'] = variants
-        
+        params_dict["sequences"] = sequences
+        params_dict["variants"] = variants
+
         # combine with kwargs (if both params_dict and kwargs have the same key, params_dict takes precedence)
         params_dict = {**kwargs, **params_dict}
 
@@ -2769,11 +2758,11 @@ def main():  # noqa: C901
 
     # * count return
     if args.command == "count":
-        #* ensure that all keys in params_dict correspond to the python parameters, and the values correspond to the command line values - see the vk build section in main for more details
+        # * ensure that all keys in params_dict correspond to the python parameters, and the values correspond to the command line values - see the vk build section in main for more details
 
         # (1) modify variable outside of args
-        fastqs = params_dict.pop('fastqs')
-        
+        fastqs = params_dict.pop("fastqs")
+
         # combine with kwargs (if both params_dict and kwargs have the same key, params_dict takes precedence)
         params_dict = {**kwargs, **params_dict}
 
@@ -2786,6 +2775,6 @@ def main():  # noqa: C901
         # * optionally do something with count_results (e.g., save, or print to console)
 
 
-#* new Feb 2025 for pytest
+# * new Feb 2025 for pytest
 if __name__ == "__main__":
     main()

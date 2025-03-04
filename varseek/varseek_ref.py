@@ -1,5 +1,6 @@
 """varseek ref and specific helper functions."""
 
+import getpass
 import inspect
 import json
 import logging
@@ -8,21 +9,27 @@ import subprocess
 import time
 
 import requests
-import getpass
 from gget.gget_cosmic import is_valid_email
 
 import varseek as vk
 from varseek.utils import (
     check_file_path_is_string_with_valid_extension,
     check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal,
-    download_varseek_files, get_python_or_cli_function_call, is_valid_int,
-    make_function_parameter_to_value_dict, report_time_elapsed,
-    save_params_to_config_file, save_run_info, set_up_logger)
+    download_varseek_files,
+    get_python_or_cli_function_call,
+    is_valid_int,
+    make_function_parameter_to_value_dict,
+    report_time_elapsed,
+    save_params_to_config_file,
+    save_run_info,
+    set_up_logger,
+)
 
 from .constants import (
     prebuilt_vk_ref_files,
     supported_databases_and_corresponding_reference_sequence_type,
-    varseek_ref_only_allowable_kb_ref_arguments)
+    varseek_ref_only_allowable_kb_ref_arguments,
+)
 
 logger = logging.getLogger(__name__)
 COSMIC_CREDENTIAL_VALIDATION_URL = "https://varseek-server-3relpk35fa-wl.a.run.app"
@@ -52,8 +59,8 @@ def validate_input_ref(params_dict):
 
     if k < w + 1:
         raise ValueError("k must be greater than or equal to w + 1")
-    
-    if k > 2*w:
+
+    if k > 2 * w:
         raise ValueError("k must be less than or equal to 2*w")
 
     dlist_valid_values = {"genome", "transcriptome", "genome_and_transcriptome", "None", None}
@@ -70,16 +77,6 @@ def validate_input_ref(params_dict):
     for param_name in ["minimum_info_columns", "download", "dry_run"]:
         if not isinstance(params_dict.get(param_name), bool):
             raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
-
-    variants = params_dict["variants"]
-    sequences = params_dict["sequences"]
-    # more on download
-
-    if params_dict.get("download"):
-        if variants not in prebuilt_vk_ref_files:
-            raise ValueError(f"When downloading prebuilt reference, `variants` must be one of {prebuilt_vk_ref_files.keys()}. variants={variants} not recognized.")
-        if sequences not in prebuilt_vk_ref_files[variants]:
-            raise ValueError(f"When downloading prebuilt reference, `sequences` must be one of {prebuilt_vk_ref_files[variants].keys()}. sequences={sequences} not recognized.")
 
     # kb ref stuff
     for argument_type, argument_set in varseek_ref_only_allowable_kb_ref_arguments.items():
@@ -268,20 +265,20 @@ def ref(
         for key in signature.parameters.keys():
             if key not in params_dict and key not in ref_signature.parameters.keys():
                 params_dict[key] = signature.parameters[key].default
-    
+
     vk.varseek_build.validate_input_build(params_dict)  # this passes all vk ref parameters to the function - I could only pass in the vk build parameters here if desired (and likewise below), but there should be no naming conflicts anyways
     vk.varseek_info.validate_input_info(params_dict)
     vk.varseek_filter.validate_input_filter(params_dict)
     validate_input_ref(params_dict)
 
     # * 3. Dry-run
-    # handled within child functions   
+    # handled within child functions
 
     # * 4. Save params to config file and run info file
     if not dry_run:
         # Save parameters to config file
         config_file = os.path.join(out, "config", "vk_ref_config.json")
-        save_params_to_config_file(params_dict, config_file)  #$ Now I am done with params_dict 
+        save_params_to_config_file(params_dict, config_file)  # $ Now I am done with params_dict
 
         run_info_file = os.path.join(out, "config", "vk_ref_run_info.txt")
         save_run_info(run_info_file)
@@ -302,7 +299,7 @@ def ref(
     # * 5. Set up default folder/file input paths, and make sure the necessary ones exist
     # all input files for vk ref are required in the varseek workflow, so this is skipped
 
-    # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True    
+    # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
     # Make directories
     os.makedirs(out, exist_ok=True)
 
@@ -331,7 +328,7 @@ def ref(
     file_signifying_successful_vk_info_completion = variants_updated_vk_info_csv_out
     files_signifying_successful_vk_filter_completion = (vcrs_filtered_fasta_out, vcrs_t2g_filtered_out)
     file_signifying_successful_kb_ref_completion = index_out
-    
+
     out, kwargs["input_dir"] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(out, kwargs.get("input_dir"))  # check that, if out and input_dir are both provided, they are the same directory; otherwise, if only one is provided, then make them equal to each other
     kwargs["vcrs_fasta_out"], kwargs["vcrs_fasta"] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(kwargs.get("vcrs_fasta_out"), kwargs.get("vcrs_fasta"))  # build --> info
     kwargs["id_to_header_csv_out"], kwargs["id_to_header_csv"] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(kwargs.get("id_to_header_csv_out"), kwargs.get("id_to_header_csv"))  # build --> info/filter
@@ -356,7 +353,7 @@ def ref(
         if cosmic_email:
             logger.info(f"Using COSMIC email from COSMIC_EMAIL environment variable: {cosmic_email}")
             kwargs["cosmic_email"] = cosmic_email
-    
+
     cosmic_password = kwargs.get("cosmic_password", None)
     if cosmic_password:
         logger.info("Using COSMIC password from arguments")
@@ -368,9 +365,9 @@ def ref(
 
     # ensure that max_ambiguous (build) and max_ambiguous_vcrs (info) are the same if only one is provided
     if kwargs.get("max_ambiguous") and not kwargs.get("max_ambiguous_vcrs"):
-        kwargs['max_ambiguous_vcrs'] = kwargs['max_ambiguous']
+        kwargs["max_ambiguous_vcrs"] = kwargs["max_ambiguous"]
     if kwargs.get("max_ambiguous_vcrs") and not kwargs.get("max_ambiguous"):
-        kwargs['max_ambiguous'] = kwargs['max_ambiguous_vcrs']
+        kwargs["max_ambiguous"] = kwargs["max_ambiguous_vcrs"]
 
     if kwargs.get("columns_to_include") is not None:
         logger.info("columns_to_include is not None, so minimum_info_columns will be set to False")
@@ -382,7 +379,7 @@ def ref(
             else:
                 columns_to_include = tuple([item.split(":")[0] for item in filters])
             kwargs["columns_to_include"] = columns_to_include
-        else:  # use the default from vk info - make sure kwargs has no value for columns_to_include so that nothing gets passed in to vk info 
+        else:  # use the default from vk info - make sure kwargs has no value for columns_to_include so that nothing gets passed in to vk info
             if "columns_to_include" in kwargs:
                 del kwargs["columns_to_include"]
 
@@ -410,7 +407,9 @@ def ref(
     # download if download argument is True
     if download:
         prebuilt_vk_ref_files_key = f"variants={variants},sequences={sequences},w={w},k={k},dlist_reference_source={dlist_reference_source}"  # matches constants.py and server
-        file_dict = prebuilt_vk_ref_files.get(prebuilt_vk_ref_files_key, {})
+        if prebuilt_vk_ref_files_key not in prebuilt_vk_ref_files:
+            raise ValueError(f"Invalid combination of parameters for downloading prebuilt reference files. Supported combinations are: {list(prebuilt_vk_ref_files.keys())}")
+        file_dict = prebuilt_vk_ref_files[prebuilt_vk_ref_files_key]
         if file_dict:
             if file_dict["index"] == "COSMIC":
                 if not cosmic_email:
@@ -469,47 +468,29 @@ def ref(
     all_parameter_names_set_vk_info = explicit_parameters_vk_info | allowable_kwargs_vk_info
     all_parameter_names_set_vk_filter = explicit_parameters_vk_filter | allowable_kwargs_vk_filter
 
-    #* vk build
+    # * vk build
     if not os.path.exists(file_signifying_successful_vk_build_completion) or overwrite:  # the reason I do it like this, rather than if overwrite or not os.path.exists(MYPATH), is because I would like vk ref/count to automatically overwrite partially-completed function outputs even when overwrite=False; but when overwrite=True, then run from scratch regardless
         kwargs_vk_build = {key: value for key, value in kwargs.items() if ((key in all_parameter_names_set_vk_build) and (key not in ref_signature.parameters.keys()))}
         # update anything in kwargs_vk_build that is not fully updated in (vk ref's) kwargs (should be nothing or very close to it, as I try to avoid these double-assignments by always keeping kwargs in kwargs)
         # eg kwargs_vk_build['mykwarg'] = mykwarg
         # just to be extra clear, I must explicitly pass arguments that are in the signature of vk ref; anything not in vk ref's signature should go in kwargs_vk_build (it is irrelevant what is in vk build's signature); and in the line above, I should update any values that are (1) not in vk ref's signature (so therefore they're in vk ref's kwargs), (2) I want to pass to vk build, and (3) have been updated outside of vk ref's kwargs somewhere in the function
 
-        save_column_names_json_path=f"{out}/column_names_tmp.json"
+        save_column_names_json_path = f"{out}/column_names_tmp.json"
 
         logger.info("Running vk build")
-        _ = vk.build(
-                sequences=sequences,
-                variants=variants,
-                seq_id_column=seq_id_column,
-                var_column=var_column,
-                var_id_column=var_id_column,
-                w=w,
-                k=k,
-                out=out,
-                reference_out_dir=reference_out_dir,
-                dry_run=dry_run,
-                overwrite=True,  # overwrite=True rather than overwrite=overwrite because I only enter this condition if the file signifying success does not exist and/or overwrite is True anyways - this allows me to overwrite half-completed functions
-                logging_level=logging_level,
-                save_logs=save_logs,
-                log_out_dir=log_out_dir,
-                verbose=verbose,
-                save_column_names_json_path=save_column_names_json_path,  # saves the temp json
-                **kwargs_vk_build
-        )
+        _ = vk.build(sequences=sequences, variants=variants, seq_id_column=seq_id_column, var_column=var_column, var_id_column=var_id_column, w=w, k=k, out=out, reference_out_dir=reference_out_dir, dry_run=dry_run, overwrite=True, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir, verbose=verbose, save_column_names_json_path=save_column_names_json_path, **kwargs_vk_build)  # overwrite=True rather than overwrite=overwrite because I only enter this condition if the file signifying success does not exist and/or overwrite is True anyways - this allows me to overwrite half-completed functions  # saves the temp json
 
         # use values for columns and file paths as provided in vk build
         if os.path.exists(save_column_names_json_path):  # will only exist if variants in supported_databases_and_corresponding_reference_sequence_type
             with open(save_column_names_json_path, "r") as f:
                 column_names_and_file_names_dict = json.load(f)
             os.remove(save_column_names_json_path)
-            if column_names_and_file_names_dict['seq_id_column']:
-                seq_id_column = column_names_and_file_names_dict['seq_id_column']
-            if column_names_and_file_names_dict['var_column']:
-                var_column = column_names_and_file_names_dict['var_column']
-            if column_names_and_file_names_dict['var_id_column']:
-                var_id_column = column_names_and_file_names_dict['var_id_column']
+            if column_names_and_file_names_dict["seq_id_column"]:
+                seq_id_column = column_names_and_file_names_dict["seq_id_column"]
+            if column_names_and_file_names_dict["var_column"]:
+                var_column = column_names_and_file_names_dict["var_column"]
+            if column_names_and_file_names_dict["var_id_column"]:
+                var_id_column = column_names_and_file_names_dict["var_id_column"]
             for column in ("seq_id_genome_column", "var_genome_column", "seq_id_cdna_column", "var_cdna_column", "gene_name_column"):
                 kwargs[column] = kwargs.get(column, supported_databases_and_corresponding_reference_sequence_type[variants]["column_names"][column])
             for file in ("gtf", "reference_genome_fasta", "reference_cdna_fasta"):
@@ -519,7 +500,7 @@ def ref(
     else:
         logger.warning(f"Skipping vk build because {file_signifying_successful_vk_build_completion} already exists and overwrite=False")
 
-    #* vk info
+    # * vk info
     if not skip_info:
         if kwargs.get("use_IDs", None) is False:
             logger.warning("use_IDs=False is not recommended for vk info, as the headers output by vk build can break some programs that read fasta files due to the inclusion of '>' symbols in substitutions and the potentially long length of the headers (with multiple combined headers and/or long insertions). Consider setting use_IDs=True (use IDs throughout the workflow) or leaving this parameter blank (will use IDs in vk build so that vk info runs properly [unless vk info/filter will not be run, in which case it will use headers], and will use headers in vk filter so that the output is more readable).")
@@ -527,26 +508,9 @@ def ref(
             kwargs_vk_info = {key: value for key, value in kwargs.items() if ((key in all_parameter_names_set_vk_info) and (key not in ref_signature.parameters.keys()))}
             # update anything in kwargs_vk_info that is not fully updated in (vk ref's) kwargs (should be nothing or very close to it, as I try to avoid these double-assignments by always keeping kwargs in kwargs)
             # eg kwargs_vk_info['mykwarg'] = mykwarg
-            
+
             logger.info("Running vk info")
-            _ = vk.info(
-                k=k,
-                dlist_reference_source=dlist_reference_source,
-                seq_id_column=seq_id_column,
-                var_column=var_column,
-                out=out,
-                reference_out_dir=reference_out_dir,
-                dry_run=dry_run,
-                overwrite=True,  # overwrite=True rather than overwrite=overwrite because I only enter this condition if the file signifying success does not exist and/or overwrite is True anyways - this allows me to overwrite half-completed functions
-                threads=threads,
-                logging_level=logging_level,
-                save_logs=save_logs,
-                log_out_dir=log_out_dir,
-                verbose=verbose,
-                variants=variants,  # a kwargs of vk info but explicit in vk ref
-                w=w,  # a kwargs of vk info but explicit in vk ref
-                **kwargs_vk_info  # including input_dir
-        )
+            _ = vk.info(k=k, dlist_reference_source=dlist_reference_source, seq_id_column=seq_id_column, var_column=var_column, out=out, reference_out_dir=reference_out_dir, dry_run=dry_run, overwrite=True, threads=threads, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir, verbose=verbose, variants=variants, w=w, **kwargs_vk_info)  # overwrite=True rather than overwrite=overwrite because I only enter this condition if the file signifying success does not exist and/or overwrite is True anyways - this allows me to overwrite half-completed functions  # a kwargs of vk info but explicit in vk ref  # a kwargs of vk info but explicit in vk ref  # including input_dir
         else:
             logger.warning(f"Skipping vk info because {file_signifying_successful_vk_info_completion} already exists and overwrite=False")
 
@@ -556,18 +520,9 @@ def ref(
             kwargs_vk_filter = {key: value for key, value in kwargs.items() if ((key in all_parameter_names_set_vk_filter) and (key not in ref_signature.parameters.keys()))}
             # update anything in kwargs_vk_filter that is not fully updated in (vk ref's) kwargs (should be nothing or very close to it, as I try to avoid these double-assignments by always keeping kwargs in kwargs)
             # eg kwargs_vk_filter['mykwarg'] = mykwarg
-            
+
             logger.info("Running vk filter")
-            _ = vk.filter(
-                filters=filters,
-                out=out,
-                dry_run=dry_run,
-                overwrite=True,  # overwrite=True rather than overwrite=overwrite because I only enter this condition if the file signifying success does not exist and/or overwrite is True anyways - this allows me to overwrite half-completed functions
-                logging_level=logging_level,
-                save_logs=save_logs,
-                log_out_dir=log_out_dir,
-                **kwargs_vk_filter
-        )
+            _ = vk.filter(filters=filters, out=out, dry_run=dry_run, overwrite=True, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir, **kwargs_vk_filter)  # overwrite=True rather than overwrite=overwrite because I only enter this condition if the file signifying success does not exist and/or overwrite is True anyways - this allows me to overwrite half-completed functions
         else:
             logger.warning(f"Skipping vk filter because {files_signifying_successful_vk_filter_completion} already exist and overwrite=False")
 
@@ -624,7 +579,7 @@ def ref(
     file_signifying_successful_wt_vcrs_kb_ref_completion = wt_vcrs_index_out
 
     if os.path.exists(vcrs_wt_fasta_for_index):
-        if (not os.path.exists(file_signifying_successful_wt_vcrs_kb_ref_completion) or overwrite):
+        if not os.path.exists(file_signifying_successful_wt_vcrs_kb_ref_completion) or overwrite:
             kb_ref_wt_vcrs_command = ["kb", "ref", "--workflow", "custom", "-t", str(threads), "-i", wt_vcrs_index_out, "--d-list", "None", "-k", str(k), "--overwrite", True, vcrs_wt_fasta_for_index]  # set to True here regardless of the overwrite argument because I would only even enter this block if kb count was only partially run (as seen by the lack of existing of file_signifying_successful_wt_vcrs_kb_ref_completion), in which case I should overwrite anyways
             if dry_run:
                 print(" ".join(kb_ref_wt_vcrs_command))
@@ -648,4 +603,3 @@ def ref(
         report_time_elapsed(start_time, logger=logger, function_name="ref")
 
     return vk_ref_output_dict
-

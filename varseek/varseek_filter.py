@@ -10,15 +10,24 @@ from pathlib import Path
 
 import pandas as pd
 
-from .utils import (check_file_path_is_string_with_valid_extension,
-                    create_identity_t2g, extract_documentation_file_blocks,
-                    fasta_summary_stats, filter_fasta,
-                    make_function_parameter_to_value_dict, make_mapping_dict,
-                    print_varseek_dry_run, report_time_elapsed,
-                    safe_literal_eval, save_params_to_config_file,
-                    save_run_info, set_up_logger)
+from .utils import (
+    check_file_path_is_string_with_valid_extension,
+    create_identity_t2g,
+    extract_documentation_file_blocks,
+    fasta_summary_stats,
+    filter_fasta,
+    make_function_parameter_to_value_dict,
+    make_mapping_dict,
+    print_varseek_dry_run,
+    report_time_elapsed,
+    safe_literal_eval,
+    save_params_to_config_file,
+    save_run_info,
+    set_up_logger,
+)
 
 logger = logging.getLogger(__name__)
+
 
 def apply_filters(df, filters, filtering_report_text_out=None):
     logger.info("Initial variant report")
@@ -262,7 +271,7 @@ def validate_input_filter(params_dict):
 
     if not isinstance(filters, (str, list, tuple, set, Path)) and filters:  # also checks boolean - having filters empty (empty string, None, etc) is valid due to the check in vk ref - but if someone actually tries running vk filter directly with empty filters, then they will get an exception in section 0 before they even get this far
         raise ValueError(f"Invalid filters: {filters}")
-    
+
     if filters and filters != "None":
         if isinstance(filters, (str, Path)):
             if os.path.isfile(filters):
@@ -270,7 +279,7 @@ def validate_input_filter(params_dict):
                     raise ValueError(f"Invalid filters: {filters}")
             else:
                 filters = [str(filters)]
-        
+
         for individual_filter in filters:  # more thorough parsing provided in prepare_filters_list
             match = re.match(filter_regex, individual_filter)
             if not match:
@@ -308,6 +317,7 @@ filter_rules_that_expect_text_file_or_list_value = {"is_in", "is_not_in"}
 filter_rules_that_expect_no_value = {"is_true", "is_false", "is_not_true", "is_not_false", "is_null", "is_not_null"}
 all_possible_filter_rules_regex = "|".join(map(re.escape, all_possible_filter_rules))
 filter_regex = rf"^(?P<column>\w+):(?P<rule>(?:{all_possible_filter_rules_regex}))(?:=(?P<value>.+))?$"
+
 
 def filter(
     input_dir,
@@ -387,7 +397,7 @@ def filter(
     if list_filter_rules:
         print_list_filter_rules()
         return
-    
+
     if not filters or filters == "None":
         raise ValueError("No filters provided. Please provide filters to apply.")
 
@@ -480,7 +490,7 @@ def filter(
         save_wt_vcrs_fasta_and_t2g = True
     if variants_updated_filtered_csv_out or variants_updated_exploded_vk_info_csv:
         save_variants_updated_filtered_csvs = True
-    
+
     # define output file names if not provided
     if not variants_updated_filtered_csv_out:  # variants_updated_vk_info_csv must exist or else an exception will be raised from earlier
         variants_updated_filtered_csv_out = os.path.join(out, "variants_updated_filtered.csv")

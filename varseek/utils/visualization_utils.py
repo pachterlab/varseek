@@ -276,21 +276,7 @@ def convert_number_bin_into_labels(bins):
     return bin_labels
 
 
-def create_stratified_metric_bar_plot(
-    df,
-    x_stratification,
-    y_metric,
-    overall_metric=None,
-    log_x_axis=False,
-    bins=None,
-    x_axis_name=None,
-    y_axis_name=None,
-    title=None,
-    display_numbers=False,
-    out_path=None,
-    crude=False,
-    show=True
-):
+def create_stratified_metric_bar_plot(df, x_stratification, y_metric, overall_metric=None, log_x_axis=False, bins=None, x_axis_name=None, y_axis_name=None, title=None, display_numbers=False, out_path=None, crude=False, show=True):
     if bins is not None:
         labels = convert_number_bin_into_labels(bins)
         df["binned_" + x_stratification] = pd.cut(df[x_stratification], bins=bins, labels=labels, right=True)
@@ -419,6 +405,7 @@ def create_stratified_metric_bar_plot(
 
 def create_venn_diagram(true_set, positive_set, TN=None, mm=None, out_path=None, show=True):
     from matplotlib_venn import venn2
+
     venn = venn2(
         [true_set, positive_set],
         set_labels=("Present in reads", "Detected by alignment"),
@@ -482,17 +469,7 @@ def create_venn_diagram(true_set, positive_set, TN=None, mm=None, out_path=None,
     plt.close()
 
 
-def plot_histogram(
-    df,
-    column_name,
-    bins=None,
-    log_scale=False,
-    x_axis_label=None,
-    y_axis_label=None,
-    title=None,
-    out_path=None,
-    show=False
-):
+def plot_histogram(df, column_name, bins=None, log_scale=False, x_axis_label=None, y_axis_label=None, title=None, out_path=None, show=False):
     """
     Plot a histogram of the specified column in the DataFrame with custom bins and log x-axis.
 
@@ -545,7 +522,7 @@ def plot_histogram(
         plt.savefig(out_path, bbox_inches="tight", dpi=DPI)
         if SAVE_PDF_GLOBAL:
             plt.savefig(out_path.replace(".png", ".pdf"), format="pdf", dpi=DPI)
-    
+
     if show:
         plt.show()
     plt.close()
@@ -702,8 +679,9 @@ def draw_confusion_matrix(metric_dictionary_reads, title="Confusion Matrix", tit
 def draw_confusion_matrix_rich(metric_dictionary_reads, title="Confusion Matrix", suffix="", additional_fp_key=""):
     from rich.console import Console
     from rich.table import Table
+
     console = Console()
-    
+
     # Sample dictionary with confusion matrix values
     confusion_matrix = {
         "TP": metric_dictionary_reads[f"TP{suffix}"],  # True Positive
@@ -828,13 +806,7 @@ def plot_items_descending_order(df, x_column, y_column, item_range=(0, 10), xlab
     plt.close()
 
 
-def plot_knee_plot(
-    umi_counts_sorted,
-    knee_locator,
-    min_counts_assessed_by_knee_plot=None,
-    output_file=None,
-    show=False
-):
+def plot_knee_plot(umi_counts_sorted, knee_locator, min_counts_assessed_by_knee_plot=None, output_file=None, show=False):
     plt.plot(range(len(umi_counts_sorted)), umi_counts_sorted, marker=".")
     plt.axvline(
         knee_locator.knee,
