@@ -125,10 +125,10 @@ default_filename_dict = {"index": "vcrs_index.idx", "t2g": "vcrs_t2g.txt"}
 # * matches varseek ref and server
 # * for cosmic, leave the value "COSMIC" in place of a link (used for authentication), and keep the links in varseek_server/validate_cosmic.py; for others, replace with a link
 prebuilt_vk_ref_files = {
-    "variants=cosmic_cmc,sequences=cdna,w=47,k=51,dlist_reference_source=grch37": {"index": "COSMIC", "t2g": "COSMIC"},
-    "variants=cosmic_cmc,sequences=cdna,w=47,k=51,dlist_reference_source=t2t": {"index": "COSMIC", "t2g": "COSMIC"},
-    #  ("variants=cosmic_cmc", "sequences=genome", "w=47", "k=51", "dlist_reference_source=grch37"): {"index": "COSMIC", "t2g": "COSMIC"},
-    #  ("variants=cosmic_cmc", "sequences=genome", "w=47", "k=51", "dlist_reference_source=t2t"): {"index": "COSMIC", "t2g": "COSMIC"},
+    "variants=cosmic_cmc,sequences=cdna,w=47,k=51,dlist_reference_source=grch37": {"index": "COSMIC", "t2g": "COSMIC", "fasta": "COSMIC"},
+    "variants=cosmic_cmc,sequences=cdna,w=47,k=51,dlist_reference_source=t2t": {"index": "COSMIC", "t2g": "COSMIC", "fasta": "COSMIC"},
+    #  ("variants=cosmic_cmc", "sequences=genome", "w=47", "k=51", "dlist_reference_source=grch37"): {"index": "COSMIC", "t2g": "COSMIC", "fasta": "COSMIC"},
+    #  ("variants=cosmic_cmc", "sequences=genome", "w=47", "k=51", "dlist_reference_source=t2t"): {"index": "COSMIC", "t2g": "COSMIC", "fasta": "COSMIC"},
 }
 
 

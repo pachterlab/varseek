@@ -2282,6 +2282,12 @@ def main():  # noqa: C901
         help=extract_help_from_doc(ref, "t2g_out"),
     )
     parser_ref.add_argument(
+        "--fasta_out",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(ref, "fasta_out"),
+    )
+    parser_ref.add_argument(
         "-d",
         "--download",
         action="store_true",

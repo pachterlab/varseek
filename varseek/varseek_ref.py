@@ -96,8 +96,9 @@ def validate_input_ref(params_dict):
 
 # a list of dictionaries with keys "variants", "sequences", and "description"
 downloadable_references = [
-    {"variants": "cosmic_cmc", "sequences": "cdna", "description": "COSMIC Cancer Mutation Census version 100 - Ensembl GRCh37 release 93 cDNA reference annotations. All default arguments of varseek ref (k=59, w=54, filters, no d-list, etc.). Header format (showing the column(s) from the original database used): 'seq_ID':'mutation_cdna'"},
-    {"variants": "cosmic_cmc", "sequences": "genome", "description": "COSMIC Cancer Mutation Census version 100 - Ensembl GRCh37 release 93 genome reference annotations. All default arguments of varseek ref (k=59, w=54, filters, no d-list, etc.). Header format (showing the column(s) from the original database used): 'chromosome':'mutation_genome'"},
+    {"variants": "cosmic_cmc", "sequences": "cdna", "description": "COSMIC Cancer Mutation Census version 100 - Ensembl GRCh37 release 93 cDNA reference annotations. w=47, k=51. All other arguments are defaults of varseek ref unless otherwise specified. Header format (showing the column(s) from the original database used): 'seq_ID':'mutation_cdna'. Download with vk ref -v cosmic_cmc -s cdna -w 47 -k 51 -d"},
+    {"variants": "cosmic_cmc", "sequences": "cdna", "description": "COSMIC Cancer Mutation Census version 100 - Ensembl GRCh37 release 93 cDNA reference annotations. w=47, k=51, dlist_reference_source=grch37. All other arguments are defaults of varseek ref unless otherwise specified. Header format (showing the column(s) from the original database used): 'seq_ID':'mutation_cdna'. Download with vk ref -v cosmic_cmc -s cdna -w 47 -k 51 --dlist_reference_source grch37 -d"},
+    # {"variants": "cosmic_cmc", "sequences": "genome", "description": "COSMIC Cancer Mutation Census version 100 - Ensembl GRCh37 release 93 genome reference annotations. w=47,k=51. All other arguments are defaults of varseek ref unless otherwise specified. Header format (showing the column(s) from the original database used): 'chromosome':'mutation_genome'"},
 ]
 
 
@@ -123,6 +124,7 @@ def ref(
     reference_out_dir=None,
     index_out=None,
     t2g_out=None,  # intentionally avoid having this name clash with the t2g from vk build and vk filter, as it could refer to either (depending on whether or not filtering will occur)
+    fasta_out=None,  # intentionally avoid having this name clash with the fasta from vk build and vk filter, as it could refer to either (depending on whether or not filtering will occur)
     download=False,
     dry_run=False,
     list_downloadable_references=False,
@@ -201,10 +203,11 @@ def ref(
     - out           (str) Output directory. Default: ".".
     - reference_out_dir  (str) Path to the directory where the reference files will be saved. Default: `out`/reference.
     - index_out (str) Path to output VCRS index file. Default: `out`/vcrs_index.idx.
-    - t2g_out (str) Path to output VCRS t2g file to be used in alignment. Default: `out`/vcrs_t2g.txt.
+    - t2g_out (str) Path to output VCRS t2g file to be used in alignment. Default: None (default file names in vk build/info, as well as for download).
+    - fasta_out (str) Path to output VCRS fasta file. Default: Default: None (default file names in vk build/info, as well as for download).
 
     # General arguments:
-    - download      (bool) If True, download prebuilt reference files. Default: False.
+    - download      (bool) If True, download prebuilt reference files (index, t2g, vcrs fasta) into `out` (or paths specified by index_out, t2g_out, and fasta_out, respectively). Default: False.
     - dry_run       (bool) If True, print the commands that would be run without actually running them. Default: False.
     - list_downloadable_references (bool) If True, list the available downloadable references. Default: False.
     - minimum_info_columns (bool) If True, run vk info with minimum columns. Default: True.
@@ -391,6 +394,9 @@ def ref(
     skip_info = minimum_info_columns and skip_filter  # skip vk info if no filtering will be performed and one specifies minimum info columns
 
     if skip_filter:
+        if fasta_out:
+            kwargs["vcrs_fasta_out"] = fasta_out
+            vcrs_fasta_out = fasta_out
         vcrs_fasta_for_index = vcrs_fasta_out
         if t2g_out:
             kwargs["vcrs_t2g_out"] = t2g_out  # pass this custom path into vk build
@@ -399,6 +405,9 @@ def ref(
         if kwargs.get("use_IDs") is None:  # if someone has a strong preference, then who am I to tell them otherwise - but otherwise, I will want to override the default to False for vk build
             kwargs["use_IDs"] = False
     else:
+        if fasta_out:
+            kwargs["vcrs_filtered_fasta_out"] = fasta_out
+            vcrs_filtered_fasta_out = fasta_out
         vcrs_fasta_for_index = vcrs_filtered_fasta_out
         if t2g_out:
             kwargs["vcrs_t2g_filtered_out"] = t2g_out
@@ -436,6 +445,9 @@ def ref(
             if t2g_out and vk_ref_output_dict["t2g"] != t2g_out:
                 os.rename(vk_ref_output_dict["t2g"], t2g_out)
                 vk_ref_output_dict["t2g"] = t2g_out
+            if fasta_out and vk_ref_output_dict["fasta"] != fasta_out:
+                os.rename(vk_ref_output_dict["fasta"], fasta_out)
+                vk_ref_output_dict["fasta"] = fasta_out
 
             return vk_ref_output_dict
         else:
@@ -599,6 +611,7 @@ def ref(
     vk_ref_output_dict = {}
     vk_ref_output_dict["index"] = os.path.abspath(index_out)
     vk_ref_output_dict["t2g"] = os.path.abspath(vcrs_t2g_for_alignment)
+    vk_ref_output_dict["fasta"] = os.path.abspath(vcrs_fasta_for_index)
 
     # Report time
     if not dry_run:

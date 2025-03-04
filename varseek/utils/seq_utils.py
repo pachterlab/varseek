@@ -990,7 +990,7 @@ def generate_mutation_notation_from_vcf_columns(row):
         return f"g.{pos}{ref}>{alt}"  # Substitution case
 
     elif len(ref) > 1 and len(alt) == 1:  # Deletion case
-        pos_start = pos + 1 if pos != 1 else pos  # eg CAG --> C, where C is at position 40 - this is a 41_42del
+        pos_start = pos + 1 if pos != 1 else 1  # eg CAG --> C, where C is at position 40 - this is a 41_42del
         if len(ref) == 2:
             return f"g.{pos_start}del"
         else:
@@ -999,7 +999,7 @@ def generate_mutation_notation_from_vcf_columns(row):
 
     elif len(ref) == 1 and len(alt) > 1:  # Insertion case
         if pos == 1:
-            return "g.UNKNOWN"  # Can't handle insertions at the beginning of the sequence
+            return "g.UNKNOWN"  # Can't handle insertions at the beginning of the sequence - maybe f"g.0_1ins{alt[:-1]}"
         inserted = alt[1:]  # The inserted sequence (excluding the common base)
         return f"g.{pos}_{pos+1}ins{inserted}"
     elif len(ref) > 1 and len(alt) > 1:  # Delins case
