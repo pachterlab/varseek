@@ -528,8 +528,8 @@ def build(
     - max_ambiguous                      (int) Maximum number of 'N' (or 'n') characters allowed in a VCRS. None means no 'N' filter will be applied. Default: 0.
 
     # Additional input files and associated parameters
-    - var_column                         (str) Name of the column containing the variants to be introduced in 'variants'. Default: 'mutation'.
-    - seq_id_column                      (str) Name of the column containing the IDs of the sequences to be mutated in 'variants'. Default: 'seq_ID'.
+    - var_column                         (str) Name of the column containing the variants to be introduced in 'variants'. Important for CSV/TSV input with pre-defined columns. Default: 'mutation'.
+    - seq_id_column                      (str) Name of the column containing the IDs of the sequences to be mutated in 'variants'. Important for CSV/TSV input with pre-defined columns. Default: 'seq_ID'.
     - var_id_column                      (str) Name of the column containing the IDs of each variant in 'variants'. Optional. Default: use <seq_id_column>_<var_column> for each row.
     - gtf                                (str) Path to .gtf file. Only used in conjunction with the arguments `transcript_boundaries` and `identify_all_spliced_from_genome`, as well as to add some information to the downloaded database when variants='cosmic_cmc'. If downloading sequence information, then setting gtf=True will automatically include it in the download. Default: None
     - gtf_transcript_id_column           (str) Column name in the input 'variants' file containing the transcript ID.
@@ -1079,7 +1079,7 @@ def build(
         add_variant_type(mutations, var_column)
 
     # Link sequences to their mutations using the sequence identifiers
-    if store_full_sequences or ".vcf" in mutations_path:
+    if store_full_sequences or ".vcf" in mutations_original:
         mutations["wt_sequence_full"] = mutations[seq_id_column].map(seq_dict)
         if ".vcf" in mutations_path:  # look for long duplications - needed seq_dict
             update_vcf_derived_df_with_multibase_duplication(mutations, seq_dict, seq_id_column=seq_id_column, var_column=var_column)
