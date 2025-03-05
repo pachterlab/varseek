@@ -970,41 +970,141 @@ def vcf_to_dataframe(vcf_file, additional_columns=True, explode_alt=True, filter
         df = df[~df["ALT"].isin([None, "", "."])]
 
     if explode_alt:
-        df["ALT_ORIGINAL"] = df["ALT"]
+        # df["ALT_ORIGINAL"] = df["ALT"]
         df["ALT"] = df["ALT"].str.split(",")  # Split ALT column into lists
         df = df.explode("ALT", ignore_index=True)  # Expand the DataFrame
 
     return df
 
 
-def generate_mutation_notation_from_vcf_columns(row):
-    pos = row["POS"]
-    ref = row["REF"]
-    alt = row["ALT"]
+# def generate_mutation_notation_from_vcf_columns(row):
+#     pos = row["POS"]
+#     ref = row["REF"]
+#     alt = row["ALT"]
 
-    if not isinstance(pos, int) or not isinstance(ref, str) or not isinstance(alt, str):
-        return "g.UNKNOWN"
+#     if not isinstance(pos, int) or not isinstance(ref, str) or not isinstance(alt, str):
+#         return "g.UNKNOWN"
 
-    # Start with "g."
-    if len(ref) == 1 and len(alt) == 1:
-        return f"g.{pos}{ref}>{alt}"  # Substitution case
+#     # Start with "g."
+#     if len(ref) == 1 and len(alt) == 1:
+#         return f"g.{pos}{ref}>{alt}"  # Substitution case
 
-    elif len(ref) > 1 and len(alt) == 1:  # Deletion case
-        pos_start = pos + 1 if pos != 1 else 1  # eg CAG --> C, where C is at position 40 - this is a 41_42del
-        if len(ref) == 2:
-            return f"g.{pos_start}del"
-        else:
-            pos_end = pos + len(ref) - 1
-            return f"g.{pos_start}_{pos_end}del"
+#     elif len(ref) > 1 and len(alt) == 1:  # Deletion case
+#         pos_start = pos + 1 if pos != 1 else 1  # eg CAG --> C, where C is at position 40 - this is a 41_42del
+#         if len(ref) == 2:
+#             return f"g.{pos_start}del"
+#         else:
+#             pos_end = pos + len(ref) - 1
+#             return f"g.{pos_start}_{pos_end}del"
 
-    elif len(ref) == 1 and len(alt) > 1:  # Insertion case
-        if pos == 1:
-            return "g.UNKNOWN"  # Can't handle insertions at the beginning of the sequence - maybe f"g.0_1ins{alt[:-1]}"
-        inserted = alt[1:]  # The inserted sequence (excluding the common base)
-        return f"g.{pos}_{pos+1}ins{inserted}"
-    elif len(ref) > 1 and len(alt) > 1:  # Delins case
-        pos_start = pos
-        pos_end = pos + len(ref) - 1
-        return f"g.{pos_start}_{pos_end}delins{alt}"
-    else:
-        return "g.UNKNOWN"
+#     elif len(ref) == 1 and len(alt) > 1:  # Insertion case
+#         if pos == 1:
+#             return "g.UNKNOWN"  # Can't handle insertions at the beginning of the sequence - maybe f"g.0_1ins{alt[:-1]}"
+#         inserted = alt[1:]  # The inserted sequence (excluding the common base)
+#         return f"g.{pos}_{pos+1}ins{inserted}"
+#     elif len(ref) > 1 and len(alt) > 1:  # Delins case
+#         pos_start = pos
+#         pos_end = pos + len(ref) - 1
+#         return f"g.{pos_start}_{pos_end}delins{alt}"
+#     else:
+#         return "g.UNKNOWN"
+
+
+def add_variant_type_column_to_vcf_derived_df(sample_vcf_df):
+    # Compute lengths once
+    sample_vcf_df["REF_len"] = sample_vcf_df["REF"].str.len()
+    sample_vcf_df["ALT_len"] = sample_vcf_df["ALT"].str.len()
+
+    sample_vcf_df["ALT_RC"] = np.where(
+        (sample_vcf_df["REF_len"] > 1) & (sample_vcf_df["ALT_len"] > 1),
+        sample_vcf_df["ALT"].apply(reverse_complement),  # only call reverse_complement if both REF and ALT are longer than 1 (i.e., eligible inversions)
+        np.nan
+    )
+
+    # Define conditions using precomputed values
+    #* check for duplications of length > 1 later
+    conditions = [
+        (sample_vcf_df["REF_len"] == 1) & (sample_vcf_df["ALT_len"] == 1),  # Substitution
+        (sample_vcf_df["REF_len"] > 1) & (sample_vcf_df["ALT_len"] == 1),   # Deletion
+        (sample_vcf_df["REF_len"] == 1) & (sample_vcf_df["ALT_len"] == 2) & (sample_vcf_df["ALT"].str[1] == sample_vcf_df["REF"].str[0]),  # Duplication of length 1 - must go before insertion because it is a special case of insertion
+        (sample_vcf_df["REF_len"] == 1) & (sample_vcf_df["ALT_len"] > 1),   # Insertion
+        (sample_vcf_df["REF_len"] > 1) & (sample_vcf_df["ALT_len"] > 1) & (sample_vcf_df["REF"] == sample_vcf_df["ALT_RC"]),  # Inversion - must go before delins because it is a special case of delins
+        (sample_vcf_df["REF_len"] > 1) & (sample_vcf_df["ALT_len"] > 1),    # Delins
+    ]
+
+    # Define corresponding values
+    choices = ["substitution", "deletion", "duplication", "insertion", "inversion", "delins"]
+
+    # Apply np.select
+    sample_vcf_df["variant_type"] = np.select(conditions, choices, default="unknown")
+    
+def add_variant_column_to_vcf_derived_df(sample_vcf_df, var_column="variant"):
+    # Compute end position for delins
+    sample_vcf_df["start_POS_deletion"] = (sample_vcf_df["POS"] + 1).astype(str)
+    sample_vcf_df["start_POS_deletion_starting_at_1"] = "1"
+    sample_vcf_df["end_POS_for_multibase_deletion_and_delins_and_inversion"] = (sample_vcf_df["POS"] + sample_vcf_df["REF_len"] - 1).astype(str)
+    sample_vcf_df["end_POS_for_multibase_deletion_starting_at_1"] = (sample_vcf_df["REF_len"] - 1).astype(str)
+    sample_vcf_df["end_POS_for_insertion"] = (sample_vcf_df["POS"] + 1).astype(str)
+    sample_vcf_df["ALT_first_base_trimmed"] = sample_vcf_df["ALT"].str[1:]
+    # sample_vcf_df["ALT_last_base_trimmed"] = sample_vcf_df["ALT"].str[:-1]
+
+    # Define conditions
+    conditions = [
+        sample_vcf_df["variant_type"] == "substitution",  # Substitution
+        (sample_vcf_df["variant_type"] == "deletion") & (sample_vcf_df["REF_len"] == 2) & (sample_vcf_df["POS"] != 1),  # Single base deletion
+        (sample_vcf_df["variant_type"] == "deletion") & (sample_vcf_df["REF_len"] > 2) & (sample_vcf_df["POS"] != 1),  # Multi base deletion
+        (sample_vcf_df["variant_type"] == "deletion") & (sample_vcf_df["REF_len"] == 2) & (sample_vcf_df["POS"] == 1),  # Single base deletion starting at 1
+        (sample_vcf_df["variant_type"] == "deletion") & (sample_vcf_df["REF_len"] > 2) & (sample_vcf_df["POS"] == 1),  # Multi base deletion starting at 1
+        (sample_vcf_df["variant_type"] == "insertion") & (sample_vcf_df["POS"] != 1),  # Insertion
+        (sample_vcf_df["variant_type"] == "insertion") & (sample_vcf_df["POS"] == 1),  # Insertion starting at 1
+        sample_vcf_df["variant_type"] == "delins",  # Delins
+        sample_vcf_df["variant_type"] == "duplication",  # Single base duplication
+        sample_vcf_df["variant_type"] == "inversion"  # Inversion
+    ]
+
+    # Ensure POS is an integer in string format
+    sample_vcf_df["POS"] = sample_vcf_df["POS"].astype(str)
+
+    # Define corresponding variant formats
+    choices = [
+        "g." + sample_vcf_df["POS"] + sample_vcf_df["REF"] + ">" + sample_vcf_df["ALT"],  # Substitution
+        "g." + sample_vcf_df["start_POS_deletion"] + "del",  # Single base deletion
+        "g." + sample_vcf_df["start_POS_deletion"] + "_" + sample_vcf_df["end_POS_for_multibase_deletion_and_delins_and_inversion"] + "del",  # Multi base deletion
+        "g.1del",  # Single base deletion starting at 1
+        "g.1_" + sample_vcf_df["end_POS_for_multibase_deletion_starting_at_1"] + "del",  # Multi base deletion starting at 1
+        "g." + sample_vcf_df["POS"] + "_" + sample_vcf_df["end_POS_for_insertion"] + "ins" + sample_vcf_df["ALT_first_base_trimmed"],  # Insertion
+        "g.unknown",  # Insertion starting at 1  # "g.0_1ins" + sample_vcf_df["ALT_last_base_trimmed"],
+        "g." + sample_vcf_df["POS"] + "_" + sample_vcf_df["end_POS_for_multibase_deletion_and_delins_and_inversion"] + "delins" + sample_vcf_df["ALT"],  # Delins
+        "g." + sample_vcf_df["POS"] + "dup",  # Single base duplication
+        "g." + sample_vcf_df["POS"] + "_" + sample_vcf_df["end_POS_for_multibase_deletion_and_delins_and_inversion"] + "inv"  # Inversion
+    ]
+
+    # Apply np.select
+    sample_vcf_df[var_column] = np.select(conditions, choices, default="g.unknown")  # Default to None if no match
+    sample_vcf_df.drop(columns=["REF_len", "ALT_len", "ALT_RC", "start_POS_deletion", "start_POS_deletion_starting_at_1", "end_POS_for_multibase_deletion_and_delins_and_inversion", "end_POS_for_multibase_deletion_starting_at_1", "end_POS_for_insertion", "ALT_first_base_trimmed", "ALT_last_base_trimmed"], inplace=True, errors="ignore")
+
+def update_vcf_derived_df_with_multibase_duplication(mutations, seq_dict, seq_id_column="seq_id", var_column="variant"):
+    mutations["wt_sequence_full"] = mutations[seq_id_column].map(seq_dict)
+    mutations["ALT_len"] = mutations["ALT"].str.len()
+    mutations["ALT_first_base_trimmed"] = mutations["ALT"].str[1:]
+
+    # Step 1: Create a mask for rows where variant_type == "insertion" and the last base of ALT equals REF
+    mask = (mutations["variant_type"] == "insertion") & (mutations["ALT"].str[-1] == mutations["REF"])
+
+    # Step 2: Compute the start position for comparison (only for masked rows)
+    mutations.loc[mask, "start_pos"] = mutations.loc[mask, "POS"].astype(int) - mutations.loc[mask, "ALT_len"] + 2
+
+    # Step 3: Extract sequence slice only for masked rows
+    mutations.loc[mask, "seq_slice"] = mutations.loc[mask].apply(
+        lambda row: row["wt_sequence_full"][int(row["start_pos"]-1):int(row["POS"])]  # row["start_pos"]+1 because of 0-indexing in python
+        if pd.notna(row["wt_sequence_full"]) else "", axis=1
+    )
+
+    # Step 4: Create a mask for matching sequences
+    compare_mask = mask & (mutations["ALT_first_base_trimmed"] == mutations["seq_slice"])
+
+    # Step 5: Update variant_type and variant only for matched rows
+    mutations.loc[compare_mask, "variant_type"] = "duplication"
+    mutations.loc[compare_mask, var_column] = "g." + mutations.loc[compare_mask, "start_pos"].astype(int).astype(str) + "_" + mutations.loc[compare_mask, "POS"].astype(str) + "dup"
+
+    mutations.drop(columns=["ALT_first_base_trimmed", "ALT_len", "start_pos", "seq_slice"], inplace=True, errors="ignore")

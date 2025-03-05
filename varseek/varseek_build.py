@@ -26,8 +26,10 @@ from .utils import (
     convert_chromosome_value_to_int_when_possible,
     convert_mutation_cds_locations_to_cdna,
     create_identity_t2g,
-    generate_mutation_notation_from_vcf_columns,
+    add_variant_type_column_to_vcf_derived_df,
+    add_variant_column_to_vcf_derived_df,
     generate_unique_ids,
+    update_vcf_derived_df_with_multibase_duplication,
     is_valid_int,
     make_function_parameter_to_value_dict,
     print_varseek_dry_run,
@@ -975,7 +977,8 @@ def build(
         mutations.rename(columns={"CHROM": seq_id_column}, inplace=True)
         if var_id_column:
             mutations.rename(columns={"ID": var_id_column}, inplace=True)
-        mutations[var_column] = mutations.apply(generate_mutation_notation_from_vcf_columns, axis=1)  #!! untested
+        add_variant_type_column_to_vcf_derived_df(mutations)
+        add_variant_column_to_vcf_derived_df(mutations, var_column=var_column)
 
     # Handle mutations passed as a list
     elif isinstance(mutations, list):
@@ -1072,11 +1075,16 @@ def build(
     # ensure seq_ID column is string type, and chromosome numbers don't have decimals
     mutations[seq_id_column] = mutations[seq_id_column].apply(convert_chromosome_value_to_int_when_possible)
 
-    add_variant_type(mutations, var_column)
+    if "variant_type" not in mutations.columns:
+        add_variant_type(mutations, var_column)
 
     # Link sequences to their mutations using the sequence identifiers
-    if store_full_sequences:
+    if store_full_sequences or ".vcf" in mutations_path:
         mutations["wt_sequence_full"] = mutations[seq_id_column].map(seq_dict)
+        if ".vcf" in mutations_path:  # look for long duplications - needed seq_dict
+            update_vcf_derived_df_with_multibase_duplication(mutations, seq_dict, seq_id_column=seq_id_column, var_column=var_column)
+            if not store_full_sequences:
+                mutations.drop(columns=["wt_sequence_full"], inplace=True)
 
     # Handle sequences that were not found based on their sequence IDs
     seqs_not_found_count = len(mutations[~mutations[seq_id_column].isin(seq_dict.keys())])

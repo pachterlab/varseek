@@ -307,7 +307,7 @@ def assign_output_file_name_for_download_varseek_files(response, out, filetype):
     return output_file
 
 
-def download_varseek_files(urls_dict, out="."):
+def download_varseek_files(urls_dict, out=".", verbose=True):
     filetype_to_filename_dict = {}
     for filetype, url in urls_dict.items():
         os.makedirs(out, exist_ok=True)
@@ -324,10 +324,10 @@ def download_varseek_files(urls_dict, out="."):
                     file.write(chunk)
 
             filetype_to_filename_dict[filetype] = output_file_path
-
-            print(f"File downloaded successfully as '{output_file_path}'")
+            if verbose:  # setting verbose so that I can turn it off in vk ref
+                print(f"File downloaded successfully as '{output_file_path}'")
         else:
-            print(f"Failed to download file. Status code: {response.status_code}")
+            print(f"Failed to download file. Status code: {response.status_code}")    # no need to toggle with verbose - I only do above for vk ref to avoid confusion (will say it downloaded to the original file path, but vk ref moves it)
 
     return filetype_to_filename_dict
 
@@ -472,7 +472,7 @@ def run_command_with_error_logging(command, verbose=True, track_time=False):
         return minutes, seconds
 
 
-def download_box_url(url, output_folder=".", output_file_name=None):
+def download_box_url(url, output_folder=".", output_file_name=None, verbose=True):
     if not output_file_name:
         output_file_name = url.split("/")[-1]
     if "/" not in output_file_name:
@@ -488,7 +488,8 @@ def download_box_url(url, output_folder=".", output_file_name=None):
         with open(output_file_path, "wb") as file:
             for chunk in response.iter_content(chunk_size=8192):
                 file.write(chunk)
-        print(f"File downloaded successfully to {output_file_path}")
+        if verbose:  
+            print(f"File downloaded successfully to {output_file_path}")
     else:
         print(f"Failed to download file. HTTP Status Code: {response.status_code}")
 

@@ -185,6 +185,7 @@ def validate_input_clean(params_dict):
                     data = json.load(f)
                 if "--num" not in data["call"]:
                     raise ValueError(f"--num must be included in the provided value for {arg}. Please run kb count on the normal genome again, or provide a new path for {arg} to allow varseek count to make this file for you.")
+        logger.warning("For the best results with qc_against_gene_matrix=True, try to ensure the reference assembly and release of the genome used with kb_count_reference_genome_dir is as similar as possible to the one used with kb_count_vcrs_dir. This helps ensure that transcript/gene IDs are as stable as possible.")
 
 
 needs_for_normal_genome_matrix = ["filter_cells_by_min_counts", "filter_cells_by_min_genes", "filter_genes_by_min_cells", "filter_cells_by_max_mt_content", "doublet_detection", "cpm_normalization"]
@@ -199,7 +200,7 @@ def clean(
     apply_single_end_mode_on_paired_end_data_correction=False,
     split_reads_by_Ns_and_low_quality_bases=False,
     apply_dlist_correction=False,
-    qc_against_gene_matrix=True,
+    qc_against_gene_matrix=False,
     filter_cells_by_min_counts=None,
     filter_cells_by_min_genes=None,
     filter_genes_by_min_cells=None,

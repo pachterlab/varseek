@@ -40,7 +40,7 @@ def long_sequence_with_N():
 
 
 @pytest.fixture
-def create_temp_files(long_sequence):
+def create_temp_files(long_sequence):  # do not generalize this for temp files - use tmp_path instead
     # Create a temporary CSV file
     temp_csv_file = tempfile.NamedTemporaryFile(delete=False, suffix='.csv')
     
@@ -74,6 +74,7 @@ def create_temp_files(long_sequence):
     # Cleanup
     os.remove(temp_csv_file.name)
     os.remove(temp_fasta_file.name)
+
 
 def assert_global_variables_zero(number_intronic_position_mutations = 0, number_posttranslational_region_mutations = 0, number_uncertain_mutations = 0, number_ambiguous_position_mutations = 0, number_index_errors = 0):
     assert vk.varseek_build.intronic_mutations == number_intronic_position_mutations
@@ -671,3 +672,34 @@ def test_parameter_values(toy_sequences_fasta_for_vk_ref, toy_variants_csv_for_v
     for parameter_dict in bad_parameter_values_list_of_dicts:
         with pytest.raises(ValueError):
             vk.build(**parameter_dict, overwrite=True)
+
+
+
+
+
+def test_vcf(vcf_file_and_corresponding_sequences, out_dir):
+    vcf_file_path, sequences_fasta_path = vcf_file_and_corresponding_sequences
+
+    result = vk.build(
+        variants="vcf_testing.vcf",
+        sequences="sequences_testing.fa",
+        out="vcf_testing_out_dir",
+        seq_id_column="chromosome",
+        var_column="mutation_from_vcf",
+        overwrite=True
+    )
+    
+    result = vk.build(
+        sequences=long_sequence,
+        optimize_flanking_regions = True,
+        variants="c.35G>A",
+        return_variant_output=True,
+        required_insertion_overlap_length=None,
+        w=30,
+        k=31,
+        out=out_dir
+    )
+
+    assert result[0] == "GCCCCACCCCGCCCCTCCCCGCCCCACCCCACCCCTCCCCGCCCCACCCCGCCCCTCCCCG"
+
+    assert_global_variables_zero()

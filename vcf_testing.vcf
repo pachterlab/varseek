@@ -20,20 +20,17 @@
 ##ALT=<ID=DEL:ME:ALU,Description="Deletion of ALU element">
 ##ALT=<ID=CNV,Description="Copy number variable region">
 #CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	NA00001	NA00002	NA00003
-19	11	single_sub_mid	A	C	g.11A>C	PASS	.	GT:HQ	0|0:10,10	0|0:10,10	0/1:3,3
-19	22	exploded_sub_mid	G	A,C,T	g.22G>A,g.22G>C,g.22G>T	PASS	NS=3;DP=14;AF=0.5;DB;H2	GT:GQ:DP:HQ	0|0:48:1:51,51	1|0:48:8:51,51	1/1:43:5:.,.
-19	1	sub_begin	T	A	g.1T>A	PASS	NS=3;DP=11;AF=0.017	GT:GQ:DP:HQ	0|0:49:3:58,50	0|1:3:5:65,3	0/0:41:3:.,.
-19	33	empty_alt	T	.	None	FAIL	NS=3;DP=13;AA=T	GT:GQ:DP:HQ	0|0:54:.:56,60	0|0:48:4:51,51	0/0:61:2:.,.
-19	34	exploded_ins_mid	G	G,GAC	g.34_35insG,g.34_35insGAC	PASS	NS=3;DP=9;AA=G;AN=6;AC=3,1	GT:GQ:DP	0/1:.:4	0/2:17:2	1/1:40:3
-19	1	ins_begin	T	AGT	None	FAIL	NS=3;DP=9;AA=G;AN=6;AC=3,1	GT:GQ:DP	0/1:.:4	0/2:17:2	1/1:40:3
-19	40	single_del_mid	AG	A	g.40del	PASS	NS=3;DP=9;AA=G;AN=6;AC=3,1	GT:GQ:DP	0/1:.:4	0/2:17:2	1/1:40:3
-19	40	multi_del_mid	AGCAT	A	g.40_43del	PASS	NS=3;DP=9;AA=G;AN=6;AC=3,1	GT:GQ:DP	0/1:.:4	0/2:17:2	1/1:40:3
-19	1	single_del_begin	TC	C	g.1del	PASS	NS=3;DP=9;AA=G;AN=6;AC=3,1	GT:GQ:DP	0/1:.:4	0/2:17:2	1/1:40:3
-19	1	multi_del_begin	TCATC	C	g.1_4del	PASS	NS=3;DP=9;AA=G;AN=6;AC=3,1	GT:GQ:DP	0/1:.:4	0/2:17:2	1/1:40:3
-19	60	delins	TCG	AA	g.60_62delinsAA	PASS	NS=3;DP=9;AA=G;AN=6;AC=3,1	GT:GQ:DP	0/1:.:4	0/2:17:2	1/1:40:3
-
-
-
-vcf_sequence = "TCATCGAACTAGCAGCTCGACGACGCACATCGTGGATCCAGCATCAGCCCCCTCTCGAGTCGCATCGCATCG"
-              # 123456789_123456789_123456789_123456789_123456789_123456789_123456789_123
-              #          10        20        30        40        50        60        70
+19	11	single_sub_mid;g.11A>C	A	C	1	PASS	.	GT:HQ	0|0:10,10	0|0:10,10	0/1:3,3
+19	22	exploded_sub_mid;g.22G>A,g.22G>C,g.22G>T	G	A,C,T	1	PASS	NS=3;DP=14;AF=0.5;DB;H2	GT:GQ:DP:HQ	0|0:48:1:51,51	1|0:48:8:51,51	1/1:43:5:.,.
+19	1	sub_begin;g.1T>A	T	A	1	PASS	NS=3;DP=11;AF=0.017	GT:GQ:DP:HQ	0|0:49:3:58,50	0|1:3:5:65,3	0/0:41:3:.,.
+19	33	empty_alt;None	T	.	None	FAIL	NS=3;DP=13;AA=T	GT:GQ:DP:HQ	0|0:54:.:56,60	0|0:48:4:51,51	0/0:61:2:.,.
+19	34	exploded_ins_mid;g.34_35insA,g.34_35insGAC	G	GA,GAC	0	PASS	NS=3;DP=9;AA=G;AN=6;AC=3,1	GT:GQ:DP	0/1:.:4	0/2:17:2	1/1:40:3
+19	1	ins_begin;None	T	AGT	None	FAIL	NS=3;DP=9;AA=G;AN=6;AC=3,1	GT:GQ:DP	0/1:.:4	0/2:17:2	1/1:40:3
+19	40	single_del_mid;g.41del	AG	A	0	PASS	NS=3;DP=9;AA=G;AN=6;AC=3,1	GT:GQ:DP	0/1:.:4	0/2:17:2	1/1:40:3
+19	40	multi_del_mid;g.41_44del	AGCAT	A	0	PASS	NS=3;DP=9;AA=G;AN=6;AC=3,1	GT:GQ:DP	0/1:.:4	0/2:17:2	1/1:40:3
+19	1	single_del_begin;g.1del	TC	C	0	PASS	NS=3;DP=9;AA=G;AN=6;AC=3,1	GT:GQ:DP	0/1:.:4	0/2:17:2	1/1:40:3
+19	1	multi_del_begin;g.1_4del	TCATC	C	0	PASS	NS=3;DP=9;AA=G;AN=6;AC=3,1	GT:GQ:DP	0/1:.:4	0/2:17:2	1/1:40:3
+19	60	delins;g.60_62delinsAA	TCG	AA	0	PASS	NS=3;DP=9;AA=G;AN=6;AC=3,1	GT:GQ:DP	0/1:.:4	0/2:17:2	1/1:40:3
+19	40	duplication;g.40dup	A	AA	0	PASS	NS=3;DP=9;AA=G;AN=6;AC=3,1	GT:GQ:DP	0/1:.:4	0/2:17:2	1/1:40:3
+19	40	inversion;g.40_43inv	TCGT	ACGA	0	PASS	NS=3;DP=9;AA=G;AN=6;AC=3,1	GT:GQ:DP	0/1:.:4	0/2:17:2	1/1:40:3
+19	50	duplication;g.47_50dup(initiallyg.50_51insGCCC)	C	CGCCC	0	PASS	NS=3;DP=9;AA=G;AN=6;AC=3,1	GT:GQ:DP	0/1:.:4	0/2:17:2	1/1:40:3

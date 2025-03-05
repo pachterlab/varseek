@@ -438,7 +438,7 @@ def ref(
                 else:
                     raise ValueError(f"Failed to verify COSMIC credentials. Status code: {response.status_code}")
             logger.info(f"Downloading reference files with variants={variants}, sequences={sequences}")
-            vk_ref_output_dict = download_varseek_files(file_dict, out=out)
+            vk_ref_output_dict = download_varseek_files(file_dict, out=out, verbose=False)
             if index_out and vk_ref_output_dict["index"] != index_out:
                 os.rename(vk_ref_output_dict["index"], index_out)
                 vk_ref_output_dict["index"] = index_out
@@ -448,6 +448,8 @@ def ref(
             if fasta_out and vk_ref_output_dict["fasta"] != fasta_out:
                 os.rename(vk_ref_output_dict["fasta"], fasta_out)
                 vk_ref_output_dict["fasta"] = fasta_out
+
+            logger.info(f"Downloaded files: {vk_ref_output_dict}")
 
             return vk_ref_output_dict
         else:
@@ -612,6 +614,8 @@ def ref(
     vk_ref_output_dict["index"] = os.path.abspath(index_out)
     vk_ref_output_dict["t2g"] = os.path.abspath(vcrs_t2g_for_alignment)
     vk_ref_output_dict["fasta"] = os.path.abspath(vcrs_fasta_for_index)
+
+    logger.info(f"Produced files: {vk_ref_output_dict}")
 
     # Report time
     if not dry_run:
