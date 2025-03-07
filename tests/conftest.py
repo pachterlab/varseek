@@ -2,6 +2,7 @@ import os
 import random
 import tempfile
 from pathlib import Path
+from io import StringIO
 
 import numpy as np
 import pandas as pd
@@ -423,7 +424,7 @@ def vcf_file_and_corresponding_sequences(tmp_path):
 19	22	exploded_sub_mid;g.22G>A,g.22G>C,g.22G>T	G	A,C,T	1	PASS	NS=3;DP=14;AF=0.5;DB;H2	GT:GQ:DP:HQ	0|0:48:1:51,51	1|0:48:8:51,51	1/1:43:5:.,.
 19	1	sub_begin;g.1T>A	T	A	1	PASS	NS=3;DP=11;AF=0.017	GT:GQ:DP:HQ	0|0:49:3:58,50	0|1:3:5:65,3	0/0:41:3:.,.
 19	33	empty_alt;None	T	.	None	FAIL	NS=3;DP=13;AA=T	GT:GQ:DP:HQ	0|0:54:.:56,60	0|0:48:4:51,51	0/0:61:2:.,.
-19	34	exploded_ins_mid;g.34_35insA,g.34_35insGAC	G	GA,GAC	0	PASS	NS=3;DP=9;AA=G;AN=6;AC=3,1	GT:GQ:DP	0/1:.:4	0/2:17:2	1/1:40:3
+19	34	exploded_ins_mid;g.34_35insA,g.34_35insAC	G	GA,GAC	0	PASS	NS=3;DP=9;AA=G;AN=6;AC=3,1	GT:GQ:DP	0/1:.:4	0/2:17:2	1/1:40:3
 19	1	ins_begin;None	T	AGT	None	FAIL	NS=3;DP=9;AA=G;AN=6;AC=3,1	GT:GQ:DP	0/1:.:4	0/2:17:2	1/1:40:3
 19	40	single_del_mid;g.41del	AG	A	0	PASS	NS=3;DP=9;AA=G;AN=6;AC=3,1	GT:GQ:DP	0/1:.:4	0/2:17:2	1/1:40:3
 19	40	multi_del_mid;g.41_44del	AGCAT	A	0	PASS	NS=3;DP=9;AA=G;AN=6;AC=3,1	GT:GQ:DP	0/1:.:4	0/2:17:2	1/1:40:3
@@ -449,4 +450,24 @@ def vcf_file_and_corresponding_sequences(tmp_path):
     fasta_path = tmp_path / "test.fasta"
     fasta_path.write_text(fasta_content)
 
-    return vcf_path, fasta_path
+    vcf_output_ground_truth_df_data = """vcrs_header,seq_ID,mutation,variant_type,wt_sequence,vcrs_sequence,nucleotide_positions,actual_variant,start_variant_position,end_variant_position,vcrs_id
+19:g.11A>C,19,g.11A>C,substitution,CGAACTAGCAGCT,CGAACTCGCAGCT,11,A>C,11,11,vcrs_01
+19:g.22G>A,19,g.22G>A,substitution,CTCGACGACGCAC,CTCGACAACGCAC,22,G>A,22,22,vcrs_02
+19:g.22G>C,19,g.22G>C,substitution,CTCGACGACGCAC,CTCGACCACGCAC,22,G>C,22,22,vcrs_03
+19:g.22G>T,19,g.22G>T,substitution,CTCGACGACGCAC,CTCGACTACGCAC,22,G>T,22,22,vcrs_04
+19:g.1T>A,19,g.1T>A,substitution,TCATCGA,ACATCGA,1,T>A,1,1,vcrs_05
+19:g.34_35insA,19,g.34_35insA,insertion,ATCGTGGATCCA,ATCGTGAGATCCA,34_35,insA,34,35,vcrs_06
+19:g.34_35insAC,19,g.34_35insAC,insertion,ATCGTGGATCCA,ATCGTGACGATCCA,34_35,insAC,34,35,vcrs_07
+19:g.41del,19,g.41del,deletion,GATCCAGCATCAG,GATCCACATCAG,41,del,41,41,vcrs_08
+19:g.41_44del,19,g.41_44del,deletion,GATCCAGCATCAGCCC,GATCCACAGCCC,41_44,del,41,44,vcrs_09
+19:g.1del,19,g.1del,deletion,TCATCGA,CATCGA,1,del,1,1,vcrs_10
+19:g.1_4del,19,g.1_4del,deletion,TCATCGAACT,CGAACT,1_4,del,1,4,vcrs_11
+19:g.60_62delinsAA,19,g.60_62delinsAA,delins,CTCGAGTCGCATCGC,CTCGAGAACATCGC,60_62,delinsAA,60,62,vcrs_12
+19:g.40dup,19,g.40dup,duplication,GATCCAGCATCA,GATCCAAGCATCA,40,dup,40,40,vcrs_13
+19:g.40_43inv,19,g.40_43inv,inversion,GGATCCAGCATCAGCC,GGATCCTGCTTCAGCC,40_43,inv,40,43,vcrs_14
+19:g.47_50dup,19,g.47_50dup,duplication,CAGCCCCCTCTC,CAGCCCGCCCCCTCTC,47_50,dup,47,50,vcrs_15
+"""
+
+    vcf_output_ground_truth_df = pd.read_csv(StringIO(vcf_output_ground_truth_df_data))
+
+    return vcf_path, fasta_path, vcf_output_ground_truth_df

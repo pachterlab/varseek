@@ -499,6 +499,14 @@ def info(
     elif dlist_reference_genome_fasta == "grch38" or dlist_reference_cdna_fasta == "grch38" or dlist_reference_gtf == "grch38":
         dlist_reference_dir = os.path.join(reference_out_dir, f"ensembl_grch38_release{dlist_reference_ensembl_release}")
         dlist_reference_genome_fasta, dlist_reference_cdna_fasta, dlist_reference_gtf = download_ensembl_reference_files(dlist_reference_dir, grch=38, ensembl_release=dlist_reference_ensembl_release)
+    else:
+        if dlist_reference_source:
+            if dlist_reference_ensembl_release:
+                dlist_reference_dir = os.path.join(reference_out_dir, f"{dlist_reference_source}_release{dlist_reference_ensembl_release}")
+            else:
+                dlist_reference_dir = os.path.join(reference_out_dir, dlist_reference_source)
+        else:
+            dlist_reference_dir = os.path.join(reference_out_dir, "dlist_reference_dir")
 
     columns_to_explode = ["header", "order"]
     columns_NOT_to_explode = ["vcrs_id", "vcrs_header", "vcrs_sequence", "vcrs_sequence_rc"]

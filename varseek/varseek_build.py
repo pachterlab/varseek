@@ -1141,7 +1141,7 @@ def build(
     mutations["end_variant_position"] -= 1  # don't forget to increment by 1 later
 
     # Calculate sequence length
-    mutations["sequence_length"] = mutations[seq_id_column].apply(lambda x: get_sequence_length(x, seq_dict))
+    mutations["sequence_length"] = mutations[seq_id_column].apply(lambda x: get_sequence_length(x, seq_dict)).astype(int)
 
     # Filter out mutations with positions outside the sequence
     index_error_mask = (mutations["start_variant_position"] > mutations["sequence_length"]) | (mutations["end_variant_position"] > mutations["sequence_length"])

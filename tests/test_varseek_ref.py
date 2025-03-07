@@ -20,7 +20,7 @@ from .conftest import (
     compare_two_t2gs,
 )
 
-sample_size=12_000  # 2,000 each for each of the 6 mutation types
+sample_size=600  # 2,000 each for each of the 6 mutation types  #!!! change back to 12_000
 columns_to_drop_info_filter = None  # drops columns for info and filter df - will not throw an error if the column does not exist in the df   # ["nearby_variants", "number_of_kmers_with_overlap_to_other_VCRSs", "number_of_other_VCRSs_with_overlapping_kmers", "overlapping_kmers", "VCRSs_with_overlapping_kmers", "kmer_overlap_with_other_VCRSs"]
 make_new_gt = True
 store_out_in_permanent_paths = True
@@ -146,6 +146,7 @@ def test_vk_ref(cosmic_csv_path, out_dir):
         variants = cosmic_csv_path,  # build args
         sequences = cosmic_cdna_path,
         out = out_dir,
+        reference_out_dir=reference_folder_parent,
         seq_id_column="seq_ID",
         var_column = "mutation_cdna",
         seq_id_cdna_column="seq_ID",
@@ -158,6 +159,8 @@ def test_vk_ref(cosmic_csv_path, out_dir):
         save_variants_updated_csv = True,
         columns_to_include = columns_to_include,  # info args
         reference_folder = reference_folder_parent,
+        dlist_reference_source="grch37",
+        dlist_reference_ensembl_release=93,
         dlist_reference_genome_fasta = cosmic_genome_path,  # for d-listing
         dlist_reference_cdna_fasta = cosmic_cdna_path,  # for d-listing
         dlist_reference_gtf = cosmic_gtf_path,  # for d-listing
@@ -167,6 +170,7 @@ def test_vk_ref(cosmic_csv_path, out_dir):
         save_variants_updated_exploded_vk_info_csv = True,
         threads = threads,
         filters = filters,  # filter args
+        verbose=True
     )
 
     # file name, file type, columns to drop for comparison

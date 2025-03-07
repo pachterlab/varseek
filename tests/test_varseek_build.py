@@ -9,7 +9,7 @@ import pytest
 
 import varseek as vk
 
-store_out_in_permanent_paths = False
+store_out_in_permanent_paths = True
 tests_dir = Path(__file__).resolve().parent
 pytest_permanent_out_dir_base = tests_dir / "pytest_output" / Path(__file__).stem
 current_datetime = datetime.now().strftime("date_%Y_%m_%d_time_%H%M_%S")
@@ -678,28 +678,25 @@ def test_parameter_values(toy_sequences_fasta_for_vk_ref, toy_variants_csv_for_v
 
 
 def test_vcf(vcf_file_and_corresponding_sequences, out_dir):
-    vcf_file_path, sequences_fasta_path = vcf_file_and_corresponding_sequences
+    vcf_file_path, sequences_fasta_path, vcf_output_ground_truth_df = vcf_file_and_corresponding_sequences
 
-    result = vk.build(
-        variants="vcf_testing.vcf",
-        sequences="sequences_testing.fa",
-        out="vcf_testing_out_dir",
-        seq_id_column="chromosome",
-        var_column="mutation_from_vcf",
-        overwrite=True
-    )
-    
-    result = vk.build(
-        sequences=long_sequence,
-        optimize_flanking_regions = True,
-        variants="c.35G>A",
-        return_variant_output=True,
-        required_insertion_overlap_length=None,
-        w=30,
-        k=31,
-        out=out_dir
+    _ = vk.build(
+        variants=vcf_file_path,
+        sequences=sequences_fasta_path,
+        out=out_dir,
+        save_variants_updated_csv=True,
+        overwrite=True,
+        w=6,
+        k=7,
+        max_ambiguous=999,
+        optimize_flanking_regions=False,
+        remove_seqs_with_wt_kmers=False,
+        min_seq_len=None,
+        merge_identical=False
     )
 
-    assert result[0] == "GCCCCACCCCGCCCCTCCCCGCCCCACCCCACCCCTCCCCGCCCCACCCCGCCCCTCCCCG"
+    vcf_output_pytest_df = pd.read_csv(out_dir / "variants_updated.csv")
+
+    assert vcf_output_pytest_df.equals(vcf_output_ground_truth_df)
 
     assert_global_variables_zero()
