@@ -39,6 +39,7 @@ dependencies = [
     "gget>=0.29.0",
     "scipy>=1.13.1",
     "pyfastx>=2.1.0",
+    "pysam>=0.22.1",
 ]
 
 [project.optional-dependencies]
@@ -59,7 +60,6 @@ analysis = [
     "goatools>=1.4.9",
     "multiqc>=1.25.1",
     "rich>=11.0.0",
-    "pysam>=0.22.1",
     "kneed>=0.8.0",
     "scanpy>=1.10.4",
     "upsetplot>=0.9.0",

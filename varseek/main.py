@@ -277,6 +277,22 @@ def main():  # noqa: C901
     # Add custom version argument to parent parser
     parent_parser.add_argument("-v", "--version", action="store_true", help="Print version.")
 
+
+    # Check if a flag is passed that causes a script to exist early, thus making normally required arguments optiona (eg I can call vk build --list_supported_databases without providing -s and -v)
+    list_information_and_exit_flag_dict = {}
+    for list_information_and_exit_flag in ("list_supported_databases", "list_columns", "list_filter_rules", "list_downloadable_references"):
+        list_information_and_exit_flag_dict[list_information_and_exit_flag] = False
+        for i, arg in enumerate(sys.argv):
+            if arg == f"--{list_information_and_exit_flag}":
+                list_information_and_exit_flag_dict[list_information_and_exit_flag] = True
+                break
+    
+    vk_build_list_information_and_exit_flag_present = list_information_and_exit_flag_dict["list_supported_databases"] 
+    vk_info_list_information_and_exit_flag_present = list_information_and_exit_flag_dict["list_columns"]
+    vk_filter_list_information_and_exit_flag_present = list_information_and_exit_flag_dict["list_filter_rules"] 
+    vk_ref_list_information_and_exit_flag_present = any(list_information_and_exit_flag_dict.values())
+
+
     # NEW PARSER
     # build parser arguments
     build_desc = "Build a variant-containing reference sequence (VCRS) file."
@@ -291,20 +307,20 @@ def main():  # noqa: C901
         formatter_class=CustomHelpFormatter,
     )
     parser_build.add_argument(
+        "-v",
+        "--variants",
+        # type=strpath_or_str_or_list_or_df,
+        nargs="+",
+        required=not vk_build_list_information_and_exit_flag_present,
+        help=extract_help_from_doc(build, "variants"),
+    )
+    parser_build.add_argument(
         "-s",
         "--sequences",
         type=str,
         nargs="+",
-        required=True,
+        required=not vk_build_list_information_and_exit_flag_present,
         help=extract_help_from_doc(build, "sequences"),
-    )
-    parser_build.add_argument(
-        "-v",
-        "--variants",
-        type=strpath_or_str_or_list_or_df,
-        nargs="+",
-        required=True,
-        help=extract_help_from_doc(build, "variants"),
     )
     parser_build.add_argument(
         "-w",
@@ -641,7 +657,7 @@ def main():  # noqa: C901
         "-i",
         "--input_dir",
         type=str,
-        required=True,
+        required=not vk_info_list_information_and_exit_flag_present,
         help=extract_help_from_doc(info, "input_dir"),
     )
     parser_info.add_argument(
@@ -858,12 +874,6 @@ def main():  # noqa: C901
         help=extract_help_from_doc(info, "list_columns"),
     )
     parser_info.add_argument(
-        "--list_d_list_values",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "list_d_list_values"),
-    )
-    parser_info.add_argument(
         "--overwrite",
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
@@ -992,7 +1002,7 @@ def main():  # noqa: C901
         "-i",
         "--input_dir",
         type=str,
-        required=True,
+        required=not vk_filter_list_information_and_exit_flag_present,
         help=extract_help_from_doc(filter, "input_dir"),
     )
     parser_filter.add_argument(
@@ -2174,21 +2184,22 @@ def main():  # noqa: C901
     # NEW PARSER
     ref_desc = "Create a reference index and t2g file for variant screening with varseek count. Wraps around varseek build, varseek info, varseek filter, and kb ref."
     parser_ref = parent_subparsers.add_parser("ref", parents=[parent], description=ref_desc, help=ref_desc, add_help=True, formatter_class=CustomHelpFormatter, epilog="To see the full list of allowable arguments, please explore vk build, vk info, vk filter, and (kallisto-bustools') kb ref")
+
+    parser_ref.add_argument(
+        "-v",
+        "--variants",
+        # type=strpath_or_str_or_list_or_df,
+        nargs="+",
+        required=not vk_ref_list_information_and_exit_flag_present,  # generally True
+        help=extract_help_from_doc(ref, "variants"),
+    )
     parser_ref.add_argument(
         "-s",
         "--sequences",
         type=str,
         nargs="+",
-        required=True,
+        required=not vk_ref_list_information_and_exit_flag_present,  # generally True
         help=extract_help_from_doc(ref, "sequences"),
-    )
-    parser_ref.add_argument(
-        "-v",
-        "--variants",
-        type=strpath_or_str_or_list_or_df,
-        nargs="+",
-        required=True,
-        help=extract_help_from_doc(ref, "variants"),
     )
     parser_ref.add_argument(
         "-w",

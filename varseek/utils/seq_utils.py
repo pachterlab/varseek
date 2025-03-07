@@ -925,46 +925,52 @@ def add_mutation_information(mutation_metadata_df, mutation_column="mutation", v
 
 
 # convert vcf to pandas df
-def vcf_to_dataframe(vcf_file, additional_columns=True, explode_alt=True, filter_empty_alt=True):
+def vcf_to_dataframe(vcf_file, additional_columns=True, explode_alt=True, filter_empty_alt=True, verbose=False):
     import pysam
 
     """Convert a VCF file to a Pandas DataFrame."""
     vcf = pysam.VariantFile(vcf_file)
+    
+    if verbose and vcf.compression == "NONE":
+        number_of_lines_command = ["wc", "-l", vcf_file]
+        total = int(subprocess.run(number_of_lines_command, stdout=subprocess.PIPE).stdout.decode().split()[0])
+    else:
+        total=None
 
-    # List to store VCF rows
-    vcf_data = []
+    iterator = tqdm(vcf.fetch(), desc="Reading VCF", unit="records", total=total) if verbose else vcf.fetch()
 
-    # Fetch each record in the VCF
-    for record in vcf.fetch():
-        # For each record, extract the desired fields
-        alts = ",".join(record.alts) if isinstance(record.alts, tuple) else record.alts  # alternate case includes None (when it is simply ".")
+    def generate_vcf_rows(iterator, additional_columns=False):
+        # Fetch each record in the VCF
+        for record in iterator:
+            # For each record, extract the desired fields
+            alts = ",".join(record.alts) if isinstance(record.alts, tuple) else record.alts  # alternate case includes None (when it is simply ".")
 
-        vcf_row = {
-            "CHROM": record.chrom,
-            "POS": record.pos,
-            "ID": record.id,
-            "REF": record.ref,
-            "ALT": alts,  # ALT can be multiple
-        }
+            vcf_row = {
+                "CHROM": record.chrom,
+                "POS": record.pos,
+                "ID": record.id,
+                "REF": record.ref,
+                "ALT": alts,  # ALT can be multiple
+            }
 
-        if additional_columns:
-            vcf_row["QUAL"] = record.qual
-            vcf_row["FILTER"] = (";".join(record.filter.keys()) if record.filter else None,)  # FILTER keys
+            if additional_columns:
+                vcf_row["QUAL"] = record.qual
+                vcf_row["FILTER"] = (";".join(record.filter.keys()) if record.filter else None,)  # FILTER keys
 
-            # Add INFO fields
-            for key, value in record.info.items():
-                vcf_row[f"INFO_{key}"] = value
+                # Add INFO fields
+                for key, value in record.info.items():
+                    vcf_row[f"INFO_{key}"] = value
 
-            # Add per-sample data (FORMAT fields)
-            for sample, sample_data in record.samples.items():
-                for format_key, format_value in sample_data.items():
-                    vcf_row[f"{sample}_{format_key}"] = format_value
+                # Add per-sample data (FORMAT fields)
+                for sample, sample_data in record.samples.items():
+                    for format_key, format_value in sample_data.items():
+                        vcf_row[f"{sample}_{format_key}"] = format_value
 
-        # Append the row to the list
-        vcf_data.append(vcf_row)
+            yield vcf_row
 
-    # Convert the list to a Pandas DataFrame
-    df = pd.DataFrame(vcf_data)
+    # Create DataFrame from the generator
+    df = pd.DataFrame(generate_vcf_rows(iterator, additional_columns=additional_columns))
+    df['CHROM'] = df['CHROM'].astype('category')
 
     if filter_empty_alt:
         df = df[~df["ALT"].isin([None, "", "."])]

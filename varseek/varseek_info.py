@@ -121,21 +121,7 @@ def validate_input_info(params_dict):
         "reference_genome_fasta": "fasta",
     }.items():
         check_file_path_is_string_with_valid_extension(params_dict.get(param_name), param_name, file_type)
-
-    # dlist reference files
-    for dlist_reference_file in ["dlist_reference_source", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf"]:
-        if params_dict.get(dlist_reference_file):
-            if not isinstance(params_dict.get(dlist_reference_file), str):
-                raise ValueError(f"{dlist_reference_file} must be a string, got {type(params_dict.get(dlist_reference_file))}")
-            if params_dict.get(dlist_reference_file) not in supported_dlist_reference_values and not os.path.isfile(params_dict.get(dlist_reference_file)):
-                raise ValueError(f"Invalid value for {dlist_reference_file}: {params_dict.get(dlist_reference_file)}")
-    if params_dict.get("dlist_reference_genome_fasta") in supported_dlist_reference_values and params_dict.get("dlist_reference_gtf") in supported_dlist_reference_values:
-        if not params_dict.get("dlist_reference_genome_fasta") == params_dict.get("dlist_reference_gtf"):
-            raise ValueError(f"dlist_reference_genome_fasta and dlist_reference_gtf must be the same value when using a supported dlist reference. Got {params_dict.get('dlist_reference_genome_fasta')} and {params_dict.get('dlist_reference_gtf')}.")
-    # check if dlist_reference_source is not a valid value and the 3 dlist file parameters are also not valid values (i.e., a real file or a supported dlist reference)
-    if not params_dict.get("dlist_reference_source") in supported_dlist_reference_values and not ((os.path.isfile(params_dict.get("dlist_reference_genome_fasta")) or params_dict.get("dlist_reference_genome_fasta") in supported_dlist_reference_values) and (os.path.isfile(params_dict.get("dlist_reference_cdna_fasta")) or params_dict.get("dlist_reference_cdna_fasta") in supported_dlist_reference_values) and (os.path.isfile(params_dict.get("dlist_reference_gtf")) or params_dict.get("dlist_reference_gtf") in supported_dlist_reference_values)):
-        raise ValueError(f"Invalid value for dlist_reference_source: {params_dict.get('dlist_reference_source')} without specifying dlist_reference_genome_fasta, dlist_reference_cdna_fasta, and dlist_reference_gtf. dlist_reference_source must be one of {supported_dlist_reference_values}, or the other arguments must be provided (each as valid file paths or one of {supported_dlist_reference_values}).")
-
+    
     # column names
     for column in ["gene_name_column", "variant_source_column", "var_cdna_column", "seq_id_cdna_column", "var_genome_column", "seq_id_genome_column", "var_id_column"]:
         if not isinstance(params_dict.get(column), str) and params_dict.get(column) is not None:
@@ -155,6 +141,25 @@ def validate_input_info(params_dict):
             raise ValueError("All elements in columns_to_include must be strings.")
         if not all(col in columns_to_include_possible_values for col in columns_to_include):
             raise ValueError(f"columns_to_include must be a subset of {columns_to_include_possible_values}. Got {columns_to_include}. Use 'all' to include all columns.")
+        
+    # dlist reference files
+    for dlist_reference_file in ["dlist_reference_source", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf"]:
+        if params_dict.get(dlist_reference_file):
+            if not isinstance(params_dict.get(dlist_reference_file), str):
+                raise ValueError(f"{dlist_reference_file} must be a string, got {type(params_dict.get(dlist_reference_file))}")
+            if params_dict.get(dlist_reference_file) not in supported_dlist_reference_values and not os.path.isfile(params_dict.get(dlist_reference_file)):
+                raise ValueError(f"Invalid value for {dlist_reference_file}: {params_dict.get(dlist_reference_file)}")
+    if params_dict.get("dlist_reference_genome_fasta") in supported_dlist_reference_values and params_dict.get("dlist_reference_gtf") in supported_dlist_reference_values:
+        if not params_dict.get("dlist_reference_genome_fasta") == params_dict.get("dlist_reference_gtf"):
+            raise ValueError(f"dlist_reference_genome_fasta and dlist_reference_gtf must be the same value when using a supported dlist reference. Got {params_dict.get('dlist_reference_genome_fasta')} and {params_dict.get('dlist_reference_gtf')}.")
+
+    # check if any column requiring dlist_reference_genome_fasta is present, and dlist_reference_genome_fasta is not available
+    if any(column in params_dict.get("columns_to_include") for column in columns_that_require_dlist_genome) and not params_dict.get("dlist_reference_source") and not params_dict.get("dlist_reference_genome_fasta"):  # above, I checked that if it was not None, that it was either a valid string (ie in supported_dlist_reference_values) or an existing path - so now, I just need to ensure that it's not None
+        raise ValueError(f"Missing dlist_reference_source and dlist_reference_genome_fasta. At least one of these is required for columns: {columns_that_require_dlist_genome}")
+    if any(column in params_dict.get("columns_to_include") for column in columns_that_require_dlist_transcriptome) and not params_dict.get("dlist_reference_source") and not params_dict.get("dlist_reference_cdna_fasta"):  # above, I checked that if it was not None, that it was either a valid string (ie in supported_dlist_reference_values) or an existing path - so now, I just need to ensure that it's not None
+        raise ValueError(f"Missing dlist_reference_source/dlist_reference_cdna_fasta. At least one of these is required for columns: {columns_that_require_dlist_genome}")
+    if any(column in params_dict.get("columns_to_include") for column in columns_that_require_dlist_gtf) and not params_dict.get("dlist_reference_source") and not params_dict.get("dlist_reference_gtf"):  # above, I checked that if it was not None, that it was either a valid string (ie in supported_dlist_reference_values) or an existing path - so now, I just need to ensure that it's not None
+        raise ValueError(f"Missing dlist_reference_source/dlist_reference_gtf. At least one of these is required for columns: {columns_that_require_dlist_genome}")
 
     # integers - optional just means that it's in kwargs
     for param_name, min_value, optional_value in [
@@ -192,6 +197,12 @@ def validate_input_info(params_dict):
 
 
 supported_dlist_reference_values = {"t2t", "grch37", "grch38"}
+columns_that_require_dlist_genome = ("alignment_to_reference", "alignment_to_reference_genome", "alignment_to_reference_count_total", "alignment_to_reference_count_genome", "substring_alignment_to_reference", "substring_alignment_to_reference_genome", "substring_alignment_to_reference_count_total", "substring_alignment_to_reference_count_genome", "pseudoaligned_to_reference", "pseudoaligned_to_reference_despite_not_truly_aligning")
+columns_that_require_dlist_transcriptome = ("alignment_to_reference", "alignment_to_reference_cdna", "alignment_to_reference_count_total", "alignment_to_reference_count_cdna", "substring_alignment_to_reference", "substring_alignment_to_reference_cdna", "substring_alignment_to_reference_count_total", "substring_alignment_to_reference_count_cdna")
+columns_that_require_dlist_gtf = ("pseudoaligned_to_reference", "pseudoaligned_to_reference_despite_not_truly_aligning")
+
+bowtie_columns_dlist = ["alignment_to_reference", "alignment_to_reference_cdna", "alignment_to_reference_genome", "alignment_to_reference_count_total", "alignment_to_reference_count_cdna", "alignment_to_reference_count_genome", "substring_alignment_to_reference", "substring_alignment_to_reference_cdna", "substring_alignment_to_reference_genome", "substring_alignment_to_reference_count_total", "substring_alignment_to_reference_count_cdna", "substring_alignment_to_reference_count_genome"]
+bowtie_columns_vcrs_to_vcrs = ["VCRSs_for_which_this_VCRS_is_a_substring", "VCRSs_for_which_this_VCRS_is_a_superstring", "VCRS_is_a_substring_of_another_VCRS", "VCRS_is_a_superstring_of_another_VCRS"]
 
 # {column_name, (description, list_of_utilized_parameters)}
 columns_to_include_possible_values = OrderedDict(
@@ -206,18 +217,18 @@ columns_to_include_possible_values = OrderedDict(
         ("has_a_nearby_variant", ("Has a nearby variant (a boolean of `nearby_variants_count`)", ["k"])),
         ("vcrs_header_length", ("VCRS header length", ["k"])),
         ("vcrs_sequence_length", ("VCRS sequence length", [])),
-        ("alignment_to_reference", ("States whether a VCRS contains any k-mer that aligns anywhere in the reference genome or transcriptome (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
-        ("alignment_to_reference_cdna", ("States whether a VCRS contains any k-mer that aligns anywhere in the reference transcriptome (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
-        ("alignment_to_reference_genome", ("States whether a VCRS contains any k-mer that aligns anywhere in the reference genome (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
-        ("alignment_to_reference_count_total", ("The total number of times that all k-mers within a VCRS match up to any k-mer in the genome and transcriptome specified by `dlist_reference_source` (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
-        ("alignment_to_reference_count_cdna", ("The total number of times that all k-mers within a VCRS match up to any k-mer in the cDNA specified by `dlist_reference_source` (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
-        ("alignment_to_reference_count_genome", ("The total number of times that all k-mers within a VCRS match up to any k-mer in the genome specified by `dlist_reference_source` (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
-        ("substring_alignment_to_reference", ("States whether a VCRS contains any k-mer that is a substring alignment to anywhere in the reference genome or transcriptome (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
-        ("substring_alignment_to_reference_cdna", ("States whether a VCRS contains any k-mer that is a substring alignment to anywhere in the reference transcriptome (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
-        ("substring_alignment_to_reference_genome", ("States whether a VCRS contains any k-mer that is a substring alignment to anywhere in the reference genome (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
-        ("substring_alignment_to_reference_count_total", ("Number of substring matches to normal human reference (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
-        ("substring_alignment_to_reference_count_cdna", ("Number of substring matches to normal human reference cDNA (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
-        ("substring_alignment_to_reference_count_genome", ("Number of substring matches to normal human reference genome (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_reference_gtf", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
+        ("alignment_to_reference", ("States whether a VCRS contains any k-mer that aligns anywhere in the reference genome or transcriptome (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
+        ("alignment_to_reference_cdna", ("States whether a VCRS contains any k-mer that aligns anywhere in the reference transcriptome (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_cdna_fasta", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
+        ("alignment_to_reference_genome", ("States whether a VCRS contains any k-mer that aligns anywhere in the reference genome (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_genome_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
+        ("alignment_to_reference_count_total", ("The total number of times that all k-mers within a VCRS match up to any k-mer in the genome and transcriptome specified by `dlist_reference_source` (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
+        ("alignment_to_reference_count_cdna", ("The total number of times that all k-mers within a VCRS match up to any k-mer in the cDNA specified by `dlist_reference_source` (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_cdna_fasta", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
+        ("alignment_to_reference_count_genome", ("The total number of times that all k-mers within a VCRS match up to any k-mer in the genome specified by `dlist_reference_source` (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_genome_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
+        ("substring_alignment_to_reference", ("States whether a VCRS contains any k-mer that is a substring alignment to anywhere in the reference genome or transcriptome (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
+        ("substring_alignment_to_reference_cdna", ("States whether a VCRS contains any k-mer that is a substring alignment to anywhere in the reference transcriptome (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_cdna_fasta", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
+        ("substring_alignment_to_reference_genome", ("States whether a VCRS contains any k-mer that is a substring alignment to anywhere in the reference genome (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_genome_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
+        ("substring_alignment_to_reference_count_total", ("Number of substring matches to normal human reference (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_reference_cdna_fasta", "dlist_genome_fasta_out", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
+        ("substring_alignment_to_reference_count_cdna", ("Number of substring matches to normal human reference cDNA (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_cdna_fasta", "dlist_cdna_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
+        ("substring_alignment_to_reference_count_genome", ("Number of substring matches to normal human reference genome (requires bowtie2)", ["k", "max_ambiguous_vcrs", "max_ambiguous_reference", "dlist_reference_genome_fasta", "dlist_genome_fasta_out", "dlist_combined_fasta_out", "threads", "vcrs_strandedness"])),
         ("pseudoaligned_to_reference", ("Pseudoaligned to human reference", ["k", "dlist_reference_genome_fasta", "dlist_reference_gtf", "threads", "vcrs_strandedness"])),
         ("pseudoaligned_to_reference_despite_not_truly_aligning", ("Pseudoaligned to human reference despite not truly aligning", ["k", "dlist_reference_genome_fasta", "dlist_reference_gtf", "threads", "vcrs_strandedness"])),
         ("number_of_kmers_with_overlap_to_other_VCRSs", ("Number of k-mers with overlap to other VCRS items in VCRS reference (MEMORY-INTENSIVE)", ["k", "vcrs_strandedness"])),
@@ -248,7 +259,7 @@ def info(
     k=59,
     max_ambiguous_vcrs=0,
     max_ambiguous_reference=0,
-    dlist_reference_source="t2t",
+    dlist_reference_source=None,
     dlist_reference_ensembl_release=111,
     vcrs_fasta=None,
     variants_updated_csv=None,
@@ -276,7 +287,6 @@ def info(
     make_kat_histogram=False,
     dry_run=False,
     list_columns=False,
-    list_d_list_values=False,
     overwrite=False,
     threads=2,
     logging_level=None,
@@ -296,8 +306,12 @@ def info(
     - k                                  (int) Length of the k-mers utilized by kallisto | bustools. Only used by the following columns: 'nearby_variants', 'nearby_variants_count', 'has_a_nearby_variant', 'alignment_to_reference', 'alignment_to_reference_cdna', 'alignment_to_reference_genome', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_cdna', 'substring_alignment_to_reference_genome', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome', 'pseudoaligned_to_reference', 'pseudoaligned_to_reference_despite_not_truly_aligning', 'number_of_kmers_with_overlap_to_other_VCRSs', 'number_of_other_VCRSs_with_overlapping_kmers', 'VCRSs_with_overlapping_kmers', 'kmer_overlap_with_other_VCRSs'; and when make_kat_histogram==True. Default: 59.
     - max_ambiguous_vcrs                 (int) Maximum number of 'N' characters allowed in the VCRS when considering alignment to the reference genome/transcriptome. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome'. Default: 0.
     - max_ambiguous_reference            (int) Maximum number of 'N' characters allowed in the aligned reference genome portion when considering alignment to the reference genome/transcriptome. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_cdna', 'alignment_to_reference_genome', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_cdna', 'substring_alignment_to_reference_genome', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome'. Default: 0.
-    - dlist_reference_source             (str) Source of the d-list reference genome and transcriptome if files are not provided by `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, and `dlist_reference_gtf`. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_cdna', 'alignment_to_reference_genome', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_cdna', 'substring_alignment_to_reference_genome', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome', 'pseudoaligned_to_reference', 'pseudoaligned_to_reference_despite_not_truly_aligning'. Possible values are {supported_dlist_reference_values}. Ignored if values for `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, and `dlist_reference_gtf` are provided. Default: "t2t". (will automatically download the t2t reference genome files to `reference_out_dir`)
-    - dlist_reference_ensembl_release    (int) Ensembl release number for the d-list reference genome and transcriptome if files are not provided by `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, and `dlist_reference_gtf`. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_cdna', 'alignment_to_reference_genome', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_cdna', 'substring_alignment_to_reference_genome', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome', 'pseudoaligned_to_reference', 'pseudoaligned_to_reference_despite_not_truly_aligning'. Only used if `dlist_reference_source`, `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, `dlist_reference_gtf` is grch37 or grch38. Default: 111. (will automatically download the Ensembl reference genome files to `reference_out_dir`)
+    - dlist_reference_source (str or None) Specifies which reference to use during alignment of VCRS k-mers to the reference genome/transcriptome and any possible d-list construction. However, no d-list is used during the creation of the VCRS reference index unless `dlist` is not None. This can refer to the same genome version as used by the "sequences" argument, but need not be. The purpose of this genome is simply to provide an accurate and comprehensive reference genome/transcriptome to determine which k-mers from the VCRSs overlap with the reference. Will look for files in `reference_out_dir`, and will download in this directory if necessary files do not exist. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_cdna', 'alignment_to_reference_genome', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_cdna', 'substring_alignment_to_reference_genome', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome', 'pseudoaligned_to_reference', 'pseudoaligned_to_reference_despite_not_truly_aligning'. Possible values are {supported_dlist_reference_values}. Ignored if values for `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, and `dlist_reference_gtf` are provided. Default: None. Possible values:
+        - "t2t" - Telomere to telomere: https://www.ncbi.nlm.nih.gov/datasets/genome/GCF_009914755.1/. Directory: {reference_out_dir}/t2t.
+        - "grch38" - Ensembl GRCh38: https://useast.ensembl.org/Homo_sapiens/Info/Annotation. Directory: {reference_out_dir}/ensembl_grch38_release{dlist_reference_ensembl_release}.
+        - "grch37" - Ensembl GRCh37: http://useast.ensembl.org/info/website/tutorials/grch37.html. Directory: {reference_out_dir}/ensembl_grch37_release{dlist_reference_ensembl_release}.
+        If wanting to provide a reference genome outside of those above supported for automatic download, then please provide existing file paths for the parameters `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, and/or `dlist_reference_gtf`.
+    - dlist_reference_ensembl_release    (int) Ensembl release number for the d-list reference genome and transcriptome if dlist_reference_source in {"grch37", "grch38"}. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_cdna', 'alignment_to_reference_genome', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_cdna', 'substring_alignment_to_reference_genome', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome', 'pseudoaligned_to_reference', 'pseudoaligned_to_reference_despite_not_truly_aligning'. Possible values are {supported_dlist_reference_values}. Ignored if values for `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, and `dlist_reference_gtf` are provided. Default: 111.
 
     # Optional input file paths: (only needed if changing/customizing file names or locations):
     - vcrs_fasta                         (str) Path to the VCRS fasta file generated from varseek build. Corresponds to `vcrs_fasta_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir`).
@@ -335,7 +349,6 @@ def info(
     # General arguments:
     - dry_run                            (bool) Whether to do a dry run (i.e., print the parameters and return without running the function). Default: False.
     - list_columns                       (bool) Whether to list the possible values for `columns_to_include` and their descriptions and immediately exit. Default: False.
-    - list_d_list_values                 (bool) Whether to list the possible values for `dlist_reference_source` and immediately exit. Default: False.
     - overwrite                          (bool) Whether to overwrite the output files if they already exist. Default: False.
     - threads                            (int) Number of threads to use for bowtie2 and bowtie2-build. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_cdna', 'alignment_to_reference_genome', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_cdna', 'substring_alignment_to_reference_genome', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome', 'pseudoaligned_to_reference', 'pseudoaligned_to_reference_despite_not_truly_aligning', 'VCRSs_for_which_this_VCRS_is_a_substring', 'VCRSs_for_which_this_VCRS_is_a_superstring', 'VCRS_is_a_substring_of_another_VCRS', 'VCRS_is_a_superstring_of_another_VCRS'; and when 'VCRSs_for_which_this_VCRS_is_a_superstring', 'VCRS_is_a_substring_of_another_VCRS', 'VCRS_is_a_superstring_of_another_VCRS', make_kat_histogram==True. Default: 2.
     - logging_level                      (str) Logging level. Can also be set with the environment variable VARSEEK_LOGGING_LEVEL. Default: INFO.
@@ -362,9 +375,6 @@ def info(
     # * 0. Informational arguments that exit early
     if list_columns:
         print_list_columns()
-        return
-    if list_d_list_values:
-        print(f"Available values for `dlist_reference_source`: {supported_dlist_reference_values}")
         return
 
     # * 1. Start timer
@@ -458,7 +468,7 @@ def info(
     near_splice_junction_threshold = kwargs.get("near_splice_junction_threshold", 10)
     reference_cdna_fasta = kwargs.get("reference_cdna_fasta", "cdna")
     reference_genome_fasta = kwargs.get("reference_genome_fasta", "genome")
-    variants_csv = kwargs.get("variants", None)
+    variants = kwargs.get("variants", None)
     # seq_id_column and var_column defined later
     kallisto = kwargs.get("kallisto", None)
     bustools = kwargs.get("bustools", None)
@@ -596,9 +606,9 @@ def info(
         if not seq_id_column and not var_column:
             raise ValueError("seq_id_column and var_column must be provided if var_id_column is provided.")
         if seq_id_column not in mutation_metadata_df_exploded.columns or var_column not in mutation_metadata_df_exploded.columns:
-            if not variants_csv:
+            if not variants:  # TODO: this will not work if variants is not a csv (eg parquet, vcf)
                 raise ValueError("variants or variants_updated_csv must be provided when var_id_column is used.")
-            variants_df = pd.read_csv(variants_csv, usecols=[seq_id_column, var_column, var_id_column])
+            variants_df = pd.read_csv(variants, usecols=[seq_id_column, var_column, var_id_column])
             if seq_id_column not in variants_df.columns or var_column not in variants_df.columns:
                 raise ValueError(f"seq_id_column and var_column must be provided in the variants csv file. Found columns: {variants_df.columns.tolist()}")
             mutation_metadata_df_exploded = mutation_metadata_df_exploded.merge(variants_df, on=var_id_column, how="left")
@@ -643,7 +653,7 @@ def info(
                     mutation_metadata_df_exploded,
                     reference_cdna_fasta=reference_cdna_fasta,
                     reference_genome_fasta=reference_genome_fasta,
-                    mutations_csv=variants_csv,
+                    mutations_csv=variants,
                     w=w,
                     variant_source=variant_source,
                     columns_to_explode=columns_to_explode,
@@ -753,10 +763,9 @@ def info(
         bowtie2 = "bowtie2"
 
     # TODO: have more columns_to_include options that allows me to do cdna alone, genome alone, or both combined - currently it is either cdna+genome or nothing
-    if columns_to_include == "all" or ("alignment_to_reference" in columns_to_include or "alignment_to_reference_count_total" in columns_to_include or "alignment_to_reference_count_cdna" in columns_to_include or "alignment_to_reference_count_genome" in columns_to_include or "substring_alignment_to_reference" in columns_to_include or "substring_alignment_to_reference_count_total" in columns_to_include or "substring_alignment_to_reference_count_cdna" in columns_to_include or "substring_alignment_to_reference_count_genome" in columns_to_include):
+    if columns_to_include == "all" or any(column in columns_to_include for column in bowtie_columns_dlist):
         if not is_program_installed(bowtie2):
-            bowtie_columns = ["alignment_to_reference", "alignment_to_reference_cdna", "alignment_to_reference_genome", "alignment_to_reference_count_total", "alignment_to_reference_count_cdna", "alignment_to_reference_count_genome", "substring_alignment_to_reference", "substring_alignment_to_reference_cdna", "substring_alignment_to_reference_genome", "substring_alignment_to_reference_count_total", "substring_alignment_to_reference_count_cdna", "substring_alignment_to_reference_count_genome"]
-            logger.error(f"bowtie2 must be installed to run for the following columns: {bowtie_columns}. Please install bowtie2 or omit these columns")
+            logger.error(f"bowtie2 must be installed to run for the following columns: {bowtie_columns_dlist}. Please install bowtie2 or omit these columns")
         try:
             logger.info("Aligning to normal genome and building dlist")
             mutation_metadata_df, sequence_names_set_union_genome_and_cdna = align_to_normal_genome_and_build_dlist(
@@ -784,21 +793,7 @@ def info(
             )
         except Exception as e:
             logger.error("Error aligning to normal genome and building alignment_to_reference: %s", e)
-            columns_not_successfully_added.extend(
-                [
-                    "alignment_to_reference",
-                    "alignment_to_reference_cdna",
-                    "alignment_to_reference_genome" "alignment_to_reference_count_total",
-                    "alignment_to_reference_count_cdna",
-                    "alignment_to_reference_count_genome",
-                    "substring_alignment_to_reference",
-                    "substring_alignment_to_reference_cdna",
-                    "substring_alignment_to_reference_genome",
-                    "substring_alignment_to_reference_count_total",
-                    "substring_alignment_to_reference_count_cdna",
-                    "substring_alignment_to_reference_count_genome",
-                ]
-            )
+            columns_not_successfully_added.extend(bowtie_columns_dlist)  # list(column for column in bowtie_columns_dlist if column in columns_to_include)
 
     # CELL
     if make_kat_histogram:
@@ -996,10 +991,9 @@ def info(
 
     # CELL
     # Add metadata: VCRS substring and superstring (forward and rc)
-    if columns_to_include == "all" or ("VCRSs_for_which_this_VCRS_is_a_substring" in columns_to_include or "VCRSs_for_which_this_VCRS_is_a_superstring" in columns_to_include or "VCRS_is_a_substring_of_another_VCRS" in columns_to_include or "VCRS_is_a_superstring_of_another_VCRS" in columns_to_include):
+    if columns_to_include == "all" or any(column in columns_to_include for column in bowtie_columns_vcrs_to_vcrs):
         if not is_program_installed(bowtie2):
-            bowtie_columns = ["VCRSs_for_which_this_VCRS_is_a_substring", "VCRSs_for_which_this_VCRS_is_a_superstring", "VCRS_is_a_substring_of_another_VCRS", "VCRS_is_a_superstring_of_another_VCRS"]
-            logger.error(f"bowtie2 must be installed to run for the following columns: {bowtie_columns}. Please install bowtie2 or omit these columns")
+            logger.error(f"bowtie2 must be installed to run for the following columns: {bowtie_columns_vcrs_to_vcrs}. Please install bowtie2 or omit these columns")
         vcrs_to_vcrs_bowtie_folder = f"{out}/bowtie_vcrs_to_vcrs"
         vcrs_sam_file = f"{vcrs_to_vcrs_bowtie_folder}/mutant_reads_to_vcrs_index.sam"
         substring_output_stat_file = f"{output_stat_folder}/substring_output_stat.txt"
@@ -1027,14 +1021,7 @@ def info(
 
         except Exception as e:
             logger.error(f"Error creating VCRS to self headers: {e}")
-            columns_not_successfully_added.extend(
-                [
-                    "VCRSs_for_which_this_VCRS_is_a_substring",
-                    "VCRSs_for_which_this_VCRS_is_a_superstring",
-                    "VCRS_is_a_substring_of_another_VCRS",
-                    "VCRS_is_a_superstring_of_another_VCRS",
-                ]
-            )
+            columns_not_successfully_added.extend(bowtie_columns_vcrs_to_vcrs)   # list(column for column in bowtie_columns_vcrs_to_vcrs if column in columns_to_include)
 
     # CELL
     logger.info("sorting variant metadata by VCRS id")

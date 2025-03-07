@@ -110,7 +110,7 @@ if not os.path.exists(vk_ref_index_path) or not os.path.exists(vk_ref_t2g_path):
     vk_ref_index_path = os.path.join(vk_ref_index_dir, "index.idx")
     vk_ref_t2g_path = os.path.join(vk_ref_index_dir, "t2g.txt")
     print(f"Downloading varseek index to {vk_ref_index_dir}")
-    vk.ref(variants="cosmic_cmc", sequences="cdna", download=True, out=vk_ref_index_dir)
+    vk.ref(variants="cosmic_cmc", sequences="cdna", w=47, k=51, dlist_reference_source="t2t", download=True, out=vk_ref_index_dir)
 
 #* install seqtk if not installed
 if not is_program_installed(seqtk):

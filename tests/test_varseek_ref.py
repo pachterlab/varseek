@@ -196,7 +196,7 @@ def test_vk_ref(cosmic_csv_path, out_dir):
 
 def test_parameter_values(toy_sequences_fasta_for_vk_ref, toy_variants_csv_for_vk_ref, out_dir):
     good_parameter_values_list_of_dicts = [
-        {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir},
+        {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "dlist_reference_source": "t2t"},
         {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "w": 27, "k": "31", "dlist_reference_source": "grch37", "minimum_info_columns": True},
     ]
     

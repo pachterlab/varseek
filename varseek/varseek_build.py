@@ -310,8 +310,13 @@ def validate_input_build(params_dict):
 
     if not isinstance(sequences, (list, tuple, str, Path)):
         raise ValueError(f"sequences must be a nucleotide string, a list of nucleotide strings, a path to a reference genome, or a string specifying a reference genome supported by varseek. Got {type(sequences)}\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
-    if isinstance(sequences, (list, tuple)) and not all(isinstance(seq, str) for seq in sequences):
-        raise ValueError("All elements in sequences must be nucleotide strings.")
+    if isinstance(sequences, (list, tuple)):
+        if not all(isinstance(seq, str) for seq in sequences):
+            raise ValueError("All elements in sequences must be nucleotide strings.")
+        if not isinstance(mutations, (list, tuple)):
+            raise ValueError("If sequences is a list, then variants must also be a list.")
+        if len(sequences) != len(mutations):
+            raise ValueError("If sequences is a list, then the number of elements in sequences must be equal to the number of elements in variants.")
     if isinstance(sequences, str):
         if all(c in "ACGTNU-.*" for c in sequences.upper()):  # a single reference sequence
             pass
@@ -333,7 +338,7 @@ def validate_input_build(params_dict):
         elif mutations in supported_databases_and_corresponding_reference_sequence_type:  # a supported mutation database
             if sequences not in supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_download_commands"]:
                 raise ValueError(f"sequences {sequences} not internally supported.\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
-        elif os.path.isfile(mutations) and mutations.endswith(accepted_build_file_types):  # a path to a mutation database with a valid extension
+        elif os.path.isfile(mutations) and any(x in os.path.basename(mutations) for x in accepted_build_file_types):  # a path to a mutation database with a valid extension (I avoid using 'endswith' becasue I want to check for compressed versions too - I can handle compressed versions, as pandas reads in CSVs/TSVs and pysam reads in VCFs)
             pass
         else:
             raise ValueError(f"variants must be a string, a list of strings, a path to a variant database, or a string specifying a variant database supported by varseek. Got {type(mutations)}.\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
@@ -423,8 +428,8 @@ accepted_build_file_types = (".csv", ".tsv", ".vcf")
 
 
 def build(
-    sequences,
     variants,
+    sequences,
     w=54,
     k=59,
     max_ambiguous=0,
@@ -468,56 +473,37 @@ def build(
     and returns sequences containing the variants and the surrounding local context, dubbed variant-containing reference sequences (VCRSs),
     compatible with k-mer-based methods (i.e., kallisto | bustools) for variant detection.
 
-    # Required input argument:
-    - sequences     (str) Path to the fasta file containing the sequences to have the variants added, e.g., 'seqs.fa'.
-                    Sequence identifiers following the '>' character must correspond to the identifiers
-                    in the seq_ID column of 'variants'.
+        # Required input argument:
+    - variants                          str or list[str] or DataFrame object) Variants to apply to the sequences. Input formats options include the following:
+                                        1) Single variant (str), along with a single sequence for `sequences` (str). E.g., variants='c.2G>T' and sequences='AGCTAGCT'.
+                                        2) List of variants (list[str]), along with a list of sequences for `sequences` (list[str]). E.g., variants=['c.2G>T', 'c.1A>C'] and sequences=['AGCTAGCT', 'AGCTAGCT'].
+                                        NOTE: The number of variants must equal the number of input sequences.
+                                        3) Path to CSV/TSV file (str) (e.g., 'variants.csv') or DataFrame (DataFrame object), along with a fasta file for `sequences`.
+                                        NOTE: The `sequences` reference genome assembly (e.g., GRCh37 vs. GRCh38), source (e.g., genome vs. cDNA vs. CDS), and release (if source is cDNA or CDS, e.g., Ensembl release 111) must match the source used to annotate the variants.
+                                        The CSV/TSV/DataFrame must be structured in the following way:
 
-                    Example:
-                    >seq1 (or ENSG00000106443)
-                    ACTGCGATAGACT
-                    >seq2
-                    AGATCGCTAG
+                                        | var_column         | seq_id_column | var_id_column |
+                                        | c.2C>T             | seq1          | var1          | -> Apply varation 1 to sequence 1
+                                        | c.9_13inv          | seq2          | var2          | -> Apply varation 2 to sequence 2
+                                        | c.9_13inv          | seq3          | var2          | -> Apply varation 2 to sequence 3
+                                        | c.9_13delinsAAT    | seq3          | var3          | -> Apply varation 3 to sequence 3
+                                        | ...                | ...           | ...           |
 
-                    Alternatively: Input sequence(s) as a string or a list of strings,
-                    e.g. 'AGCTAGCT' or ['ACTGCTAGCT', 'AGCTAGCT'].
+                                        'var_column' = Column containing the variants to be performed written in standard mutation/variant annotation matching HGVS variant format (see below).
+                                        'seq_id_column' = Column containing the identifiers of the sequences to be mutated (must correspond to the string following the > character in the 'sequences' fasta file; do NOT include spaces or dots).
+                                        'var_id_column' = Column containing an identifier for each variant (optional).
 
-                    NOTE: Only the letters until the first space or dot will be used as sequence identifiers
-                    - Version numbers of Ensembl IDs will be ignored.
-                    NOTE: When 'sequences' input is a genome, also see 'gtf' argument below.
+                                        For more information on the standard mutation/variant annotation, see https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1867422/.
 
-                    Alternatively, if 'variants' is a string specifying a supported database,
-                    sequences can be a string indicating the source upon which to apply the variants.
-                    See below for supported databases and sequences options.
-                    To see the supported combinations of variants and sequences, either
-                    1) run `vk build --list_supported_databases` from the command line, or
-                    2) run varseek.build(list_supported_databases=True) in python
+                                        4) Path to VCF file (str) (e.g., 'variants.vcf'), along with a fasta file for `sequences`.
+                                        NOTE: The `sequences` reference genome assembly (e.g., GRCh37 vs. GRCh38) and release (if source is cDNA or CDS, e.g., Ensembl release 111) must match the source used to annotate the variants.
+                                        NOTE: For VCF input, the reference source is always the genome (i.e., never the cDNA or CDS). The arguments `var_column` and `seq_id_column` are not needed for VCF input (will be automatically set).
+                                        The `var_id_column` ID column can be provided if wanting to use the value from the ID column in the VCF as the variant ID instead of the default HGVS ID.
+                                        5) A value supported internally by vk ref (str), along with a value internally supported by vk ref corresponding to this variants value (str). See vk ref --list_supported_databases for more information.
 
-    - variants     (str or list[str] or DataFrame object) Path to csv or tsv file (str) (e.g., 'variants.csv'), or DataFrame (DataFrame object),
-                    containing information about the variants in the following format:
-
-                    | var_column         | var_id_column | seq_id_column |
-                    | c.2C>T             | var1          | seq1          | -> Apply variant 1 to sequence 1
-                    | c.9_13inv          | var2          | seq2          | -> Apply variant 2 to sequence 2
-                    | c.9_13inv          | var2          | seq3          | -> Apply variant 2 to sequence 3
-                    | c.9_13delinsAAT    | var3          | seq3          | -> Apply variant 3 to sequence 3
-                    | ...                | ...           | ...           |
-
-                    'var_column' = Column containing the variants to be performed written in standard mutation/variant annotation (see below)
-                    'seq_id_column' = Column containing the identifiers of the sequences to be mutated (must correspond to the string following
-                    the > character in the 'sequences' fasta file; do NOT include spaces or dots)
-                    'var_id_column' = Column containing an identifier for each variant (optional).
-
-                    Alternatively: Input variant(s) as a string or list, e.g., 'c.2C>T' or ['c.2C>T', 'c.1A>C'].
-                    If a list is provided, the number of variants must equal the number of input sequences.
-
-                    For more information on the standard mutation/variant annotation, see https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1867422/.
-
-                    Alternatively, 'variants' can be a string specifying a supported database, which will automatically download
-                    both the variant database and corresponding reference sequence (if the 'sequences' is not a path).
-                    To see the supported combinations of variants and sequences, either
-                    1) run `vk build --list_supported_databases` from the command line, or
-                    2) run varseek.build(list_supported_databases=True) in python
+    - sequences                         (str) Sequences to which to apply the variants from `variants`. See the 'variants' argument for more information on the input formats for `sequences` and their corresponding `variants` formats.
+                                        NOTE: Only the letters until the first space or dot will be used as sequence identifiers
+                                        NOTE: When 'sequences' input is a genome, also see the arguments `gtf`, `gtf_transcript_id_column`, and `transcript_boundaries` in varseek build.
 
     # Parameters affecting VCRS creation
     - w                                  (int) Length of sequence windows flanking the variant. Default: 30.
@@ -528,8 +514,8 @@ def build(
     - max_ambiguous                      (int) Maximum number of 'N' (or 'n') characters allowed in a VCRS. None means no 'N' filter will be applied. Default: 0.
 
     # Additional input files and associated parameters
-    - var_column                         (str) Name of the column containing the variants to be introduced in 'variants'. Important for CSV/TSV input with pre-defined columns. Default: 'mutation'.
-    - seq_id_column                      (str) Name of the column containing the IDs of the sequences to be mutated in 'variants'. Important for CSV/TSV input with pre-defined columns. Default: 'seq_ID'.
+    - var_column                         (str) Name of the column containing the variants to be introduced in 'variants'. Important for CSV/TSV/DataFrame input with pre-defined columns. Default: 'mutation'.
+    - seq_id_column                      (str) Name of the column containing the IDs of the sequences to be mutated in 'variants'. Important for CSV/TSV/DataFrame input with pre-defined columns. Default: 'seq_ID'.
     - var_id_column                      (str) Name of the column containing the IDs of each variant in 'variants'. Optional. Default: use <seq_id_column>_<var_column> for each row.
     - gtf                                (str) Path to .gtf file. Only used in conjunction with the arguments `transcript_boundaries` and `identify_all_spliced_from_genome`, as well as to add some information to the downloaded database when variants='cosmic_cmc'. If downloading sequence information, then setting gtf=True will automatically include it in the download. Default: None
     - gtf_transcript_id_column           (str) Column name in the input 'variants' file containing the transcript ID.
@@ -973,7 +959,7 @@ def build(
                 columns_to_keep.append(col)  # append "mutation_aa", "gene_name", "mutation_id"
 
     elif isinstance(mutations, str) and (mutations.endswith(".vcf") or mutations.endswith(".vcf.gz")):
-        mutations = vcf_to_dataframe(mutations, additional_columns=save_variants_updated_csv, explode_alt=True, filter_empty_alt=True)  # only load in additional columns if I plan to later save this updated csv
+        mutations = vcf_to_dataframe(mutations, additional_columns=save_variants_updated_csv, explode_alt=True, filter_empty_alt=True, verbose=verbose)  # only load in additional columns if I plan to later save this updated csv
         mutations.rename(columns={"CHROM": seq_id_column}, inplace=True)
         if var_id_column:
             mutations.rename(columns={"ID": var_id_column}, inplace=True)
@@ -1106,7 +1092,7 @@ def build(
         mutations["header"] = mutations[var_id_column]
         logger.info("Using var_id_column '%s' as the variant header column.", var_id_column)
     else:
-        mutations["header"] = mutations[seq_id_column] + ":" + mutations[var_column]
+        mutations["header"] = mutations[seq_id_column].astype(str) + ":" + mutations[var_column]
         logger.info("Using the seq_id_column:var_column '%s' columns as the variant header column.", f"{seq_id_column}:{var_column}")
 
     # make a set of all initial mutation IDs
@@ -1464,7 +1450,7 @@ def build(
         """
 
     if max_ambiguous is not None:
-        report += f"""  {num_rows_with_N} variants with Ns found ({num_rows_with_N/total_mutations*100:.3f}%)
+        report += f"""  {num_rows_with_N} variants with more than {max_ambiguous} Ns found ({num_rows_with_N/total_mutations*100:.3f}%)
         """
 
     if number_of_mutations_greater_than_insertion_size_limit > 0:

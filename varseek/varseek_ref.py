@@ -96,16 +96,16 @@ def validate_input_ref(params_dict):
 
 # a list of dictionaries with keys "variants", "sequences", and "description"
 downloadable_references = [
-    {"variants": "cosmic_cmc", "sequences": "cdna", "description": "COSMIC Cancer Mutation Census version 100 - Ensembl GRCh37 release 93 cDNA reference annotations. w=47, k=51. All other arguments are defaults of varseek ref unless otherwise specified. Header format (showing the column(s) from the original database used): 'seq_ID':'mutation_cdna'. Download with vk ref -v cosmic_cmc -s cdna -w 47 -k 51 -d"},
-    {"variants": "cosmic_cmc", "sequences": "cdna", "description": "COSMIC Cancer Mutation Census version 100 - Ensembl GRCh37 release 93 cDNA reference annotations. w=47, k=51, dlist_reference_source=grch37. All other arguments are defaults of varseek ref unless otherwise specified. Header format (showing the column(s) from the original database used): 'seq_ID':'mutation_cdna'. Download with vk ref -v cosmic_cmc -s cdna -w 47 -k 51 --dlist_reference_source grch37 -d"},
-    # {"variants": "cosmic_cmc", "sequences": "genome", "description": "COSMIC Cancer Mutation Census version 100 - Ensembl GRCh37 release 93 genome reference annotations. w=47,k=51. All other arguments are defaults of varseek ref unless otherwise specified. Header format (showing the column(s) from the original database used): 'chromosome':'mutation_genome'"},
+    {"description": "COSMIC Cancer Mutation Census version 100 - Ensembl GRCh37 release 93 cDNA reference annotations. w=47, k=51, dlist_reference_source=t2t. Header format (showing the column(s) from the original database used): 'seq_ID':'mutation_cdna'.", "download_command": "vk ref -v cosmic_cmc -s cdna -w 47 -k 51 --dlist_reference_source t2t -d"},
+    {"description": "COSMIC Cancer Mutation Census version 100 - Ensembl GRCh37 release 93 cDNA reference annotations. w=47, k=51, dlist_reference_source=grch37. Header format (showing the column(s) from the original database used): 'seq_ID':'mutation_cdna'.", "download_command": "vk ref -v cosmic_cmc -s cdna -w 47 -k 51 --dlist_reference_source grch37 -d"},
+    # {"variants": "cosmic_cmc", "sequences": "genome", "description": "COSMIC Cancer Mutation Census version 100 - Ensembl GRCh37 release 93 genome reference annotations. w=47,k=51. Header format (showing the column(s) from the original database used): 'chromosome':'mutation_genome'"},
 ]
 
 
 # don't worry if it says an argument is unused, as they will all get put in params_dict for each respective function and passed to the child functions
 def ref(
-    sequences,
     variants,
+    sequences,
     w=54,
     k=59,
     filters=(
@@ -115,7 +115,7 @@ def ref(
         "num_distinct_triplets:greater_than=2",  # filters out VCRSs with <= 2 unique triplets
     ),
     dlist=None,
-    dlist_reference_source="t2t",
+    dlist_reference_source=None,
     dlist_reference_ensembl_release=111,
     var_column="mutation",
     seq_id_column="seq_ID",
@@ -141,63 +141,51 @@ def ref(
     Create a reference index and t2g file for variant screening with varseek count. Wraps around varseek build, varseek info, varseek filter, and kb ref.
 
     # Required input argument:
-    - sequences     (str) Path to the fasta file containing the sequences to have the variants added, e.g., 'seqs.fa'.
-                    Sequence identifiers following the '>' character must correspond to the identifiers
-                    in the seq_ID column of 'variants'.
+    - variants     (str or list[str] or DataFrame object) Variants to apply to the sequences. Input formats options include the following:
+                    1) Single variant (str), along with a single sequence for `sequences` (str). E.g., variants='c.2G>T' and sequences='AGCTAGCT'.
+                    2) List of variants (list[str]), along with a list of sequences for `sequences` (list[str]). E.g., variants=['c.2G>T', 'c.1A>C'] and sequences=['AGCTAGCT', 'AGCTAGCT'].
+                    NOTE: The number of variants must equal the number of input sequences.
+                    3) Path to CSV/TSV file (str) (e.g., 'variants.csv') or DataFrame (DataFrame object), along with a fasta file for `sequences`.
+                    NOTE: The `sequences` reference genome assembly (e.g., GRCh37 vs. GRCh38), source (e.g., genome vs. cDNA vs. CDS), and release (if source is cDNA or CDS, e.g., Ensembl release 111) must match the source used to annotate the variants.
+                    The CSV/TSV/DataFrame must be structured in the following way:
 
-                    Example:
-                    >seq1 (or ENSG00000106443)
-                    ACTGCGATAGACT
-                    >seq2
-                    AGATCGCTAG
-
-                    Alternatively: Input sequence(s) as a string or a list of strings,
-                    e.g. 'AGCTAGCT' or ['ACTGCTAGCT', 'AGCTAGCT'].
-
-                    NOTE: Only the letters until the first space or dot will be used as sequence identifiers
-                    - Version numbers of Ensembl IDs will be ignored.
-                    NOTE: When 'sequences' input is a genome, also see 'gtf' argument below.
-
-                    Alternatively, if 'variants' is a string specifying a supported database,
-                    sequences can be a string indicating the source upon which to apply the variants.
-                    See below for supported databases and sequences options.
-                    To see the supported combinations of variants and sequences, either
-                    1) run `vk build --list_supported_databases` from the command line, or
-                    2) run varseek.build(list_supported_databases=True) in python
-
-    - variants     (str or list[str] or DataFrame object) Path to csv or tsv file (str) (e.g., 'variants.csv'), or DataFrame (DataFrame object),
-                    containing information about the variants in the following format:
-
-                    | var_column         | var_id_column | seq_id_column |
-                    | c.2C>T             | var1          | seq1          | -> Apply varation 1 to sequence 1
-                    | c.9_13inv          | var2          | seq2          | -> Apply varation 2 to sequence 2
-                    | c.9_13inv          | var2          | seq3          | -> Apply varation 2 to sequence 3
-                    | c.9_13delinsAAT    | var3          | seq3          | -> Apply varation 3 to sequence 3
+                    | var_column         | seq_id_column | var_id_column |
+                    | c.2C>T             | seq1          | var1          | -> Apply varation 1 to sequence 1
+                    | c.9_13inv          | seq2          | var2          | -> Apply varation 2 to sequence 2
+                    | c.9_13inv          | seq3          | var2          | -> Apply varation 2 to sequence 3
+                    | c.9_13delinsAAT    | seq3          | var3          | -> Apply varation 3 to sequence 3
                     | ...                | ...           | ...           |
 
-                    'var_column' = Column containing the variants to be performed written in standard mutation/variant annotation (see below)
-                    'seq_id_column' = Column containing the identifiers of the sequences to be mutated (must correspond to the string following
-                    the > character in the 'sequences' fasta file; do NOT include spaces or dots)
+                    'var_column' = Column containing the variants to be performed written in standard mutation/variant annotation matching HGVS variant format (see below).
+                    'seq_id_column' = Column containing the identifiers of the sequences to be mutated (must correspond to the string following the > character in the 'sequences' fasta file; do NOT include spaces or dots).
                     'var_id_column' = Column containing an identifier for each variant (optional).
-
-                    Alternatively: Input variant(s) as a string or list, e.g., 'c.2C>T' or ['c.2C>T', 'c.1A>C'].
-                    If a list is provided, the number of variants must equal the number of input sequences.
 
                     For more information on the standard mutation/variant annotation, see https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1867422/.
 
-                    Alternatively, 'variants' can be a string specifying a supported database, which will automatically download
-                    both the variant database and corresponding reference sequence (if the 'sequences' is not a path).
-                    To see the supported combinations of variants and sequences, either
-                    1) run `vk build --list_supported_databases` from the command line, or
-                    2) run varseek.build(list_supported_databases=True) in python
+                    4) Path to VCF file (str) (e.g., 'variants.vcf'), along with a fasta file for `sequences`.
+                    NOTE: The `sequences` reference genome assembly (e.g., GRCh37 vs. GRCh38) and release (if source is cDNA or CDS, e.g., Ensembl release 111) must match the source used to annotate the variants.
+                    NOTE: For VCF input, the reference source is always the genome (i.e., never the cDNA or CDS). The arguments `var_column` and `seq_id_column` are not needed for VCF input (will be automatically set).
+                    The `var_id_column` ID column can be provided if wanting to use the value from the ID column in the VCF as the variant ID instead of the default HGVS ID.
+                    5) A value supported internally by vk ref (str), along with a value internally supported by vk ref corresponding to this variants value (str). See vk ref --list_supported_databases for more information.
+
+    - sequences     (str) Sequences to which to apply the variants from `variants`. See the 'variants' argument for more information on the input formats for `sequences` and their corresponding `variants` formats.
+                    NOTE: Only the letters until the first space or dot will be used as sequence identifiers
+                    NOTE: When 'sequences' input is a genome, also see the arguments `gtf`, `gtf_transcript_id_column`, and `transcript_boundaries` in varseek build.
 
     # Additional parameters
     - w             (int) Length of sequence windows flanking the variant. Default: 30. If w > total length of the sequence, the entire sequence will be kept.
     - k             (int) The length of each k-mer in the kallisto reference index construction. Accordingly corresponds to the length of the k-mers to be considered in vk build's remove_seqs_with_wt_kmers, and the default minimum value for vk build's minimum sequence length (which can be changed with 'min_seq_len'). Must be greater than the value passed in for w. Default: 59.
     - filters       (str or list[str]) List of filters to apply to the variants. See varseek filter documentation for more information.
     - dlist         (str) Specifies whether ones wants to d-list against the genome, transcriptome, or both. Possible values are "genome", "transcriptome", "genome_and_transcriptome", or None. Default: None.
-    - dlist_reference_source (str) Specifies whether to use the t2t, grch37, or grch38 reference genome during alignment of VCRS k-mers to the reference genome/transcriptome and any possible d-list construction. However, no d-list is used during the creation of the VCRS reference index unless `dlist` is not None. Default: "t2t".
-    - dlist_reference_ensembl_release    (int) Ensembl release number for the d-list reference genome and transcriptome if dlist_reference_source in {"grch37", "grch38"}. Default: 111. (will automatically download the Ensembl reference genome files to `reference_out_dir`)
+    - dlist_reference_source (str or None) Specifies which reference to use during alignment of VCRS k-mers to the reference genome/transcriptome and any possible d-list construction. However, no d-list is used during the creation of the VCRS reference index unless `dlist` is not None. This can refer to the same genome version as used by the "sequences" argument, but need not be. The purpose of this genome is simply to provide an accurate and comprehensive reference genome/transcriptome to determine which k-mers from the VCRSs overlap with the reference. Will look for files in `reference_out_dir`, and will download in this directory if necessary files do not exist. Ignored if values for `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, and `dlist_reference_gtf` are provided. Default: None. Possible values:
+        - "t2t" - Telomere to telomere: https://www.ncbi.nlm.nih.gov/datasets/genome/GCF_009914755.1/. Directory: {reference_out_dir}/t2t.
+        - "grch38" - Ensembl GRCh38: https://useast.ensembl.org/Homo_sapiens/Info/Annotation. Directory: {reference_out_dir}/ensembl_grch38_release{dlist_reference_ensembl_release}.
+        - "grch37" - Ensembl GRCh37: http://useast.ensembl.org/info/website/tutorials/grch37.html. Directory: {reference_out_dir}/ensembl_grch37_release{dlist_reference_ensembl_release}.
+        If wanting to provide a reference genome outside of those above supported for automatic download, then please provide existing file paths for the parameters `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, and/or `dlist_reference_gtf`.
+    - dlist_reference_ensembl_release    (int) Ensembl release number for the d-list reference genome and transcriptome if dlist_reference_source in {"grch37", "grch38"}. Default: 111.
+    - var_column                         (str) Name of the column containing the variants to be introduced in 'variants'. Important for CSV/TSV/DataFrame input with pre-defined columns. Default: 'mutation'.
+    - seq_id_column                      (str) Name of the column containing the IDs of the sequences to be mutated in 'variants'. Important for CSV/TSV/DataFrame input with pre-defined columns. Default: 'seq_ID'.
+    - var_id_column                      (str) Name of the column containing the IDs of each variant in 'variants'. Optional. Default: use <seq_id_column>_<var_column> for each row.
 
     # Optional output file paths: (only needed if changing/customizing file names or locations):
     - out           (str) Output directory. Default: ".".
@@ -223,8 +211,9 @@ def ref(
 
     # * 0. Informational arguments that exit early
     if list_downloadable_references:  # for vk ref
+        print("All varseek ref arguments are defaults unless otherwise specified.\n")
         for downloadable_reference in downloadable_references:
-            print(f"variants: {downloadable_reference['variants']}, sequences: {downloadable_reference['sequences']}, description: {downloadable_reference['description']}")
+            print(f"Description: {downloadable_reference['description']}\nDownload command: {downloadable_reference['download_command']}\n")
         return None
 
     if kwargs.get("list_supported_databases"):  # from vk build
@@ -232,9 +221,6 @@ def ref(
         return None
     if kwargs.get("list_columns"):  # from vk info
         vk.varseek_info.print_list_columns()
-        return None
-    if kwargs.get("list_d_list_values"):  # from vk info
-        print(f"Available values for `dlist_reference_source`: {vk.varseek_info.supported_dlist_reference_values}")
         return None
     if kwargs.get("list_filter_rules"):  # from vk filter
         vk.varseek_filter.print_list_filter_rules()

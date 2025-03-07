@@ -1057,7 +1057,7 @@ def create_df_of_dlist_headers(dlist_path, k=None, header_column_name="vcrs_id")
 
     df = pd.DataFrame(dlist_headers_list_updated, columns=[header_column_name]).drop_duplicates()
 
-    df["alignment_to_reference_count_total"] = df[header_column_name].map(pd.Series(dlist_headers_list_updated).value_counts())
+    df["alignment_to_reference_count"] = df[header_column_name].map(pd.Series(dlist_headers_list_updated).value_counts())
 
     df["alignment_to_reference"] = True
 
@@ -1506,168 +1506,191 @@ def align_to_normal_genome_and_build_dlist(
     ref_prefix_genome_full = f"{ref_folder_genome_bowtie}/{ref_prefix}"
     output_sam_file_genome = f"{out_dir_notebook}/bowtie_vcrs_kmers_to_genome/alignment.sam"
 
-    if not os.path.exists(ref_folder_genome_bowtie) or not os.listdir(ref_folder_genome_bowtie):
-        run_bowtie_build_dlist(
-            ref_fa=dlist_reference_genome_fasta,
-            ref_folder=ref_folder_genome_bowtie,
-            ref_prefix=ref_prefix_genome_full,
-            bowtie2_build=bowtie2_build,
-            threads=threads,
-            logger=logger,
+    if not dlist_reference_genome_fasta and not dlist_reference_cdna_fasta:
+        logger_info("No reference fasta files provided for alignment")
+        return
+
+    if dlist_reference_genome_fasta:
+        if not os.path.exists(ref_folder_genome_bowtie) or not os.listdir(ref_folder_genome_bowtie):
+            run_bowtie_build_dlist(
+                ref_fa=dlist_reference_genome_fasta,
+                ref_folder=ref_folder_genome_bowtie,
+                ref_prefix=ref_prefix_genome_full,
+                bowtie2_build=bowtie2_build,
+                threads=threads,
+                logger=logger,
+            )
+
+        if not os.path.exists(output_sam_file_genome):
+            run_bowtie_alignment_dlist(output_sam_file=output_sam_file_genome, read_fa=mutations, ref_folder=ref_folder_genome_bowtie, ref_prefix=ref_prefix_genome_full, k=k, bowtie2=bowtie2, threads=threads, strandedness=strandedness, N_penalty=N_penalty, max_ambiguous_vcrs=max_ambiguous_vcrs, output_stat_file=bowtie_stat_file, logger=logger)
+
+        dlist_genome_df = create_df_of_dlist_headers(output_sam_file_genome, header_column_name=vcrs_id_column, k=k)
+
+        if not dlist_fasta_file_genome_full:
+            dlist_fasta_file_genome_full = f"{out_dir_notebook}/dlist_genome.fa"
+        if not os.path.exists(dlist_fasta_file_genome_full):
+            parse_sam_and_extract_sequences(output_sam_file_genome, dlist_reference_genome_fasta, dlist_fasta_file_genome_full, k=k, capitalize=True, remove_duplicates=False, logger=logger)
+
+        dlist_substring_genome_df = get_vcrs_headers_that_are_substring_dlist(
+            mutation_reference_file_fasta=mutations,
+            dlist_fasta_file=dlist_fasta_file_genome_full,
+            strandedness=strandedness,
+            header_column_name=vcrs_id_column,
         )
 
-    if not os.path.exists(output_sam_file_genome):
-        run_bowtie_alignment_dlist(output_sam_file=output_sam_file_genome, read_fa=mutations, ref_folder=ref_folder_genome_bowtie, ref_prefix=ref_prefix_genome_full, k=k, bowtie2=bowtie2, threads=threads, strandedness=strandedness, N_penalty=N_penalty, max_ambiguous_vcrs=max_ambiguous_vcrs, output_stat_file=bowtie_stat_file, logger=logger)
+        dlist_genome_df[vcrs_id_column] = dlist_genome_df[vcrs_id_column].astype(str)
+        dlist_substring_genome_df[vcrs_id_column] = dlist_substring_genome_df[vcrs_id_column].astype(str)
+        dlist_genome_df = pd.merge(dlist_genome_df, dlist_substring_genome_df, on=vcrs_id_column, how="left")
+        dlist_genome_df["substring_alignment_to_reference"] = dlist_genome_df["substring_alignment_to_reference"].fillna(False)
 
-    dlist_genome_df = create_df_of_dlist_headers(output_sam_file_genome, header_column_name=vcrs_id_column, k=k)
-    dlist_genome_df.rename(columns={"alignment_to_reference_count_total": "alignment_to_reference_count_genome"}, inplace=True)
+        if max_ambiguous_reference < 9999:  #! be careful of changing this number - it is related to the condition in varseek info - max_ambiguous_reference = 99999
+            remove_Ns_fasta(dlist_fasta_file_genome_full, max_ambiguous_reference=max_ambiguous_reference, logger=logger)
 
-    if not dlist_fasta_file_genome_full:
-        dlist_fasta_file_genome_full = f"{out_dir_notebook}/dlist_genome.fa"
-    if not os.path.exists(dlist_fasta_file_genome_full):
-        parse_sam_and_extract_sequences(output_sam_file_genome, dlist_reference_genome_fasta, dlist_fasta_file_genome_full, k=k, capitalize=True, remove_duplicates=False, logger=logger)
+        dlist_genome_df = dlist_genome_df.rename(columns={"alignment_to_reference": "alignment_to_reference_genome", "substring_alignment_to_reference": "substring_alignment_to_reference_genome", "alignment_to_reference_count": "alignment_to_reference_count_genome", "substring_alignment_to_reference_count": "substring_alignment_to_reference_count_genome"})
 
-    dlist_substring_genome_df = get_vcrs_headers_that_are_substring_dlist(
-        mutation_reference_file_fasta=mutations,
-        dlist_fasta_file=dlist_fasta_file_genome_full,
-        strandedness=strandedness,
-        header_column_name=vcrs_id_column,
-    )
+        mutation_metadata_df = mutation_metadata_df.merge(
+            dlist_genome_df[
+                [
+                    vcrs_id_column,
+                    "alignment_to_reference_genome",
+                    "substring_alignment_to_reference_genome",
+                    "alignment_to_reference_count_genome",
+                    "substring_alignment_to_reference_count_genome",
+                ]
+            ],
+            on=vcrs_id_column,
+            how="left",
+        )
+        
+        mutation_metadata_df["alignment_to_reference_genome"] = mutation_metadata_df["alignment_to_reference_genome"].fillna(False).astype(bool)
+        mutation_metadata_df["substring_alignment_to_reference_genome"] = mutation_metadata_df["substring_alignment_to_reference_genome"].fillna(False).astype(bool)
+        mutation_metadata_df["alignment_to_reference_count_genome"] = mutation_metadata_df["alignment_to_reference_count_genome"].fillna(0).astype(int)
+        mutation_metadata_df["substring_alignment_to_reference_count_genome"] = mutation_metadata_df["substring_alignment_to_reference_count_genome"].fillna(0).astype(int)
 
-    dlist_genome_df[vcrs_id_column] = dlist_genome_df[vcrs_id_column].astype(str)
-    dlist_substring_genome_df[vcrs_id_column] = dlist_substring_genome_df[vcrs_id_column].astype(str)
-    dlist_genome_df = pd.merge(dlist_genome_df, dlist_substring_genome_df, on=vcrs_id_column, how="left")
-    dlist_genome_df["substring_alignment_to_reference"] = dlist_genome_df["substring_alignment_to_reference"].fillna(False)
+        count_genome_total = mutation_metadata_df["alignment_to_reference_genome"].sum()
+        logger_info(f"Total in genome: {count_genome_total}")
 
-    if max_ambiguous_reference < 9999:  #! be careful of changing this number - it is related to the condition in varseek info - max_ambiguous_reference = 99999
-        remove_Ns_fasta(dlist_fasta_file_genome_full, max_ambiguous_reference=max_ambiguous_reference, logger=logger)
+        sequence_names_set_genome = get_set_of_headers_from_sam(output_sam_file_genome, k=k)
 
-    ref_folder_cdna_bowtie = f"{reference_out}/bowtie_index_transcriptome"
-    ref_prefix_cdna_full = f"{ref_folder_cdna_bowtie}/{ref_prefix}"
-    output_sam_file_cdna = f"{out_dir_notebook}/bowtie_vcrs_kmers_to_transcriptome/alignment.sam"
+    if dlist_reference_cdna_fasta:
+        ref_folder_cdna_bowtie = f"{reference_out}/bowtie_index_transcriptome"
+        ref_prefix_cdna_full = f"{ref_folder_cdna_bowtie}/{ref_prefix}"
+        output_sam_file_cdna = f"{out_dir_notebook}/bowtie_vcrs_kmers_to_transcriptome/alignment.sam"
 
-    if not os.path.exists(ref_folder_cdna_bowtie) or not os.listdir(ref_folder_cdna_bowtie):
-        run_bowtie_build_dlist(ref_fa=dlist_reference_cdna_fasta, ref_folder=ref_folder_cdna_bowtie, ref_prefix=ref_prefix_cdna_full, bowtie2_build=bowtie2_build, threads=threads, logger=logger)
+        if not os.path.exists(ref_folder_cdna_bowtie) or not os.listdir(ref_folder_cdna_bowtie):
+            run_bowtie_build_dlist(ref_fa=dlist_reference_cdna_fasta, ref_folder=ref_folder_cdna_bowtie, ref_prefix=ref_prefix_cdna_full, bowtie2_build=bowtie2_build, threads=threads, logger=logger)
 
-    if not os.path.exists(output_sam_file_cdna):
-        run_bowtie_alignment_dlist(output_sam_file=output_sam_file_cdna, read_fa=mutations, ref_folder=ref_folder_cdna_bowtie, ref_prefix=ref_prefix_cdna_full, k=k, bowtie2=bowtie2, threads=threads, strandedness=strandedness, N_penalty=N_penalty, max_ambiguous_vcrs=max_ambiguous_vcrs, output_stat_file=bowtie_stat_file, logger=logger)
+        if not os.path.exists(output_sam_file_cdna):
+            run_bowtie_alignment_dlist(output_sam_file=output_sam_file_cdna, read_fa=mutations, ref_folder=ref_folder_cdna_bowtie, ref_prefix=ref_prefix_cdna_full, k=k, bowtie2=bowtie2, threads=threads, strandedness=strandedness, N_penalty=N_penalty, max_ambiguous_vcrs=max_ambiguous_vcrs, output_stat_file=bowtie_stat_file, logger=logger)
 
-    dlist_cdna_df = create_df_of_dlist_headers(output_sam_file_cdna, header_column_name=vcrs_id_column, k=k)
-    dlist_cdna_df.rename(columns={"alignment_to_reference_count_total": "alignment_to_reference_count_cdna"}, inplace=True)
+        dlist_cdna_df = create_df_of_dlist_headers(output_sam_file_cdna, header_column_name=vcrs_id_column, k=k)
 
-    if not dlist_fasta_file_cdna_full:
-        dlist_fasta_file_cdna_full = f"{out_dir_notebook}/dlist_cdna.fa"
-    if not os.path.exists(dlist_fasta_file_cdna_full):
-        parse_sam_and_extract_sequences(output_sam_file_cdna, dlist_reference_cdna_fasta, dlist_fasta_file_cdna_full, k=k, capitalize=True, remove_duplicates=False, logger=logger)
+        if not dlist_fasta_file_cdna_full:
+            dlist_fasta_file_cdna_full = f"{out_dir_notebook}/dlist_cdna.fa"
+        if not os.path.exists(dlist_fasta_file_cdna_full):
+            parse_sam_and_extract_sequences(output_sam_file_cdna, dlist_reference_cdna_fasta, dlist_fasta_file_cdna_full, k=k, capitalize=True, remove_duplicates=False, logger=logger)
 
-    dlist_substring_cdna_df = get_vcrs_headers_that_are_substring_dlist(
-        mutation_reference_file_fasta=mutations,
-        dlist_fasta_file=dlist_fasta_file_cdna_full,
-        strandedness=strandedness,
-        header_column_name=vcrs_id_column,
-    )
+        dlist_substring_cdna_df = get_vcrs_headers_that_are_substring_dlist(
+            mutation_reference_file_fasta=mutations,
+            dlist_fasta_file=dlist_fasta_file_cdna_full,
+            strandedness=strandedness,
+            header_column_name=vcrs_id_column,
+        )
 
-    dlist_cdna_df[vcrs_id_column] = dlist_cdna_df[vcrs_id_column].astype(str)
+        dlist_cdna_df[vcrs_id_column] = dlist_cdna_df[vcrs_id_column].astype(str)
 
-    dlist_cdna_df[vcrs_id_column] = dlist_cdna_df[vcrs_id_column].astype(str)
-    dlist_substring_cdna_df[vcrs_id_column] = dlist_substring_cdna_df[vcrs_id_column].astype(str)
-    dlist_cdna_df = pd.merge(dlist_cdna_df, dlist_substring_cdna_df, on=vcrs_id_column, how="left")
-    dlist_cdna_df["substring_alignment_to_reference"] = dlist_cdna_df["substring_alignment_to_reference"].fillna(False)
+        dlist_cdna_df[vcrs_id_column] = dlist_cdna_df[vcrs_id_column].astype(str)
+        dlist_substring_cdna_df[vcrs_id_column] = dlist_substring_cdna_df[vcrs_id_column].astype(str)
+        dlist_cdna_df = pd.merge(dlist_cdna_df, dlist_substring_cdna_df, on=vcrs_id_column, how="left")
+        dlist_cdna_df["substring_alignment_to_reference"] = dlist_cdna_df["substring_alignment_to_reference"].fillna(False)
 
-    if max_ambiguous_reference < 9999:  #! be careful of changing this number - it is related to the condition in varseek info - max_ambiguous_reference = 99999
-        remove_Ns_fasta(dlist_fasta_file_cdna_full, max_ambiguous_reference=max_ambiguous_reference, logger=logger)
+        if max_ambiguous_reference < 9999:  #! be careful of changing this number - it is related to the condition in varseek info - max_ambiguous_reference = 99999
+            remove_Ns_fasta(dlist_fasta_file_cdna_full, max_ambiguous_reference=max_ambiguous_reference, logger=logger)
 
-    if not dlist_fasta_file:
-        dlist_fasta_file = f"{out_dir_notebook}/dlist.fa"
+        dlist_cdna_df = dlist_cdna_df.rename(columns={"alignment_to_reference": "alignment_to_reference_cdna", "substring_alignment_to_reference": "substring_alignment_to_reference_cdna", "alignment_to_reference_count": "alignment_to_reference_count_cdna", "substring_alignment_to_reference_count": "substring_alignment_to_reference_count_cdna"})
 
-    # concatenate d-lists into one file
-    with open(dlist_fasta_file, "w", encoding="utf-8") as outfile:
-        # Write the contents of the first input file to the output file
-        with open(dlist_fasta_file_genome_full, "r", encoding="utf-8") as infile1:
-            outfile.write(infile1.read())
+        mutation_metadata_df = mutation_metadata_df.merge(
+            dlist_cdna_df[
+                [
+                    vcrs_id_column,
+                    "alignment_to_reference_cdna",
+                    "substring_alignment_to_reference_cdna",
+                    "alignment_to_reference_count_cdna",
+                    "substring_alignment_to_reference_count_cdna",
+                ]
+            ],
+            on=vcrs_id_column,
+            how="left",
+        )
 
-            # Write the contents of the second input file to the output file
-        with open(dlist_fasta_file_genome_full, "r", encoding="utf-8") as infile2:
-            outfile.write(infile2.read())
+        mutation_metadata_df["alignment_to_reference_cdna"] = mutation_metadata_df["alignment_to_reference_cdna"].fillna(False).astype(bool)
+        mutation_metadata_df["substring_alignment_to_reference_cdna"] = mutation_metadata_df["substring_alignment_to_reference_cdna"].fillna(False).astype(bool)
+        mutation_metadata_df["alignment_to_reference_count_cdna"] = mutation_metadata_df["alignment_to_reference_count_cdna"].fillna(0).astype(int)
+        mutation_metadata_df["substring_alignment_to_reference_count_cdna"] = mutation_metadata_df["substring_alignment_to_reference_count_cdna"].fillna(0).astype(int)
 
-    dlist_combined_df = dlist_cdna_df.merge(
-        dlist_genome_df,
-        on=vcrs_id_column,
-        how="outer",
-        suffixes=("_cdna", "_genome"),
-    )
+        count_cdna_total = mutation_metadata_df["alignment_to_reference_cdna"].sum()
+        sequence_names_set_cdna = get_set_of_headers_from_sam(output_sam_file_cdna, k=k)
 
-    mutation_metadata_df = mutation_metadata_df.merge(
-        dlist_combined_df[
-            [
-                vcrs_id_column,
-                "alignment_to_reference_cdna",
-                "alignment_to_reference_genome",
-                "substring_alignment_to_reference_cdna",
-                "substring_alignment_to_reference_genome",
-                "alignment_to_reference_count_cdna",
-                "alignment_to_reference_count_genome",
-                "substring_alignment_to_reference_count_cdna",
-                "substring_alignment_to_reference_count_genome",
-            ]
-        ],
-        on=vcrs_id_column,
-        how="left",
-    )
+    if dlist_reference_genome_fasta and not dlist_reference_cdna_fasta:
+        logger_info(f"Total in genome: {count_genome_total}")
+        return (mutation_metadata_df, sequence_names_set_genome)
+    elif not dlist_reference_genome_fasta and dlist_reference_cdna_fasta:
+        logger_info(f"Total in cDNA: {count_cdna_total}")
+        return (mutation_metadata_df, sequence_names_set_cdna)
+    elif dlist_reference_genome_fasta and dlist_reference_cdna_fasta:
+        if not dlist_fasta_file:
+            dlist_fasta_file = f"{out_dir_notebook}/dlist.fa"
 
-    mutation_metadata_df["alignment_to_reference_cdna"] = mutation_metadata_df["alignment_to_reference_cdna"].fillna(False).astype(bool)
-    mutation_metadata_df["alignment_to_reference_genome"] = mutation_metadata_df["alignment_to_reference_genome"].fillna(False).astype(bool)
-    mutation_metadata_df["alignment_to_reference"] = (mutation_metadata_df["alignment_to_reference_cdna"] | mutation_metadata_df["alignment_to_reference_genome"]).astype(bool)
+        # concatenate d-lists into one file
+        with open(dlist_fasta_file, "w", encoding="utf-8") as outfile:
+            # Write the contents of the first input file to the output file
+            with open(dlist_fasta_file_genome_full, "r", encoding="utf-8") as infile1:
+                outfile.write(infile1.read())
 
-    mutation_metadata_df["substring_alignment_to_reference_cdna"] = mutation_metadata_df["substring_alignment_to_reference_cdna"].fillna(False).astype(bool)
-    mutation_metadata_df["substring_alignment_to_reference_genome"] = mutation_metadata_df["substring_alignment_to_reference_genome"].fillna(False).astype(bool)
-    mutation_metadata_df["substring_alignment_to_reference"] = (mutation_metadata_df["substring_alignment_to_reference_cdna"] | mutation_metadata_df["substring_alignment_to_reference_genome"]).astype(bool)
+                # Write the contents of the second input file to the output file
+            with open(dlist_fasta_file_genome_full, "r", encoding="utf-8") as infile2:
+                outfile.write(infile2.read())
 
-    mutation_metadata_df["alignment_to_reference_count_cdna"] = mutation_metadata_df["alignment_to_reference_count_cdna"].fillna(0).astype(int)
-    mutation_metadata_df["alignment_to_reference_count_genome"] = mutation_metadata_df["alignment_to_reference_count_genome"].fillna(0).astype(int)
-    mutation_metadata_df["alignment_to_reference_count_total"] = mutation_metadata_df["alignment_to_reference_count_cdna"] + mutation_metadata_df["alignment_to_reference_count_genome"]
+        mutation_metadata_df["alignment_to_reference"] = (mutation_metadata_df["alignment_to_reference_cdna"] | mutation_metadata_df["alignment_to_reference_genome"]).astype(bool)
+        mutation_metadata_df["substring_alignment_to_reference"] = (mutation_metadata_df["substring_alignment_to_reference_cdna"] | mutation_metadata_df["substring_alignment_to_reference_genome"]).astype(bool)
+        mutation_metadata_df["alignment_to_reference_count_total"] = mutation_metadata_df["alignment_to_reference_count_cdna"] + mutation_metadata_df["alignment_to_reference_count_genome"]
+        mutation_metadata_df["substring_alignment_to_reference_count_total"] = mutation_metadata_df["substring_alignment_to_reference_count_cdna"] + mutation_metadata_df["substring_alignment_to_reference_count_genome"]
 
-    mutation_metadata_df["substring_alignment_to_reference_count_cdna"] = mutation_metadata_df["substring_alignment_to_reference_count_cdna"].fillna(0).astype(int)
-    mutation_metadata_df["substring_alignment_to_reference_count_genome"] = mutation_metadata_df["substring_alignment_to_reference_count_genome"].fillna(0).astype(int)
-    mutation_metadata_df["substring_alignment_to_reference_count_total"] = mutation_metadata_df["substring_alignment_to_reference_count_cdna"] + mutation_metadata_df["substring_alignment_to_reference_count_genome"]
+        # TODO: for those that dlist in the genome, add an additional check to see if they filter in coding regions (I already check for spliced with cDNA, but I don't distinguish unspliced coding vs noncoding) - add to column alignment_to_reference_coding_genome, substring_alignment_to_reference_coding_genome, alignment_to_reference_count_coding_genome, substring_alignment_to_reference_count_coding_genome
 
-    # TODO: for those that dlist in the genome, add an additional check to see if they filter in coding regions (I already check for spliced with cDNA, but I don't distinguish unspliced coding vs noncoding) - add to column alignment_to_reference_coding_genome, substring_alignment_to_reference_coding_genome, alignment_to_reference_count_coding_genome, substring_alignment_to_reference_count_coding_genome
+        # count_cdna_total = mutation_metadata_df["alignment_to_reference_cdna"].sum()  # computed above
+        # count_genome_total = mutation_metadata_df["alignment_to_reference_genome"].sum()  # computed above
+        count_cdna_unique = ((mutation_metadata_df["alignment_to_reference_cdna"]) & (~mutation_metadata_df["alignment_to_reference_genome"])).sum()
+        count_genome_unique = ((mutation_metadata_df["alignment_to_reference_genome"]) & (~mutation_metadata_df["alignment_to_reference_cdna"])).sum()
+        count_cdna_and_genome_intersection = ((mutation_metadata_df["alignment_to_reference_genome"]) & (mutation_metadata_df["alignment_to_reference_cdna"])).sum()
+        count_cdna_or_genome_union = mutation_metadata_df["alignment_to_reference"].sum()
 
-    count_cdna_unique = ((mutation_metadata_df["alignment_to_reference_cdna"]) & (~mutation_metadata_df["alignment_to_reference_genome"])).sum()
-    count_genome_unique = ((mutation_metadata_df["alignment_to_reference_genome"]) & (~mutation_metadata_df["alignment_to_reference_cdna"])).sum()
-    count_cdna_and_genome_intersection = ((mutation_metadata_df["alignment_to_reference_genome"]) & (mutation_metadata_df["alignment_to_reference_cdna"])).sum()
-    count_cdna_total = mutation_metadata_df["alignment_to_reference_cdna"].sum()
-    count_genome_total = mutation_metadata_df["alignment_to_reference_genome"].sum()
-    count_cdna_or_genome_union = mutation_metadata_df["alignment_to_reference"].sum()
+        log_messages = [
+            f"Unique to cDNA: {count_cdna_unique}",
+            f"Unique to genome: {count_genome_unique}",
+            f"Shared between cDNA and genome: {count_cdna_and_genome_intersection}",
+            f"Total in cDNA: {count_cdna_total}",
+            f"Total in genome: {count_genome_total}",
+            f"Total in cDNA or genome: {count_cdna_or_genome_union}",
+        ]
 
-    log_messages = [
-        f"Unique to cDNA: {count_cdna_unique}",
-        f"Unique to genome: {count_genome_unique}",
-        f"Shared between cDNA and genome: {count_cdna_and_genome_intersection}",
-        f"Total in cDNA: {count_cdna_total}",
-        f"Total in genome: {count_genome_total}",
-        f"Total in cDNA or genome: {count_cdna_or_genome_union}",
-    ]
-
-    # Log the messages
-    for message in log_messages:
-        logger_info(message)
-
-    if os.path.exists(bowtie_stat_file):
-        write_mode = "a"
-    else:
-        write_mode = "w"
-
-    # Re-print and save the messages to a text file
-    with open(bowtie_stat_file, write_mode, encoding="utf-8") as f:  # Use 'a' to append to the file
-        f.write("Bowtie alignment statistics summary\n")
+        # Log the messages
         for message in log_messages:
-            f.write(message + "\n")  # Write to file
+            logger_info(message)
 
-    sequence_names_set_genome = get_set_of_headers_from_sam(output_sam_file_genome, k=k)
-    sequence_names_set_cdna = get_set_of_headers_from_sam(output_sam_file_cdna, k=k)
-    sequence_names_set_union_genome_and_cdna = sequence_names_set_genome | sequence_names_set_cdna
-    return (mutation_metadata_df, sequence_names_set_union_genome_and_cdna)
+        if os.path.exists(bowtie_stat_file):
+            write_mode = "a"
+        else:
+            write_mode = "w"
+
+        # Re-print and save the messages to a text file
+        with open(bowtie_stat_file, write_mode, encoding="utf-8") as f:  # Use 'a' to append to the file
+            f.write("Bowtie alignment statistics summary\n")
+            for message in log_messages:
+                f.write(message + "\n")  # Write to file
+
+        sequence_names_set_union_genome_and_cdna = sequence_names_set_genome | sequence_names_set_cdna
+        return (mutation_metadata_df, sequence_names_set_union_genome_and_cdna)
 
 
 def identify_variant_source(mutation_metadata_df_exploded, variant_source_column="variant_source"):
