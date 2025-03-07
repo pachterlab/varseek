@@ -24,6 +24,7 @@ sample_size=600  # 2,000 each for each of the 6 mutation types  #!!! change back
 columns_to_drop_info_filter = None  # drops columns for info and filter df - will not throw an error if the column does not exist in the df   # ["nearby_variants", "number_of_kmers_with_overlap_to_other_VCRSs", "number_of_other_VCRSs_with_overlapping_kmers", "overlapping_kmers", "VCRSs_with_overlapping_kmers", "kmer_overlap_with_other_VCRSs"]
 make_new_gt = True
 store_out_in_permanent_paths = True
+threads = 8
 
 test_directory = Path(__file__).resolve().parent
 ground_truth_folder = os.path.join(test_directory, "pytest_ground_truth")
@@ -136,7 +137,6 @@ def test_vk_ref(cosmic_csv_path, out_dir):
     w = 47
     k = 51
     columns_to_include = "all"
-    threads = 2
     filters=(
         "alignment_to_reference:is_not_true",
         # "substring_alignment_to_reference:is_not_true",  # filter out variants that are a substring of the reference genome  #* uncomment this and erase the line above when implementing d-list
@@ -154,24 +154,23 @@ def test_vk_ref(cosmic_csv_path, out_dir):
         reference_out_dir=reference_folder_parent,
         seq_id_column="seq_ID",
         var_column = "mutation_cdna",
+        w = w,
+        k = k,
+        save_variants_updated_csv = True,
+        columns_to_include = columns_to_include,  # info args
         seq_id_cdna_column="seq_ID",
         var_cdna_column="mutation_cdna",
         seq_id_genome_column="chromosome",
         var_genome_column="mutation_genome",
         gene_name_column="gene_name",
-        w = w,
-        k = k,
-        save_variants_updated_csv = True,
-        columns_to_include = columns_to_include,  # info args
-        reference_folder = reference_folder_parent,
         dlist_reference_source="grch37",
         dlist_reference_ensembl_release=93,
-        dlist_reference_genome_fasta = cosmic_genome_path,  # for d-listing
-        dlist_reference_cdna_fasta = cosmic_cdna_path,  # for d-listing
-        dlist_reference_gtf = cosmic_gtf_path,  # for d-listing
-        reference_genome_fasta = cosmic_genome_path,  # for compare_cdna_and_genome
-        reference_cdna_fasta = cosmic_cdna_path,  # for compare_cdna_and_genome
-        gtf = cosmic_gtf_path,  # for distance to nearest splice junction
+        # dlist_reference_genome_fasta = cosmic_genome_path,  # for d-listing - should be handled internally by vk info
+        # dlist_reference_cdna_fasta = cosmic_cdna_path,  # for d-listing - should be handled internally by vk info
+        # dlist_reference_gtf = cosmic_gtf_path,  # for d-listing - should be handled internally by vk info
+        # reference_genome_fasta = cosmic_genome_path,  # for compare_cdna_and_genome - should be handled internally by vk ref
+        # reference_cdna_fasta = cosmic_cdna_path,  # for compare_cdna_and_genome - should be handled internally by vk ref
+        # gtf = cosmic_gtf_path,  # for distance to nearest splice junction - should be handled internally by vk ref
         save_variants_updated_exploded_vk_info_csv = True,
         threads = threads,
         filters = filters,  # filter args
