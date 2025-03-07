@@ -772,7 +772,7 @@ def get_vcrss_that_pseudoalign_but_arent_dlisted(mutation_metadata_df, vcrs_id_c
     vcrs_fa_base, vcrs_fa_ext = splitext_custom(vcrs_fa)
     vcrs_fa_filtered_bowtie = f"{vcrs_fa_base}_filtered_bowtie{vcrs_fa_ext}"
     vcrs_fQ_filtered_bowtie = f"{vcrs_fa_base}_filtered_bowtie.fq"
-    kb_ref_wt = f"{ref_folder_kb}/reference"
+    kb_ref_wt = f"{ref_folder_kb}/kb_ref_out_{additional_kb_extract_filtering_workflow}_workflow"
     os.makedirs(kb_ref_wt, exist_ok=True)
     kb_human_reference_index_file = f"{kb_ref_wt}/index.idx"
     kb_human_reference_t2g_file = f"{kb_ref_wt}/t2g.txt"

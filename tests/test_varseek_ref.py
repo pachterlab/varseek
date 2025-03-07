@@ -114,6 +114,7 @@ def test_vk_ref(cosmic_csv_path, out_dir):
 
     bowtie2_reference_genome_folder = os.path.join(ensembl_grch37_release93_folder, "bowtie_index_genome")
     bowtie2_reference_transcriptome_folder = os.path.join(ensembl_grch37_release93_folder, "bowtie_index_transcriptome")
+    kb_reference_genome_index_folder = os.path.join(ensembl_grch37_release93_folder, "kb_ref_nac_workflow")
 
     # skip this run if you don't have the ground truth and are not making it
     if not os.path.exists(ground_truth_folder) or not os.listdir(ground_truth_folder):
@@ -127,6 +128,10 @@ def test_vk_ref(cosmic_csv_path, out_dir):
     for directory in [bowtie2_reference_genome_folder, bowtie2_reference_transcriptome_folder]:
         if not os.path.isdir(directory) or len(os.listdir(directory)) == 0:
             pytest.skip(f"{directory} not found. Please make this bowtie2 index to continue")
+
+    for directory in [kb_reference_genome_index_folder]:
+        if not os.path.isdir(directory) or len(os.listdir(directory)) == 0:
+            pytest.skip(f"{directory} not found. Please make this kallisto index to continue")
 
     w = 47
     k = 51
