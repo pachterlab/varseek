@@ -325,11 +325,11 @@ def validate_input_build(params_dict):
         elif os.path.isfile(sequences) and sequences.endswith(fasta_extensions):  # a path to a reference genome with a valid extension
             pass
         else:
-            raise ValueError(f"sequences must be a nucleotide string, a list of nucleotide strings, a path to a reference genome, or a string specifying a reference genome supported by varseek. Got {type(sequences)}.\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
+            raise ValueError(f"sequences must be a nucleotide string, a list of nucleotide strings, a path to a reference genome, or a string specifying a reference genome supported by varseek. Got {sequences} of type {type(sequences)}.\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
 
     # mutations
     if not isinstance(mutations, (list, str, Path)):
-        raise ValueError(f"variants must be a string, a list of strings, a path to a variant database, or a string specifying a variant database supported by varseek. Got {type(mutations)}\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
+        raise ValueError(f"variants must be a string, a list of strings, a path to a variant database, or a string specifying a variant database supported by varseek. Got {mutations} of type {type(mutations)}\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
     if isinstance(mutations, list) and not all((isinstance(mut, str) and mut.startswith(("c.", "g."))) for mut in mutations):
         raise ValueError("All elements in variants must be strings that start with 'c.' or 'g.'.")
     if isinstance(mutations, str):
@@ -1413,13 +1413,11 @@ def build(
         mutations["num_N"] = mutations["vcrs_sequence"].str.lower().str.count("n")
         num_rows_with_N = (mutations["num_N"] > max_ambiguous).sum()
         mutations = mutations[mutations["num_N"] <= max_ambiguous]
+        mutations = mutations.drop(columns=["num_N"])
 
         logger.info("Removed %d variant kmers containing more than %d 'N's...", num_rows_with_N, max_ambiguous)
     else:
         num_rows_with_N = 0
-
-        # Drop the 'num_N' column after filtering
-        mutations = mutations.drop(columns=["num_N"])
 
     # Report status of mutations back to user
     good_mutations = mutations.shape[0]

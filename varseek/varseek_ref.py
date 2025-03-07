@@ -175,7 +175,7 @@ def ref(
     # Additional parameters
     - w             (int) Length of sequence windows flanking the variant. Default: 30. If w > total length of the sequence, the entire sequence will be kept.
     - k             (int) The length of each k-mer in the kallisto reference index construction. Accordingly corresponds to the length of the k-mers to be considered in vk build's remove_seqs_with_wt_kmers, and the default minimum value for vk build's minimum sequence length (which can be changed with 'min_seq_len'). Must be greater than the value passed in for w. Default: 59.
-    - filters       (str or list[str]) List of filters to apply to the variants. See varseek filter documentation for more information.
+    - filters       (str or list[str]) Filter or list of filters to apply to the variant reference fasta. Each filter should be in the format COLUMN-RULE=VALUE or COLUMN-RULE (for boolean evaluation). For details, run vk filter --list_filter_rules, or see the documentation at https://github.com/pachterlab/varseek/blob/main/docs/filter.md
     - dlist         (str) Specifies whether ones wants to d-list against the genome, transcriptome, or both. Possible values are "genome", "transcriptome", "genome_and_transcriptome", or None. Default: None.
     - dlist_reference_source (str or None) Specifies which reference to use during alignment of VCRS k-mers to the reference genome/transcriptome and any possible d-list construction. However, no d-list is used during the creation of the VCRS reference index unless `dlist` is not None. This can refer to the same genome version as used by the "sequences" argument, but need not be. The purpose of this genome is simply to provide an accurate and comprehensive reference genome/transcriptome to determine which k-mers from the VCRSs overlap with the reference. Will look for files in `reference_out_dir`, and will download in this directory if necessary files do not exist. Ignored if values for `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, and `dlist_reference_gtf` are provided. Default: None. Possible values:
         - "t2t" - Telomere to telomere: https://www.ncbi.nlm.nih.gov/datasets/genome/GCF_009914755.1/. Directory: {reference_out_dir}/t2t.
@@ -498,6 +498,9 @@ def ref(
             for file in ("gtf", "reference_genome_fasta", "reference_cdna_fasta"):
                 if column_names_and_file_names_dict[file]:
                     kwargs[file] = kwargs.get(file, column_names_and_file_names_dict[file])
+            
+            # if kwargs.get("reference_cds_fasta") and not kwargs.get("reference_cdna_fasta"):  # updated thought: this does in fact need to be cDNA (cannot be cds), as the column above refers to cDNA  # original thought: for the purposes of vk info, reference_cdna_fasta really just refers to the transcriptome, whether it is cDNA or CDS
+            #     kwargs["reference_cdna_fasta"] = kwargs["reference_cds_fasta"]
 
     else:
         logger.warning(f"Skipping vk build because {file_signifying_successful_vk_build_completion} already exists and overwrite=False")
@@ -512,7 +515,7 @@ def ref(
             # eg kwargs_vk_info['mykwarg'] = mykwarg
 
             logger.info("Running vk info")
-            _ = vk.info(k=k, dlist_reference_source=dlist_reference_source, dlist_reference_ensembl_release=dlist_reference_ensembl_release, seq_id_column=seq_id_column, var_column=var_column, out=out, reference_out_dir=reference_out_dir, dry_run=dry_run, overwrite=True, threads=threads, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir, verbose=verbose, variants=variants, w=w, **kwargs_vk_info)  # overwrite=True rather than overwrite=overwrite because I only enter this condition if the file signifying success does not exist and/or overwrite is True anyways - this allows me to overwrite half-completed functions  # a kwargs of vk info but explicit in vk ref  # a kwargs of vk info but explicit in vk ref  # including input_dir
+            _ = vk.info(k=k, dlist_reference_source=dlist_reference_source, dlist_reference_ensembl_release=dlist_reference_ensembl_release, seq_id_column=seq_id_column, var_column=var_column, out=out, reference_out_dir=reference_out_dir, dry_run=dry_run, overwrite=True, threads=threads, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir, verbose=verbose, variants=variants, sequences=sequences, w=w, **kwargs_vk_info)  # overwrite=True rather than overwrite=overwrite because I only enter this condition if the file signifying success does not exist and/or overwrite is True anyways - this allows me to overwrite half-completed functions  # a kwargs of vk info but explicit in vk ref  # a kwargs of vk info but explicit in vk ref  # including input_dir
         else:
             logger.warning(f"Skipping vk info because {file_signifying_successful_vk_info_completion} already exists and overwrite=False")
 

@@ -2,6 +2,7 @@
 
 # CELL
 import logging
+import shutil
 import os
 import subprocess
 import time
@@ -364,6 +365,7 @@ def info(
     - reference_cdna_fasta               (str) Path to the reference cDNA fasta file. Only utilized for the column 'cdna_and_genome_same'. Default: "cdna".
     - reference_genome_fasta             (str) Path to the reference genome fasta file. Only utilized for the column 'cdna_and_genome_same'. Default: "genome".
     - variants                           (str) Path to the variants csv file. Only utilized for the column 'cdna_and_genome_same', and when `var_id_column` provided. Corresponds to `variants` in the varseek build function. Default: None.
+    - sequences                          (str) Path to the sequences fasta file. Only utilized for the column 'cdna_and_genome_same'. Corresponds to `sequences` in the varseek build function. Default: None.
     - seq_id_column                      (str) Corresponds to `seq_id_column` in the varseek build function. Only utilized when `var_id_column` provided. Default: None.
     - var_column                         (str) Corresponds to `var_column` in the varseek build function. Only utilized when `var_id_column` provided. Default: None.
     - kallisto                           (str) Path to the directory containing the kallisto executable. Only utilized for the columns `pseudoaligned_to_reference`, `pseudoaligned_to_reference_despite_not_truly_aligning`. Default: None.
@@ -469,6 +471,7 @@ def info(
     reference_cdna_fasta = kwargs.get("reference_cdna_fasta", "cdna")
     reference_genome_fasta = kwargs.get("reference_genome_fasta", "genome")
     variants = kwargs.get("variants", None)
+    sequences = kwargs.get("sequences", None)
     # seq_id_column and var_column defined later
     kallisto = kwargs.get("kallisto", None)
     bustools = kwargs.get("bustools", None)
@@ -634,6 +637,22 @@ def info(
     unique_vcrs_sources = mutation_metadata_df_exploded[variant_source_column].unique()
     variant_source = "combined" if len(unique_vcrs_sources) > 1 else unique_vcrs_sources[0]
 
+    # ensures proper handling if someone passes in seq_id_column and var_column to vk ref, but not cdna/genome columns in particular; as well as if they passed sequences but not reference_cdna_fasta
+    if variant_source == "cdna":
+        if kwargs.get("seq_id_column") and not seq_id_cdna_column:
+            seq_id_cdna_column = kwargs.get("seq_id_column")
+        if kwargs.get("var_column") and not var_cdna_column:
+            var_cdna_column = kwargs.get("var_column")
+        if (not reference_cdna_fasta or not os.path.isfile(reference_cdna_fasta)) and (sequences and os.path.isfile(sequences)):
+            reference_cdna_fasta = sequences
+    elif variant_source == "genome":
+        if kwargs.get("seq_id_column") and not seq_id_genome_column:
+            seq_id_genome_column = kwargs.get("seq_id_column")
+        if kwargs.get("var_column") and not var_genome_column:
+            var_genome_column = kwargs.get("var_column")
+        if (not reference_genome_fasta or not os.path.isfile(reference_genome_fasta)) and (sequences and os.path.isfile(sequences)):
+            reference_genome_fasta = sequences
+
     add_mutation_information(mutation_metadata_df_exploded, mutation_column="variant_used_for_vcrs")
 
     if seq_id_cdna_column and var_cdna_column in mutation_metadata_df_exploded.columns:
@@ -655,6 +674,8 @@ def info(
         if "cdna_and_genome_same" in mutation_metadata_df_exploded.columns:
             columns_to_explode.append("cdna_and_genome_same")
         else:
+            varseek_build_temp_folder="vk_build_tmp"
+            delete_temp_dir=True
             try:
                 logger.info("Comparing cDNA and genome")
                 mutation_metadata_df_exploded, columns_to_explode = compare_cdna_and_genome(
@@ -670,10 +691,14 @@ def info(
                     seq_id_column_genome=seq_id_genome_column,
                     var_column_genome=var_genome_column,
                     reference_out_dir=reference_out_dir,
+                    varseek_build_temp_folder=varseek_build_temp_folder,
+                    delete_temp_dir=delete_temp_dir
                 )
             except Exception as e:
                 logger.error(f"Error comparing cDNA and genome: {e}")
                 columns_not_successfully_added.append("cdna_and_genome_same")
+            if delete_temp_dir and os.path.exists(varseek_build_temp_folder):
+                shutil.rmtree(varseek_build_temp_folder)
 
     # CELL
     if columns_to_include == "all" or "distance_to_nearest_splice_junction" in columns_to_include:

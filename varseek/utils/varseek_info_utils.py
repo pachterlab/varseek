@@ -494,13 +494,14 @@ def compare_cdna_and_genome(mutation_metadata_df_exploded, reference_out_dir=Non
     else:
         reference_out_dir_temp = reference_out_dir
 
-    varseek_build_cdna_out_df = f"{varseek_build_temp_folder}/varseek_build_cdna_{w}.csv"
+    varseek_build_temp_folder_cdna = f"{varseek_build_temp_folder}/cdna"
+    varseek_build_cdna_out_df = f"{varseek_build_temp_folder_cdna}/varseek_build_cdna_{w}.csv"
 
     if not os.path.exists(varseek_build_cdna_out_df):
         build(
             sequences=reference_cdna_fasta,
             variants=mutations_csv,
-            out=varseek_build_temp_folder,
+            out=varseek_build_temp_folder_cdna,
             reference_out_dir=reference_out_dir_temp,
             w=w,
             remove_seqs_with_wt_kmers=False,
@@ -528,13 +529,14 @@ def compare_cdna_and_genome(mutation_metadata_df_exploded, reference_out_dir=Non
         ],
     )
 
-    varseek_build_genome_out_df = f"{varseek_build_temp_folder}/varseek_build_genome_{w}.csv"
+    varseek_build_temp_folder_genome = f"{varseek_build_temp_folder}/genome"
+    varseek_build_genome_out_df = f"{varseek_build_temp_folder_genome}/varseek_build_genome_{w}.csv"
 
     if not os.path.exists(varseek_build_genome_out_df):
         build(
             sequences=reference_genome_fasta,
             variants=mutations_csv,
-            out=varseek_build_temp_folder,
+            out=varseek_build_temp_folder_genome,
             reference_out_dir=reference_out_dir_temp,
             w=w,
             remove_seqs_with_wt_kmers=False,

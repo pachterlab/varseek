@@ -253,7 +253,7 @@ def make_filtering_report(variant_metadata_df, vcrs_header_column="vcrs_header",
 
 
 def print_list_filter_rules():
-    filter_md_path = os.path.join(os.path.dirname(os.getcwd()), "docs", "filter.md")  # Get the filter.md file relative to varseek_filter.py
+    filter_md_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs", "filter.md")  # Get the filter.md file relative to varseek_filter.py
     column_blocks = extract_documentation_file_blocks(filter_md_path, start_pattern=r"^COLUMN:RULE", stop_pattern=r"^$")  # COLUMN:RULE to new line
     for block in column_blocks:
         print(block)
@@ -351,7 +351,7 @@ def filter(
 
     # Required input arguments:
     - input_dir     (str) Path to the directory containing the input files. Corresponds to `out` in the varseek info function.
-    - filters       (str or list[str]) String or list of filters to apply. If a string, it should be a path to a txt file containing the filters. If a list, it should be a list of strings in the format COLUMNNAME-RULE=VALUE. See documentation for details, or run vk.filter(list_filter_rules=True).
+    - filters       (str or list[str]) Filter or list of filters to apply to the variant reference fasta. Each filter should be in the format COLUMN-RULE=VALUE or COLUMN-RULE (for boolean evaluation). For details, run vk filter --list_filter_rules, or see the documentation at https://github.com/pachterlab/varseek/blob/main/docs/filter.md
 
     # Optional input arguments:
     - variants_updated_vk_info_csv                (str) Path to the updated dataframe containing the VCRS headers and sequences. Corresponds to `variants_updated_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).

@@ -20,7 +20,7 @@ from .conftest import (
     compare_two_t2gs,
 )
 
-sample_size=600  # 2,000 each for each of the 6 mutation types  #!!! change back to 12_000
+sample_size=12_000  # 2,000 each for each of the 6 mutation types  #!!! change back to 12_000
 columns_to_drop_info_filter = None  # drops columns for info and filter df - will not throw an error if the column does not exist in the df   # ["nearby_variants", "number_of_kmers_with_overlap_to_other_VCRSs", "number_of_other_VCRSs_with_overlapping_kmers", "overlapping_kmers", "VCRSs_with_overlapping_kmers", "kmer_overlap_with_other_VCRSs"]
 make_new_gt = True
 store_out_in_permanent_paths = True
@@ -115,7 +115,7 @@ def test_vk_ref(cosmic_csv_path, out_dir):
 
     bowtie2_reference_genome_folder = os.path.join(ensembl_grch37_release93_folder, "bowtie_index_genome")
     bowtie2_reference_transcriptome_folder = os.path.join(ensembl_grch37_release93_folder, "bowtie_index_transcriptome")
-    kb_reference_genome_index_folder = os.path.join(ensembl_grch37_release93_folder, "kb_ref_nac_workflow")
+    kb_reference_genome_index_folder = os.path.join(ensembl_grch37_release93_folder, "kb_ref_out_nac_workflow")
 
     # skip this run if you don't have the ground truth and are not making it
     if not os.path.exists(ground_truth_folder) or not os.listdir(ground_truth_folder):
@@ -165,12 +165,12 @@ def test_vk_ref(cosmic_csv_path, out_dir):
         gene_name_column="gene_name",
         dlist_reference_source="grch37",
         dlist_reference_ensembl_release=93,
-        # dlist_reference_genome_fasta = cosmic_genome_path,  # for d-listing - should be handled internally by vk info
-        # dlist_reference_cdna_fasta = cosmic_cdna_path,  # for d-listing - should be handled internally by vk info
-        # dlist_reference_gtf = cosmic_gtf_path,  # for d-listing - should be handled internally by vk info
-        # reference_genome_fasta = cosmic_genome_path,  # for compare_cdna_and_genome - should be handled internally by vk ref
-        # reference_cdna_fasta = cosmic_cdna_path,  # for compare_cdna_and_genome - should be handled internally by vk ref
-        # gtf = cosmic_gtf_path,  # for distance to nearest splice junction - should be handled internally by vk ref
+        # dlist_reference_genome_fasta = cosmic_genome_path,  # for d-listing - should be handled internally by vk info because dlist_reference_source is provided
+        # dlist_reference_cdna_fasta = cosmic_cdna_path,  # for d-listing - should be handled internally by vk info because dlist_reference_source is provided
+        # dlist_reference_gtf = cosmic_gtf_path,  # for d-listing - should be handled internally by vk info because dlist_reference_source is provided
+        reference_genome_fasta = cosmic_genome_path,  # for compare_cdna_and_genome - only handled internally by vk ref if variants = "cosmic_cmc" etc
+        # reference_cdna_fasta = cosmic_cdna_path,  # for compare_cdna_and_genome - should be handled internally by vk ref (because I provided sequences for vk build, and because variant_source can be identified to be transcriptome)
+        gtf = cosmic_gtf_path,  # for distance to nearest splice junction - only handled internally by vk ref if variants = "cosmic_cmc" etc
         save_variants_updated_exploded_vk_info_csv = True,
         threads = threads,
         filters = filters,  # filter args
@@ -178,6 +178,7 @@ def test_vk_ref(cosmic_csv_path, out_dir):
     )
 
     # file name, file type, columns to drop for comparison
+    global columns_to_drop_info_filter  # should be unnecessary but got an error without it
     files_to_compare_and_file_type = [
         ("vcrs.fa", "fasta", None),
         ("CancerMutationCensus_AllData_v100_GRCh37_mutation_workflow_with_cdna_subsampled_pytest_updated.csv", "df", None),

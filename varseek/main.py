@@ -1010,7 +1010,7 @@ def main():  # noqa: C901
         "--filters",
         type=strpath_or_list_like_of_strings,
         nargs="+",
-        required=True,
+        required=not vk_filter_list_information_and_exit_flag_present,
         help=extract_help_from_doc(filter, "filters"),
     )
     parser_filter.add_argument(
