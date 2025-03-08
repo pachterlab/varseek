@@ -289,8 +289,16 @@ def sim(
     # don't account for number_of_reads_per_variant_alt (can be all), number_of_reads_per_variant_ref (can be all), error_rate (float), max_errors (can be float("inf"))
 
     # * 8. Start the function
+    variants_format = "dataframe"
     if isinstance(variants, str) and os.path.exists(variants):
-        variants = pd.read_csv(variants)
+        if ".tsv" in variants:
+            variants_format = "tsv"
+            variants = pd.read_csv(variants, sep="\t")
+        elif ".csv" in variants:
+            variants_format = "csv"
+            variants = pd.read_csv(variants)
+        else:
+            raise ValueError("variants must be a csv path, tsv path, or dataframe")
 
     if (isinstance(variants, str) and not os.path.exists(variants)) or (variant_sequence_read_parent_column not in variants.columns and sample_type != "w") or (ref_sequence_read_parent_column not in variants.columns and sample_type != "m"):
         logger.info("cannot find mutant sequence read parent")
@@ -723,7 +731,8 @@ def sim(
         read_df.to_csv(reads_csv_out, index=False)
 
     if variants_updated_csv_out is not None:
-        variants.to_csv(variants_updated_csv_out, index=False)
+        sep = "\t" if variants == "tsv" else ","
+        variants.to_csv(variants_updated_csv_out, index=False, sep=sep)
 
     report_time_elapsed(start_time, logger=logger, function_name="sim")
 

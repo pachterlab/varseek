@@ -185,7 +185,7 @@ def introduce_sequencing_errors(sequence, error_rate=0.0001, error_distribution=
 
 def build_random_genome_read_df(
     reference_fasta_file_path,
-    mutation_metadata_df,
+    mutation_metadata_df=None,
     seq_id_column="seq_ID",
     var_column="mutation",
     input_type="cdna",
@@ -207,9 +207,10 @@ def build_random_genome_read_df(
         input_type = "cdna"  # for backwards compatibility
     if input_type not in ["genome", "cdna"]:
         raise ValueError(f"Invalid input_type: {input_type}. Expected 'genome' or 'cdna'.")
-    if f"start_variant_position_{input_type}" not in mutation_metadata_df.columns or f"end_variant_position_{input_type}" not in mutation_metadata_df.columns:
-        add_mutation_information(mutation_metadata_df, mutation_column=var_column, variant_source=input_type)
-    mutation_metadata_df[f"start_position_for_which_read_contains_mutation_{input_type}"] = mutation_metadata_df[f"start_variant_position_{input_type}"] - read_length + 1
+    if mutation_metadata_df:
+        if f"start_variant_position_{input_type}" not in mutation_metadata_df.columns or f"end_variant_position_{input_type}" not in mutation_metadata_df.columns:
+            add_mutation_information(mutation_metadata_df, mutation_column=var_column, variant_source=input_type)
+        mutation_metadata_df[f"start_position_for_which_read_contains_mutation_{input_type}"] = mutation_metadata_df[f"start_variant_position_{input_type}"] - read_length + 1
 
     # Collect all headers and sequences from the FASTA file
     fastq_output_path_base, fastq_output_path_ext = splitext_custom(fastq_output_path)
@@ -246,14 +247,17 @@ def build_random_genome_read_df(
             # Choose a random integer between 1 and the sequence_length-read_length as start position
             start_position = random.randint(0, len_random_sequence - read_length)  # positions are 0-index
 
-            filtered_mutation_metadata_df = mutation_metadata_df.loc[mutation_metadata_df[fasta_entry_column] == random_transcript]
+            if mutation_metadata_df:
+                filtered_mutation_metadata_df = mutation_metadata_df.loc[mutation_metadata_df[fasta_entry_column] == random_transcript]
 
-            ranges = list(
-                zip(
-                    filtered_mutation_metadata_df[vcrs_start_column],
-                    filtered_mutation_metadata_df[vcrs_end_column],
-                )
-            )  # if a mutation spans from positions 950-955 and read length=150, then a random sequence between 801-955 will contain the mutation, and thus should be the range of exclusion here
+                ranges = list(
+                    zip(
+                        filtered_mutation_metadata_df[vcrs_start_column],
+                        filtered_mutation_metadata_df[vcrs_end_column],
+                    )
+                )  # if a mutation spans from positions 950-955 and read length=150, then a random sequence between 801-955 will contain the mutation, and thus should be the range of exclusion here
+            else:
+                ranges = None
 
             if not is_in_ranges(start_position, ranges):
                 end_position = start_position + read_length  # positions are still 0-index

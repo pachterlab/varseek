@@ -918,3 +918,39 @@ def splitext_custom(file_path):
 
 def get_file_name_without_extensions_or_full_path(file_path):
     return str(file_path).split("/")[-1].split(".")[0]
+
+
+def check_memory_of_all_items_in_scope(scope_items, threshold=0, units='MB'):
+    # scope_items should be globals().items() or locals().items()
+    # threshold is the MB threshold for printing
+    # beware that in my varseek functions, I might periodically delete objects from memory - if I want to see the impact of these, do a replace-all of 'del ' with '# del ' (without quotes), do the memory-checking, and then replace-all the reverse to restore back to original
+
+    from pympler import asizeof
+
+    memory_usage = []  # Store (name, size) tuples
+
+    for name, obj in scope_items:
+        try:
+            size = asizeof.asizeof(obj)
+            if units.upper() == 'BYTES':
+                pass
+            if units.upper() == 'KB':
+                size = size / 1024
+            elif units.upper() == 'MB':
+                size = size / (1024 ** 2)
+            elif units.upper() == 'GB':
+                size = size / (1024 ** 3)
+            else:
+                raise ValueError("Invalid units. Must be 'bytes, 'KB', 'MB', or 'GB'.")
+                
+            if size >= threshold:
+                memory_usage.append((name, size))
+        except Exception as e:
+            print(f"Could not get size of {name}: {e}")
+
+    # Sort by size in descending order
+    memory_usage.sort(key=lambda x: x[1], reverse=True)
+
+    # Print results
+    for name, size in memory_usage:
+        print(f"{name}: {size:.3f} {units}")
