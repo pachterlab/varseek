@@ -489,6 +489,13 @@ def compare_cdna_and_genome(mutation_metadata_df_exploded, reference_out_dir=Non
     else:
         columns_to_explode = columns_to_explode.copy()
 
+    # avoid Posix Path error
+    reference_out_dir = str(reference_out_dir) if reference_out_dir else reference_out_dir
+    varseek_build_temp_folder = str(varseek_build_temp_folder)
+    reference_cdna_fasta = str(reference_cdna_fasta)
+    reference_genome_fasta = str(reference_genome_fasta)
+    mutations_csv=str(mutations_csv)
+
     if reference_out_dir is None:
         reference_out_dir_temp = f"{varseek_build_temp_folder}/reference_out"
     else:

@@ -83,6 +83,21 @@ def compare_two_id_to_header_mappings(id_to_header_csv, id_to_header_csv_ground_
     assert id_to_header_dict == id_to_header_dict_ground_truth
 
 
+import hashlib
+def compute_checksum(file_path, algorithm='sha256'):
+    """Compute file checksum using hashlib (pure Python)."""
+    hash_func = hashlib.new(algorithm)
+    with open(file_path, 'rb') as f:
+        while chunk := f.read(8192):  # Read in chunks
+            hash_func.update(chunk)
+    return hash_func.hexdigest()
+
+def compare_two_files_by_checksum(file1, file2):
+    checksum1 = compute_checksum(file1)
+    checksum2 = compute_checksum(file2)
+    assert checksum1 == checksum2
+
+
 @pytest.fixture
 def vcrs_id_and_header_and_sequence_standard_lists():
     vcrs_id_list = [

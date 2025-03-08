@@ -18,13 +18,14 @@ from .conftest import (
     compare_two_fastas_without_regard_for_order_of_entries,
     compare_two_id_to_header_mappings,
     compare_two_t2gs,
+    compare_two_files_by_checksum
 )
 
-sample_size=12_000  # 2,000 each for each of the 6 mutation types  #!!! change back to 12_000
+sample_size=12_000  # 2,000 each for each of the 6 mutation types
 columns_to_drop_info_filter = None  # drops columns for info and filter df - will not throw an error if the column does not exist in the df   # ["nearby_variants", "number_of_kmers_with_overlap_to_other_VCRSs", "number_of_other_VCRSs_with_overlapping_kmers", "overlapping_kmers", "VCRSs_with_overlapping_kmers", "kmer_overlap_with_other_VCRSs"]
-make_new_gt = True
+make_new_gt = False
 store_out_in_permanent_paths = True
-threads = 8
+threads = 2
 
 test_directory = Path(__file__).resolve().parent
 ground_truth_folder = os.path.join(test_directory, "pytest_ground_truth")
@@ -93,6 +94,9 @@ def cosmic_csv_path(out_dir):
     return subsampled_cosmic_csv_path
 
 
+
+
+
 def apply_file_comparison(test_path, ground_truth_path, file_type, columns_to_drop_info_filter = None):
     if file_type == "fasta":
         compare_two_fastas_without_regard_for_order_of_entries(test_path, ground_truth_path)
@@ -102,9 +106,12 @@ def apply_file_comparison(test_path, ground_truth_path, file_type, columns_to_dr
         compare_two_id_to_header_mappings(test_path, ground_truth_path)
     elif file_type == "t2g":
         compare_two_t2gs(test_path, ground_truth_path)
+    elif file_type == "index":
+        compare_two_files_by_checksum(test_path, ground_truth_path)
     else:
         raise ValueError(f"File type {file_type} is not supported.")
 
+# run pytest -vs tests/test_varseek_ref.py::test_vk_ref
 #* note: temp files will be deleted upon completion of the test or running into an error - to debug with a temp file, place a breakpoint before the error occurs
 def test_vk_ref(cosmic_csv_path, out_dir):
     # global ground_truth_folder, reference_folder_parent, make_new_gt, ensembl_grch37_release93_folder
@@ -174,25 +181,27 @@ def test_vk_ref(cosmic_csv_path, out_dir):
         save_variants_updated_exploded_vk_info_csv = True,
         threads = threads,
         filters = filters,  # filter args
+        save_variants_updated_filtered_csvs=True,
         verbose=True
     )
 
     # file name, file type, columns to drop for comparison
     global columns_to_drop_info_filter  # should be unnecessary but got an error without it
     files_to_compare_and_file_type = [
-        ("vcrs.fa", "fasta", None),
-        ("CancerMutationCensus_AllData_v100_GRCh37_mutation_workflow_with_cdna_subsampled_pytest_updated.csv", "df", None),
-        ("id_to_header_mapping.csv", "id_to_header_mapping", None),
-        ("vcrs_t2g.txt", "t2g", None),
         ("dlist.fa", "fasta", None),
-        ("variants_updated_vk_info.csv", "df", columns_to_drop_info_filter),
+        ("id_to_header_mapping.csv", "id_to_header_mapping", None),
+        ("id_to_header_mapping_filtered.csv", "id_to_header_mapping", None),
         ("variants_updated_exploded_vk_info.csv", "df", columns_to_drop_info_filter),
-        ("vcrs_filtered.fa", "fasta", None),
-        ("variants_updated_filtered.csv", "df", columns_to_drop_info_filter),
         ("variants_updated_exploded_filtered.csv", "df", columns_to_drop_info_filter),
-        ("dlist_filtered.fa", "fasta", None),
+        ("variants_updated_vk_info.csv", "df", columns_to_drop_info_filter),
+        ("variants_updated_filtered.csv", "df", columns_to_drop_info_filter),
+        ("variants_updated.csv", "df", columns_to_drop_info_filter),
+        ("vcrs_filtered.fa", "fasta", None),
         ("vcrs_t2g_filtered.txt", "t2g", None),
-        ("id_to_header_mapping_filtered.csv", "id_to_header_mapping", None)
+        ("vcrs_t2g.txt", "t2g", None),
+        ("vcrs_with_headers.fa", "fasta", None),
+        ("vcrs.fa", "fasta", None),
+        ("vcrs_index.idx", "index", None),
     ]
 
     for file, file_type, columns_to_drop_info_filter in files_to_compare_and_file_type:

@@ -464,12 +464,12 @@ def filter(
     # define input file names if not provided
     if variants_updated_vk_info_csv is None:
         variants_updated_vk_info_csv = os.path.join(input_dir, "variants_updated_vk_info.csv")
-    if not variants_updated_exploded_vk_info_csv is None:
+    if variants_updated_exploded_vk_info_csv is None:
         variants_updated_exploded_vk_info_csv = os.path.join(input_dir, "variants_updated_exploded_vk_info.csv")
-    if not dlist_fasta:
+    if dlist_fasta is None:
         dlist_fasta = os.path.join(input_dir, "dlist.fa")
-    if not id_to_header_csv:
-        id_to_header_csv = os.path.join(input_dir, "id_to_header.csv")
+    if id_to_header_csv is None:
+        id_to_header_csv = os.path.join(input_dir, "id_to_header_mapping.csv")
 
     # set input file names to None if they do not exist
     if not ((isinstance(variants_updated_vk_info_csv, str) and os.path.isfile(variants_updated_vk_info_csv)) or isinstance(variants_updated_vk_info_csv, pd.DataFrame)):

@@ -859,7 +859,6 @@ def info(
 
     # CELL
     if columns_to_include == "all" or ("pseudoaligned_to_reference" in columns_to_include):
-        ref_folder_kb = f"{reference_out_dir}/kb_index_for_vcrs_pseudoalignment_to_reference_genome"
         try:
             logger.info("Getting VCRSs that pseudoalign")
             mutation_metadata_df = get_vcrss_that_pseudoalign_but_arent_dlisted(
@@ -870,7 +869,7 @@ def info(
                 human_reference_genome_fa=dlist_reference_genome_fasta,
                 human_reference_gtf=dlist_reference_gtf,
                 out_dir_notebook=out,
-                ref_folder_kb=ref_folder_kb,
+                ref_folder_kb=dlist_reference_dir,
                 header_column_name="vcrs_id",
                 additional_kb_extract_filtering_workflow=pseudoalignment_workflow,
                 k=k,
@@ -889,7 +888,6 @@ def info(
             logger.warning("alignment_to_reference not found in dataframe. Skipping pseudoalignment to reference.")
             columns_not_successfully_added.append("pseudoaligned_to_reference_despite_not_truly_aligning")
         else:
-            ref_folder_kb = f"{reference_out_dir}/kb_index_for_vcrs_pseudoalignment_to_reference_genome_without_true_alignment_vcrss"
             if "pseudoaligned_to_reference" in mutation_metadata_df.columns:  #!! untested
                 mutation_metadata_df["pseudoaligned_to_reference_despite_not_truly_aligning"] = (~mutation_metadata_df["alignment_to_reference"]) & (mutation_metadata_df["pseudoaligned_to_reference"])
             else:
@@ -903,7 +901,7 @@ def info(
                         human_reference_genome_fa=dlist_reference_genome_fasta,
                         human_reference_gtf=dlist_reference_gtf,
                         out_dir_notebook=out,
-                        ref_folder_kb=ref_folder_kb,
+                        ref_folder_kb=dlist_reference_dir,
                         header_column_name="vcrs_id",
                         additional_kb_extract_filtering_workflow=pseudoalignment_workflow,
                         k=k,

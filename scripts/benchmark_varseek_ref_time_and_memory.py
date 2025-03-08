@@ -53,7 +53,7 @@ if not os.path.isfile(sequences_fasta_path):
 # download COSMIC
 if not os.path.isfile(cosmic_mutations_path):
     import gget
-    cosmic_mutations_path = os.path.join(reference_out_dir, "CancerMutationCensus_AllData_Tsv_v100_GRCh37", "CancerMutationCensus_AllData_v100_GRCh37_mutation_workflow.csv")
+    cosmic_mutations_path = os.path.join(reference_out_dir, "CancerMutationCensus_AllData_Tsv_v100_GRCh37_v2", "CancerMutationCensus_AllData_v100_GRCh37_mutation_workflow.csv")
     os.makedirs(os.path.dirname(cosmic_mutations_path), exist_ok=True)
     
     gget.cosmic(
