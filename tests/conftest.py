@@ -33,7 +33,7 @@ def compare_two_dataframes_without_regard_for_order_of_rows_or_columns(df1_path,
         df2 = df2.head()
         
     if columns_to_drop:
-        if type(columns_to_drop) == str:
+        if isinstance(columns_to_drop, str):
             columns_to_drop = [columns_to_drop]
         
         df1 = df1.drop(columns=columns_to_drop, errors='ignore')
@@ -63,7 +63,7 @@ def compare_two_dataframes_without_regard_for_order_of_rows_or_columns(df1_path,
     # df1 = df1.sort_values(by=list(df1.columns)).reset_index(drop=True)
     # df2 = df2.sort_values(by=list(df2.columns)).reset_index(drop=True)
 
-    pd.testing.assert_frame_equal(df1, df2, check_like=True, check_exact=False)
+    pd.testing.assert_frame_equal(df1.fillna('NULL_FOR_TESTING'), df2.fillna('NULL_FOR_TESTING'), check_like=True, check_exact=False)  # check_dtype=False
 
 def compare_two_fastas_without_regard_for_order_of_entries(fasta1, fasta2):
     fasta1_dict = create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(fasta1)

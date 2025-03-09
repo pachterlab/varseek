@@ -1063,6 +1063,7 @@ def build(
 
     if "variant_type" not in mutations.columns:
         add_variant_type(mutations, var_column)
+    mutations['variant_type'] = mutations['variant_type'].astype('category')  # new as of 3/2025
 
     # Link sequences to their mutations using the sequence identifiers
     if store_full_sequences or ".vcf" in mutations_original:
@@ -1109,8 +1110,9 @@ def build(
 
     # Filter out bad mutations
     combined_pattern = re.compile(r"(\?|\(|\)|\+|\-|\*)")
-    mask = mutations[var_column].str.contains(combined_pattern)
-    mutations = mutations[~mask]
+    bad_mutations_mask = mutations[var_column].str.contains(combined_pattern)
+    mutations = mutations[~bad_mutations_mask]
+    del bad_mutations_mask
 
     # Extract nucleotide positions and mutation info from Mutation CDS
     mutations[["nucleotide_positions", "actual_variant"]] = mutations[var_column].str.extract(mutation_pattern)
@@ -1191,6 +1193,7 @@ def build(
     variants_incorrect_wt_base = (~congruent_wt_bases_mask).sum()
 
     mutations = mutations[congruent_wt_bases_mask]
+    del congruent_wt_bases_mask
 
     if mutations.empty:
         logger.warning("No valid variants found in the input.")
@@ -1277,6 +1280,8 @@ def build(
         lambda row: seq_dict[row[seq_id_column]][row["end_variant_position"] + 1 : row["end_kmer_position"] + 1],
         axis=1,
     )  # ? vectorize
+
+    del seq_dict
 
     mutations["inserted_nucleotide_length"] = None
 
@@ -1532,6 +1537,7 @@ def build(
     final_mutation_id_set = set(mutations["header"].dropna())
 
     removed_mutation_set = initial_mutation_id_set - final_mutation_id_set
+    del initial_mutation_id_set, final_mutation_id_set
 
     # Save as a newline-separated text file
     if save_removed_variants_text:
@@ -1603,6 +1609,7 @@ def build(
                 mutations_temp.drop(columns=[group_key], inplace=True)
 
             mutations = mutations_temp
+            del mutations_temp
 
         if "vcrs_sequence_and_rc_tuple" in mutations.columns:
             mutations = mutations.drop(columns=["vcrs_sequence_and_rc_tuple"])

@@ -50,6 +50,7 @@ dev = [
     "toml>=0.10.2",
     "flake8>=7.0.0",
     "bandit>=1.8.2",
+    "pympler>=1.1"
 ]
 analysis = [
     "nbval>=0.10.0",

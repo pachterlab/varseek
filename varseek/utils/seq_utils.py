@@ -971,6 +971,7 @@ def vcf_to_dataframe(vcf_file, additional_columns=True, explode_alt=True, filter
     # Create DataFrame from the generator
     df = pd.DataFrame(generate_vcf_rows(iterator, additional_columns=additional_columns))
     df['CHROM'] = df['CHROM'].astype('category')
+    # df['POS'] = df['POS'].astype('Int64')  # leave commented out - I do this later when I add the variant column
 
     if filter_empty_alt:
         df = df[~df["ALT"].isin([None, "", "."])]
@@ -1088,6 +1089,8 @@ def add_variant_column_to_vcf_derived_df(sample_vcf_df, var_column="variant"):
     # Apply np.select
     sample_vcf_df[var_column] = np.select(conditions, choices, default="g.unknown")  # Default to None if no match
     sample_vcf_df.drop(columns=["REF_len", "ALT_len", "ALT_RC", "start_POS_deletion", "start_POS_deletion_starting_at_1", "end_POS_for_multibase_deletion_and_delins_and_inversion", "end_POS_for_multibase_deletion_starting_at_1", "end_POS_for_insertion", "ALT_first_base_trimmed", "ALT_last_base_trimmed"], inplace=True, errors="ignore")
+
+    sample_vcf_df["POS"] = sample_vcf_df["POS"].astype('Int64')
 
 def update_vcf_derived_df_with_multibase_duplication(mutations, seq_dict, seq_id_column="seq_id", var_column="variant"):
     mutations["wt_sequence_full"] = mutations[seq_id_column].map(seq_dict)

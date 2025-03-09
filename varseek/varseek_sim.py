@@ -731,7 +731,7 @@ def sim(
         read_df.to_csv(reads_csv_out, index=False)
 
     if variants_updated_csv_out is not None:
-        sep = "\t" if variants == "tsv" else ","
+        sep = "\t" if variants_format == "tsv" else ","
         variants.to_csv(variants_updated_csv_out, index=False, sep=sep)
 
     report_time_elapsed(start_time, logger=logger, function_name="sim")

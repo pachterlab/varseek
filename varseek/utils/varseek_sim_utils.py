@@ -207,7 +207,7 @@ def build_random_genome_read_df(
         input_type = "cdna"  # for backwards compatibility
     if input_type not in ["genome", "cdna"]:
         raise ValueError(f"Invalid input_type: {input_type}. Expected 'genome' or 'cdna'.")
-    if mutation_metadata_df:
+    if mutation_metadata_df is not None:
         if f"start_variant_position_{input_type}" not in mutation_metadata_df.columns or f"end_variant_position_{input_type}" not in mutation_metadata_df.columns:
             add_mutation_information(mutation_metadata_df, mutation_column=var_column, variant_source=input_type)
         mutation_metadata_df[f"start_position_for_which_read_contains_mutation_{input_type}"] = mutation_metadata_df[f"start_variant_position_{input_type}"] - read_length + 1
@@ -247,7 +247,7 @@ def build_random_genome_read_df(
             # Choose a random integer between 1 and the sequence_length-read_length as start position
             start_position = random.randint(0, len_random_sequence - read_length)  # positions are 0-index
 
-            if mutation_metadata_df:
+            if mutation_metadata_df is not None:
                 filtered_mutation_metadata_df = mutation_metadata_df.loc[mutation_metadata_df[fasta_entry_column] == random_transcript]
 
                 ranges = list(
