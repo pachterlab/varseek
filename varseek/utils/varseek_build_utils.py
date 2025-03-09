@@ -3,11 +3,15 @@ import re
 import tempfile
 from collections import OrderedDict, defaultdict
 
+import subprocess
+import numpy as np
+import gget
+
 import pandas as pd
 import pyfastx
 from tqdm import tqdm
 
-from varseek.constants import codon_to_amino_acid, mutation_pattern
+from varseek.constants import codon_to_amino_acid, mutation_pattern, supported_databases_and_corresponding_reference_sequence_type, complement
 from varseek.utils.logger_utils import get_printlog
 
 tqdm.pandas()
@@ -89,12 +93,12 @@ def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_
     else:
         raise ValueError("input_csv_path must be a string or a pandas DataFrame")
 
-    print("Copying df internally to avoid in-place modifications")
+    logger_info("Copying df internally to avoid in-place modifications")
     df_original = df.copy()
 
     bad_mutations_dict = {}
 
-    print("Removing unknown mutations")
+    logger_info("Removing unknown mutations")
     # get rids of mutations that are uncertain, ambiguous, intronic, posttranslational
     uncertain_mutations = df["mutation"].str.contains(r"\?").sum()
 
@@ -104,11 +108,11 @@ def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_
 
     posttranslational_region_mutations = df["mutation"].str.contains(r"\*").sum()
 
-    print("Removing unsupported mutation types")
-    print(f"Uncertain mutations: {uncertain_mutations}")
-    print(f"Ambiguous position mutations: {ambiguous_position_mutations}")
-    print(f"Intronic mutations: {intronic_mutations}")
-    print(f"Posttranslational region mutations: {posttranslational_region_mutations}")
+    logger_info("Removing unsupported mutation types")
+    logger_info(f"Uncertain mutations: {uncertain_mutations}")
+    logger_info(f"Ambiguous position mutations: {ambiguous_position_mutations}")
+    logger_info(f"Intronic mutations: {intronic_mutations}")
+    logger_info(f"Posttranslational region mutations: {posttranslational_region_mutations}")
 
     bad_mutations_dict["uncertain_mutations"] = uncertain_mutations
     bad_mutations_dict["ambiguous_position_mutations"] = ambiguous_position_mutations
@@ -120,10 +124,10 @@ def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_
     mask = df["mutation"].str.contains(combined_pattern)
     df = df[~mask]
 
-    print("Sorting df")
+    logger_info("Sorting df")
     df = df.sort_values(by="seq_ID")  # to make iterrows more efficient
 
-    print("Determining mutation positions")
+    logger_info("Determining mutation positions")
     df[["nucleotide_positions", "actual_variant"]] = df["mutation"].str.extract(mutation_pattern)
 
     split_positions = df["nucleotide_positions"].str.split("_", expand=True)
@@ -295,3 +299,281 @@ def join_keys_with_same_values(original_dict):
     concatenated_dict = OrderedDict((";".join(keys), value) for value, keys in grouped_dict.items())
 
     return concatenated_dict
+
+
+def download_cosmic_mutations(gtf, gtf_transcript_id_column, reference_out_dir, cosmic_version, cosmic_email, cosmic_password, columns_to_keep, grch, mutations_original, sequences, cds_file, cdna_file, var_id_column, logger, verbose):
+    reference_out_cosmic = f"{reference_out_dir}/cosmic"
+    if int(cosmic_version) == 100:
+        mutations = f"{reference_out_cosmic}/CancerMutationCensus_AllData_Tsv_v{cosmic_version}_GRCh{grch}_v2/CancerMutationCensus_AllData_v{cosmic_version}_GRCh{grch}_mutation_workflow.csv"
+    else:
+        mutations = f"{reference_out_cosmic}/CancerMutationCensus_AllData_Tsv_v{cosmic_version}_GRCh{grch}/CancerMutationCensus_AllData_v{cosmic_version}_GRCh{grch}_mutation_workflow.csv"
+    mutations_path = mutations
+
+    if not os.path.isfile(mutations):  # DO NOT specify column names in gget cosmic - I instead code them in later
+        gget.cosmic(
+                    None,
+                    grch_version=grch,
+                    cosmic_version=cosmic_version,
+                    out=reference_out_cosmic,
+                    mutation_class="cancer",
+                    download_cosmic=True,
+                    keep_genome_info=True,
+                    remove_duplicates=True,
+                    email=cosmic_email,
+                    password=cosmic_password,
+                )
+
+        mutations = pd.read_csv(mutations_path)
+
+        if gtf:
+            if os.path.isfile(gtf):
+                mutations = merge_gtf_transcript_locations_into_cosmic_csv(mutations, gtf, gtf_transcript_id_column=gtf_transcript_id_column, output_mutations_path=mutations_path)
+                columns_to_keep.extend(
+                            [
+                                "start_transcript_position",
+                                "end_transcript_position",
+                                "strand",
+                            ]
+                        )
+
+                if "CancerMutationCensus" in mutations_original or mutations_original == "cosmic_cmc":
+                    logger.info("COSMIC CMC genome strand information is not fully accurate. Improving with gtf information.")
+                    mutations = improve_genome_strand_information(mutations, mutation_genome_column_name="mutation_genome", output_mutations_path=mutations_path)
+            else:
+                raise ValueError(f"gtf file '{gtf}' does not exist.")
+    else:
+        mutations = pd.read_csv(mutations_path)
+
+    if sequences == "cdna" or sequences.endswith(supported_databases_and_corresponding_reference_sequence_type[mutations_original]["sequence_file_names"]["cdna"].replace("GRCH_NUMBER", grch)):  # covers whether sequences == "cdna" or sequences == "PATH/TO/Homo_sapiens.GRCh37.cdna.all.fa"
+        if "mutation_cdna" not in mutations.columns:
+            logger.info("Adding in cdna information into COSMIC. Note that the 'mutation_cdna' column will refer to cDNA mutation notation, and the 'mutation' column will refer to CDS mutation notation.")
+            mutations, bad_cosmic_mutations_dict = convert_mutation_cds_locations_to_cdna(input_csv_path=mutations, output_csv_path=mutations_path, cds_fasta_path=cds_file, cdna_fasta_path=cdna_file, logger=logger, verbose=verbose)
+
+            # uncertain_mutations += bad_cosmic_mutations_dict["uncertain_mutations"]
+            # ambiguous_position_mutations += bad_cosmic_mutations_dict["ambiguous_position_mutations"]
+            # intronic_mutations += bad_cosmic_mutations_dict["intronic_mutations"]
+            # posttranslational_region_mutations += bad_cosmic_mutations_dict["posttranslational_region_mutations"]
+
+        seq_id_column = supported_databases_and_corresponding_reference_sequence_type[mutations_original]["column_names"]["seq_id_cdna_column"]  # "seq_ID"
+        var_column = supported_databases_and_corresponding_reference_sequence_type[mutations_original]["column_names"]["var_cdna_column"]  # "mutation_cdna"
+
+    elif sequences == "genome" or sequences.endswith(supported_databases_and_corresponding_reference_sequence_type[mutations_original]["sequence_file_names"]["genome"].replace("GRCH_NUMBER", grch)):  # covers whether sequences == "genome" or sequences == "PATH/TO/Homo_sapiens.GRCh37.dna.primary_assembly.fa"
+        mutations_path_no_duplications = mutations_path.replace(".csv", "_no_duplications.csv")
+        if not os.path.isfile(mutations_path_no_duplications):
+            logger.info("COSMIC genome location is not accurate for duplications. Dropping duplications in a copy of the csv file.")
+            mutations = drop_duplication_mutations(mutations, mutations_path_no_duplications, logger)  # COSMIC incorrectly records genome positions of duplications
+        else:
+            mutations = pd.read_csv(mutations_path_no_duplications)
+
+        seq_id_column = supported_databases_and_corresponding_reference_sequence_type[mutations_original]["column_names"]["seq_id_genome_column"]  # "chromosome"
+        var_column = supported_databases_and_corresponding_reference_sequence_type[mutations_original]["column_names"]["var_genome_column"]  # "mutation_genome"
+
+    elif sequences == "cds" or sequences.endswith(supported_databases_and_corresponding_reference_sequence_type[mutations_original]["sequence_file_names"]["cds"].replace("GRCH_NUMBER", grch)):  # covers whether sequences == "cds" or sequences == "PATH/TO/Homo_sapiens.GRCh37.cds.all.fa"
+        seq_id_column = supported_databases_and_corresponding_reference_sequence_type[mutations_original]["column_names"]["seq_id_cds_column"]  # "seq_ID"
+        var_column = supported_databases_and_corresponding_reference_sequence_type[mutations_original]["column_names"]["var_cds_column"]  # "mutation"
+
+    var_id_column = supported_databases_and_corresponding_reference_sequence_type[mutations_original]["column_names"]["var_id_column"] if var_id_column is not None else None  # use the id column if the user wanted to; otherwise keep as default
+    return mutations,mutations_path,seq_id_column,var_column,var_id_column,columns_to_keep
+
+
+def download_cosmic_sequences(sequences, seq_id_column, gtf, gtf_transcript_id_column, reference_out_dir, cosmic_version, mutations, grch, logger):
+    if grch == "37":
+        gget_ref_species = "human_grch37"
+    elif grch == "38":
+        gget_ref_species = "human"
+    else:
+        gget_ref_species = grch
+    
+    ensembl_version = supported_databases_and_corresponding_reference_sequence_type[mutations]["database_version_to_reference_release"][cosmic_version]
+    reference_out_sequences = f"{reference_out_dir}/ensembl_grch{grch}_release{ensembl_version}"  # matches vk info
+
+    sequences_download_command = supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_download_commands"][sequences]
+    sequences_download_command = sequences_download_command.replace("OUT_DIR", reference_out_sequences)
+    sequences_download_command = sequences_download_command.replace("ENSEMBL_VERSION", ensembl_version)
+    sequences_download_command = sequences_download_command.replace("SPECIES", gget_ref_species)
+
+    genome_file = supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_file_names"]["genome"]
+    genome_file = genome_file.replace("GRCH_NUMBER", grch)
+    genome_file = f"{reference_out_sequences}/{genome_file}"
+
+    gtf_file = supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_file_names"]["gtf"]
+    gtf_file = gtf_file.replace("GRCH_NUMBER", grch)
+    gtf_file = f"{reference_out_sequences}/{gtf_file}"
+
+    cds_file = supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_file_names"]["cds"]
+    cds_file = cds_file.replace("GRCH_NUMBER", grch)
+    cds_file = f"{reference_out_sequences}/{cds_file}"
+
+    cdna_file = supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_file_names"]["cdna"]
+    cdna_file = cdna_file.replace("GRCH_NUMBER", grch)
+    cdna_file = f"{reference_out_sequences}/{cdna_file}"
+
+    files_to_download_list = []
+    if sequences == "genome" and not os.path.isfile(genome_file):
+        files_to_download_list.append("dna")
+    if gtf and not os.path.isfile(gtf):
+        gtf = gtf_file
+        gtf_transcript_id_column = seq_id_column
+        if not os.path.isfile(gtf):  # now that I have overridden the user-provided gtf with my gtf
+            files_to_download_list.append("gtf")
+    if (sequences == "cdna" or sequences == "cds") and not os.path.isfile(cds_file):
+        files_to_download_list.append("cds")
+    if sequences == "cdna" and not os.path.isfile(cdna_file):
+        files_to_download_list.append("cdna")
+
+    files_to_download = ",".join(files_to_download_list)
+    sequences_download_command = sequences_download_command.replace("FILES_TO_DOWNLOAD", files_to_download)
+
+    sequences_download_command_list = sequences_download_command.split(" ")
+
+    if files_to_download_list:  # means that at least 1 of the necessary files must be downloaded
+        logger.warning("Downloading reference sequences with %s. Note that this requires curl >=7.73.0", " ".join(sequences_download_command_list))
+        subprocess.run(sequences_download_command_list, check=True)
+        if "dna" in files_to_download_list:
+            subprocess.run(["gunzip", f"{genome_file}.gz"], check=True)
+        if "gtf" in files_to_download_list:
+            subprocess.run(["gunzip", f"{gtf_file}.gz"], check=True)
+        if "cds" in files_to_download_list:
+            subprocess.run(["gunzip", f"{cds_file}.gz"], check=True)
+        if "cdna" in files_to_download_list:
+            subprocess.run(["gunzip", f"{cdna_file}.gz"], check=True)
+
+    if sequences == "genome":
+        sequences = genome_file
+    elif sequences == "cds":
+        sequences = cds_file
+    elif sequences == "cdna":
+        sequences = cdna_file
+    return sequences,gtf,gtf_transcript_id_column,genome_file,cds_file,cdna_file
+
+
+def merge_gtf_transcript_locations_into_cosmic_csv(mutations, gtf_path, gtf_transcript_id_column, output_mutations_path=None):
+    # mutations = mutations.copy()  # commented out to save time, but be careful not to make unwanted changes to the original df (in general, if I set df = myfunc(df), then I likely welcome any modifications to df within the function; if not, be especially careful)
+
+    gtf_df = pd.read_csv(
+        gtf_path,
+        sep="\t",
+        comment="#",
+        header=None,
+        names=[
+            "seqname",
+            "source",
+            "feature",
+            "start",
+            "end",
+            "score",
+            "strand",
+            "frame",
+            "attribute",
+        ],
+    )
+
+    if "strand" in mutations.columns:
+        mutations.rename(columns={"strand": "strand_original"}, inplace=True)
+
+    gtf_df = gtf_df[gtf_df["feature"] == "transcript"]
+
+    gtf_df["transcript_id"] = gtf_df["attribute"].str.extract('transcript_id "([^"]+)"')
+
+    if not len(gtf_df["transcript_id"]) == len(set(gtf_df["transcript_id"])):
+        raise ValueError("Duplicate transcript_id values found!")
+
+    # Filter out rows where transcript_id is NaN
+    gtf_df = gtf_df.dropna(subset=["transcript_id"])
+
+    gtf_df = gtf_df[["transcript_id", "start", "end", "strand"]].rename(
+        columns={
+            "transcript_id": gtf_transcript_id_column,
+            "start": "start_transcript_position",
+            "end": "end_transcript_position",
+        }
+    )
+
+    merged_df = pd.merge(mutations, gtf_df, on=gtf_transcript_id_column, how="left")
+
+    # Fill NaN values
+    merged_df["start_transcript_position"] = merged_df["start_transcript_position"].fillna(0)
+    merged_df["end_transcript_position"] = merged_df["end_transcript_position"].fillna(9999999)
+    merged_df["strand"] = merged_df["strand"].fillna(".")
+
+    if output_mutations_path is not None:
+        merged_df.to_csv(output_mutations_path, index=False)
+
+    return merged_df
+
+
+def drop_duplication_mutations(input_mutations, output, mutation_column="mutation_genome", logger=None):
+    logger_info = get_printlog(logger=logger)
+    if isinstance(input_mutations, str):
+        df = pd.read_csv(input_mutations)
+    elif isinstance(input_mutations, pd.DataFrame):
+        df = input_mutations
+    else:
+        raise ValueError("input_mutations must be a string or a DataFrame.")
+
+    # count number of duplications
+    num_dup = df[mutation_column].str.contains("dup", na=False).sum()
+    logger_info(f"Number of duplication mutations that have been dropped: {num_dup}")
+
+    df_no_dup_mutations = df.loc[~(df[mutation_column].str.contains("dup"))]
+
+    df_no_dup_mutations.to_csv(output, index=False)
+
+    return df_no_dup_mutations
+
+
+def improve_genome_strand_information(cosmic_reference_file_mutation_csv, mutation_genome_column_name="mutation_genome", output_mutations_path=None):
+    if isinstance(cosmic_reference_file_mutation_csv, str):
+        df = pd.read_csv(cosmic_reference_file_mutation_csv)
+    elif isinstance(cosmic_reference_file_mutation_csv, pd.DataFrame):
+        df = cosmic_reference_file_mutation_csv
+    else:
+        raise ValueError("cosmic_reference_file_mutation_csv must be a string or a DataFrame.")
+
+    df["strand_modified"] = df["strand"].replace(".", "+")
+
+    genome_nucleotide_position_pattern = r"g\.(\d+)(?:_(\d+))?[A-Za-z]*"
+
+    extracted_numbers = df[mutation_genome_column_name].str.extract(genome_nucleotide_position_pattern)
+    extracted_numbers[1] = extracted_numbers[1].fillna(extracted_numbers[0])
+    df["GENOME_START"] = extracted_numbers[0]
+    df["GENOME_STOP"] = extracted_numbers[1]
+
+    def complement_substitution(actual_variant):
+        return "".join(complement.get(nucleotide, "N") for nucleotide in actual_variant[:])
+
+    def reverse_complement_insertion(actual_variant):
+        return "".join(complement.get(nucleotide, "N") for nucleotide in actual_variant[::-1])
+
+    df[["nucleotide_positions", "actual_variant"]] = df["mutation"].str.extract(mutation_pattern)
+
+    minus_sub_mask = (df["strand_modified"] == "-") & (df["actual_variant"].str.contains(">"))
+    ins_delins_mask = (df["strand_modified"] == "-") & (df["actual_variant"].str.contains("ins"))
+
+    df["actual_variant_rc"] = df["actual_variant"]
+
+    df.loc[minus_sub_mask, "actual_variant_rc"] = df.loc[minus_sub_mask, "actual_variant"].apply(complement_substitution)
+
+    df.loc[ins_delins_mask, ["variant_type", "mut_nucleotides"]] = df.loc[ins_delins_mask, "actual_variant"].str.extract(r"(delins|ins)([A-Z]+)").values
+
+    df.loc[ins_delins_mask, "mut_nucleotides_rc"] = df.loc[ins_delins_mask, "mut_nucleotides"].apply(reverse_complement_insertion)
+
+    df.loc[ins_delins_mask, "actual_variant_rc"] = df.loc[ins_delins_mask, "variant_type"] + df.loc[ins_delins_mask, "mut_nucleotides_rc"]
+
+    df["actual_variant_final"] = np.where(df["strand_modified"] == "+", df["actual_variant"], df["actual_variant_rc"])
+
+    df[mutation_genome_column_name] = np.where(
+        df["GENOME_START"] != df["GENOME_STOP"],
+        "g." + df["GENOME_START"].astype(str) + "_" + df["GENOME_STOP"].astype(str) + df["actual_variant_final"],
+        "g." + df["GENOME_START"].astype(str) + df["actual_variant_final"],
+    )
+
+    df.drop(
+        columns=["GENOME_START", "GENOME_STOP", "nucleotide_positions", "actual_variant", "actual_variant_rc", "variant_type", "mut_nucleotides", "mut_nucleotides_rc", "actual_variant_final", "strand_modified"],
+        inplace=True,
+    )  # drop all columns exceptmutation_genome_column_name(and the original ones)
+
+    if output_mutations_path:
+        df.to_csv(output_mutations_path, index=False)
+
+    return df

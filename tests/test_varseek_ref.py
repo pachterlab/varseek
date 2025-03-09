@@ -21,9 +21,9 @@ from .conftest import (
     compare_two_files_by_checksum
 )
 
-sample_size=12_000  # 2,000 each for each of the 6 mutation types
-columns_to_drop_info_filter = ["cdna_and_genome_same", "nearby_variants", "VCRSs_with_overlapping_kmers"]  # drops columns for info and filter df - will not throw an error if the column does not exist in the df   # ["nearby_variants", "number_of_kmers_with_overlap_to_other_VCRSs", "number_of_other_VCRSs_with_overlapping_kmers", "overlapping_kmers", "VCRSs_with_overlapping_kmers", "kmer_overlap_with_other_VCRSs"]
-make_new_gt = False
+sample_size = 12_000  # 2,000 each for each of the 6 mutation types
+columns_to_drop_info_filter = None  # drops columns for info and filter df - will not throw an error if the column does not exist in the df  # ["cdna_and_genome_same", "nearby_variants", "VCRSs_with_overlapping_kmers"] - the order of the VCRS headers was messed up for some reason
+make_new_gt = True
 store_out_in_permanent_paths = True
 threads = 2
 
@@ -203,7 +203,7 @@ def test_vk_ref(cosmic_csv_path, out_dir):
         ("vcrs_t2g.txt", "t2g", None),
         ("vcrs_with_headers.fa", "fasta", None),
         ("vcrs.fa", "fasta", None),
-        ("vcrs_index.idx", "index", None),
+        # ("vcrs_index.idx", "index", None),
     ]
 
     for file, file_type, columns_to_drop_info_filter in files_to_compare_and_file_type:

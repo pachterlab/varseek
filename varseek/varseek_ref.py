@@ -335,25 +335,6 @@ def ref(
     w, k, threads = int(w), int(k), int(threads)
 
     # * 8. Start the actual function
-    # get COSMIC info
-    cosmic_email = kwargs.get("cosmic_email", None)
-    if cosmic_email:
-        logger.info(f"Using COSMIC email from arguments: {cosmic_email}")
-    else:
-        cosmic_email = os.getenv("COSMIC_EMAIL")
-        if cosmic_email:
-            logger.info(f"Using COSMIC email from COSMIC_EMAIL environment variable: {cosmic_email}")
-            kwargs["cosmic_email"] = cosmic_email
-
-    cosmic_password = kwargs.get("cosmic_password", None)
-    if cosmic_password:
-        logger.info("Using COSMIC password from arguments")
-    else:
-        cosmic_password = os.getenv("COSMIC_PASSWORD")
-        if cosmic_password:
-            logger.info("Using COSMIC password from COSMIC_PASSWORD environment variable")
-            kwargs["cosmic_password"] = cosmic_password
-
     # ensure that max_ambiguous (build) and max_ambiguous_vcrs (info) are the same if only one is provided
     if kwargs.get("max_ambiguous") and not kwargs.get("max_ambiguous_vcrs"):
         kwargs["max_ambiguous_vcrs"] = kwargs["max_ambiguous"]
