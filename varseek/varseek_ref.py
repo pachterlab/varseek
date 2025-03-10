@@ -339,6 +339,16 @@ def ref(
     if kwargs.get("max_ambiguous_vcrs") and not kwargs.get("max_ambiguous"):
         kwargs["max_ambiguous"] = kwargs["max_ambiguous_vcrs"]
 
+    cosmic_email = kwargs.get("cosmic_email", None)
+    if not cosmic_email and os.getenv("COSMIC_EMAIL"):
+        logger.info(f"Using COSMIC email from COSMIC_EMAIL environment variable: {cosmic_email}")
+        cosmic_email = os.getenv("COSMIC_EMAIL")
+    
+    cosmic_password = kwargs.get("cosmic_password", None)
+    if not cosmic_password and os.getenv("COSMIC_PASSWORD"):
+        logger.info("Using COSMIC password from COSMIC_PASSWORD environment variable")
+        cosmic_password = os.getenv("COSMIC_PASSWORD")
+
     if kwargs.get("columns_to_include") is not None:
         logger.info("columns_to_include is not None, so minimum_info_columns will be set to False")
         minimum_info_columns = False

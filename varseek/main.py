@@ -1159,6 +1159,12 @@ def main():  # noqa: C901
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(filter, "log_out_dir"),
     )
+    parser_filter.add_argument(
+        "--disable_make_internal_copies",
+        action="store_false",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(filter, "make_internal_copies", disable=True),
+    )
 
     # kwargs
     parser_filter.add_argument(
@@ -1477,6 +1483,44 @@ def main():  # noqa: C901
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(sim, "dry_run"),
+    )
+    parser_sim.add_argument(
+        "--dry_run",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(sim, "dry_run"),
+    )
+    parser_sim.add_argument(
+        "--logging_level",
+        choices=["NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "0", "10", "20", "30", "40", "50", "60", None],
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(sim, "logging_level"),
+    )
+    parser_sim.add_argument(
+        "--save_logs",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(sim, "save_logs"),
+    )
+    parser_sim.add_argument(
+        "--log_out_dir",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(sim, "log_out_dir"),
+    )
+    # kwargs
+    parser_sim.add_argument(
+        "--disable_make_internal_copies",
+        action="store_false",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(sim, "make_internal_copies", disable=True),
+    )
+    parser_sim.add_argument(
+        "--disable_filter_null_rows_from_important_cols",
+        action="store_false",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(sim, "filter_null_rows_from_important_cols", disable=True),
     )
 
     # NEW PARSER

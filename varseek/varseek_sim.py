@@ -236,6 +236,8 @@ def sim(
     - log_out_dir                       (str) Directory to save logs. Default: None (do not save logs).
 
     # Hidden arguments
+    - make_internal_copies              (bool) Whether to make internal copies of the input dataframes. Default: True
+    - filter_null_rows_from_important_cols  (bool) Whether to filter out rows with null values in important columns. Default: True
     All kwargs get passed into vk build
     """
     # * 1. Start timer
@@ -287,6 +289,8 @@ def sim(
     os.makedirs(out, exist_ok=True)
 
     # * 7. Define kwargs defaults
+    make_internal_copies = kwargs.get("make_internal_copies", True)
+    filter_null_rows_from_important_cols = kwargs.get("filter_null_rows_from_important_cols", True)
 
     # * 7.5 make sure ints are ints
     number_of_variants_to_sample, read_length, k, w = int(number_of_variants_to_sample), int(read_length), int(k), int(w)
@@ -296,14 +300,12 @@ def sim(
     variants_format = "dataframe"
     if isinstance(variants, str) and os.path.exists(variants):
         if ".tsv" in variants:
-            variants_format = "tsv"
             variants = pd.read_csv(variants, sep="\t")
         elif ".csv" in variants:
-            variants_format = "csv"
             variants = pd.read_csv(variants)
         else:
             raise ValueError("variants must be a csv path, tsv path, or dataframe")
-    elif isinstance(variants, pd.DataFrame):
+    elif isinstance(variants, pd.DataFrame) and make_internal_copies:
         variants = variants.copy()
         
     if header_column not in variants.columns:
@@ -395,7 +397,9 @@ def sim(
 
     if not filters:
         filters = []
-    filters.extend([f"{variant_sequence_read_parent_column}:is_not_null", f"{ref_sequence_read_parent_column}:is_not_null"])
+    if filter_null_rows_from_important_cols:
+        filters.extend([f"{variant_sequence_read_parent_column}:is_not_null", f"{ref_sequence_read_parent_column}:is_not_null"])
+
     filters = list(dict.fromkeys(filters))  # equivalent to `list(set(filters))`, but maintains order of filters
 
     if filters:
@@ -407,7 +411,9 @@ def sim(
             return_variants_updated_filtered_csv_df=True,
             save_vcrs_filtered_fasta_and_t2g=False,
             vcrs_id_column=header_column,
-            overwrite=True
+            overwrite=True,
+            make_internal_copies=False,
+            called_from_vk_sim=True
         )  # filter to include only rows not already in variant and whatever condition I would like
     else:
         filtered_df = variants
@@ -729,6 +735,8 @@ def sim(
     if reads_csv_parent is not None:
         if isinstance(reads_csv_parent, str):
             reads_csv_parent = pd.read_csv(reads_csv_parent)
+        elif isinstance(reads_csv_parent, pd.DataFrame) and make_internal_copies:
+            reads_csv_parent = reads_csv_parent.copy()
         read_df = pd.concat([reads_csv_parent, read_df], ignore_index=True)
 
     variants = merge_synthetic_read_info_into_variants_metadata_df(variants, sampled_reference_df, sample_type=sample_type, header_column=header_column)
@@ -754,8 +762,7 @@ def sim(
         read_df.to_csv(reads_csv_out, index=False)
 
     if variants_updated_csv_out is not None:
-        sep = "\t" if variants_format == "tsv" else ","
-        variants.to_csv(variants_updated_csv_out, index=False, sep=sep)
+        variants.to_csv(variants_updated_csv_out, index=False)
 
     report_time_elapsed(start_time, logger=logger, function_name="sim")
 

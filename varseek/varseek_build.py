@@ -894,7 +894,7 @@ def build(
     mutations["end_variant_position"] -= 1  # don't forget to increment by 1 later
 
     # Calculate sequence length
-    mutations["sequence_length"] = mutations[seq_id_column].apply(lambda x: get_sequence_length(x, seq_dict)).astype(int)
+    mutations["sequence_length"] = mutations[seq_id_column].apply(lambda x: get_sequence_length(x, seq_dict)).astype(int)  # noqa: F821
 
     # Filter out mutations with positions outside the sequence
     index_error_mask = (mutations["start_variant_position"] > mutations["sequence_length"]) | (mutations["end_variant_position"] > mutations["sequence_length"])
@@ -955,7 +955,7 @@ def build(
     mutations.loc[insertion_mask, "end_variant_position"] -= 1  # in this notation, the end position is one before the start position
 
     # Extract the WT nucleotides for the non-substitution rows from the Mutation CDS (i.e., COSMIC)
-    mutations.loc[non_substitution_mask, "wt_nucleotides_ensembl"] = mutations.loc[non_substitution_mask].apply(lambda row: extract_sequence(row, seq_dict, seq_id_column), axis=1)
+    mutations.loc[non_substitution_mask, "wt_nucleotides_ensembl"] = mutations.loc[non_substitution_mask].apply(lambda row: extract_sequence(row, seq_dict, seq_id_column), axis=1)  # noqa: F821
 
     # Apply mutations to the sequences
     mutations["mut_nucleotides"] = None
@@ -1004,7 +1004,7 @@ def build(
             tqdm.pandas(desc="Extracting full left flank sequences")
 
         mutations["left_flank_region_full"] = mut_apply(
-            lambda row: seq_dict[row[seq_id_column]][0 : row["start_variant_position"]],
+            lambda row: seq_dict[row[seq_id_column]][0 : row["start_variant_position"]],  # noqa: F821
             axis=1,
         )  # ? vectorize
 
@@ -1012,7 +1012,7 @@ def build(
             tqdm.pandas(desc="Extracting full right flank sequences")
 
         mutations["right_flank_region_full"] = mut_apply(
-            lambda row: seq_dict[row[seq_id_column]][row["end_variant_position"] + 1 : row["sequence_length"]],
+            lambda row: seq_dict[row[seq_id_column]][row["end_variant_position"] + 1 : row["sequence_length"]],  # noqa: F821
             axis=1,
         )  # ? vectorize
 
@@ -1020,7 +1020,7 @@ def build(
         tqdm.pandas(desc="Extracting VCRS left flank sequences")
 
     mutations["left_flank_region"] = mut_apply(
-        lambda row: seq_dict[row[seq_id_column]][row["start_kmer_position"] : row["start_variant_position"]],
+        lambda row: seq_dict[row[seq_id_column]][row["start_kmer_position"] : row["start_variant_position"]],  # noqa: F821
         axis=1,
     )  # ? vectorize
 
@@ -1028,7 +1028,7 @@ def build(
         tqdm.pandas(desc="Extracting VCRS right flank sequences")
 
     mutations["right_flank_region"] = mut_apply(
-        lambda row: seq_dict[row[seq_id_column]][row["end_variant_position"] + 1 : row["end_kmer_position"] + 1],
+        lambda row: seq_dict[row[seq_id_column]][row["end_variant_position"] + 1 : row["end_kmer_position"] + 1],  # noqa: F821
         axis=1,
     )  # ? vectorize
 

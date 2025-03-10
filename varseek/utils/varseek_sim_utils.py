@@ -17,22 +17,27 @@ tqdm.pandas()
 
 
 def merge_synthetic_read_info_into_variants_metadata_df(mutation_metadata_df, sampled_reference_df, sample_type="all", header_column="header"):
+    columns_to_merge_mutant = ["included_in_synthetic_reads_mutant", "number_of_reads_mutant", "list_of_read_starting_indices_mutant", "any_noisy_reads_mutant", "noisy_read_indices_mutant"]
+    columns_to_merge_wt = ["included_in_synthetic_reads_wt", "number_of_reads_wt", "list_of_read_starting_indices_wt", "any_noisy_reads_wt", "noisy_read_indices_wt"]
+
+    columns_to_merge = [header_column]
+    if sample_type == "m":
+        columns_to_merge += columns_to_merge_mutant
+    elif sample_type == "w":
+        columns_to_merge += columns_to_merge_wt
+    elif sample_type == "all":
+        columns_to_merge += columns_to_merge_mutant + columns_to_merge_wt
+    else:
+        raise ValueError(f"Invalid sample_type: {sample_type}. Expected 'm', 'w', or 'all'.")
+    
+    mutation_metadata_df_new = mutation_metadata_df.merge(
+        sampled_reference_df[columns_to_merge],
+        on=header_column,
+        how="left",
+        suffixes=("", "_new"),
+    )
+    
     if sample_type != "m":
-        mutation_metadata_df_new = mutation_metadata_df.merge(
-            sampled_reference_df[
-                [
-                    header_column,
-                    "included_in_synthetic_reads_wt",
-                    "number_of_reads_wt",
-                    "list_of_read_starting_indices_wt",
-                    "any_noisy_reads_wt",
-                    "noisy_read_indices_wt",
-                ]
-            ],
-            on=header_column,
-            how="left",
-            suffixes=("", "_new"),
-        )
         mutation_metadata_df_new["included_in_synthetic_reads_wt"] = mutation_metadata_df_new["included_in_synthetic_reads_wt"] | mutation_metadata_df_new["included_in_synthetic_reads_wt_new"]
 
         mutation_metadata_df_new["any_noisy_reads_wt"] = mutation_metadata_df_new["any_noisy_reads_wt"] | mutation_metadata_df_new["any_noisy_reads_wt_new"]
@@ -68,21 +73,6 @@ def merge_synthetic_read_info_into_variants_metadata_df(mutation_metadata_df, sa
         mutation_metadata_df_new = mutation_metadata_df
 
     if sample_type != "w":
-        mutation_metadata_df_new = mutation_metadata_df_new.merge(
-            sampled_reference_df[
-                [
-                    header_column,
-                    "included_in_synthetic_reads_mutant",
-                    "number_of_reads_mutant",
-                    "list_of_read_starting_indices_mutant",
-                    "any_noisy_reads_mutant",
-                    "noisy_read_indices_mutant",
-                ]
-            ],
-            on=header_column,
-            how="left",
-            suffixes=("", "_new"),
-        )
         mutation_metadata_df_new["included_in_synthetic_reads_mutant"] = mutation_metadata_df_new["included_in_synthetic_reads_mutant"] | mutation_metadata_df_new["included_in_synthetic_reads_mutant_new"]
 
         mutation_metadata_df_new["any_noisy_reads_mutant"] = mutation_metadata_df_new["any_noisy_reads_mutant"] | mutation_metadata_df_new["any_noisy_reads_mutant_new"]

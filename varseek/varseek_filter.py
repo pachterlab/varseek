@@ -396,6 +396,7 @@ def filter(
     - save_vcrs_filtered_fasta_and_t2g             (bool) If True, save the filtered vcrs fasta and t2g files. Default: True.
     - use_IDs                                      (bool) If True, use IDs instead of headers. Default: False.
     - logger                                       (logging.Logger) Logger object. Default: None (use default logger).
+    - make_internal_copies              (bool) Whether to make internal copies of the input dataframes. Default: True
     """
     # * 0. Informational arguments that exit early
     if list_filter_rules:
@@ -451,6 +452,7 @@ def filter(
     dlist_cdna_filtered_fasta_out = kwargs.get("dlist_cdna_filtered_fasta_out", None)
     save_vcrs_filtered_fasta_and_t2g = kwargs.get("save_vcrs_filtered_fasta_and_t2g", True)
     use_IDs = kwargs.get("use_IDs", False)
+    make_internal_copies = kwargs.get("make_internal_copies", True)
 
     if filter_all_dlists:
         if not dlist_genome_fasta:
@@ -512,6 +514,7 @@ def filter(
         wt_vcrs_filtered_fasta_out = os.path.join(out, "wt_vcrs_filtered.fa")
     if not wt_vcrs_t2g_filtered_out:
         wt_vcrs_t2g_filtered_out = os.path.join(out, "wt_vcrs_t2g_filtered.txt")
+    filtering_report_text_out = os.path.join(out, "filtering_report.txt")
 
     # make sure directories of all output files exist
     output_files = [variants_updated_filtered_csv_out, variants_updated_exploded_filtered_csv_out, id_to_header_filtered_csv_out, dlist_filtered_fasta_out, vcrs_filtered_fasta_out, vcrs_t2g_filtered_out, wt_vcrs_filtered_fasta_out, wt_vcrs_t2g_filtered_out]
@@ -536,7 +539,10 @@ def filter(
     if isinstance(variants_updated_vk_info_csv, str):
         variant_metadata_df = pd.read_csv(variants_updated_vk_info_csv)
     else:
-        variant_metadata_df = variants_updated_vk_info_csv
+        if make_internal_copies:
+            variant_metadata_df = variants_updated_vk_info_csv.copy()
+        else:
+            variant_metadata_df = variants_updated_vk_info_csv
 
     vcrs_header_column = "vcrs_header"
 
@@ -555,8 +561,12 @@ def filter(
     if "semicolon_count" not in variant_metadata_df.columns and vcrs_header_column in variant_metadata_df.columns:  # adding for reporting purposes
         variant_metadata_df["semicolon_count"] = variant_metadata_df[vcrs_header_column].str.count(";")
 
-    filtering_report_text_out = os.path.join(out, "filtering_report.txt")
-    filtered_df = apply_filters(variant_metadata_df, filters, filtering_report_text_out=filtering_report_text_out)
+    filtered_df = apply_filters(variant_metadata_df, filters, filtering_report_text_out=filtering_report_text_out)  #$$$ the real meat of the function
+
+    if kwargs.get("called_from_vk_sim"):  # return early because I don't need anything else
+        report_time_elapsed(start_time, logger=logger, function_name="filter")
+        return filtered_df
+
     filtered_df = filtered_df.copy()  # here to avoid pandas warning about assigning to a slice rather than a copy
 
     if "semicolon_count" in filtered_df.columns:
