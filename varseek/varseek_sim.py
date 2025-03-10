@@ -153,7 +153,7 @@ def sim(
     reads_csv_out=None,
     save_variants_updated_csv=True,
     save_reads_csv=True,
-    vk_build_out_dir=".",
+    vk_build_out_dir=None,
     sequences=None,
     seq_id_column="seq_ID",
     var_column="mutation",
@@ -303,6 +303,8 @@ def sim(
             variants = pd.read_csv(variants)
         else:
             raise ValueError("variants must be a csv path, tsv path, or dataframe")
+    elif isinstance(variants, pd.DataFrame):
+        variants = variants.copy()
         
     if header_column not in variants.columns:
         raise ValueError(f"variants must contain a 'header' column provided by {header_column}, which consists of <seq_id_column>:<var_column>.")
@@ -391,6 +393,8 @@ def sim(
         if "wt_sequence_read_parent_length" not in variants.columns and sample_type != "m":
             variants["wt_sequence_read_parent_length"] = variants[ref_sequence_read_parent_column].str.len()
 
+    if not filters:
+        filters = []
     filters.extend([f"{variant_sequence_read_parent_column}:is_not_null", f"{ref_sequence_read_parent_column}:is_not_null"])
     filters = list(dict.fromkeys(filters))  # equivalent to `list(set(filters))`, but maintains order of filters
 
