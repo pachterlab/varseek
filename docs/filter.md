@@ -30,7 +30,7 @@ Takes in:
 Only keeps values that pass the filters (e.g., COLUMN0:min=5 will only keep rows where COLUMN0 is greater than or equal to 5)
 
 COLUMN:RULE or COLUMN:RULE=VALUE
-- COLUMN: column name in the info csv
+- COLUMN: column name in the info csv (NOTE: column names cannot have spaces)
 - RULE: rule to apply to the column from the following list:
     - greater_than:
         - greater than VALUE i.e., minimum (exclusive) - does not filter null values

@@ -326,6 +326,8 @@ def filter(
     variants_updated_exploded_vk_info_csv=None,  # input exploded variant metadata df
     id_to_header_csv=None,  # input id to header csv
     dlist_fasta=None,  # input dlist
+    vcrs_id_column="vcrs_id",  # column name for vcrs id
+    vcrs_sequence_column="vcrs_sequence",  # column name for vcrs sequence
     out=None,  # output directory
     variants_updated_filtered_csv_out=None,  # output metadata df
     variants_updated_exploded_filtered_csv_out=None,  # output exploded variant metadata df
@@ -358,6 +360,8 @@ def filter(
     - variants_updated_exploded_vk_info_csv       (str) Path to the updated exploded dataframe containing the VCRS headers and sequences. Corresponds to `variants_updated_exploded_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).
     - id_to_header_csv                             (str) Path to the csv file containing the mapping of IDs to headers generated from varseek build corresponding to vcrs_fasta. Corresponds to `id_to_header_csv_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir` if it exists).
     - dlist_fasta                                  (str) Path to the dlist fasta file. Default: None (will find it in `input_dir` if it exists).
+    - vcrs_id_column                               (str) Column name for the VCRS ID in the variant metadata dataframe. Default: "vcrs_id".
+    - vcrs_sequence_column                        (str) Column name for the VCRS sequence in the variant metadata dataframe. Default: "vcrs_sequence".
 
     # Optional output file paths: (only needed if changing/customizing file names or locations):
     - out                                          (str) Path to the directory where the output files will be saved. Default: `input_dir`.
@@ -535,17 +539,16 @@ def filter(
         variant_metadata_df = variants_updated_vk_info_csv
 
     vcrs_header_column = "vcrs_header"
-    vcrs_sequence_column = "vcrs_sequence"
 
-    if not variant_metadata_df["vcrs_id"].iloc[0].startswith("vcrs"):  # use_IDs was False in vk build and header column is "vcrs_id"
-        vcrs_header_column = "vcrs_id"
+    if not variant_metadata_df[vcrs_id_column].iloc[0].startswith("vcrs"):  # use_IDs was False in vk build and header column is vcrs_id_column
+        vcrs_header_column = vcrs_id_column
     else:
         if vcrs_header_column not in variant_metadata_df.columns:
             if id_to_header_csv and os.path.isfile(id_to_header_csv):
                 id_to_header_dict = make_mapping_dict(id_to_header_csv, dict_key="id")
 
                 if id_to_header_dict is not None:
-                    variant_metadata_df[vcrs_header_column] = variant_metadata_df["vcrs_id"].map(id_to_header_dict)
+                    variant_metadata_df[vcrs_header_column] = variant_metadata_df[vcrs_id_column].map(id_to_header_dict)
             else:
                 raise ValueError(f"ID to header mapping file not found at {id_to_header_csv}, and vcrs_id provides an ID that must be replaced. Please provide a valid file.")
 
@@ -564,14 +567,14 @@ def filter(
 
     # make vcrs_filtered_fasta_out
     if use_IDs:
-        output_fasta_header_column = "vcrs_id"
+        output_fasta_header_column = vcrs_id_column
     else:
         output_fasta_header_column = vcrs_header_column
     filtered_df[output_fasta_header_column] = filtered_df[output_fasta_header_column].astype(str)
 
-    filtered_df["fasta_format"] = ">" + filtered_df[output_fasta_header_column] + "\n" + filtered_df[vcrs_sequence_column] + "\n"
-
     if save_vcrs_filtered_fasta_and_t2g:
+        filtered_df["fasta_format"] = ">" + filtered_df[output_fasta_header_column] + "\n" + filtered_df[vcrs_sequence_column] + "\n"
+
         with open(vcrs_filtered_fasta_out, "w", encoding="utf-8") as fasta_file:
             fasta_file.write("".join(filtered_df["fasta_format"].values))
 
@@ -604,14 +607,14 @@ def filter(
 
     filtered_df.reset_index(drop=True, inplace=True)
 
-    filtered_df_vcrs_ids = set(filtered_df["vcrs_id"])  # no need to use output_fasta_header_column here because output_fasta_header_column is only necessary when saving the fasta files (this is using the IDs just to check for membership, not to save to a file any differently)
+    filtered_df_vcrs_ids = set(filtered_df[vcrs_id_column])  # no need to use output_fasta_header_column here because output_fasta_header_column is only necessary when saving the fasta files (this is using the IDs just to check for membership, not to save to a file any differently)
 
     # make variants_updated_exploded_filtered_csv_out iff variants_updated_exploded_vk_info_csv exists
     if save_variants_updated_filtered_csvs and variants_updated_exploded_vk_info_csv and os.path.isfile(variants_updated_exploded_vk_info_csv):
         variant_metadata_df_exploded = pd.read_csv(variants_updated_exploded_vk_info_csv)
 
         # Filter variant_metadata_df_exploded based on these unique values
-        filtered_variant_metadata_df_exploded = variant_metadata_df_exploded[variant_metadata_df_exploded["vcrs_id"].isin(filtered_df_vcrs_ids)]
+        filtered_variant_metadata_df_exploded = variant_metadata_df_exploded[variant_metadata_df_exploded[vcrs_id_column].isin(filtered_df_vcrs_ids)]
 
         filtered_variant_metadata_df_exploded.to_csv(variants_updated_exploded_filtered_csv_out, index=False)
 
@@ -633,8 +636,9 @@ def filter(
     if id_to_header_csv and os.path.isfile(id_to_header_csv):
         filter_id_to_header_csv(id_to_header_csv, id_to_header_filtered_csv_out, filtered_df_vcrs_ids)
 
-    logger.info(f"Output fasta file with filtered variants: {vcrs_filtered_fasta_out}")
-    logger.info(f"t2g file containing mutated sequences created at {vcrs_t2g_filtered_out}.")
+    if save_vcrs_filtered_fasta_and_t2g:
+        logger.info(f"Output fasta file with filtered variants: {vcrs_filtered_fasta_out}")
+        logger.info(f"t2g file containing mutated sequences created at {vcrs_t2g_filtered_out}.")
     if dlist_filtered_fasta_out and os.path.isfile(dlist_filtered_fasta_out):
         logger.info(f"Filtered dlist fasta created at {dlist_filtered_fasta_out}.")
 

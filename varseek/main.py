@@ -1038,6 +1038,18 @@ def main():  # noqa: C901
         help=extract_help_from_doc(filter, "dlist_fasta"),
     )
     parser_filter.add_argument(
+        "--vcrs_id_column",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(filter, "vcrs_id_column"),
+    )
+    parser_filter.add_argument(
+        "--vcrs_sequence_column",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(filter, "vcrs_sequence_column"),
+    )
+    parser_filter.add_argument(
         "-o",
         "--out",
         required=False,

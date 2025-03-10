@@ -108,7 +108,7 @@ def validate_input_sim(params_dict):
     if not (is_valid_int(params_dict["max_errors"], ">=", 0) or isinstance(params_dict["max_errors"], float)):
         raise ValueError("max_errors must be a positive integer or float.")
 
-    for param_name, file_type in {"reads_fastq_parent": "fastq", "reads_csv_parent": "csv", "variants_updated_csv_out": "csv", "reads_fastq_out": "fastq", "reads_csv_out": "csv", "wt_vcrs_fasta_out": "fasta", "wt_vcrs_t2g_out": "t2g", "removed_variants_text_out": "txt", "gtf": "gtf"}.items():
+    for param_name, file_type in {"reads_fastq_parent": "fastq", "reads_csv_parent": "csv", "variants_updated_csv_out": ["csv", "tsv"], "reads_fastq_out": "fastq", "reads_csv_out": "csv", "wt_vcrs_fasta_out": "fasta", "wt_vcrs_t2g_out": "t2g", "removed_variants_text_out": "txt", "gtf": "gtf"}.items():
         check_file_path_is_string_with_valid_extension(params_dict.get(param_name), param_name, file_type)
 
     # Boolean
@@ -157,6 +157,8 @@ def sim(
     sequences=None,
     seq_id_column="seq_ID",
     var_column="mutation",
+    header_column="header",
+    variant_type_column = "vcrs_variant_type",
     k=59,
     w=54,
     sequences_cdna=None,
@@ -212,10 +214,12 @@ def sim(
     - reads_csv_out                     (str) Path to the output csv file containing the simulated reads (one row per read). Default: `out`/synthetic_reads_df.csv
     - save_variants_updated_csv        (bool) Whether to save the updated variant metadata dataframe to a csv file. Default: True
     - save_reads_csv                     (bool) Whether to save the simulated reads to a csv file. Default: True
-    - vk_build_out_dir                  (str) Only applies if variants does not exist or have the expected columns. Path to the output directory for the vk_build files. Default: "."
+    - vk_build_out_dir                  (str) Only applies if variants does not exist or have the expected columns. Path to the output directory for the vk_build files. Default: `out`/vk_build.
     - sequences                         (str) Only applies if variants does not exist or have the expected columns. Path to the fasta file containing the sequences. Default: None
     - seq_id_column                     (str) Only applies if variants does not exist or have the expected columns. Name of the column containing the sequence IDs. Default: "seq_ID"
     - var_column                        (str) Only applies if variants does not exist or have the expected columns. Name of the column containing the variants. Default: "mutation"
+    - header_column                     (str) Only applies if variants does not exist or have the expected columns. Name of the column containing the variant header. Default: "header"
+    - variant_type_column               (str) Only applies if variants does not exist or have the expected columns. Name of the column containing the variant type. Default: "vcrs_variant_type"
     - k                                 (int) Only applies if variants does not exist or have the expected columns. Length of the k-mer to use for filtering. Default: 59
     - w                                 (int) Only applies if variants does not exist or have the expected columns. Length of the k-mer to use for filtering. Default: 54
     - sequences_cdna                    (str) Only applies if variants does not exist or have the expected columns. Path to the fasta file containing the cDNA sequences. Default: None
@@ -299,9 +303,15 @@ def sim(
             variants = pd.read_csv(variants)
         else:
             raise ValueError("variants must be a csv path, tsv path, or dataframe")
+        
+    if header_column not in variants.columns:
+        raise ValueError(f"variants must contain a 'header' column provided by {header_column}, which consists of <seq_id_column>:<var_column>.")
 
     if (isinstance(variants, str) and not os.path.exists(variants)) or (variant_sequence_read_parent_column not in variants.columns and sample_type != "w") or (ref_sequence_read_parent_column not in variants.columns and sample_type != "m"):
         logger.info("cannot find mutant sequence read parent")
+        if not vk_build_out_dir:
+            vk_build_out_dir = os.path.join(out, "vk_build")
+        
         update_df_out = f"{vk_build_out_dir}/sim_data_df.csv"
 
         if k and w:
@@ -310,15 +320,17 @@ def sim(
             read_w = read_length - (k - w)
         else:
             read_w = read_length - 1
+        
+        read_k = read_w + 1
 
         if sequences_cdna is not None and sequences_genome is not None:
             update_df_out_cdna = update_df_out.replace(".csv", "_cdna.csv")
             if not os.path.exists(update_df_out_cdna):
-                varseek.build(sequences=sequences_cdna, variants=variants, out=vk_build_out_dir, w=read_w, k=k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, required_insertion_overlap_length=None, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, cosmic_email=os.getenv("COSMIC_EMAIL"), cosmic_password=os.getenv("COSMIC_PASSWORD"), save_variants_updated_csv=True, variants_updated_csv_out=update_df_out_cdna, seq_id_column=seq_id_column_cdna, var_column=var_column_cdna, **kwargs)
+                varseek.build(sequences=sequences_cdna, variants=variants, out=vk_build_out_dir, w=read_w, k=read_k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, required_insertion_overlap_length=None, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, save_variants_updated_csv=True, variants_updated_csv_out=update_df_out_cdna, seq_id_column=seq_id_column_cdna, var_column=var_column_cdna, overwrite=True, **kwargs)
 
             update_df_out_genome = update_df_out.replace(".csv", "_genome.csv")
             if not os.path.exists(update_df_out_genome):
-                varseek.build(sequences=sequences_genome, variants=variants, out=vk_build_out_dir, w=read_w, k=k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, required_insertion_overlap_length=None, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, cosmic_email=os.getenv("COSMIC_EMAIL"), cosmic_password=os.getenv("COSMIC_PASSWORD"), save_variants_updated_csv=True, variants_updated_csv_out=update_df_out_genome, seq_id_column=seq_id_column_genome, var_column=var_column_genome, **kwargs)
+                varseek.build(sequences=sequences_genome, variants=variants, out=vk_build_out_dir, w=read_w, k=read_k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, required_insertion_overlap_length=None, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, save_variants_updated_csv=True, variants_updated_csv_out=update_df_out_genome, seq_id_column=seq_id_column_genome, var_column=var_column_genome, overwrite=True, **kwargs)
 
             # Load the CSV files
             df_cdna = pd.read_csv(update_df_out_cdna)
@@ -332,13 +344,13 @@ def sim(
         else:
             if not os.path.exists(update_df_out):
                 logger.info("running varseek build")
-                varseek.build(sequences=sequences, variants=variants, out=vk_build_out_dir, w=read_w, k=k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, required_insertion_overlap_length=None, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, cosmic_email=os.getenv("COSMIC_EMAIL"), cosmic_password=os.getenv("COSMIC_PASSWORD"), save_variants_updated_csv=True, variants_updated_csv_out=update_df_out, seq_id_column=seq_id_column, var_column=var_column, **kwargs)  # uncomment for genome support
+                varseek.build(sequences=sequences, variants=variants, out=vk_build_out_dir, w=read_w, k=read_k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, required_insertion_overlap_length=None, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, save_variants_updated_csv=True, variants_updated_csv_out=update_df_out, seq_id_column=seq_id_column, var_column=var_column, overwrite=True, **kwargs)
 
             sim_data_df = pd.read_csv(update_df_out)
 
         sim_data_df.rename(
             columns={
-                "vcrs_header": "header",
+                "vcrs_header": header_column,
                 "vcrs_sequence": variant_sequence_read_parent_column,
                 "wt_sequence": ref_sequence_read_parent_column,
             },
@@ -355,7 +367,7 @@ def sim(
             variants,
             sim_data_df[
                 [
-                    "header",
+                    header_column,
                     variant_sequence_read_parent_column,
                     variant_sequence_read_parent_rc_column,
                     "mutant_sequence_read_parent_length",
@@ -364,7 +376,7 @@ def sim(
                     "wt_sequence_read_parent_length",
                 ]
             ],
-            on="header",
+            on=header_column,
             how="left",
             suffixes=("", "_read_parent"),
         )
@@ -380,7 +392,7 @@ def sim(
             variants["wt_sequence_read_parent_length"] = variants[ref_sequence_read_parent_column].str.len()
 
     filters.extend([f"{variant_sequence_read_parent_column}:is_not_null", f"{ref_sequence_read_parent_column}:is_not_null"])
-    filters = list(set(filters))
+    filters = list(dict.fromkeys(filters))  # equivalent to `list(set(filters))`, but maintains order of filters
 
     if filters:
         filtered_df = varseek.filter(
@@ -390,6 +402,8 @@ def sim(
             out=out,
             return_variants_updated_filtered_csv_df=True,
             save_vcrs_filtered_fasta_and_t2g=False,
+            vcrs_id_column=header_column,
+            overwrite=True
         )  # filter to include only rows not already in variant and whatever condition I would like
     else:
         filtered_df = variants
@@ -480,18 +494,23 @@ def sim(
     total_fragments = 0
     skipped = 0
     with open(fasta_output_path_temp, "w", encoding="utf-8") as fa_file:
-        for row in sampled_reference_df.itertuples(index=False):
+        for row in tqdm(sampled_reference_df.itertuples(index=False), total=len(sampled_reference_df), desc="Simulating reads"):
             # try:
-            header = row.header
+            header = getattr(row, header_column, None)
             vcrs_id = getattr(row, "vcrs_id", None)
             vcrs_header = getattr(row, "vcrs_header", None)
-            vcrs_variant_type = getattr(row, "vcrs_variant_type", None)
+            vcrs_variant_type = getattr(row, variant_type_column, None)
             mutant_sequence = getattr(row, variant_sequence_read_parent_column)
             mutant_sequence_rc = getattr(row, variant_sequence_read_parent_rc_column)
             mutant_sequence_length = row.mutant_sequence_read_parent_length
             wt_sequence = getattr(row, ref_sequence_read_parent_column)
             wt_sequence_rc = getattr(row, ref_sequence_read_parent_rc_column)
             wt_sequence_length = row.wt_sequence_read_parent_length
+
+            if not vcrs_id:
+                vcrs_id = header
+            if not vcrs_header:
+                vcrs_header = header
 
             valid_starting_index_max_mutant = int(mutant_sequence_length - read_length + 1)
             valid_starting_index_max_wt = int(wt_sequence_length - read_length + 1)
@@ -601,8 +620,8 @@ def sim(
                             noise_str = "n"
                             noisy_read_indices_mutant.append(i)
 
-                    read_id = f"{vcrs_id}_{i}{selected_strand}M{noise_str}_row{total_fragments}"
-                    read_header = f"{header}_{i}{selected_strand}M{noise_str}_row{total_fragments}"
+                    read_id = f"{vcrs_id}_{i}{selected_strand}M{noise_str}_{total_fragments}"
+                    read_header = f"{header}_{i}{selected_strand}M{noise_str}_{total_fragments}"
                     fa_file.write(f">{read_id}\n{sequence_chunk}\n")
                     mutant_dict = {
                         "read_id": read_id,
@@ -645,8 +664,8 @@ def sim(
                             noise_str = "n"
                             noisy_read_indices_wt.append(i)
 
-                    read_id = f"{vcrs_id}_{i}{selected_strand}W{noise_str}_row{total_fragments}"
-                    read_header = f"{header}_{i}{selected_strand}W{noise_str}_row{total_fragments}"
+                    read_id = f"{vcrs_id}_{i}{selected_strand}W{noise_str}_{total_fragments}"
+                    read_header = f"{header}_{i}{selected_strand}W{noise_str}_{total_fragments}"
                     fa_file.write(f">{read_id}\n{sequence_chunk}\n")
                     wt_dict = {
                         "read_id": read_id,
@@ -708,7 +727,7 @@ def sim(
             reads_csv_parent = pd.read_csv(reads_csv_parent)
         read_df = pd.concat([reads_csv_parent, read_df], ignore_index=True)
 
-    variants = merge_synthetic_read_info_into_variants_metadata_df(variants, sampled_reference_df, sample_type=sample_type)
+    variants = merge_synthetic_read_info_into_variants_metadata_df(variants, sampled_reference_df, sample_type=sample_type, header_column=header_column)
 
     variants["tumor_purity"] = variants["number_of_reads_mutant"] / (variants["number_of_reads_wt"] + variants["number_of_reads_mutant"])
 

@@ -192,15 +192,15 @@ def validate_input_build(params_dict):
     if isinstance(sequences, str):
         if all(c in "ACGTNU-.*" for c in sequences.upper()):  # a single reference sequence
             pass
-        elif supported_databases_and_corresponding_reference_sequence_type.get(mutations, {}).get("sequence_file_names", {}).get(sequences, None):  # a supported reference genome
-            pass
         elif os.path.isfile(sequences) and sequences.endswith(fasta_extensions):  # a path to a reference genome with a valid extension
+            pass
+        elif isinstance(mutations, str) and supported_databases_and_corresponding_reference_sequence_type.get(mutations, {}).get("sequence_file_names", {}).get(sequences, None):  # a supported reference genome
             pass
         else:
             raise ValueError(f"sequences must be a nucleotide string, a list of nucleotide strings, a path to a reference genome, or a string specifying a reference genome supported by varseek. Got {sequences} of type {type(sequences)}.\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
 
     # mutations
-    if not isinstance(mutations, (list, str, Path)):
+    if not isinstance(mutations, (list, tuple, str, Path, pd.DataFrame)):
         raise ValueError(f"variants must be a string, a list of strings, a path to a variant database, or a string specifying a variant database supported by varseek. Got {mutations} of type {type(mutations)}\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
     if isinstance(mutations, list) and not all((isinstance(mut, str) and mut.startswith(("c.", "g."))) for mut in mutations):
         raise ValueError("All elements in variants must be strings that start with 'c.' or 'g.'.")
@@ -259,7 +259,7 @@ def validate_input_build(params_dict):
     if int(k) % 2 == 0 or int(k) > 63:
         logger.warning("If running a workflow with vk ref or kb ref, k should be an odd number between 1 and 63. Got k=%s.", k)
     if int(w) >= int(k):
-        raise ValueError(f"w should be less than k. Got w={w}, k={k}.")
+         raise ValueError(f"w should be less than k. Got w={w}, k={k}.")
     if int(k) > 2 * int(w):
         raise ValueError("k must be less than or equal to 2*w")
 
@@ -641,7 +641,7 @@ def build(
 
     # Load input sequences and their identifiers from fasta file
     if isinstance(sequences, str) and ("." in sequences or (mutations in supported_databases_and_corresponding_reference_sequence_type and sequences in supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_download_commands"])):
-        if mutations in supported_databases_and_corresponding_reference_sequence_type and sequences in supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_download_commands"]:
+        if isinstance(mutations, str) and mutations in supported_databases_and_corresponding_reference_sequence_type and sequences in supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_download_commands"]:
             if "cosmic" in mutations:
                 sequences, gtf, gtf_transcript_id_column, genome_file, cds_file, cdna_file = download_cosmic_sequences(sequences, seq_id_column, gtf, gtf_transcript_id_column, reference_out_dir, cosmic_version, mutations, grch, logger)
 

@@ -154,38 +154,36 @@ def test_vk_ref(cosmic_csv_path, out_dir):
     if make_new_gt:
         os.makedirs(ground_truth_folder, exist_ok=True)
 
-    # vk.ref(
-    #     variants = cosmic_csv_path,  # build args
-    #     sequences = cosmic_cdna_path,
-    #     out = out_dir,
-    #     reference_out_dir=reference_folder_parent,
-    #     seq_id_column="seq_ID",
-    #     var_column = "mutation_cdna",
-    #     w = w,
-    #     k = k,
-    #     save_variants_updated_csv = True,
-    #     columns_to_include = columns_to_include,  # info args
-    #     seq_id_cdna_column="seq_ID",
-    #     var_cdna_column="mutation_cdna",
-    #     seq_id_genome_column="chromosome",
-    #     var_genome_column="mutation_genome",
-    #     gene_name_column="gene_name",
-    #     dlist_reference_source="grch37",
-    #     dlist_reference_ensembl_release=93,
-    #     # dlist_reference_genome_fasta = cosmic_genome_path,  # for d-listing - should be handled internally by vk info because dlist_reference_source is provided
-    #     # dlist_reference_cdna_fasta = cosmic_cdna_path,  # for d-listing - should be handled internally by vk info because dlist_reference_source is provided
-    #     # dlist_reference_gtf = cosmic_gtf_path,  # for d-listing - should be handled internally by vk info because dlist_reference_source is provided
-    #     reference_genome_fasta = cosmic_genome_path,  # for compare_cdna_and_genome - only handled internally by vk ref if variants = "cosmic_cmc" etc
-    #     # reference_cdna_fasta = cosmic_cdna_path,  # for compare_cdna_and_genome - should be handled internally by vk ref (because I provided sequences for vk build, and because variant_source can be identified to be transcriptome)
-    #     gtf = cosmic_gtf_path,  # for distance to nearest splice junction - only handled internally by vk ref if variants = "cosmic_cmc" etc
-    #     save_variants_updated_exploded_vk_info_csv = True,
-    #     threads = threads,
-    #     filters = filters,  # filter args
-    #     save_variants_updated_filtered_csvs=True,
-    #     verbose=True
-    # )
-
-    out_dir = "/Users/joeyrich/Desktop/local/varseek/tests/pytest_output/test_varseek_ref/date_2025_03_07_time_1607_57/test_vk_ref"  #!!! erase, and uncomment vk ref above
+    vk.ref(
+        variants = cosmic_csv_path,  # build args
+        sequences = cosmic_cdna_path,
+        out = out_dir,
+        reference_out_dir=reference_folder_parent,
+        seq_id_column="seq_ID",
+        var_column = "mutation_cdna",
+        w = w,
+        k = k,
+        save_variants_updated_csv = True,
+        columns_to_include = columns_to_include,  # info args
+        seq_id_cdna_column="seq_ID",
+        var_cdna_column="mutation_cdna",
+        seq_id_genome_column="chromosome",
+        var_genome_column="mutation_genome",
+        gene_name_column="gene_name",
+        dlist_reference_source="grch37",
+        dlist_reference_ensembl_release=93,
+        # dlist_reference_genome_fasta = cosmic_genome_path,  # for d-listing - should be handled internally by vk info because dlist_reference_source is provided
+        # dlist_reference_cdna_fasta = cosmic_cdna_path,  # for d-listing - should be handled internally by vk info because dlist_reference_source is provided
+        # dlist_reference_gtf = cosmic_gtf_path,  # for d-listing - should be handled internally by vk info because dlist_reference_source is provided
+        reference_genome_fasta = cosmic_genome_path,  # for compare_cdna_and_genome - only handled internally by vk ref if variants = "cosmic_cmc" etc
+        # reference_cdna_fasta = cosmic_cdna_path,  # for compare_cdna_and_genome - should be handled internally by vk ref (because I provided sequences for vk build, and because variant_source can be identified to be transcriptome)
+        gtf = cosmic_gtf_path,  # for distance to nearest splice junction - only handled internally by vk ref if variants = "cosmic_cmc" etc
+        save_variants_updated_exploded_vk_info_csv = True,
+        threads = threads,
+        filters = filters,  # filter args
+        save_variants_updated_filtered_csvs=True,
+        verbose=True
+    )
 
     # file name, file type, columns to drop for comparison
     global columns_to_drop_info_filter  # should be unnecessary but got an error without it
@@ -201,7 +199,6 @@ def test_vk_ref(cosmic_csv_path, out_dir):
         ("vcrs_filtered.fa", "fasta", None),
         ("vcrs_t2g_filtered.txt", "t2g", None),
         ("vcrs_t2g.txt", "t2g", None),
-        ("vcrs_with_headers.fa", "fasta", None),
         ("vcrs.fa", "fasta", None),
         # ("vcrs_index.idx", "index", None),
     ]

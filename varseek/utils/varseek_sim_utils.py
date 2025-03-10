@@ -16,12 +16,12 @@ from varseek.utils.seq_utils import (
 tqdm.pandas()
 
 
-def merge_synthetic_read_info_into_variants_metadata_df(mutation_metadata_df, sampled_reference_df, sample_type="all"):
+def merge_synthetic_read_info_into_variants_metadata_df(mutation_metadata_df, sampled_reference_df, sample_type="all", header_column="header"):
     if sample_type != "m":
         mutation_metadata_df_new = mutation_metadata_df.merge(
             sampled_reference_df[
                 [
-                    "header",
+                    header_column,
                     "included_in_synthetic_reads_wt",
                     "number_of_reads_wt",
                     "list_of_read_starting_indices_wt",
@@ -29,7 +29,7 @@ def merge_synthetic_read_info_into_variants_metadata_df(mutation_metadata_df, sa
                     "noisy_read_indices_wt",
                 ]
             ],
-            on="header",
+            on=header_column,
             how="left",
             suffixes=("", "_new"),
         )
@@ -71,7 +71,7 @@ def merge_synthetic_read_info_into_variants_metadata_df(mutation_metadata_df, sa
         mutation_metadata_df_new = mutation_metadata_df_new.merge(
             sampled_reference_df[
                 [
-                    "header",
+                    header_column,
                     "included_in_synthetic_reads_mutant",
                     "number_of_reads_mutant",
                     "list_of_read_starting_indices_mutant",
@@ -79,7 +79,7 @@ def merge_synthetic_read_info_into_variants_metadata_df(mutation_metadata_df, sa
                     "noisy_read_indices_mutant",
                 ]
             ],
-            on="header",
+            on=header_column,
             how="left",
             suffixes=("", "_new"),
         )
@@ -188,7 +188,7 @@ def build_random_genome_read_df(
     mutation_metadata_df=None,
     seq_id_column="seq_ID",
     var_column="mutation",
-    input_type="cdna",
+    input_type="transcriptome",
     read_df=None,
     read_df_out=None,
     fastq_output_path="random_reads.fq",
@@ -203,10 +203,10 @@ def build_random_genome_read_df(
     max_errors=float("inf"),
     seed=42,
 ):
-    if input_type == "transcriptome":
-        input_type = "cdna"  # for backwards compatibility
-    if input_type not in ["genome", "cdna"]:
-        raise ValueError(f"Invalid input_type: {input_type}. Expected 'genome' or 'cdna'.")
+    if input_type == "cdna":
+        input_type = "transcriptome"  # for backwards compatibility
+    if input_type not in ["genome", "transcriptome"]:
+        raise ValueError(f"Invalid input_type: {input_type}. Expected 'genome' or 'transcriptome'.")
     if mutation_metadata_df is not None:
         if f"start_variant_position_{input_type}" not in mutation_metadata_df.columns or f"end_variant_position_{input_type}" not in mutation_metadata_df.columns:
             add_mutation_information(mutation_metadata_df, mutation_column=var_column, variant_source=input_type)
@@ -241,7 +241,7 @@ def build_random_genome_read_df(
                 continue
 
             random_transcript = random_transcript.split()[0]  # grab ENST from long transcript name string
-            if input_type == "cdna":
+            if input_type == "transcriptome":
                 random_transcript = random_transcript.split(".")[0]  # strip version number from ENST
 
             # Choose a random integer between 1 and the sequence_length-read_length as start position
@@ -286,8 +286,8 @@ def build_random_genome_read_df(
                     if random_sequence != random_sequence_old:
                         noise_str = "n"
 
-                wt_id = f"wt_random{selected_strand}W{noise_str}_row{i}"
-                header = f"{random_transcript}:{start_position}_{end_position}_random{selected_strand}W{noise_str}_row{i}"
+                wt_id = f"wt_{input_type}_random{selected_strand}W{noise_str}_{i}"
+                header = f"{random_transcript}:{start_position}_{end_position}_random{selected_strand}W{noise_str}_{i}"
                 read_df = append_row(read_df, wt_id, header, random_sequence, start_position, selected_strand, added_noise=bool(noise_str))
 
                 fa_file.write(f">{header}\n{random_sequence}\n")

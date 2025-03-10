@@ -294,15 +294,25 @@ def ref(
     # Make directories
     os.makedirs(out, exist_ok=True)
 
+    # ensure equivalent parameter file paths agree
+    out, kwargs["input_dir"] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(out, kwargs.get("input_dir"))  # check that, if out and input_dir are both provided, they are the same directory; otherwise, if only one is provided, then make them equal to each other
+    kwargs["vcrs_fasta_out"], kwargs["vcrs_fasta"] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(kwargs.get("vcrs_fasta_out"), kwargs.get("vcrs_fasta"))  # build --> info
+    kwargs["id_to_header_csv_out"], kwargs["id_to_header_csv"] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(kwargs.get("id_to_header_csv_out"), kwargs.get("id_to_header_csv"))  # build --> info/filter
+    kwargs["variants_updated_csv_out"], kwargs["variants_updated_csv"] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(kwargs.get("variants_updated_csv_out"), kwargs.get("variants_updated_csv"))  # build --> info
+    kwargs["variants_updated_vk_info_csv_out"], kwargs["variants_updated_vk_info_csv"] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(kwargs.get("variants_updated_vk_info_csv_out"), kwargs.get("variants_updated_vk_info_csv"))  # info --> filter
+    kwargs["variants_updated_exploded_vk_info_csv_out"], kwargs["variants_updated_exploded_vk_info_csv"] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(kwargs.get("variants_updated_exploded_vk_info_csv_out"), kwargs.get("variants_updated_exploded_vk_info_csv"))  # info --> filter
+    # dlist handled below - see the comment "set d-list argument"
+
     # define some more file paths
     if not index_out:
         index_out = os.path.join(out, "vcrs_index.idx")
     os.makedirs(os.path.dirname(index_out), exist_ok=True)
 
-    vcrs_fasta_out = kwargs.get("vcrs_fasta_out", os.path.join(out, "vcrs.fa"))  # make sure this matches vk build
-    vcrs_filtered_fasta_out = kwargs.get("vcrs_filtered_fasta_out", os.path.join(out, "vcrs_filtered.fa"))  # make sure this matches vk filter
-    vcrs_t2g_out = kwargs.get("vcrs_t2g_out", os.path.join(out, "vcrs_t2g.txt"))  # make sure this matches vk build
-    vcrs_t2g_filtered_out = kwargs.get("vcrs_t2g_filtered_out", os.path.join(out, "vcrs_t2g_filtered.txt"))  # make sure this matches vk filter
+    vcrs_fasta_out = kwargs.get("vcrs_fasta_out") if kwargs.get("vcrs_fasta_out") else os.path.join(out, "vcrs.fa")  # make sure this matches vk build - I use this if else rather than simply the kwargs.get as below, because if someone provides the path None here then I don't want an error
+    vcrs_filtered_fasta_out = kwargs.get("vcrs_filtered_fasta_out") if kwargs.get("vcrs_filtered_fasta_out") else os.path.join(out, "vcrs_filtered.fa")  # make sure this matches vk filter
+    vcrs_t2g_out = kwargs.get("vcrs_t2g_out") if kwargs.get("vcrs_t2g_out") else os.path.join(out, "vcrs_t2g.txt")  # make sure this matches vk build
+    vcrs_t2g_filtered_out = kwargs.get("vcrs_t2g_filtered_out") if kwargs.get("vcrs_t2g_filtered_out") else os.path.join(out, "vcrs_t2g_filtered.txt")  # make sure this matches vk filter
+    variants_updated_vk_info_csv_out = kwargs.get("variants_updated_vk_info_csv_out") if kwargs.get("variants_updated_vk_info_csv_out") else os.path.join(out, "variants_updated_vk_info.csv")  # make sure this matches vk info
     dlist_genome_fasta_out = kwargs.get("dlist_genome_fasta_out", os.path.join(out, "dlist_genome.fa"))  # make sure this matches vk info
     dlist_cdna_fasta_out = kwargs.get("dlist_cdna_fasta_out", os.path.join(out, "dlist_cdna.fa"))  # make sure this matches vk info
     dlist_combined_fasta_out = kwargs.get("dlist_combined_fasta_out", os.path.join(out, "dlist.fa"))  # make sure this matches vk info
@@ -311,22 +321,10 @@ def ref(
         if os.path.isfile(file) and not overwrite:
             raise FileExistsError(f"Output file {file} already exists. Please delete it or specify a different output directory or set overwrite=True.")
 
-    variants_updated_vk_info_csv_out = kwargs.get("variants_updated_vk_info_csv_out", None)
-    if not variants_updated_vk_info_csv_out:
-        variants_updated_vk_info_csv_out = os.path.join(out, "variants_updated_vk_info.csv")  # make sure this matches vk info
-
     file_signifying_successful_vk_build_completion = vcrs_fasta_out
     file_signifying_successful_vk_info_completion = variants_updated_vk_info_csv_out
     files_signifying_successful_vk_filter_completion = (vcrs_filtered_fasta_out, vcrs_t2g_filtered_out)
     file_signifying_successful_kb_ref_completion = index_out
-
-    out, kwargs["input_dir"] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(out, kwargs.get("input_dir"))  # check that, if out and input_dir are both provided, they are the same directory; otherwise, if only one is provided, then make them equal to each other
-    kwargs["vcrs_fasta_out"], kwargs["vcrs_fasta"] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(kwargs.get("vcrs_fasta_out"), kwargs.get("vcrs_fasta"))  # build --> info
-    kwargs["id_to_header_csv_out"], kwargs["id_to_header_csv"] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(kwargs.get("id_to_header_csv_out"), kwargs.get("id_to_header_csv"))  # build --> info/filter
-    kwargs["variants_updated_csv_out"], kwargs["variants_updated_csv"] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(kwargs.get("variants_updated_csv_out"), kwargs.get("variants_updated_csv"))  # build --> info
-    kwargs["variants_updated_vk_info_csv_out"], kwargs["variants_updated_vk_info_csv"] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(kwargs.get("variants_updated_vk_info_csv_out"), kwargs.get("variants_updated_vk_info_csv"))  # info --> filter
-    kwargs["variants_updated_exploded_vk_info_csv_out"], kwargs["variants_updated_exploded_vk_info_csv"] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(kwargs.get("variants_updated_exploded_vk_info_csv_out"), kwargs.get("variants_updated_exploded_vk_info_csv"))  # info --> filter
-    # dlist handled below - see the comment "set d-list argument"
 
     # * 7. Define kwargs defaults
     # Nothing to see here
