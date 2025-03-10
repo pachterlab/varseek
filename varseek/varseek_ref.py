@@ -257,9 +257,10 @@ def ref(
             if key not in params_dict and key not in ref_signature.parameters.keys():
                 params_dict[key] = signature.parameters[key].default
 
-    vk.varseek_build.validate_input_build(params_dict)  # this passes all vk ref parameters to the function - I could only pass in the vk build parameters here if desired (and likewise below), but there should be no naming conflicts anyways
-    vk.varseek_info.validate_input_info(params_dict)
-    vk.varseek_filter.validate_input_filter(params_dict)
+    if not download:  # skip when downloading, as I don't need all of these functions to run normally
+        vk.varseek_build.validate_input_build(params_dict)  # this passes all vk ref parameters to the function - I could only pass in the vk build parameters here if desired (and likewise below), but there should be no naming conflicts anyways
+        vk.varseek_info.validate_input_info(params_dict)
+        vk.varseek_filter.validate_input_filter(params_dict)
     validate_input_ref(params_dict)
 
     # * 3. Dry-run
