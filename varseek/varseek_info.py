@@ -101,7 +101,7 @@ def validate_input_info(params_dict):
         raise ValueError(f"Invalid value for input_dir: {params_dict.get('input_dir')}")
     if params_dict.get("out") is not None and not isinstance(params_dict.get("out"), (str, Path)):
         raise ValueError(f"Invalid value for out: {params_dict.get('out')}")
-    if params_dict.get("reference_out_dir") and (not isinstance(params_dict.get("reference_out_dir"), (str, Path)) or not os.path.isdir(params_dict.get("reference_out_dir"))):
+    if params_dict.get("reference_out_dir") and not isinstance(params_dict.get("reference_out_dir"), (str, Path)):
         raise ValueError(f"Invalid value for reference_out_dir: {params_dict.get('reference_out_dir')}")
 
     gtf = params_dict.get("gtf")  # gtf gets special treatment because it can be a bool - and check for {"True", "False"} because of CLI passing

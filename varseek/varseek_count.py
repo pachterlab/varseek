@@ -235,6 +235,7 @@ def count(
     params_dict = make_function_parameter_to_value_dict(1)
     params_dict["adata_vcrs"] = "placeholder/adata.h5ad"  # this is just a placeholder, but it is needed for type checking
     params_dict["adata"] = "placeholder/adata_cleaned.h5ad"  # this is just a placeholder, but it is needed for type checking
+    params_dict["kb_count_reference_genome_dir"] = None  # this is just a placeholder, but it is needed for type checking
 
     # Set params_dict_for_type_checking to default values of children functions - important so type checking works properly
     count_signature = inspect.signature(count)

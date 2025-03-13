@@ -342,7 +342,7 @@ def ref(
 
     cosmic_email = kwargs.get("cosmic_email", None)
     if not cosmic_email and os.getenv("COSMIC_EMAIL"):
-        logger.info(f"Using COSMIC email from COSMIC_EMAIL environment variable: {cosmic_email}")
+        logger.info(f"Using COSMIC email from COSMIC_EMAIL environment variable")
         cosmic_email = os.getenv("COSMIC_EMAIL")
     
     cosmic_password = kwargs.get("cosmic_password", None)
@@ -413,6 +413,8 @@ def ref(
                     logger.warning("According to COSMIC regulations, please do not share any data that utilizes the COSMIC database. See more here: https://cancer.sanger.ac.uk/cosmic/help/terms")
                 else:
                     raise ValueError(f"Failed to verify COSMIC credentials. Status code: {response.status_code}")
+            
+            fasta_file_previously_existed = os.path.isfile(vcrs_fasta_for_index)
             logger.info(f"Downloading reference files with variants={variants}, sequences={sequences}")
             vk_ref_output_dict = download_varseek_files(file_dict, out=out, verbose=False)
             if index_out and vk_ref_output_dict["index"] != index_out:
@@ -424,6 +426,10 @@ def ref(
             if fasta_out and vk_ref_output_dict["fasta"] != fasta_out:
                 os.rename(vk_ref_output_dict["fasta"], fasta_out)
                 vk_ref_output_dict["fasta"] = fasta_out
+            elif not fasta_out and not fasta_file_previously_existed:
+                # delete vk_ref_output_dict["fasta"] if a path was not provided and this file did not previously exist
+                os.remove(vk_ref_output_dict["fasta"])
+                vk_ref_output_dict["fasta"] = None
 
             logger.info(f"Downloaded files: {vk_ref_output_dict}")
 
@@ -559,7 +565,7 @@ def ref(
 
     if not os.path.exists(file_signifying_successful_kb_ref_completion) or overwrite:
         if dry_run:
-            print(" ".join(kb_ref_command))
+            print(' '.join(kb_ref_command))
         else:
             logger.info(f"Running kb ref with command: {' '.join(kb_ref_command)}")
             subprocess.run(kb_ref_command, check=True)
@@ -575,24 +581,20 @@ def ref(
 
     if os.path.exists(vcrs_wt_fasta_for_index):
         if not os.path.exists(file_signifying_successful_wt_vcrs_kb_ref_completion) or overwrite:
-            kb_ref_wt_vcrs_command = ["kb", "ref", "--workflow", "custom", "-t", str(threads), "-i", wt_vcrs_index_out, "--d-list", "None", "-k", str(k), "--overwrite", True, vcrs_wt_fasta_for_index]  # set to True here regardless of the overwrite argument because I would only even enter this block if kb count was only partially run (as seen by the lack of existing of file_signifying_successful_wt_vcrs_kb_ref_completion), in which case I should overwrite anyways
+            kb_ref_wt_vcrs_command = ["kb", "ref", "--workflow", "custom", "-t", str(threads), "-i", wt_vcrs_index_out, "--d-list", "None", "-k", str(k), "--overwrite", vcrs_wt_fasta_for_index]  # set to True here regardless of the overwrite argument because I would only even enter this block if kb count was only partially run (as seen by the lack of existing of file_signifying_successful_wt_vcrs_kb_ref_completion), in which case I should overwrite anyways
             if dry_run:
-                print(" ".join(kb_ref_wt_vcrs_command))
+                print(' '.join(kb_ref_wt_vcrs_command))
             else:
                 logger.info(f"Running kb ref for wt vcrs index with command: {' '.join(kb_ref_wt_vcrs_command)}")
                 subprocess.run(kb_ref_wt_vcrs_command, check=True)
         else:
             logger.warning(f"Skipping kb ref for wt vcrs because {file_signifying_successful_wt_vcrs_kb_ref_completion} already exists and overwrite=False")
     #!!! erase if removing wt vcrs feature
-
-    if dry_run:
-        index_out = None
-        vcrs_t2g_for_alignment = None
-
+    
     vk_ref_output_dict = {}
-    vk_ref_output_dict["index"] = os.path.abspath(index_out)
-    vk_ref_output_dict["t2g"] = os.path.abspath(vcrs_t2g_for_alignment)
-    vk_ref_output_dict["fasta"] = os.path.abspath(vcrs_fasta_for_index)
+    vk_ref_output_dict["index"] = os.path.abspath(index_out) if (isinstance(index_out, str) and os.path.isfile(index_out) and not dry_run) else None
+    vk_ref_output_dict["t2g"] = os.path.abspath(vcrs_t2g_for_alignment) if (isinstance(vcrs_t2g_for_alignment, str) and os.path.isfile(vcrs_t2g_for_alignment) and not dry_run) else None
+    vk_ref_output_dict["fasta"] = os.path.abspath(vcrs_fasta_for_index) if (isinstance(vcrs_fasta_for_index, str) and os.path.isfile(vcrs_fasta_for_index) and not dry_run) else None
 
     logger.info(f"Produced files: {vk_ref_output_dict}")
 
