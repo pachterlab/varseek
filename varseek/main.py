@@ -1485,12 +1485,6 @@ def main():  # noqa: C901
         help=extract_help_from_doc(sim, "dry_run"),
     )
     parser_sim.add_argument(
-        "--dry_run",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "dry_run"),
-    )
-    parser_sim.add_argument(
         "--logging_level",
         choices=["NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "0", "10", "20", "30", "40", "50", "60", None],
         required=False,

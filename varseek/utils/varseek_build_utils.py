@@ -82,7 +82,7 @@ def count_leading_Ns(seq):
     return len(seq) - len(seq.lstrip("N"))
 
 
-def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_fasta_path, output_csv_path, logger=None, verbose=True):
+def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_fasta_path, output_csv_path=None, logger=None, verbose=True):
     logger_info = get_printlog(logger=logger)
     # Load the CSV
     if isinstance(input_csv_path, str):
@@ -200,6 +200,8 @@ def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_
             df_merged = df_original.merge(df[["seq_ID", "mutation", "mutation_cdna"]], on=["seq_ID", "mutation"], how="left")  # new as of Feb 2025
 
         # Write to new CSV
+        # if not output_csv_path:
+        #     output_csv_path = input_csv_path
         if output_csv_path:
             logger_info(f"Saving output to {output_csv_path}")
             df_merged.to_csv(output_csv_path, index=False)  # new as of Feb 2025 (replaced df.to_csv with df_merged.to_csv)

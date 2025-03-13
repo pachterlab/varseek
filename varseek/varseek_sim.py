@@ -189,7 +189,7 @@ def sim(
             ref_sequence_read_parent_rc_column: the reverse complement of the parent non-variant containing sequence from which to draw the read - optional (generated if not present)
 
     # Optional input arguments:
-    - number_of_variants_to_sample     (int) Number of variants to sample from `variants`. Default: 1500
+    - number_of_variants_to_sample     (int) Number of variants to sample from `variants`, or 'all' for all variants. Default: 1500
     - number_of_reads_per_variant_alt    (int or str) Number of variant-containing reads to simulate per variant. Either accepts an integer greater than 0 or "all" to simulate all possible reads per variant. Default: "all"
     - number_of_reads_per_variant_ref    (int or str) Number of non-variant-containing reads to simulate per variant. Either accepts an integer greater than 0 or "all" to simulate all possible reads per variant. Default: "all"
     - sample_ref_and_alt_reads_from_same_locations (bool) Whether to sample variant-containing and non-variant-containing reads from the same locations. Requires number_of_reads_per_variant_alt and number_of_reads_per_variant_ref to be the same. Default: False
@@ -293,7 +293,7 @@ def sim(
     filter_null_rows_from_important_cols = kwargs.get("filter_null_rows_from_important_cols", True)
 
     # * 7.5 make sure ints are ints
-    number_of_variants_to_sample, read_length, k, w = int(number_of_variants_to_sample), int(read_length), int(k), int(w)
+    read_length, k, w = int(read_length), int(k), int(w)
     # don't account for number_of_reads_per_variant_alt (can be all), number_of_reads_per_variant_ref (can be all), error_rate (float), max_errors (can be float("inf"))
 
     # * 8. Start the function
@@ -499,6 +499,11 @@ def sim(
     noisy_read_indices_wt = []
 
     with_replacement_original = with_replacement
+
+    if not variant_type_column:
+        variant_type_column = ""
+    if variant_type_column not in sampled_reference_df:
+        logger.warning(f"variant_type_column {variant_type_column} not in dataframe")
 
     # Write to a FASTA file
     total_fragments = 0

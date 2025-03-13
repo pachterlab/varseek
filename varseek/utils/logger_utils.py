@@ -571,7 +571,7 @@ def is_valid_int(value, threshold_type=None, threshold_value=None, optional=Fals
         return True
 
     # Check if value is an int or a valid string representation of an int
-    if not (isinstance(value, int) or (isinstance(value, str) and value.isdigit())):
+    if not (isinstance(value, int) or (isinstance(value, str) and value.isdigit()) or (isinstance(value, float) and value.is_integer())):
         return False
 
     # Convert to integer
