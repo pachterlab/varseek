@@ -524,10 +524,7 @@ def sim(
     # Write to a FASTA file
     total_fragments = 0
     skipped = 0
-    buffer = []
-    chunk_size = 10_000 if make_dataframes else 100_000  # larger when not making dataframes since I have more RAM at my disposal
     
-    # TODO: rather than writing each line one at a time, I can store in buffer and write chunks
     with open(fasta_output_path_temp, "w", encoding="utf-8") as fa_file:
         for row in tqdm(sampled_reference_df.itertuples(index=False), total=len_sampled_reference_df, desc="Looping through variants to simulate reads", unit="variants"):
             # try:
@@ -654,10 +651,7 @@ def sim(
 
                     read_id = f"{vcrs_id}_{i}{selected_strand}M{noise_str}_{total_fragments}"
                     read_header = f"{header}_{i}{selected_strand}M{noise_str}_{total_fragments}"
-                    buffer.append(f">{read_id}\n{sequence_chunk}\n")
-                    if len(buffer) >= chunk_size:
-                        fa_file.write("".join(buffer))
-                        buffer.clear()  # Reset buffer
+                    fa_file.write(f">{read_id}\n{sequence_chunk}\n")  # not worth adding a buffer, as the rate-limiting step is itertuples
                     if make_dataframes:
                         mutant_dict = {
                             "read_id": read_id,
@@ -703,10 +697,7 @@ def sim(
 
                     read_id = f"{vcrs_id}_{i}{selected_strand}W{noise_str}_{total_fragments}"
                     read_header = f"{header}_{i}{selected_strand}W{noise_str}_{total_fragments}"
-                    buffer.append(f">{read_id}\n{sequence_chunk}\n")
-                    if len(buffer) >= chunk_size:
-                        fa_file.write("".join(buffer))
-                        buffer.clear()  # Reset buffer
+                    fa_file.write(f">{read_id}\n{sequence_chunk}\n")
                     if make_dataframes:
                         wt_dict = {
                             "read_id": read_id,
@@ -734,11 +725,6 @@ def sim(
                 noisy_read_indices_wt = []
             # except Exception as e:
             #     skipped += 1
-
-        # Write remaining data in buffer
-        if buffer:
-            fa_file.write("".join(buffer))
-            buffer.clear()
 
     if skipped > 0:
         logger.warning(f"Skipped {skipped} variants due to errors")
