@@ -507,23 +507,29 @@ def sim(
     if variant_type_column not in sampled_reference_df:
         logger.warning(f"variant_type_column {variant_type_column} not in dataframe")
     
-    tqdm_desc = "Simulating reads (approximate number of reads)"
+    approximate_symbol = "~"
+    len_sampled_reference_df = len(sampled_reference_df)
     if isinstance(number_of_reads_per_variant_ref, int) and isinstance(number_of_reads_per_variant_alt, int):
-        total_reads = len(sampled_reference_df) * (number_of_reads_per_variant_ref + number_of_reads_per_variant_alt)
-        tqdm_desc = "Simulating reads"
+        total_reads = len_sampled_reference_df * (number_of_reads_per_variant_ref + number_of_reads_per_variant_alt)
+        approximate_symbol = ""
     elif isinstance(number_of_reads_per_variant_ref, int) and not isinstance(number_of_reads_per_variant_alt, int):
-        total_reads = len(sampled_reference_df) * (number_of_reads_per_variant_ref + read_length)  # read_length gives an upper bound
+        total_reads = len_sampled_reference_df * (number_of_reads_per_variant_ref + read_length)  # read_length gives an upper bound
     elif not isinstance(number_of_reads_per_variant_ref, int) and isinstance(number_of_reads_per_variant_alt, int):
-        total_reads = len(sampled_reference_df) * (number_of_reads_per_variant_alt + read_length)
+        total_reads = len_sampled_reference_df * (number_of_reads_per_variant_alt + read_length)
     else:
-        total_reads = len(sampled_reference_df) * (read_length + read_length)
+        total_reads = len_sampled_reference_df * (read_length + read_length)
+    
+    logger.info(f"Simulating {approximate_symbol}{total_reads} reads - {len_sampled_reference_df} variants, with {number_of_reads_per_variant_ref} ref reads per variant and {number_of_reads_per_variant_alt} alt reads per variant")
 
     # Write to a FASTA file
     total_fragments = 0
     skipped = 0
+    buffer = []
+    chunk_size = 10_000 if make_dataframes else 100_000  # larger when not making dataframes since I have more RAM at my disposal
     
+    # TODO: rather than writing each line one at a time, I can store in buffer and write chunks
     with open(fasta_output_path_temp, "w", encoding="utf-8") as fa_file:
-        for row in tqdm(sampled_reference_df.itertuples(index=False), total=total_reads, desc=tqdm_desc, unit="reads"):
+        for row in tqdm(sampled_reference_df.itertuples(index=False), total=len_sampled_reference_df, desc="Looping through variants to simulate reads", unit="variants"):
             # try:
             header = getattr(row, header_column, None)
             vcrs_id = getattr(row, "vcrs_id", None)
@@ -648,7 +654,10 @@ def sim(
 
                     read_id = f"{vcrs_id}_{i}{selected_strand}M{noise_str}_{total_fragments}"
                     read_header = f"{header}_{i}{selected_strand}M{noise_str}_{total_fragments}"
-                    fa_file.write(f">{read_id}\n{sequence_chunk}\n")
+                    buffer.append(f">{read_id}\n{sequence_chunk}\n")
+                    if len(buffer) >= chunk_size:
+                        fa_file.write("".join(buffer))
+                        buffer.clear()  # Reset buffer
                     if make_dataframes:
                         mutant_dict = {
                             "read_id": read_id,
@@ -694,7 +703,10 @@ def sim(
 
                     read_id = f"{vcrs_id}_{i}{selected_strand}W{noise_str}_{total_fragments}"
                     read_header = f"{header}_{i}{selected_strand}W{noise_str}_{total_fragments}"
-                    fa_file.write(f">{read_id}\n{sequence_chunk}\n")
+                    buffer.append(f">{read_id}\n{sequence_chunk}\n")
+                    if len(buffer) >= chunk_size:
+                        fa_file.write("".join(buffer))
+                        buffer.clear()  # Reset buffer
                     if make_dataframes:
                         wt_dict = {
                             "read_id": read_id,
@@ -722,6 +734,11 @@ def sim(
                 noisy_read_indices_wt = []
             # except Exception as e:
             #     skipped += 1
+
+        # Write remaining data in buffer
+        if buffer:
+            fa_file.write("".join(buffer))
+            buffer.clear()
 
     if skipped > 0:
         logger.warning(f"Skipped {skipped} variants due to errors")
