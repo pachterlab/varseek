@@ -344,7 +344,7 @@ def is_program_installed(program):
 # result = subprocess.run(command, text=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE, check=True)
 
 
-def report_time_and_memory_of_script(script_path, argparse_flags=None, output_file=None):
+def report_time_and_memory_of_script(script_path, argparse_flags=None, output_file=None, script_title=None):
     # Run the command and capture stderr, where `/usr/bin/time -l` outputs its results
     system = os.uname().sysname
     time_flag = "-v" if system == "Linux" else "-l"
@@ -380,6 +380,8 @@ def report_time_and_memory_of_script(script_path, argparse_flags=None, output_fi
             minutes = int(runtime // 60)
             seconds = runtime % 60
         time_message = f"Runtime: {minutes} minutes, {seconds:.2f} seconds"
+        if script_title:
+            time_message = f"{script_title } " + time_message
         print(time_message)
 
     # Extract the "maximum resident set size" line using a regex
@@ -395,6 +397,8 @@ def report_time_and_memory_of_script(script_path, argparse_flags=None, output_fi
             peak_memory_readable_units = peak_memory_readable_units / 1024  # GB
             unit = "GB"
         memory_message = f"Peak memory usage: {peak_memory_readable_units:.2f} {unit}"
+        if script_title:
+            memory_message = f"{script_title } " + memory_message
         print(memory_message)
 
     if not match_time:
@@ -405,7 +409,8 @@ def report_time_and_memory_of_script(script_path, argparse_flags=None, output_fi
     if output_file:
         if os.path.dirname(output_file):
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
-        with open(output_file, "w", encoding="utf-8") as f:
+        file_mode = "a" if os.path.isfile(output_file) else "w"
+        with open(output_file, file_mode, encoding="utf-8") as f:
             f.write(time_message + "\n")
             f.write(memory_message + "\n")
 

@@ -150,6 +150,8 @@ def summarize(
         adata = ad.read_h5ad(adata)
     else:
         raise ValueError("adata must be a string (file path) or an AnnData object.")
+    
+    logger.info("Calculating summary statistics for variants and genes. See %s for results", stats_file)
 
     # 1. Number of Variants with Count > 0 in any Sample/Cell, and for bulk in particular, for each sample; then list the variants
     logger.info("1. Number of Variants with Count > 0 in any Sample/Cell, and for bulk in particular, for each sample; then list the variants")

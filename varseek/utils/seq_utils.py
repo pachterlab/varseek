@@ -868,7 +868,7 @@ def load_in_fastqs(fastqs):
         if len(files) == 0:
             raise ValueError(f"No fastq files found in {fastqs}")  # redundant with type-checking below, but prints a different error message (informs that the directory has no fastqs, rather than simply telling the user that no fastqs were provided)
     elif os.path.isfile(fastqs):
-        if file.lower().endswith("txt"):  # make fastqs list from items in txt file
+        if fastqs.lower().endswith("txt"):  # make fastqs list from items in txt file
             with open(fastqs, "r", encoding="utf-8") as f:
                 files = [line.strip() for line in f.readlines()]
             if len(files) == 0:
