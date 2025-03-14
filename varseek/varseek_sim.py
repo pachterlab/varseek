@@ -523,7 +523,7 @@ def sim(
     skipped = 0
     
     with open(fasta_output_path_temp, "w", encoding="utf-8") as fa_file:
-        for row in tqdm(sampled_reference_df.itertuples(index=False), total=total_reads, desc=tqdm_desc, units="reads"):
+        for row in tqdm(sampled_reference_df.itertuples(index=False), total=total_reads, desc=tqdm_desc, unit="reads"):
             # try:
             header = getattr(row, header_column, None)
             vcrs_id = getattr(row, "vcrs_id", None)
