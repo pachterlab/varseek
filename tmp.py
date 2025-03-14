@@ -238,7 +238,6 @@ def sim(
     # Hidden arguments
     - make_internal_copies              (bool) Whether to make internal copies of the input dataframes. Default: True
     - filter_null_rows_from_important_cols  (bool) Whether to filter out rows with null values in important columns. Default: True
-    - make_dataframes                   (bool) Whether to make dataframes. Turn off when only wanting to make the fastq file (saves a lot of memory). Default: True
     All kwargs get passed into vk build
     """
     # * 1. Start timer
@@ -292,7 +291,6 @@ def sim(
     # * 7. Define kwargs defaults
     make_internal_copies = kwargs.get("make_internal_copies", True)
     filter_null_rows_from_important_cols = kwargs.get("filter_null_rows_from_important_cols", True)
-    make_dataframes = kwargs.get("make_dataframes", True)
 
     # * 7.5 make sure ints are ints
     read_length, k, w = int(read_length), int(k), int(w)
@@ -506,24 +504,12 @@ def sim(
         variant_type_column = ""
     if variant_type_column not in sampled_reference_df:
         logger.warning(f"variant_type_column {variant_type_column} not in dataframe")
-    
-    tqdm_desc = "Simulating reads (approximate number of reads)"
-    if isinstance(number_of_reads_per_variant_ref, int) and isinstance(number_of_reads_per_variant_alt, int):
-        total_reads = len(sampled_reference_df) * (number_of_reads_per_variant_ref + number_of_reads_per_variant_alt)
-        tqdm_desc = "Simulating reads"
-    elif isinstance(number_of_reads_per_variant_ref, int) and not isinstance(number_of_reads_per_variant_alt, int):
-        total_reads = len(sampled_reference_df) * (number_of_reads_per_variant_ref + read_length)  # read_length gives an upper bound
-    elif not isinstance(number_of_reads_per_variant_ref, int) and isinstance(number_of_reads_per_variant_alt, int):
-        total_reads = len(sampled_reference_df) * (number_of_reads_per_variant_alt + read_length)
-    else:
-        total_reads = len(sampled_reference_df) * (read_length + read_length)
 
     # Write to a FASTA file
     total_fragments = 0
     skipped = 0
-    
     with open(fasta_output_path_temp, "w", encoding="utf-8") as fa_file:
-        for row in tqdm(sampled_reference_df.itertuples(index=False), total=total_reads, desc=tqdm_desc, units="reads"):
+        for row in tqdm(sampled_reference_df.itertuples(index=False), total=len(sampled_reference_df), desc="Simulating reads"):
             # try:
             header = getattr(row, header_column, None)
             vcrs_id = getattr(row, "vcrs_id", None)
@@ -630,6 +616,9 @@ def sim(
 
             # Loop through each 150mer of the sequence
             if sample_type != "w":
+                new_column_dict["number_of_reads_mutant"].append(number_of_reads_mutant)
+                new_column_dict["list_of_read_starting_indices_mutant"].append(read_start_indices_mutant)
+
                 for i, selected_strand in read_start_indices_and_strand_mutant:
                     selected_sequence = mutant_sequence if selected_strand == "f" else mutant_sequence_rc  # if selected_strand == "r"
                     sequence_chunk = selected_sequence[i : i + read_length]
@@ -649,33 +638,31 @@ def sim(
                     read_id = f"{vcrs_id}_{i}{selected_strand}M{noise_str}_{total_fragments}"
                     read_header = f"{header}_{i}{selected_strand}M{noise_str}_{total_fragments}"
                     fa_file.write(f">{read_id}\n{sequence_chunk}\n")
-                    if make_dataframes:
-                        mutant_dict = {
-                            "read_id": read_id,
-                            "read_header": read_header,
-                            "read_sequence": sequence_chunk,
-                            "read_index": i,
-                            "read_strand": selected_strand,
-                            "reference_header": header,
-                            "vcrs_id": vcrs_id,
-                            "vcrs_header": vcrs_header,
-                            "vcrs_variant_type": vcrs_variant_type,
-                            "mutant_read": True,
-                            "wt_read": False,
-                            "region_included_in_vcrs_reference": True,
-                            "noise_added": bool(noise_str),
-                        }
-                        mutant_list_of_dicts.append(mutant_dict)
+                    mutant_dict = {
+                        "read_id": read_id,
+                        "read_header": read_header,
+                        "read_sequence": sequence_chunk,
+                        "read_index": i,
+                        "read_strand": selected_strand,
+                        "reference_header": header,
+                        "vcrs_id": vcrs_id,
+                        "vcrs_header": vcrs_header,
+                        "vcrs_variant_type": vcrs_variant_type,
+                        "mutant_read": True,
+                        "wt_read": False,
+                        "region_included_in_vcrs_reference": True,
+                        "noise_added": bool(noise_str),
+                    }
+                    mutant_list_of_dicts.append(mutant_dict)
                     total_fragments += 1
 
-                if make_dataframes:
-                    new_column_dict["number_of_reads_mutant"].append(number_of_reads_mutant)
-                    new_column_dict["list_of_read_starting_indices_mutant"].append(read_start_indices_mutant)
-                    new_column_dict["any_noisy_reads_mutant"].append(bool(noisy_read_indices_mutant))
-                    new_column_dict["noisy_read_indices_mutant"].append(noisy_read_indices_mutant)
+                new_column_dict["any_noisy_reads_mutant"].append(bool(noisy_read_indices_mutant))
+                new_column_dict["noisy_read_indices_mutant"].append(noisy_read_indices_mutant)
                 noisy_read_indices_mutant = []
 
             if sample_type != "m":
+                new_column_dict["number_of_reads_wt"].append(number_of_reads_wt)
+                new_column_dict["list_of_read_starting_indices_wt"].append(read_start_indices_wt)
                 for i, selected_strand in read_start_indices_and_strand_wt:
                     selected_sequence = wt_sequence if selected_strand == "f" else wt_sequence_rc  # if selected_strand == "r"
                     sequence_chunk = selected_sequence[i : i + read_length]
@@ -695,47 +682,32 @@ def sim(
                     read_id = f"{vcrs_id}_{i}{selected_strand}W{noise_str}_{total_fragments}"
                     read_header = f"{header}_{i}{selected_strand}W{noise_str}_{total_fragments}"
                     fa_file.write(f">{read_id}\n{sequence_chunk}\n")
-                    if make_dataframes:
-                        wt_dict = {
-                            "read_id": read_id,
-                            "read_header": read_header,
-                            "read_sequence": sequence_chunk,
-                            "read_index": i,
-                            "read_strand": selected_strand,
-                            "reference_header": header,
-                            "vcrs_id": vcrs_id,
-                            "vcrs_header": vcrs_header,
-                            "vcrs_variant_type": vcrs_variant_type,
-                            "mutant_read": False,
-                            "wt_read": True,
-                            "region_included_in_vcrs_reference": True,
-                            "noise_added": bool(noise_str),
-                        }
-                        wt_list_of_dicts.append(wt_dict)
+                    wt_dict = {
+                        "read_id": read_id,
+                        "read_header": read_header,
+                        "read_sequence": sequence_chunk,
+                        "read_index": i,
+                        "read_strand": selected_strand,
+                        "reference_header": header,
+                        "vcrs_id": vcrs_id,
+                        "vcrs_header": vcrs_header,
+                        "vcrs_variant_type": vcrs_variant_type,
+                        "mutant_read": False,
+                        "wt_read": True,
+                        "region_included_in_vcrs_reference": True,
+                        "noise_added": bool(noise_str),
+                    }
+                    wt_list_of_dicts.append(wt_dict)
                     total_fragments += 1
 
-                if make_dataframes:
-                    new_column_dict["number_of_reads_wt"].append(number_of_reads_wt)
-                    new_column_dict["list_of_read_starting_indices_wt"].append(read_start_indices_wt)
-                    new_column_dict["noisy_read_indices_wt"].append(noisy_read_indices_wt)
-                    new_column_dict["any_noisy_reads_wt"].append(bool(noisy_read_indices_wt))
+                new_column_dict["noisy_read_indices_wt"].append(noisy_read_indices_wt)
+                new_column_dict["any_noisy_reads_wt"].append(bool(noisy_read_indices_wt))
                 noisy_read_indices_wt = []
             # except Exception as e:
             #     skipped += 1
 
     if skipped > 0:
         logger.warning(f"Skipped {skipped} variants due to errors")
-
-    fasta_to_fastq(fasta_output_path_temp, reads_fastq_out, add_noise=add_noise_base_quality, gzip_output=gzip_reads_fastq_out)
-    os.remove(fasta_output_path_temp)
-    logger.info(f"Wrote {total_fragments} variants to {reads_fastq_out}")
-    if not make_dataframes:
-        report_time_elapsed(start_time, logger=logger, function_name="sim")
-        simulated_df_dict = {
-            "read_df": None,
-            "variants": None,
-        }
-        return simulated_df_dict
 
     for key in new_column_dict:
         sampled_reference_df[key] = new_column_dict[key]
@@ -748,6 +720,8 @@ def sim(
         read_df = pd.DataFrame(mutant_list_of_dicts)
     elif wt_list_of_dicts:
         read_df = pd.DataFrame(wt_list_of_dicts)
+
+    fasta_to_fastq(fasta_output_path_temp, reads_fastq_out, add_noise=add_noise_base_quality, gzip_output=gzip_reads_fastq_out)
 
     # Read the contents of the files first
     if reads_fastq_parent:
@@ -779,6 +753,10 @@ def sim(
         np.nan,  # Keep NaN as NaN
         variants["tumor_purity"],  # Keep the result for valid divisions
     )
+
+    os.remove(fasta_output_path_temp)
+
+    logger.info(f"Wrote {total_fragments} variants to {reads_fastq_out}")
 
     simulated_df_dict = {
         "read_df": read_df,

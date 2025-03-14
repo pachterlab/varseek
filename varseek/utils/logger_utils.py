@@ -354,37 +354,21 @@ def report_time_and_memory_of_script(script_path, argparse_flags=None, output_fi
         command += f" {argparse_flags}"
 
     try:
+        start_time = time.perf_counter()
         result = subprocess.run(command, shell=True, text=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE, check=True)
+        runtime = time.perf_counter() - start_time
     except Exception as e:
         print(f"Error running command {command}: {e}")
         return None
 
-    if system == "Linux":
-        time_re = r"(?:Elapsed \(wall clock\) time \(.*\):\s+)?(\d+:)?(\d+):(\d+(?:\.\d+)?)"
-        time_group = 1
-        memory_re = r"Maximum resident set size \(kbytes\): (\d+)"
-    else:
-        time_re = r"(\d+\.\d+)\s+(?:real|user|sys)"
-        time_group = 1
-        memory_re = r"\s+(\d+)\s+maximum resident set size"
-
-    match_time = re.search(time_re, result.stderr)
-    if match_time:
-        if system == "Linux":
-            hours = float(match_time.group(1)) if match_time.group(1) else 0
-            minutes = int(float(match_time.group(2)) + hours * 60)
-            seconds = float(match_time.group(3))
-            runtime = minutes * 60 + seconds
-        else:
-            runtime = float(match_time.group(time_group))  # Return real time in seconds
-            minutes = int(runtime // 60)
-            seconds = runtime % 60
-        time_message = f"Runtime: {minutes} minutes, {seconds:.2f} seconds"
-        if script_title:
-            time_message = f"{script_title } " + time_message
-        print(time_message)
+    minutes, seconds = divmod(runtime, 60)
+    time_message = f"Runtime: {minutes} minutes, {seconds:.2f} seconds"
+    if script_title:
+        time_message = f"{script_title } " + time_message
+    print(time_message)
 
     # Extract the "maximum resident set size" line using a regex
+    memory_re = r"Maximum resident set size \(kbytes\): (\d+)" if system == "Linux" else r"\s+(\d+)\s+maximum resident set size"
     match_memory = re.search(memory_re, result.stderr)
     if match_memory:
         peak_memory = int(match_memory.group(1))  # Capture the numeric value
@@ -400,10 +384,7 @@ def report_time_and_memory_of_script(script_path, argparse_flags=None, output_fi
         if script_title:
             memory_message = f"{script_title } " + memory_message
         print(memory_message)
-
-    if not match_time:
-        raise ValueError("Failed to find 'real' time in output.")
-    if not match_memory:
+    else:
         raise ValueError("Failed to find 'maximum resident set size' in output.")
 
     if output_file:
@@ -414,7 +395,7 @@ def report_time_and_memory_of_script(script_path, argparse_flags=None, output_fi
             f.write(time_message + "\n")
             f.write(memory_message + "\n")
 
-    return (runtime, peak_memory)  # Return the runtime and peak memory usage in bytes
+    return (runtime, peak_memory)  # Return the runtime (seconds) and peak memory usage (bytes)
 
 
 def make_positional_arguments_list_and_keyword_arguments_dict():
@@ -427,14 +408,20 @@ def make_positional_arguments_list_and_keyword_arguments_dict():
     # Parse arguments
     i = 0
     while i < len(args):
-        if args[i].startswith("--"):  # Handle flags
-            key = args[i].lstrip("--")
-            # Check if a value exists and doesn't start with "--"
-            if i + 1 < len(args) and not args[i + 1].startswith("--"):
+        if args[i].startswith("--"):  # Handle long flags
+            key = args[i][2:]
+            if i + 1 < len(args) and not args[i + 1].startswith("-"):
                 args_dict[key] = args[i + 1]
                 i += 1  # Skip the value
             else:
-                args_dict[key] = True  # Store True for flags without values
+                args_dict[key] = True  # Store True for standalone flags
+        elif args[i].startswith("-") and len(args[i]) > 1:  # Handle short flags
+            key = args[i][1:]
+            if i + 1 < len(args) and not args[i + 1].startswith("-"):
+                args_dict[key] = args[i + 1]
+                i += 1  # Skip the value
+            else:
+                args_dict[key] = True
         else:  # Handle positional arguments
             positional_args.append(args[i])
         i += 1

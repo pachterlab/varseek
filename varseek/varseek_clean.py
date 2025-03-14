@@ -132,7 +132,7 @@ def validate_input_clean(params_dict):
 
     # k
     k = params_dict.get("k", None)
-    if not isinstance(k, int) or int(k) < 1:
+    if not isinstance(k, (int, str)) or int(k) < 1:
         raise ValueError(f"k must be a positive integer. Got {k} of type {type(k)}.")
     if int(k) % 2 == 0 or int(k) > 63:
         logger.warning("If running a workflow with vk ref or kb ref, k should be an odd number between 1 and 63. Got k=%s.", k)
