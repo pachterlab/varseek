@@ -5,8 +5,9 @@ import numpy as np
 import pandas as pd
 import pyfastx
 from tqdm import tqdm
+import logging
 
-from varseek.utils.logger_utils import splitext_custom
+from varseek.utils.logger_utils import splitext_custom, set_up_logger
 from varseek.utils.seq_utils import (
     add_mutation_information,
     fasta_to_fastq,
@@ -14,6 +15,9 @@ from varseek.utils.seq_utils import (
 )
 
 tqdm.pandas()
+
+logger = logging.getLogger(__name__)
+logger = set_up_logger(logger, logging_level="INFO", save_logs=False, log_dir=None)
 
 
 def merge_synthetic_read_info_into_variants_metadata_df(mutation_metadata_df, sampled_reference_df, sample_type="all", header_column="header"):

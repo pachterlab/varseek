@@ -43,11 +43,13 @@ from .utils import (
     wt_fragment_and_mutant_fragment_share_kmer,
     download_cosmic_sequences,
     download_cosmic_mutations,
-    merge_gtf_transcript_locations_into_cosmic_csv
+    merge_gtf_transcript_locations_into_cosmic_csv,
+    set_varseek_logging_level_and_filehandler
 )
 
 tqdm.pandas()
 logger = logging.getLogger(__name__)
+logger = set_up_logger(logger, logging_level="INFO", save_logs=False, log_dir=None)
 
 # Define global variables to count occurences of weird mutations
 intronic_mutations = 0
@@ -468,7 +470,6 @@ def build(
 
     # other
     - save_column_names_json_path        (str) Whether to save the column names in their own json file. Utilized internally by vk ref. Default: None.
-    - logger                             (logging.Logger) Logger object. Default: None.
 
 
     Saves mutated sequences in fasta format (or returns a list containing the mutated sequences if out=None).
@@ -485,13 +486,10 @@ def build(
     start_time = time.perf_counter()
 
     # * 1.5. logger
-    global logger
-    if kwargs.get("logger") and isinstance(kwargs.get("logger"), logging.Logger):
-        logger = kwargs.get("logger")
-    else:
-        if save_logs and not log_out_dir:
-            log_out_dir = os.path.join(out, "logs")
-        logger = set_up_logger(logger, logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
+    if save_logs and not log_out_dir:
+        log_out_dir = os.path.join(out, "logs")
+    set_varseek_logging_level_and_filehandler(logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
+
 
     # * 1.75. For the nargs="+" arguments, convert any list of length 1 to a string
     if isinstance(sequences, (list, tuple)) and len(sequences) == 1:
@@ -1471,7 +1469,7 @@ def build(
             all_mut_seqs.remove("")
 
         if len(all_mut_seqs) > 0:
-            report_time_elapsed(start_time, logger=logger, function_name="build")
+            report_time_elapsed(start_time, function_name="build")
             return all_mut_seqs
 
-    report_time_elapsed(start_time, logger=logger, function_name="build")
+    report_time_elapsed(start_time, function_name="build")

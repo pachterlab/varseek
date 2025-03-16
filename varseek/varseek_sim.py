@@ -28,10 +28,12 @@ from .utils import (
     save_run_info,
     set_up_logger,
     splitext_custom,
+    set_varseek_logging_level_and_filehandler
 )
 
 tqdm.pandas()
 logger = logging.getLogger(__name__)
+logger = set_up_logger(logger, logging_level="INFO", save_logs=False, log_dir=None)
 
 
 def assign_strands(read_start_indices_mutant, strand, seed=None):
@@ -245,13 +247,10 @@ def sim(
     start_time = time.perf_counter()
 
     # * 1.5. logger
-    global logger
-    if kwargs.get("logger") and isinstance(kwargs.get("logger"), logging.Logger):
-        logger = kwargs.get("logger")
-    else:
-        if save_logs and not log_out_dir:
-            log_out_dir = os.path.join(out, "logs")
-        logger = set_up_logger(logger, logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
+    if save_logs and not log_out_dir:
+        log_out_dir = os.path.join(out, "logs")
+    set_varseek_logging_level_and_filehandler(logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
+
 
     # * 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
@@ -736,7 +735,7 @@ def sim(
     os.remove(fasta_output_path_temp)
     logger.info(f"Wrote {total_fragments} variants to {reads_fastq_out}")
     if not make_dataframes:
-        report_time_elapsed(start_time, logger=logger, function_name="sim")
+        report_time_elapsed(start_time, function_name="sim")
         simulated_df_dict = {
             "read_df": None,
             "variants": None,
@@ -797,6 +796,6 @@ def sim(
     if variants_updated_csv_out is not None:
         variants.to_csv(variants_updated_csv_out, index=False)
 
-    report_time_elapsed(start_time, logger=logger, function_name="sim")
+    report_time_elapsed(start_time, function_name="sim")
 
     return simulated_df_dict

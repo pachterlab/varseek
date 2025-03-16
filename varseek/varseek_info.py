@@ -47,6 +47,7 @@ from varseek.utils import (
     safe_literal_eval,
     save_params_to_config_file,
     save_run_info,
+    set_varseek_logging_level_and_filehandler,
     set_up_logger,
     splitext_custom,
     swap_ids_for_headers_in_fasta,
@@ -55,6 +56,7 @@ from varseek.utils import (
 
 tqdm.pandas()
 logger = logging.getLogger(__name__)
+logger = set_up_logger(logger, logging_level="INFO", save_logs=False, log_dir=None)
 pd.set_option("display.max_columns", None)
 
 
@@ -371,7 +373,6 @@ def info(
     - kallisto                           (str) Path to the directory containing the kallisto executable. Only utilized for the columns `pseudoaligned_to_reference`, `pseudoaligned_to_reference_despite_not_truly_aligning`. Default: None.
     - bustools                           (str) Path to the directory containing the bustools executable. Only utilized for the columns `pseudoaligned_to_reference`, `pseudoaligned_to_reference_despite_not_truly_aligning`. Default: None.
     - pseudoalignment_workflow           (str) Pseudoalignment workflow to use. Only utilized for the columns `pseudoaligned_to_reference`, `pseudoaligned_to_reference_despite_not_truly_aligning`. Options: {"standard", "nac"}. Default: "nac".
-    - logger                             (logging.Logger) Logger object. Default: None.
     """
     # CELL
     # * 0. Informational arguments that exit early
@@ -385,13 +386,11 @@ def info(
     # * 1.5. logger and set out folder (must to it up here or else logger and config will save in the wrong place)
     if out is None:
         out = input_dir if input_dir else "."
-    global logger
-    if kwargs.get("logger") and isinstance(kwargs.get("logger"), logging.Logger):
-        logger = kwargs.get("logger")
-    else:
-        if save_logs and not log_out_dir:
-            log_out_dir = os.path.join(out, "logs")
-        logger = set_up_logger(logger, logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
+    
+    if save_logs and not log_out_dir:
+        log_out_dir = os.path.join(out, "logs")
+    set_varseek_logging_level_and_filehandler(logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
+
 
     if isinstance(columns_to_include, (list, tuple)) and len(columns_to_include) == 1:
         columns_to_include = columns_to_include[0]
@@ -592,7 +591,7 @@ def info(
     vcrs_header_has_merged_values = mutation_metadata_df["vcrs_header"].apply(lambda x: isinstance(x, str) and ";" in x).any()
 
     if vcrs_header_has_merged_values:
-        mutation_metadata_df_exploded = explode_df(mutation_metadata_df, columns_to_explode, verbose=verbose, logger=logger)  # will add columns 'header' and 'order'
+        mutation_metadata_df_exploded = explode_df(mutation_metadata_df, columns_to_explode, verbose=verbose)  # will add columns 'header' and 'order'
     else:
         mutation_metadata_df_exploded = mutation_metadata_df
         mutation_metadata_df_exploded["header"] = mutation_metadata_df_exploded["vcrs_header"]
@@ -751,7 +750,7 @@ def info(
     if columns_to_include == "all" or ("nearby_variants" in columns_to_include or "nearby_variants_count" in columns_to_include or "has_a_nearby_variant" in columns_to_include):
         try:
             logger.info("Calculating nearby variants")
-            mutation_metadata_df_exploded, columns_to_explode = calculate_nearby_mutations(variant_source_column=variant_source_column, k=k, output_plot_folder=output_plot_folder, variant_source=variant_source, mutation_metadata_df_exploded=mutation_metadata_df_exploded, columns_to_explode=columns_to_explode, seq_id_cdna_column=seq_id_cdna_column, seq_id_genome_column=seq_id_genome_column, logger=logger)
+            mutation_metadata_df_exploded, columns_to_explode = calculate_nearby_mutations(variant_source_column=variant_source_column, k=k, output_plot_folder=output_plot_folder, variant_source=variant_source, mutation_metadata_df_exploded=mutation_metadata_df_exploded, columns_to_explode=columns_to_explode, seq_id_cdna_column=seq_id_cdna_column, seq_id_genome_column=seq_id_genome_column)
         except Exception as e:
             logger.error(f"Error calculating nearby variants: {e}")
             columns_not_successfully_added.extend(["nearby_variants", "nearby_variants_count", "has_a_nearby_variant"])
@@ -822,7 +821,6 @@ def info(
                 mutation_metadata_df=mutation_metadata_df,
                 bowtie2_build=bowtie2_build,
                 bowtie2=bowtie2,
-                logger=logger,
             )
         except Exception as e:
             logger.error("Error aligning to normal genome and building alignment_to_reference: %s", e)
@@ -1040,7 +1038,6 @@ def info(
                 strandedness=vcrs_strandedness,
                 vcrs_id_column="vcrs_id",
                 output_stat_file=substring_output_stat_file,
-                logger=logger,
             )
 
             mutation_metadata_df["vcrs_id"] = mutation_metadata_df["vcrs_id"].astype(str)
@@ -1078,4 +1075,4 @@ def info(
     logger.info(f"Columns not successfully added: {set(columns_not_successfully_added)}")
 
     # Report time
-    report_time_elapsed(start_time, logger=logger, function_name="info")
+    report_time_elapsed(start_time, function_name="info")

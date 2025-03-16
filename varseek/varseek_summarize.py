@@ -18,11 +18,13 @@ from varseek.utils import (
     save_params_to_config_file,
     save_run_info,
     set_up_logger,
+    set_varseek_logging_level_and_filehandler
 )
 
 from .constants import technology_valid_values
 
 logger = logging.getLogger(__name__)
+logger = set_up_logger(logger, logging_level="INFO", save_logs=False, log_dir=None)
 
 
 def validate_input_summarize(params_dict):
@@ -86,20 +88,15 @@ def summarize(
     - stats_file                        (str) Path to the stats file. Default: `out`/varseek_summarize_stats.txt
     - specific_stats_folder             (str) Path to the specific stats folder. Default: `out`/specific_stats
     - plots_folder                      (str) Path to the plots folder. Default: `out`/plots
-    - logger                            (logging.Logger) Logger object. Default: None (use the default logger).
     """
 
     # * 1. Start timer
     start_time = time.perf_counter()
 
     # * 1.5. logger
-    global logger
-    if kwargs.get("logger") and isinstance(kwargs.get("logger"), logging.Logger):
-        logger = kwargs.get("logger")
-    else:
-        if save_logs and not log_out_dir:
-            log_out_dir = os.path.join(out, "logs")
-        logger = set_up_logger(logger, logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
+    if save_logs and not log_out_dir:
+        log_out_dir = os.path.join(out, "logs")
+    set_varseek_logging_level_and_filehandler(logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
 
     # * 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
@@ -259,7 +256,7 @@ def summarize(
                 total_counts = gene_counts.var.loc[variant, "vcrs_count"]
                 f.write(f"{variant}\t{number_of_samples}\t{total_counts}\n")
 
-    report_time_elapsed(start_time, logger=logger, function_name="summarize")
+    report_time_elapsed(start_time, function_name="summarize")
 
     # TODO: things to add
     # differentially expressed variants/mutated genes

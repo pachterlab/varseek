@@ -10,7 +10,6 @@ from .constants import technology_valid_values
 from .utils import (
     check_file_path_is_string_with_valid_extension,
     concatenate_fastqs,
-    get_printlog,
     is_program_installed,
     is_valid_int,
     load_in_fastqs,
@@ -24,11 +23,13 @@ from .utils import (
     save_run_info,
     set_up_logger,
     sort_fastq_files_for_kb_count,
+    set_varseek_logging_level_and_filehandler,
     split_reads_by_N_list,
     trim_edges_off_reads_fastq_list,
 )
 
 logger = logging.getLogger(__name__)
+logger = set_up_logger(logger, logging_level="INFO", save_logs=False, log_dir=None)
 
 
 def validate_input_fastqpp(params_dict):
@@ -181,7 +182,6 @@ def fastqpp(
     - split_by_Ns_and_low_quality_bases_out_dir   (str) Directory to save fastq files with reads split by Ns and low quality bases. Default: `out`/fastqs_split_by_Ns_and_low_quality_bases
     - concatenate_paired_fastqs_out_dir    (str) Directory to save concatenated paired fastq files. Default: `out`/fastqs_concatenated_paired
     - delete_intermediate_files        (bool) If True, delete intermediate files. Default: True
-    - logger                           (logging.Logger) Logger to use. Default: None
     """
 
     # * 0. Informational arguments that exit early
@@ -191,13 +191,9 @@ def fastqpp(
     start_time = time.perf_counter()
 
     # * 1.25. logger
-    global logger
-    if kwargs.get("logger") and isinstance(kwargs.get("logger"), logging.Logger):
-        logger = kwargs.get("logger")
-    else:
-        if save_logs and not log_out_dir:
-            log_out_dir = os.path.join(out, "logs")
-        logger = set_up_logger(logger, logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
+    if save_logs and not log_out_dir:
+        log_out_dir = os.path.join(out, "logs")
+    set_varseek_logging_level_and_filehandler(logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
 
     # * 1.5. For the nargs="+" arguments, convert any list of length 1 to a string
     if isinstance(fastqs, (list, tuple)) and len(fastqs) == 1:
@@ -259,7 +255,7 @@ def fastqpp(
 
     # * 8. Start the actual function
     try:
-        fastqs = sort_fastq_files_for_kb_count(fastqs, technology=technology, multiplexed=multiplexed, logger=logger, check_only=(not sort_fastqs))
+        fastqs = sort_fastq_files_for_kb_count(fastqs, technology=technology, multiplexed=multiplexed, check_only=(not sort_fastqs))
     except ValueError as e:
         if sort_fastqs:
             logger.warning(f"Automatic FASTQ argument order sorting for kb count could not recognize FASTQ file name format. Skipping argument order sorting.")
@@ -323,7 +319,7 @@ def fastqpp(
             if not all(os.path.exists(f) for f in fastq_more_Ns_all_files) or overwrite:
                 logger.info("Replacing low quality bases with N")
                 os.makedirs(replace_low_quality_bases_with_N_out_dir, exist_ok=True)
-                fastqs = replace_low_quality_bases_with_N_list(rnaseq_fastq_files=fastqs, minimum_base_quality=min_base_quality_for_splitting, seqtk=seqtk, out_dir=out, logger=logger)
+                fastqs = replace_low_quality_bases_with_N_list(rnaseq_fastq_files=fastqs, minimum_base_quality=min_base_quality_for_splitting, seqtk=seqtk, out_dir=out)
             else:
                 logger.warning("Fastq files with low quality bases replaced with N already exist. Skipping this step. Use overwrite=True to overwrite existing files.")
             if not delete_intermediate_files:
@@ -335,7 +331,7 @@ def fastqpp(
         if not all(os.path.exists(f) for f in split_by_Ns_and_low_quality_bases_all_files) or overwrite:
             logger.info("Splitting reads by Ns")
             os.makedirs(split_by_Ns_and_low_quality_bases_out_dir, exist_ok=True)
-            fastqs = split_reads_by_N_list(fastqs, minimum_sequence_length=length_required, delete_original_files=delete_intermediate_files, out_dir=split_by_Ns_and_low_quality_bases_out_dir, logger=logger, seqtk=seqtk)
+            fastqs = split_reads_by_N_list(fastqs, minimum_sequence_length=length_required, delete_original_files=delete_intermediate_files, out_dir=split_by_Ns_and_low_quality_bases_out_dir, seqtk=seqtk)
         else:
             logger.warning("Fastq files with reads split by N already exist. Skipping this step. Use overwrite=True to overwrite existing files.")
         if not delete_intermediate_files:
@@ -365,6 +361,6 @@ def fastqpp(
     fastqpp_dict["final"] = fastqs
 
     logger.info("Returning a dictionary with keys describing the fastq files and values pointing to their file paths")
-    report_time_elapsed(start_time, logger=logger, function_name="fastqpp")
+    report_time_elapsed(start_time, function_name="fastqpp")
 
     return fastqpp_dict

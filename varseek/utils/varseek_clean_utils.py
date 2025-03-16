@@ -10,6 +10,7 @@ import pyfastx
 import scipy.sparse as sp
 from scipy.sparse import csr_matrix
 import json
+import logging
 from tqdm import tqdm
 
 from varseek.constants import (
@@ -27,6 +28,10 @@ from varseek.utils.seq_utils import (
     sort_fastq_files_for_kb_count,
     load_in_fastqs
 )
+from varseek.utils.logger_utils import set_up_logger
+
+logger = logging.getLogger(__name__)
+logger = set_up_logger(logger, logging_level="INFO", save_logs=False, log_dir=None)
 
 tqdm.pandas()
 

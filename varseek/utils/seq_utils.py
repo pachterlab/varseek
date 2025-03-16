@@ -17,6 +17,7 @@ import pandas as pd
 import pyfastx
 import requests
 from tqdm import tqdm
+import logging
 
 from varseek.constants import (
     complement,
@@ -24,7 +25,10 @@ from varseek.constants import (
     fastq_extensions,
     mutation_pattern,
 )
-from varseek.utils.logger_utils import get_printlog, splitext_custom
+from varseek.utils.logger_utils import splitext_custom, set_up_logger
+
+logger = logging.getLogger(__name__)
+logger = set_up_logger(logger, logging_level="INFO", save_logs=False, log_dir=None)
 
 tqdm.pandas()
 
@@ -799,9 +803,7 @@ def illumina_sort_order_for_kb_count_fastqs(filepath):
     return (sample_name, lane, file_type_order.get(file_type, 999))
 
 
-def sort_fastq_files_for_kb_count(fastq_files, technology=None, multiplexed=None, logger=None, check_only=False, verbose=True):
-    logger_info = get_printlog(verbose=verbose, logger=logger)
-
+def sort_fastq_files_for_kb_count(fastq_files, technology=None, multiplexed=None, check_only=False, verbose=True):
     file_name_format = None
 
     try:
@@ -817,21 +819,21 @@ def sort_fastq_files_for_kb_count(fastq_files, technology=None, multiplexed=None
             else:
                 message = f"File {fastq_file} does not match the expected bulk file naming convention of SAMPLE_PAIR.EXT where SAMPLE is sample name, PAIR is 1/2, and EXT is a fastq extension - or the Illumina file naming convention of SAMPLE_LANE_R[12]_001.fastq.gz, where SAMPLE is letters, numbers, underscores; LANE is numbers with optional leading 0s; pair is either R1 or R2; and it has .fq or .fastq extension (or .fq.gz or .fastq.gz)."
                 if check_only:
-                    logger_info(message)
+                    logger.info(message)
                 else:
                     message += "\nRaising exception and exiting because sort_fastqs=True, which requires standard bulk or Illumina file naming convention. Please check fastq file names or set sort_fastqs=False."
                     raise ValueError(message)
 
         if technology is None:
-            logger_info("No technology specified, so defaulting to None when checking file order (i.e., will not drop index files from fastq file list)")
+            logger.info("No technology specified, so defaulting to None when checking file order (i.e., will not drop index files from fastq file list)")
         if "smartseq" in technology.lower() and multiplexed is None:
-            logger_info("Multiplexed not specified with smartseq technology, so defaulting to None when checking file order (i.e., will not drop index files from fastq file list)")
+            logger.info("Multiplexed not specified with smartseq technology, so defaulting to None when checking file order (i.e., will not drop index files from fastq file list)")
             multiplexed = True
 
         if technology is None or technology == "10xv1" or ("smartseq" in technology.lower() and multiplexed):  # keep the index I1/I2 files (pass into kb count) for 10xv1 or multiplexed smart-seq
             filtered_files = fastq_files
         else:  # remove the index files
-            logger_info(f"Removing index files from fastq files list, as they are not utilized in kb count with technology {technology}")
+            logger.info(f"Removing index files from fastq files list, as they are not utilized in kb count with technology {technology}")
             filtered_files = [f for f in fastq_files if not any(x in os.path.basename(f) for x in ["I1", "I2"])]
 
         if file_name_format == "illumina":
@@ -843,15 +845,15 @@ def sort_fastq_files_for_kb_count(fastq_files, technology=None, multiplexed=None
 
         if check_only:
             if sorted_files == fastq_files:
-                logger_info("Fastq files are in the expected order")
+                logger.info("Fastq files are in the expected order")
             else:
-                logger_info("Fastq files are not in the expected order. Fastq files are expected to be sorted (in order) by (a) SAMPLE, (b) LANE, and (c) PARITY (R1/R2). Index files (I1/I2) are not included in the sort order except for technology=10xv1 and multiplexed smartseq. To enable automatic sorting, set sort_fastqs=True.")
+                logger.info("Fastq files are not in the expected order. Fastq files are expected to be sorted (in order) by (a) SAMPLE, (b) LANE, and (c) PARITY (R1/R2). Index files (I1/I2) are not included in the sort order except for technology=10xv1 and multiplexed smartseq. To enable automatic sorting, set sort_fastqs=True.")
             return fastq_files
         else:
             return sorted_files
     except Exception as e:
         if check_only:
-            logger_info(f"Error sorting fastq files: {e}")
+            logger.info(f"Error sorting fastq files: {e}")
             return fastq_files
         else:
             message = f"Error sorting fastq files: {e}"
@@ -1127,3 +1129,4 @@ def update_vcf_derived_df_with_multibase_duplication(mutations, seq_dict, seq_id
     mutations.loc[compare_mask, var_column] = "g." + mutations.loc[compare_mask, "start_pos"].astype(int).astype(str) + "_" + mutations.loc[compare_mask, "POS"].astype(str) + "dup"
 
     mutations.drop(columns=["ALT_first_base_trimmed", "ALT_len", "start_pos", "seq_slice"], inplace=True, errors="ignore")
+

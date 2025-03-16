@@ -8,6 +8,12 @@ import pandas as pd
 from matplotlib.patches import Rectangle
 from matplotlib.ticker import MaxNLocator, MultipleLocator
 from scipy import stats
+import logging
+
+from varseek.utils.logger_utils import set_up_logger
+
+logger = logging.getLogger(__name__)
+logger = set_up_logger(logger, logging_level="INFO", save_logs=False, log_dir=None)
 
 # Set global settings
 plt.rcParams.update(

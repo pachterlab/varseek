@@ -33,11 +33,13 @@ from varseek.utils import (
     make_good_barcodes_and_file_index_tuples,
     write_to_vcf,
     write_vcfs_for_rows,
+    set_varseek_logging_level_and_filehandler
 )
 
 from .constants import non_single_cell_technologies, technology_valid_values
 
 logger = logging.getLogger(__name__)
+logger = set_up_logger(logger, logging_level="INFO", save_logs=False, log_dir=None)
 
 
 def make_vcf():
@@ -321,19 +323,15 @@ def clean(
     - kallisto                              (str): Path to the kallisto binary. Default: None.
     - bustools                              (str): Path to the bustools binary. Default: None.
     - parity_kb_count                       (str) The parity of the reads used in kb count when generating adata_vcrs. Default: `parity`.
-    - logger                                (logging.Logger): Logger object. Default: None.
     """
     # * 1. Start timer
     start_time = time.perf_counter()
 
     # * 1.25. logger
-    global logger
-    if kwargs.get("logger") and isinstance(kwargs.get("logger"), logging.Logger):
-        logger = kwargs.get("logger")
-    else:
-        if save_logs and not log_out_dir:
-            log_out_dir = os.path.join(out, "logs")
-        logger = set_up_logger(logger, logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
+    if save_logs and not log_out_dir:
+        log_out_dir = os.path.join(out, "logs")
+    set_varseek_logging_level_and_filehandler(logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
+
 
     # * 1.5 load in fastqs
     fastqs_original = fastqs
@@ -425,7 +423,7 @@ def clean(
 
     if fastqs:
         try:
-            fastqs = sort_fastq_files_for_kb_count(fastqs, technology=technology, multiplexed=multiplexed, logger=logger, check_only=(not sort_fastqs))
+            fastqs = sort_fastq_files_for_kb_count(fastqs, technology=technology, multiplexed=multiplexed, check_only=(not sort_fastqs))
         except Exception:
             if sort_fastqs:
                 logger.warning(f"Automatic FASTQ argument order sorting for kb count could not recognize FASTQ file name format. Skipping argument order sorting.")
@@ -733,6 +731,6 @@ def clean(
 
     adata.write(adata_vcrs_clean_out)
 
-    report_time_elapsed(start_time, logger=logger, function_name="clean")
+    report_time_elapsed(start_time, function_name="clean")
 
     return adata

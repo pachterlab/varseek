@@ -21,6 +21,7 @@ from varseek.utils import (
     save_run_info,
     set_up_logger,
     sort_fastq_files_for_kb_count,
+    set_varseek_logging_level_and_filehandler
 )
 from varseek.varseek_clean import needs_for_normal_genome_matrix
 
@@ -31,6 +32,7 @@ from .constants import (
 )
 
 logger = logging.getLogger(__name__)
+logger = set_up_logger(logger, logging_level="INFO", save_logs=False, log_dir=None)
 
 mode_parameters = {
     "very_sensitive": {},
@@ -214,15 +216,10 @@ def count(
     start_time = time.perf_counter()
 
     # * 1.25. logger
-    global logger
-    if kwargs.get("logger") and isinstance(kwargs.get("logger"), logging.Logger):
-        logger = kwargs.get("logger")
-    else:
-        if save_logs and not log_out_dir:
-            log_out_dir = os.path.join(out, "logs")
-        logger = set_up_logger(logger, logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
-    kwargs["logger"] = logger
-
+    if save_logs and not log_out_dir:
+        log_out_dir = os.path.join(out, "logs")
+    set_varseek_logging_level_and_filehandler(logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
+    
     # * 1.5. For the nargs="+" arguments, convert any list of length 1 to a string
     if isinstance(fastqs, (list, tuple)) and len(fastqs) == 1:
         fastqs = fastqs[0]
@@ -325,7 +322,7 @@ def count(
 
     fastqs_unsorted = fastqs
     try:
-        fastqs = sort_fastq_files_for_kb_count(fastqs, technology=technology, multiplexed=kwargs.get("multiplexed"), logger=logger, check_only=(not sort_fastqs))
+        fastqs = sort_fastq_files_for_kb_count(fastqs, technology=technology, multiplexed=kwargs.get("multiplexed"), check_only=(not sort_fastqs))
     except ValueError as e:
         if sort_fastqs:
             logger.warning(f"Automatic FASTQ argument order sorting for kb count could not recognize FASTQ file name format. Skipping argument order sorting.")
@@ -577,6 +574,6 @@ def count(
     vk_count_output_dict["vk_summarize_output_dir"] = os.path.abspath(vk_summarize_out_dir) if os.path.exists(os.path.abspath(vk_summarize_out_dir)) else None
 
     if not dry_run:
-        report_time_elapsed(start_time, logger=logger, function_name="count")
+        report_time_elapsed(start_time, function_name="count")
 
     return vk_count_output_dict

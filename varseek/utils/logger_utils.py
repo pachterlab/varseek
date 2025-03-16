@@ -27,7 +27,10 @@ from varseek.constants import default_filename_dict
 # Mute numexpr threads info
 logging.getLogger("numexpr").setLevel(logging.WARNING)
 
+logger = logging.getLogger(__name__)
 
+
+formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s", "%H:%M:%S")
 def set_up_logger(logger, logging_level=None, save_logs=False, log_dir=None):
     # type checking
     if not isinstance(save_logs, bool):
@@ -51,8 +54,7 @@ def set_up_logger(logger, logging_level=None, save_logs=False, log_dir=None):
     logger.setLevel(logging_level)
 
     if not logger.handlers:
-        formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s", "%H:%M:%S")
-
+        global formatter
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(formatter)
         # console_handler.setLevel(logging_level)  # redundant
@@ -76,6 +78,44 @@ def set_up_logger(logger, logging_level=None, save_logs=False, log_dir=None):
             logger.addHandler(file_handler)
 
     return logger
+
+logger = set_up_logger(logger, logging_level="INFO", save_logs=False, log_dir=None)
+
+
+def set_varseek_logging_level_and_filehandler(logging_level=None, save_logs=False, log_dir=None):
+    """
+    Set the logging level for all varseek loggers.
+    """
+    if not logging_level and not save_logs:
+        return
+    if logging_level is None:
+        logging_level = os.getenv("VARSEEK_LOGGING_LEVEL", "INFO")
+    if str(logging_level) not in {"NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "0", "10", "20", "30", "40", "50", "60"}:  # unknown log level
+        print(f"Unknown log level: {logging_level}. Defaulting to INFO.")
+        logging_level = logging.INFO
+    if save_logs:
+        global formatter
+        if log_dir is None:
+            package_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            log_dir = os.path.join(package_dir, "logs")
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        function_name = inspect.stack()[1].function  # gets the name of the function that called it (eg build, info, filter, etc)
+        dt = datetime.now()
+        log_file = os.path.join(log_dir, f"logs_{function_name}_date_{dt:%Y_%m_%d}_time_{dt:%H_%M_%S}.txt")
+
+    for name, log in logging.root.manager.loggerDict.items():
+        if name.startswith("varseek") and isinstance(log, logging.Logger):
+            log.setLevel(logging_level)
+            if save_logs:
+                for handler in list(log.handlers):  # Remove existing FileHandlers; Use list() to avoid modifying during iteration
+                    if isinstance(handler, logging.FileHandler):
+                        log.removeHandler(handler)
+                        handler.close()
+                file_handler = logging.FileHandler(log_file)  # Add my new FileHandler
+                file_handler.setFormatter(formatter)
+                # file_handler.setLevel(logging.DEBUG)  # Capture all logs regardless of logger's level
+                log.addHandler(file_handler)
 
 
 def check_file_path_is_string_with_valid_extension(file_path, variable_name, file_type, required=False):
@@ -158,14 +198,11 @@ def make_function_parameter_to_value_dict(levels_up=1, explicit_only=False):
     return params
 
 
-def report_time_elapsed(start_time, logger=None, function_name=None):
+def report_time_elapsed(start_time, function_name=None):
     elapsed = time.perf_counter() - start_time
     function_name_message = f" for vk {function_name}" if function_name else ""
     time_elapsed_message = f"Total runtime{function_name_message}: {int(elapsed // 60)}m, {elapsed % 60:.2f}s"
-    if logger:
-        logger.info(time_elapsed_message)
-    else:
-        print(time_elapsed_message)
+    logger.info(time_elapsed_message)
 
 
 def convert_value_for_json(value):
@@ -891,7 +928,7 @@ def check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(
     return path1, path2
 
 
-def get_printlog(verbose=True, logger=None):
+def get_printlog(verbose=True):
     """
     if verbose=False --> print/log nothing
     if verbose=True and logger --> logger.info

@@ -23,10 +23,12 @@ from .utils import (
     safe_literal_eval,
     save_params_to_config_file,
     save_run_info,
+    set_varseek_logging_level_and_filehandler,
     set_up_logger,
 )
 
 logger = logging.getLogger(__name__)
+logger = set_up_logger(logger, logging_level="INFO", save_logs=False, log_dir=None)
 
 
 def apply_filters(df, filters, filtering_report_text_out=None):
@@ -395,7 +397,6 @@ def filter(
     - dlist_cdna_filtered_fasta_out                (str) Path to the filtered cDNA dlist fasta file. Default: None.
     - save_vcrs_filtered_fasta_and_t2g             (bool) If True, save the filtered vcrs fasta and t2g files. Default: True.
     - use_IDs                                      (bool) If True, use IDs instead of headers. Default: False.
-    - logger                                       (logging.Logger) Logger object. Default: None (use default logger).
     - make_internal_copies              (bool) Whether to make internal copies of the input dataframes. Default: True
     """
     # * 0. Informational arguments that exit early
@@ -413,13 +414,10 @@ def filter(
     if out is None:
         out = input_dir if input_dir else "."
 
-    global logger
-    if kwargs.get("logger") and isinstance(kwargs.get("logger"), logging.Logger):
-        logger = kwargs.get("logger")
-    else:
-        if save_logs and not log_out_dir:
-            log_out_dir = os.path.join(out, "logs")
-        logger = set_up_logger(logger, logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
+    if save_logs and not log_out_dir:
+        log_out_dir = os.path.join(out, "logs")
+    set_varseek_logging_level_and_filehandler(logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
+
 
     if isinstance(filters, (list, tuple)) and len(filters) == 1:
         filters = filters[0]
@@ -564,7 +562,7 @@ def filter(
     filtered_df = apply_filters(variant_metadata_df, filters, filtering_report_text_out=filtering_report_text_out)  #$$$ the real meat of the function
 
     if kwargs.get("called_from_vk_sim"):  # return early because I don't need anything else
-        report_time_elapsed(start_time, logger=logger, function_name="filter")
+        report_time_elapsed(start_time, function_name="filter")
         return filtered_df
 
     filtered_df = filtered_df.copy()  # here to avoid pandas warning about assigning to a slice rather than a copy
@@ -653,7 +651,7 @@ def filter(
         logger.info(f"Filtered dlist fasta created at {dlist_filtered_fasta_out}.")
 
     # Report time
-    report_time_elapsed(start_time, logger=logger, function_name="filter")
+    report_time_elapsed(start_time, function_name="filter")
 
     if return_variants_updated_filtered_csv_df:
         return filtered_df

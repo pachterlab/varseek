@@ -23,6 +23,7 @@ from varseek.utils import (
     save_params_to_config_file,
     save_run_info,
     set_up_logger,
+    set_varseek_logging_level_and_filehandler
 )
 
 from .constants import (
@@ -32,6 +33,7 @@ from .constants import (
 )
 
 logger = logging.getLogger(__name__)
+logger = set_up_logger(logger, logging_level="INFO", save_logs=False, log_dir=None)
 COSMIC_CREDENTIAL_VALIDATION_URL = "https://varseek-server-3relpk35fa-wl.a.run.app"
 
 varseek_ref_unallowable_arguments = {
@@ -230,14 +232,10 @@ def ref(
     start_time = time.perf_counter()
 
     # * 1.25 logger
-    global logger
-    if kwargs.get("logger") and isinstance(kwargs.get("logger"), logging.Logger):
-        logger = kwargs.get("logger")
-    else:
-        if save_logs and not log_out_dir:
-            log_out_dir = os.path.join(out, "logs")
-        logger = set_up_logger(logger, logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
-    kwargs["logger"] = logger
+    if save_logs and not log_out_dir:
+        log_out_dir = os.path.join(out, "logs")
+    set_varseek_logging_level_and_filehandler(logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
+
 
     # * 1.5. For the nargs="+" arguments, convert any list of length 1 to a string
     if isinstance(sequences, (list, tuple)) and len(sequences) == 1:
@@ -600,6 +598,6 @@ def ref(
 
     # Report time
     if not dry_run:
-        report_time_elapsed(start_time, logger=logger, function_name="ref")
+        report_time_elapsed(start_time, function_name="ref")
 
     return vk_ref_output_dict
