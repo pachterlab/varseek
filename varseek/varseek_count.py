@@ -134,6 +134,7 @@ def validate_input_count(params_dict):
 
 
 # don't worry if it says an argument is unused, as they will all get put in params_dict for each respective function and passed to the child functions
+@report_time_elapsed
 def count(
     *fastqs,
     index,
@@ -212,10 +213,7 @@ def count(
     # * 0. Informational arguments that exit early
     # Nothing here
 
-    # * 1. Start timer
-    start_time = time.perf_counter()
-
-    # * 1.25. logger
+    # * 1. logger
     if save_logs and not log_out_dir:
         log_out_dir = os.path.join(out, "logs")
     set_varseek_logging_level_and_filehandler(logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
@@ -572,8 +570,5 @@ def count(
 
     vk_count_output_dict["vcf"] = os.path.abspath(vcf_out) if os.path.isfile(os.path.abspath(vcf_out)) else None
     vk_count_output_dict["vk_summarize_output_dir"] = os.path.abspath(vk_summarize_out_dir) if os.path.exists(os.path.abspath(vk_summarize_out_dir)) else None
-
-    if not dry_run:
-        report_time_elapsed(start_time, function_name="count")
 
     return vk_count_output_dict

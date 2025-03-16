@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import time
+import functools
 from collections import OrderedDict
 from datetime import date, datetime
 from pathlib import Path
@@ -198,11 +199,23 @@ def make_function_parameter_to_value_dict(levels_up=1, explicit_only=False):
     return params
 
 
-def report_time_elapsed(start_time, function_name=None):
-    elapsed = time.perf_counter() - start_time
-    function_name_message = f" for vk {function_name}" if function_name else ""
-    time_elapsed_message = f"Total runtime{function_name_message}: {int(elapsed // 60)}m, {elapsed % 60:.2f}s"
-    logger.info(time_elapsed_message)
+# def report_time_elapsed(start_time, function_name=None):
+#     elapsed = time.perf_counter() - start_time
+#     function_name_message = f" for vk {function_name}" if function_name else ""
+#     time_elapsed_message = f"Total runtime{function_name_message}: {int(elapsed // 60)}m, {elapsed % 60:.2f}s"
+#     logger.info(time_elapsed_message)
+
+# now defined as a decorator
+def report_time_elapsed(func):
+    @functools.wraps(func)  # ✅ Preserves original function metadata
+    def wrapper(*args, **kwargs):
+        start_time = time.perf_counter()
+        result = func(*args, **kwargs)
+        elapsed_time = time.perf_counter() - start_time
+        time_elapsed_message = f"Total runtime for vk {func.__name__}: {int(elapsed_time // 60)}m, {elapsed_time % 60:.2f}s"
+        logger.info(time_elapsed_message)
+        return result
+    return wrapper
 
 
 def convert_value_for_json(value):

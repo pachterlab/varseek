@@ -102,7 +102,7 @@ def validate_input_fastqpp(params_dict):
     if not isinstance(params_dict.get("failed_out"), (bool, str)):
         raise ValueError(f"failed_out must be a boolean or string. Got {params_dict.get('failed_out')} of type {type(params_dict.get('failed_out'))}.")
 
-
+@report_time_elapsed
 def fastqpp(
     *fastqs,
     technology,
@@ -187,10 +187,7 @@ def fastqpp(
     # * 0. Informational arguments that exit early
     # Not in this function
 
-    # * 1. Start timer
-    start_time = time.perf_counter()
-
-    # * 1.25. logger
+    # * 1. logger
     if save_logs and not log_out_dir:
         log_out_dir = os.path.join(out, "logs")
     set_varseek_logging_level_and_filehandler(logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
@@ -361,6 +358,5 @@ def fastqpp(
     fastqpp_dict["final"] = fastqs
 
     logger.info("Returning a dictionary with keys describing the fastq files and values pointing to their file paths")
-    report_time_elapsed(start_time, function_name="fastqpp")
 
     return fastqpp_dict

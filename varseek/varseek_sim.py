@@ -127,7 +127,7 @@ def validate_input_sim(params_dict):
         if not isinstance(params_dict.get(param_name), bool):
             raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
 
-
+@report_time_elapsed
 def sim(
     variants,
     number_of_variants_to_sample=1500,
@@ -243,10 +243,7 @@ def sim(
     - make_dataframes                   (bool) Whether to make dataframes. Turn off when only wanting to make the fastq file (saves a lot of memory). Default: True
     All kwargs get passed into vk build
     """
-    # * 1. Start timer
-    start_time = time.perf_counter()
-
-    # * 1.5. logger
+    # * 1. logger
     if save_logs and not log_out_dir:
         log_out_dir = os.path.join(out, "logs")
     set_varseek_logging_level_and_filehandler(logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
@@ -795,7 +792,5 @@ def sim(
 
     if variants_updated_csv_out is not None:
         variants.to_csv(variants_updated_csv_out, index=False)
-
-    report_time_elapsed(start_time, function_name="sim")
 
     return simulated_df_dict

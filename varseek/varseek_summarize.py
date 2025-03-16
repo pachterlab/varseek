@@ -53,7 +53,7 @@ def validate_input_summarize(params_dict):
         if not isinstance(params_dict.get(param_name), bool):
             raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
 
-
+@report_time_elapsed
 def summarize(
     adata,
     top_values=10,
@@ -89,11 +89,7 @@ def summarize(
     - specific_stats_folder             (str) Path to the specific stats folder. Default: `out`/specific_stats
     - plots_folder                      (str) Path to the plots folder. Default: `out`/plots
     """
-
-    # * 1. Start timer
-    start_time = time.perf_counter()
-
-    # * 1.5. logger
+    # * 1. logger
     if save_logs and not log_out_dir:
         log_out_dir = os.path.join(out, "logs")
     set_varseek_logging_level_and_filehandler(logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
@@ -255,8 +251,6 @@ def summarize(
                 number_of_samples = gene_counts.var.loc[variant, "number_of_samples_in_which_the_variant_is_detected"]
                 total_counts = gene_counts.var.loc[variant, "vcrs_count"]
                 f.write(f"{variant}\t{number_of_samples}\t{total_counts}\n")
-
-    report_time_elapsed(start_time, function_name="summarize")
 
     # TODO: things to add
     # differentially expressed variants/mutated genes

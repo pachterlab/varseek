@@ -105,6 +105,7 @@ downloadable_references = [
 
 
 # don't worry if it says an argument is unused, as they will all get put in params_dict for each respective function and passed to the child functions
+@report_time_elapsed
 def ref(
     variants,
     sequences,
@@ -228,10 +229,7 @@ def ref(
         vk.varseek_filter.print_list_filter_rules()
         return None
 
-    # * 1. Start timer
-    start_time = time.perf_counter()
-
-    # * 1.25 logger
+    # * 1. logger
     if save_logs and not log_out_dir:
         log_out_dir = os.path.join(out, "logs")
     set_varseek_logging_level_and_filehandler(logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
@@ -595,9 +593,5 @@ def ref(
     vk_ref_output_dict["fasta"] = os.path.abspath(vcrs_fasta_for_index) if (isinstance(vcrs_fasta_for_index, str) and os.path.isfile(vcrs_fasta_for_index) and not dry_run) else None
 
     logger.info(f"Produced files: {vk_ref_output_dict}")
-
-    # Report time
-    if not dry_run:
-        report_time_elapsed(start_time, function_name="ref")
 
     return vk_ref_output_dict

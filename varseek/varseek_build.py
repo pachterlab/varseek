@@ -300,7 +300,7 @@ def validate_input_build(params_dict):
 
 accepted_build_file_types = (".csv", ".tsv", ".vcf")
 
-
+@report_time_elapsed
 def build(
     variants,
     sequences,
@@ -347,7 +347,7 @@ def build(
     and returns sequences containing the variants and the surrounding local context, dubbed variant-containing reference sequences (VCRSs),
     compatible with k-mer-based methods (i.e., kallisto | bustools) for variant detection.
 
-        # Required input argument:
+    # Required input argument:
     - variants                          str or list[str] or DataFrame object) Variants to apply to the sequences. Input formats options include the following:
                                         1) Single variant (str), along with a single sequence for `sequences` (str). E.g., variants='c.2G>T' and sequences='AGCTAGCT'.
                                         2) List of variants (list[str]), along with a list of sequences for `sequences` (list[str]). E.g., variants=['c.2G>T', 'c.1A>C'] and sequences=['AGCTAGCT', 'AGCTAGCT'].
@@ -482,10 +482,7 @@ def build(
         print_valid_values_for_variants_and_sequences_in_varseek_build()
         return None
 
-    # * 1. Start timer
-    start_time = time.perf_counter()
-
-    # * 1.5. logger
+    # * 1. logger
     if save_logs and not log_out_dir:
         log_out_dir = os.path.join(out, "logs")
     set_varseek_logging_level_and_filehandler(logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
@@ -1469,7 +1466,4 @@ def build(
             all_mut_seqs.remove("")
 
         if len(all_mut_seqs) > 0:
-            report_time_elapsed(start_time, function_name="build")
             return all_mut_seqs
-
-    report_time_elapsed(start_time, function_name="build")

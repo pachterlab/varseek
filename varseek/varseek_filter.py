@@ -320,7 +320,7 @@ filter_rules_that_expect_no_value = {"is_true", "is_false", "is_not_true", "is_n
 all_possible_filter_rules_regex = "|".join(map(re.escape, all_possible_filter_rules))
 filter_regex = rf"^(?P<column>\w+):(?P<rule>(?:{all_possible_filter_rules_regex}))(?:=(?P<value>.+))?$"
 
-
+@report_time_elapsed
 def filter(
     input_dir,
     filters,
@@ -407,10 +407,7 @@ def filter(
     if not filters or filters == "None":
         raise ValueError("No filters provided. Please provide filters to apply.")
 
-    # * 1. Start timer
-    start_time = time.perf_counter()
-
-    # * 1.5. logger and set out folder (must to it up here or else logger and config will save in the wrong place)
+    # * 1. logger and set out folder (must to it up here or else logger and config will save in the wrong place)
     if out is None:
         out = input_dir if input_dir else "."
 
@@ -562,7 +559,6 @@ def filter(
     filtered_df = apply_filters(variant_metadata_df, filters, filtering_report_text_out=filtering_report_text_out)  #$$$ the real meat of the function
 
     if kwargs.get("called_from_vk_sim"):  # return early because I don't need anything else
-        report_time_elapsed(start_time, function_name="filter")
         return filtered_df
 
     filtered_df = filtered_df.copy()  # here to avoid pandas warning about assigning to a slice rather than a copy
@@ -649,9 +645,6 @@ def filter(
         logger.info(f"t2g file containing mutated sequences created at {vcrs_t2g_filtered_out}.")
     if dlist_filtered_fasta_out and os.path.isfile(dlist_filtered_fasta_out):
         logger.info(f"Filtered dlist fasta created at {dlist_filtered_fasta_out}.")
-
-    # Report time
-    report_time_elapsed(start_time, function_name="filter")
 
     if return_variants_updated_filtered_csv_df:
         return filtered_df

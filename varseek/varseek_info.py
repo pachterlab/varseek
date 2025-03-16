@@ -256,6 +256,7 @@ columns_to_include_possible_values = OrderedDict(
 
 
 # TODO: finish implementing the cdna/genome column stuff, and remove hard-coding of some column names
+@report_time_elapsed
 def info(
     input_dir,
     columns_to_include=("number_of_variants_in_this_gene_total", "alignment_to_reference", "pseudoaligned_to_reference_despite_not_truly_aligning", "triplet_complexity"),
@@ -380,10 +381,7 @@ def info(
         print_list_columns()
         return
 
-    # * 1. Start timer
-    start_time = time.perf_counter()
-
-    # * 1.5. logger and set out folder (must to it up here or else logger and config will save in the wrong place)
+    # * 1. logger and set out folder (must to it up here or else logger and config will save in the wrong place)
     if out is None:
         out = input_dir if input_dir else "."
     
@@ -1073,6 +1071,3 @@ def info(
     logger.info(f"Columns: {mutation_metadata_df.columns}")
     logger.info(f"Columns successfully added: {set(mutation_metadata_df.columns.tolist()) - set(columns_original)}")
     logger.info(f"Columns not successfully added: {set(columns_not_successfully_added)}")
-
-    # Report time
-    report_time_elapsed(start_time, function_name="info")

@@ -193,7 +193,7 @@ def validate_input_clean(params_dict):
 
 needs_for_normal_genome_matrix = ["filter_cells_by_min_counts", "filter_cells_by_min_genes", "filter_genes_by_min_cells", "filter_cells_by_max_mt_content", "doublet_detection", "cpm_normalization"]
 
-
+@report_time_elapsed
 def clean(
     adata_vcrs,  # required inputs
     technology,
@@ -324,10 +324,7 @@ def clean(
     - bustools                              (str): Path to the bustools binary. Default: None.
     - parity_kb_count                       (str) The parity of the reads used in kb count when generating adata_vcrs. Default: `parity`.
     """
-    # * 1. Start timer
-    start_time = time.perf_counter()
-
-    # * 1.25. logger
+    # * 1. logger
     if save_logs and not log_out_dir:
         log_out_dir = os.path.join(out, "logs")
     set_varseek_logging_level_and_filehandler(logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
@@ -730,7 +727,5 @@ def clean(
         adata_reference_genome.write(adata_reference_genome_clean_out)
 
     adata.write(adata_vcrs_clean_out)
-
-    report_time_elapsed(start_time, function_name="clean")
 
     return adata
