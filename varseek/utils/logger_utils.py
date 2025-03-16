@@ -85,10 +85,12 @@ logger = set_up_logger(logger, logging_level="INFO", save_logs=False, log_dir=No
 
 def set_varseek_logging_level_and_filehandler(logging_level=None, save_logs=False, log_dir=None):
     """
-    Set the logging level for all varseek loggers.
+    Set the logging level for all varseek loggers. The priority is (1) satisfy manually-passed logging_level and save_logs, and then (2) basicConfig specified by the user (only if condition 1 is not met).
     """
-    if not logging_level and not save_logs:
+    basicConfig_specified = logging.getLogger().hasHandlers()  # check if basicConfig was specified
+    if not logging_level and not save_logs and not basicConfig_specified:  # return if (1) no logging_level specified, (2) save_logs False, and (3) no basicConfig specified
         return
+    logging_level_original = logging_level
     if logging_level is None:
         logging_level = os.getenv("VARSEEK_LOGGING_LEVEL", "INFO")
     if str(logging_level) not in {"NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "0", "10", "20", "30", "40", "50", "60"}:  # unknown log level
@@ -105,18 +107,33 @@ def set_varseek_logging_level_and_filehandler(logging_level=None, save_logs=Fals
         dt = datetime.now()
         log_file = os.path.join(log_dir, f"logs_{function_name}_date_{dt:%Y_%m_%d}_time_{dt:%H_%M_%S}.txt")
 
+    if logging_level_original or save_logs:  # if manually-passed arguments, then clear any basicConfig
+        if basicConfig_specified:
+            for handler in logging.getLogger().handlers[:]:
+                logging.getLogger().removeHandler(handler)
+
+            # Reset the level to NOTSET
+            logging.getLogger().setLevel(logging.NOTSET)
+
     for name, log in logging.root.manager.loggerDict.items():
         if name.startswith("varseek") and isinstance(log, logging.Logger):
-            log.setLevel(logging_level)
-            if save_logs:
-                for handler in list(log.handlers):  # Remove existing FileHandlers; Use list() to avoid modifying during iteration
-                    if isinstance(handler, logging.FileHandler):
-                        log.removeHandler(handler)
-                        handler.close()
-                file_handler = logging.FileHandler(log_file)  # Add my new FileHandler
-                file_handler.setFormatter(formatter)
-                # file_handler.setLevel(logging.DEBUG)  # Capture all logs regardless of logger's level
-                log.addHandler(file_handler)
+            if logging_level_original or save_logs:  # first priority is manually-passed arguments
+                log.setLevel(logging_level)
+                if save_logs:
+                    for handler in list(log.handlers):  # Remove existing FileHandlers; Use list() to avoid modifying during iteration
+                        if isinstance(handler, logging.FileHandler):
+                            log.removeHandler(handler)
+                            handler.close()
+                    file_handler = logging.FileHandler(log_file)  # Add my new FileHandler
+                    file_handler.setFormatter(formatter)
+                    # file_handler.setLevel(logging.DEBUG)  # Capture all logs regardless of logger's level
+                    log.addHandler(file_handler)
+            else:
+                if basicConfig_specified:  # second priority is if the user set basicConfig outside
+                    log.handlers = []  # Remove existing handlers (optional)
+                    log.propagate = True  # Ensure logs are passed to the root logger
+                    log.setLevel(logging.getLogger().level)  # Match the root logger level
+
 
 
 def check_file_path_is_string_with_valid_extension(file_path, variable_name, file_type, required=False):
