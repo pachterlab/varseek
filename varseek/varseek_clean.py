@@ -30,6 +30,7 @@ from varseek.utils import (
     save_run_info,
     set_up_logger,
     sort_fastq_files_for_kb_count,
+    make_good_barcodes_and_file_index_tuples,
     write_to_vcf,
     write_vcfs_for_rows,
 )
@@ -468,6 +469,20 @@ def clean(
 
     adata.var.index.name = "variant"
     original_var_names = adata.var_names.copy()
+
+    if parity == "paired" and parity_kb_count == "single":
+        barcodes_file = os.path.join(kb_count_vcrs_dir, "matrix.sample.barcodes")
+        bad_to_good_barcode_dict = make_good_barcodes_and_file_index_tuples(barcodes_file)
+        adata.obs.index = adata.obs.index.map(lambda x: bad_to_good_barcode_dict.get(x, x))  # map from old (incorrect) barcodes to new (correct) barcodes  #!!! ensure the old barcodes don't linger anywhere else
+
+        # Convert to DataFrame for easy manipulation
+        df = pd.DataFrame(adata.X.toarray() if hasattr(adata.X, "toarray") else adata.X, 
+                  index=adata.obs.index, 
+                  columns=adata.var.index)
+        df_grouped = df.groupby(df.index).sum()
+
+        # Create new AnnData object
+        adata = ad.AnnData(X=df_grouped.values, obs=pd.DataFrame(index=df_grouped.index), var=adata.var)  #!!! inspect this
 
     variants_updated_csv_columns_to_merge = kwargs.get("variants_updated_csv_columns_to_merge", None)
     for id_column, corresponding_argument in [(seq_id_column, transcript_set_to_exclusively_keep), (seq_id_column, transcript_set_to_exclude), (gene_id_column, gene_set_to_exclusively_keep), (gene_id_column, gene_set_to_exclude)]:

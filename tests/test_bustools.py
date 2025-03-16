@@ -12,9 +12,10 @@ import sys
 import varseek as vk
 from varseek.utils import create_identity_t2g, make_bus_df
 
-# If "tests/test_bustools.py" is not explicitly in the command line arguments, skip this module.
-if not any("tests/test_bustools.py" in arg for arg in sys.argv):
-    pytest.skip("Skipping test_bustools.py due issues with kallisto compiling in some environments (e.g., GitHub actions, some MacOS systems); run this file by explicity including the file i.e., 'pytest tests/test_bustools.py'", allow_module_level=True)
+#$ TOGGLE THIS SECTION TO HAVE THIS FILE RECOGNIZED BY PYTEST (commented out means it will be recognized, uncommented means it will be hidden)
+# # If "tests/test_bustools.py" is not explicitly in the command line arguments, skip this module.
+# if not any("tests/test_bustools.py" in arg for arg in sys.argv):
+#     pytest.skip("Skipping test_bustools.py due issues with kallisto compiling in some environments (e.g., GitHub actions, some MacOS systems); run this file by explicity including the file i.e., 'pytest tests/test_bustools.py'", allow_module_level=True)
 
 
 @pytest.fixture
@@ -85,7 +86,7 @@ def temp_kb_count_out_folder(tmp_path):
 from pdb import set_trace as st
 
 
-def test_bustools_df_bulk(temp_fastq_file, temp_fasta_file, temp_index_file, temp_t2g_file, temp_kb_count_out_folder, tmp_path_factory):
+def test_bustools_df_bulk_parity_single(temp_fastq_file, temp_fasta_file, temp_index_file, temp_t2g_file, temp_kb_count_out_folder):
     k = "31"
     kb_ref_command = ["kb", "ref", "--workflow", "custom", "-t", "2", "-i", str(temp_index_file), "--d-list", "None", "-k", k, str(temp_fasta_file)]
     subprocess.run(kb_ref_command, check=True)
@@ -99,8 +100,8 @@ def test_bustools_df_bulk(temp_fastq_file, temp_fasta_file, temp_index_file, tem
         bustools_binary_path_command = "kb info | grep 'bustools:' | awk '{print $3}' | sed 's/[()]//g'"
         bustools = subprocess.run(bustools_binary_path_command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, text=True, check=True).stdout.strip()
 
-    bus_df = make_bus_df(kallisto_out = temp_kb_count_out_folder, fastq_file_list = temp_fastq_file, t2g_file = temp_t2g_file, mm = False, union = False, technology = "bulk", bustools = bustools)
-    read_to_ref_dict = dict(zip(bus_df['fastq_header'], bus_df['gene_names_final']))
+    bus_df = make_bus_df(kb_count_out = temp_kb_count_out_folder, fastq_file_list = temp_fastq_file, t2g_file = temp_t2g_file, mm = False, union = False, technology = "bulk", bustools = bustools, check_only=True)
+    read_to_ref_dict = dict(zip(bus_df['fastq_header'], bus_df['gene_names']))
 
     assert read_to_ref_dict == {'seq1': ['vcrs1', 'vcrs6'], 'seq2': ['vcrs2'], 'seq3': ['vcrs1', 'vcrs6'], 'seq5': ['vcrs2', 'vcrs4', 'vcrs5']}
 
@@ -108,3 +109,6 @@ def test_bustools_df_bulk(temp_fastq_file, temp_fasta_file, temp_index_file, tem
     adata = ad.read_h5ad(adata_path)
 
     assert np.array_equal(adata.X.toarray(), np.array([[0., 1., 0., 0., 0., 0.]]))
+
+def test_bustools_df_bulk_parity_paired(temp_fastq_file, temp_fasta_file, temp_index_file, temp_t2g_file, temp_kb_count_out_folder):
+    pass

@@ -3,6 +3,7 @@
 import ast
 import csv
 import gzip
+from pathlib import Path
 import os
 import random
 import re
@@ -803,54 +804,62 @@ def sort_fastq_files_for_kb_count(fastq_files, technology=None, multiplexed=None
 
     file_name_format = None
 
-    for fastq_file in fastq_files:
-        if not fastq_file.endswith(fastq_extensions):  # check for valid extension
-            message = f"File {fastq_file} does not have a valid FASTQ extension of one of the following: {fastq_extensions}."
-            raise ValueError(message)  # invalid regardless of order
+    try:
+        for fastq_file in fastq_files:
+            if not fastq_file.endswith(fastq_extensions):  # check for valid extension
+                message = f"File {fastq_file} does not have a valid FASTQ extension of one of the following: {fastq_extensions}."
+                raise ValueError(message)  # invalid regardless of order
 
-        if bool(rnaseq_fastq_filename_pattern_illumina.match(os.path.basename(fastq_file))):  # check for Illumina file naming convention
-            file_name_format = "illumina"
-        elif bool(rnaseq_fastq_filename_pattern_bulk.match(os.path.basename(fastq_file))):
-            file_name_format = "bulk"
-        else:
-            message = f"File {fastq_file} does not match the expected bulk file naming convention of SAMPLE_PAIR.EXT where SAMPLE is sample name, PAIR is 1/2, and EXT is a fastq extension - or the Illumina file naming convention of SAMPLE_LANE_R[12]_001.fastq.gz, where SAMPLE is letters, numbers, underscores; LANE is numbers with optional leading 0s; pair is either R1 or R2; and it has .fq or .fastq extension (or .fq.gz or .fastq.gz)."
-            if check_only:
-                logger_info(message)
+            if bool(rnaseq_fastq_filename_pattern_illumina.match(os.path.basename(fastq_file))):  # check for Illumina file naming convention
+                file_name_format = "illumina"
+            elif bool(rnaseq_fastq_filename_pattern_bulk.match(os.path.basename(fastq_file))):
+                file_name_format = "bulk"
             else:
-                message += "\nRaising exception and exiting because sort_fastqs=True, which requires standard bulk or Illumina file naming convention. Please check fastq file names or set sort_fastqs=False."
-                raise ValueError(message)
+                message = f"File {fastq_file} does not match the expected bulk file naming convention of SAMPLE_PAIR.EXT where SAMPLE is sample name, PAIR is 1/2, and EXT is a fastq extension - or the Illumina file naming convention of SAMPLE_LANE_R[12]_001.fastq.gz, where SAMPLE is letters, numbers, underscores; LANE is numbers with optional leading 0s; pair is either R1 or R2; and it has .fq or .fastq extension (or .fq.gz or .fastq.gz)."
+                if check_only:
+                    logger_info(message)
+                else:
+                    message += "\nRaising exception and exiting because sort_fastqs=True, which requires standard bulk or Illumina file naming convention. Please check fastq file names or set sort_fastqs=False."
+                    raise ValueError(message)
 
-    if technology is None:
-        logger_info("No technology specified, so defaulting to None when checking file order (i.e., will not drop index files from fastq file list)")
-    if "smartseq" in technology.lower() and multiplexed is None:
-        logger_info("Multiplexed not specified with smartseq technology, so defaulting to None when checking file order (i.e., will not drop index files from fastq file list)")
-        multiplexed = True
+        if technology is None:
+            logger_info("No technology specified, so defaulting to None when checking file order (i.e., will not drop index files from fastq file list)")
+        if "smartseq" in technology.lower() and multiplexed is None:
+            logger_info("Multiplexed not specified with smartseq technology, so defaulting to None when checking file order (i.e., will not drop index files from fastq file list)")
+            multiplexed = True
 
-    if technology is None or technology == "10xv1" or ("smartseq" in technology.lower() and multiplexed):  # keep the index I1/I2 files (pass into kb count) for 10xv1 or multiplexed smart-seq
-        filtered_files = fastq_files
-    else:  # remove the index files
-        logger_info(f"Removing index files from fastq files list, as they are not utilized in kb count with technology {technology}")
-        filtered_files = [f for f in fastq_files if not any(x in os.path.basename(f) for x in ["I1", "I2"])]
+        if technology is None or technology == "10xv1" or ("smartseq" in technology.lower() and multiplexed):  # keep the index I1/I2 files (pass into kb count) for 10xv1 or multiplexed smart-seq
+            filtered_files = fastq_files
+        else:  # remove the index files
+            logger_info(f"Removing index files from fastq files list, as they are not utilized in kb count with technology {technology}")
+            filtered_files = [f for f in fastq_files if not any(x in os.path.basename(f) for x in ["I1", "I2"])]
 
-    if file_name_format == "illumina":
-        sorted_files = sorted(filtered_files, key=illumina_sort_order_for_kb_count_fastqs)
-    elif file_name_format == "bulk":
-        sorted_files = sorted(filtered_files, key=bulk_sort_order_for_kb_count_fastqs)
-    else:
-        sorted_files = sorted(filtered_files, key=bulk_sort_order_for_kb_count_fastqs)  # default to bulk
-
-    if check_only:
-        if sorted_files == fastq_files:
-            logger_info("Fastq files are in the expected order")
+        if file_name_format == "illumina":
+            sorted_files = sorted(filtered_files, key=illumina_sort_order_for_kb_count_fastqs)
+        elif file_name_format == "bulk":
+            sorted_files = sorted(filtered_files, key=bulk_sort_order_for_kb_count_fastqs)
         else:
-            logger_info("Fastq files are not in the expected order. Fastq files are expected to be sorted (in order) by (a) SAMPLE, (b) LANE, and (c) PARITY (R1/R2). Index files (I1/I2) are not included in the sort order except for technology=10xv1 and multiplexed smartseq. To enable automatic sorting, set sort_fastqs=True.")
-        return fastq_files
-    else:
-        return sorted_files
+            sorted_files = sorted(filtered_files, key=bulk_sort_order_for_kb_count_fastqs)  # default to bulk
+
+        if check_only:
+            if sorted_files == fastq_files:
+                logger_info("Fastq files are in the expected order")
+            else:
+                logger_info("Fastq files are not in the expected order. Fastq files are expected to be sorted (in order) by (a) SAMPLE, (b) LANE, and (c) PARITY (R1/R2). Index files (I1/I2) are not included in the sort order except for technology=10xv1 and multiplexed smartseq. To enable automatic sorting, set sort_fastqs=True.")
+            return fastq_files
+        else:
+            return sorted_files
+    except Exception as e:
+        if check_only:
+            logger_info(f"Error sorting fastq files: {e}")
+            return fastq_files
+        else:
+            message = f"Error sorting fastq files: {e}"
+            raise ValueError(message)
 
 
 def load_in_fastqs(fastqs):
-    if not isinstance(fastqs, (str, list, tuple)):
+    if not isinstance(fastqs, (str, list, tuple, Path)):
         raise ValueError(f"fastqs must be a string, list, or tuple, not {type(fastqs)}")
     if isinstance(fastqs, (list, tuple)):
         if len(fastqs) > 1:
@@ -860,6 +869,7 @@ def load_in_fastqs(fastqs):
     if not os.path.exists(fastqs):
         raise ValueError(f"File/folder {fastqs} does not exist")
 
+    fastqs = str(fastqs)  # convert Path to string if necessary
     if os.path.isdir(fastqs):
         files = []
         for file in os.listdir(fastqs):  # make fastqs list from fastq files in immediate child directory
@@ -868,12 +878,12 @@ def load_in_fastqs(fastqs):
         if len(files) == 0:
             raise ValueError(f"No fastq files found in {fastqs}")  # redundant with type-checking below, but prints a different error message (informs that the directory has no fastqs, rather than simply telling the user that no fastqs were provided)
     elif os.path.isfile(fastqs):
-        if fastqs.lower().endswith("txt"):  # make fastqs list from items in txt file
+        if fastqs.endswith(".txt"):  # make fastqs list from items in txt file
             with open(fastqs, "r", encoding="utf-8") as f:
                 files = [line.strip() for line in f.readlines()]
             if len(files) == 0:
                 raise ValueError(f"No fastq files found in {fastqs}")  # redundant with type-checking below, but prints a different error message (informs that the text file has no fastqs, rather than simply telling the user that no fastqs were provided)
-        elif any(fastqs.lower().endswith((ext, f"{ext}.zip", f"{ext}.gz")) for ext in fastq_extensions):
+        elif any(fastqs.endswith((ext, f"{ext}.zip", f"{ext}.gz")) for ext in fastq_extensions):
             files = [fastqs]
         else:
             raise ValueError(f"File {fastqs} is not a fastq file, text file, or directory")

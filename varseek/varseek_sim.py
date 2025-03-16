@@ -299,7 +299,6 @@ def sim(
     # don't account for number_of_reads_per_variant_alt (can be all), number_of_reads_per_variant_ref (can be all), error_rate (float), max_errors (can be float("inf"))
 
     # * 8. Start the function
-    variants_format = "dataframe"
     if isinstance(variants, str) and os.path.exists(variants):
         if ".tsv" in variants:
             variants = pd.read_csv(variants, sep="\t")
@@ -311,7 +310,11 @@ def sim(
         variants = variants.copy()
         
     if header_column not in variants.columns:
-        raise ValueError(f"variants must contain a 'header' column provided by {header_column}, which consists of <seq_id_column>:<var_column>.")
+        try:
+            variants[header_column] = variants[seq_id_column] + ":" + variants[var_column]
+            logger.info(f"adding {header_column} column to variants dataframe as <seq_id_column>:<var_column>")
+        except Exception as e:
+            raise KeyError(f"variants must contain a 'header' column provided by {header_column}, or that can be created with <seq_id_column>:<var_column>.")
 
     if (isinstance(variants, str) and not os.path.exists(variants)) or (variant_sequence_read_parent_column not in variants.columns and sample_type != "w") or (ref_sequence_read_parent_column not in variants.columns and sample_type != "m"):
         logger.info("cannot find mutant sequence read parent")

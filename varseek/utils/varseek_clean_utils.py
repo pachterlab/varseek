@@ -9,6 +9,7 @@ import pandas as pd
 import pyfastx
 import scipy.sparse as sp
 from scipy.sparse import csr_matrix
+import json
 from tqdm import tqdm
 
 from varseek.constants import (
@@ -23,6 +24,8 @@ from varseek.utils.seq_utils import (
     get_header_set_from_fastq,
     make_mapping_dict,
     safe_literal_eval,
+    sort_fastq_files_for_kb_count,
+    load_in_fastqs
 )
 
 tqdm.pandas()
@@ -278,8 +281,156 @@ def map_transcripts_to_genes(transcript_list, mapping_dict):
     return [mapping_dict.get(transcript, "Unknown") for transcript in transcript_list]
 
 
-# * only works when kb count was run with --num (as this means that each row of the BUS file corresponds to exactly one read)
-def make_bus_df(kallisto_out, fastq_file_list, t2g_file, mm=False, union=False, technology="bulk", parity="single", bustools="bustools", ignore_barcodes=False):  # make sure this is in the same order as passed into kb count - [sample1, sample2, etc] OR [sample1_pair1, sample1_pair2, sample2_pair1, sample2_pair2, etc]  # technology flag of kb
+def make_good_barcodes_and_file_index_tuples(barcodes, include_file_index=False):
+    if isinstance(barcodes, (str, Path)):
+        with open(barcodes, encoding="utf-8") as f:
+            barcodes = f.read().splitlines()
+
+    good_barcodes_list = []
+    for i in range(len(barcodes)):
+        good_barcode_index = i // 2
+        good_barcode = barcodes[good_barcode_index]
+        if include_file_index:
+            file_index = i % 2
+            good_barcodes_list.append((good_barcode, str(file_index)))
+        else:
+            good_barcodes_list.append(good_barcode)
+
+    bad_to_good_barcode_dict = dict(zip(barcodes, good_barcodes_list))
+    return bad_to_good_barcode_dict
+
+
+
+def make_bus_df(kb_count_out, fastq_file_list, t2g_file, mm=False, union=False, technology="bulk", parity="single", bustools="bustools", check_only=False):  # make sure this is in the same order as passed into kb count - [sample1, sample2, etc] OR [sample1_pair1, sample1_pair2, sample2_pair1, sample2_pair2, etc]
+    with open(f"{kb_count_out}/kb_info.json", 'r') as f:
+        kb_info_data = json.load(f)
+    if "--num" not in kb_info_data.get("call", ""):
+        raise ValueError("This function only works when kb count was run with --num (as this means that each row of the BUS file corresponds to exactly one read)")
+    if "--parity paired" in kb_info_data.get("call", ""):
+        vcrs_parity = "paired"
+    else:
+        vcrs_parity = "single"
+    dlist_none_pattern = r"dlist\s*(?:=|\s+)?(?:'None'|None|\"None\")"
+    if "dlist" not in kb_info_data.get("call", "") or re.search(dlist_none_pattern, kb_info_data.get("call", "")):
+        used_dlist = False
+    else:
+        used_dlist = True
+        
+    fastq_file_list = load_in_fastqs(fastq_file_list)
+    fastq_file_list = sort_fastq_files_for_kb_count(fastq_file_list, technology=technology, check_only=check_only)
+    
+    print("loading in transcripts")
+    with open(f"{kb_count_out}/transcripts.txt", encoding="utf-8") as f:
+        transcripts = f.read().splitlines()  # get transcript at index 0 with transcript[0], and index of transcript named "name" with transcript.index("name")
+    transcripts.append("dlist")  # add dlist to the end of the list
+    
+    if technology != "bulk":
+        parity = "single"
+
+    technology = technology.lower()
+    if technology == "bulk":
+        #* barcodes
+        print("loading in barcodes")
+        with open(f"{kb_count_out}/matrix.sample.barcodes", encoding="utf-8") as f:
+            barcodes = f.read().splitlines()
+
+        if len(fastq_file_list) // 2 == len(barcodes):
+            vcrs_parity = "paired"  # just a sanity check
+            barcodes = [x for x in barcodes for _ in range(2)]  # converts ["AAA", "AAC"] to ["AAA", "AAA", "AAC", "AAC"]
+        
+        #* fastq df
+        fastq_header_df = pd.DataFrame(columns=["read_index", "fastq_header", "barcode"])
+        for i, fastq_file in enumerate(fastq_file_list):
+            fastq_file = str(fastq_file)  # important for temp files
+            fastq_header_list = [header.strip() for header, _, _ in tqdm(pyfastx.Fastx(fastq_file), desc="Processing FASTQ headers")]
+            barcode_list = barcodes[i]
+
+            new_rows = pd.DataFrame({"read_index": range(len(fastq_header_list)), "fastq_header": fastq_header_list, "barcode": barcode_list})
+            fastq_header_df = pd.concat([fastq_header_df, new_rows], ignore_index=True)
+        
+        #* ec df
+        # Get equivalence class that matches to 0-indexed line number of target ID
+        print("loading in ec matrix")
+        ec_df = pd.read_csv(
+            f"{kb_count_out}/matrix.ec",
+            sep="\t",
+            header=None,
+            names=["EC", "transcript_ids"],
+        )
+
+        ec_df["transcript_ids"] = ec_df["transcript_ids"].astype(str)
+        ec_df["transcript_ids_list"] = ec_df["transcript_ids"].apply(lambda x: list(map(int, x.split(","))))
+        ec_df["transcript_names"] = ec_df["transcript_ids_list"].apply(lambda ids: [transcripts[i] for i in ids])
+        ec_df.drop(columns=["transcript_ids", "transcript_ids_list"], inplace=True)  # drop transcript_ids
+
+        #* t2g
+        print("loading in t2g df")
+        t2g_df = pd.read_csv(t2g_file, sep="\t", header=None, names=["transcript_id", "gene_name"])
+        t2g_dict = dict(zip(t2g_df["transcript_id"], t2g_df["gene_name"]))
+
+        #* bus
+        bus_file = f"{kb_count_out}/output.bus"
+        bus_text_file = f"{kb_count_out}/output_sorted_bus.txt"
+        if not os.path.exists(bus_text_file):
+            print("running bustools text")
+            create_bus_txt_file_command = [bustools, "text", "-o", bus_text_file, "-f", bus_file]  # bustools text -p -a -f -d output.bus
+            subprocess.run(create_bus_txt_file_command, check=True)
+        print("loading in bus df")
+        bus_df = pd.read_csv(
+            bus_text_file,
+            sep="\t",
+            header=None,
+            names=["barcode", "UMI", "EC", "count", "read_index"],
+        )
+
+        # TODO: if I have low memory mode, then break up bus_df and loop from here through end
+        print("Merging fastq header df and ec_df into bus df")
+        bus_df = bus_df.merge(fastq_header_df, on=["read_index", "barcode"], how="left")
+        bus_df = bus_df.merge(ec_df, on="EC", how="left")
+
+        if parity == "paired" and vcrs_parity == "single":
+            bad_to_good_barcode_dict = make_good_barcodes_and_file_index_tuples(barcodes, include_file_index=True)
+            
+            bus_df[['corrected_barcode', 'file_index']] = bus_df['barcode'].map(bad_to_good_barcode_dict).apply(pd.Series)
+            bus_df.drop(columns=["barcode"], inplace=True)
+            bus_df.rename(columns={"corrected_barcode": "barcode"}, inplace=True)
+
+            dup_mask = bus_df.duplicated(subset=['barcode', 'UMI', 'EC', 'read_index'], keep=False)  # Identify all rows that have duplicates (including first occurrences)
+            bus_df.loc[dup_mask, 'file_index'] = 'both'  # Set 'file_index' to 'all' for all duplicated rows
+            bus_df = bus_df.drop_duplicates(subset=['barcode', 'UMI', 'EC', 'read_index'], keep='first')  # Drop duplicate rows, keeping only the first occurrence
+        else:
+            bus_df["file_index"] = "0"
+        bus_df["file_index"] = bus_df["file_index"].astype("category")
+
+        print("Apply the mapping function to create gene name columns")
+        bus_df["gene_names"] = bus_df["transcript_names"].progress_apply(lambda x: map_transcripts_to_genes(x, t2g_dict))
+        print("Taking set of gene_names")
+        bus_df["gene_names"] = bus_df["gene_names"].progress_apply(lambda x: sorted(list(set(x))))
+
+        print("Determining what counts in count matrix")
+        if union or mm:
+            # union or mm gets added to count matrix as long as dlist is not included in the EC
+            if used_dlist:
+                bus_df["counted_in_count_matrix"] = bus_df["transcript_names_final"].progress_apply(lambda x: "dlist" not in x)
+            else:
+                bus_df["counted_in_count_matrix"] = True
+        else:
+            # only gets added to the count matrix if EC has exactly 1 gene
+            bus_df["counted_in_count_matrix"] = bus_df["gene_names"].progress_apply(lambda x: len(x) == 1)
+        
+        print("Saving bus df as parquet")
+        bus_df.to_parquet(f"{kb_count_out}/bus_df.parquet", index=False)
+        return bus_df
+        
+    
+    
+    else:
+        for i, fastq_file in enumerate(fastq_file_list):
+            pass
+        pass #!!! WRITE FOR SINGLE-CELL
+
+
+def make_bus_df_original(kallisto_out, fastq_file_list, t2g_file, mm=False, union=False, technology="bulk", parity="single", bustools="bustools", ignore_barcodes=False):  # make sure this is in the same order as passed into kb count - [sample1, sample2, etc] OR [sample1_pair1, sample1_pair2, sample2_pair1, sample2_pair2, etc]  # technology flag of kb
     print("loading in transcripts")
     with open(f"{kallisto_out}/transcripts.txt", encoding="utf-8") as f:
         transcripts = f.read().splitlines()  # get transcript at index 0 with transcript[0], and index of transcript named "name" with transcript.index("name")
@@ -542,25 +693,29 @@ def match_paired_ends_after_single_end_run(bus_df_path, gene_name_type="vcrs_id"
 
 
 # TODO: unsure if this works for sc
-def adjust_variant_adata_by_normal_gene_matrix(adata, kb_count_vcrs_dir, kb_count_reference_genome_dir, id_to_header_csv=None, adata_output_path=None, vcrs_t2g=None, t2g_standard=None, fastq_file_list=None, mm=False, union=False, technology="bulk", parity="single", bustools="bustools", ignore_barcodes=False):
+def adjust_variant_adata_by_normal_gene_matrix(adata, kb_count_vcrs_dir, kb_count_reference_genome_dir, id_to_header_csv=None, adata_output_path=None, vcrs_t2g=None, t2g_standard=None, fastq_file_list=None, mm=False, union=False, technology="bulk", parity="single", bustools="bustools", ignore_barcodes=False, check_only=False):
     if not adata:
         adata = f"{kb_count_vcrs_dir}/counts_unfiltered/adata.h5ad"
     if isinstance(adata, str):
         adata = ad.read_h5ad(adata)
+
+    fastq_file_list = load_in_fastqs(fastq_file_list)
+    fastq_file_list = sort_fastq_files_for_kb_count(fastq_file_list, technology=technology, check_only=check_only)
 
     bus_df_mutation_path = f"{kb_count_vcrs_dir}/bus_df.csv"
     bus_df_standard_path = f"{kb_count_reference_genome_dir}/bus_df.csv"
 
     if not os.path.exists(bus_df_mutation_path):
         bus_df_mutation = make_bus_df(
-            kallisto_out=kb_count_vcrs_dir,
-            fastq_file_list=fastq_file_list,  # make sure this is in the same order as passed into kb count - [sample1, sample2, etc] OR [sample1_pair1, sample1_pair2, sample2_pair1, sample2_pair2, etc]
+            kb_count_out=kb_count_vcrs_dir,
+            fastq_file_list=fastq_file_list,
             t2g_file=vcrs_t2g,
             mm=mm,
             union=union,
             technology=technology,
             parity=parity,
             bustools=bustools,
+            check_only=check_only
         )
     else:
         bus_df_mutation = pd.read_csv(bus_df_mutation_path)
