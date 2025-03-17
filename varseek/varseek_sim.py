@@ -362,11 +362,23 @@ def sim(
             inplace=True,
         )
 
-        sim_data_df[variant_sequence_read_parent_rc_column] = sim_data_df[variant_sequence_read_parent_column].apply(reverse_complement)
-        sim_data_df["mutant_sequence_read_parent_length"] = sim_data_df[variant_sequence_read_parent_column].str.len()
+        sim_data_df_columns_original = list(sim_data_df.columns)
+        
+        if variant_sequence_read_parent_rc_column not in sim_data_df.columns:
+            sim_data_df[variant_sequence_read_parent_rc_column] = sim_data_df[variant_sequence_read_parent_column].apply(reverse_complement)
+        if ref_sequence_read_parent_rc_column not in sim_data_df.columns:
+            sim_data_df[ref_sequence_read_parent_rc_column] = sim_data_df[ref_sequence_read_parent_column].apply(reverse_complement)
+        
+        if "mutant_sequence_read_parent_length" not in sim_data_df.columns:
+            sim_data_df["mutant_sequence_read_parent_length"] = sim_data_df[variant_sequence_read_parent_column].str.len()
+        if "wt_sequence_read_parent_length" not in sim_data_df.columns:
+            sim_data_df["wt_sequence_read_parent_length"] = sim_data_df[ref_sequence_read_parent_column].str.len()
 
-        sim_data_df[ref_sequence_read_parent_rc_column] = sim_data_df[ref_sequence_read_parent_column].apply(reverse_complement)
-        sim_data_df["wt_sequence_read_parent_length"] = sim_data_df[ref_sequence_read_parent_column].str.len()
+        if "vcrs_id" not in sim_data_df.columns:
+            sim_data_df["vcrs_id"] = varseek.utils.generate_unique_ids(len(sim_data_df))
+
+        if list(sim_data_df.columns) != sim_data_df_columns_original:  # save if any columns were added
+            sim_data_df.to_csv(update_df_out, index=False)
 
         variants = pd.merge(
             variants,
@@ -379,6 +391,7 @@ def sim(
                     ref_sequence_read_parent_column,
                     ref_sequence_read_parent_rc_column,
                     "wt_sequence_read_parent_length",
+                    "vcrs_id"
                 ]
             ],
             on=header_column,
@@ -395,6 +408,9 @@ def sim(
             variants[ref_sequence_read_parent_rc_column] = variants[ref_sequence_read_parent_column].apply(reverse_complement)
         if "wt_sequence_read_parent_length" not in variants.columns and sample_type != "m":
             variants["wt_sequence_read_parent_length"] = variants[ref_sequence_read_parent_column].str.len()
+
+        if "vcrs_id" not in variants.columns:
+            variants["vcrs_id"] = varseek.utils.generate_unique_ids(len(variants))
 
     if not filters:
         filters = []
