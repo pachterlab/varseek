@@ -1417,6 +1417,13 @@ def main():  # noqa: C901
         help=extract_help_from_doc(sim, "var_column"),
     )
     parser_sim.add_argument(
+        "--var_id_column",
+        type=str,
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(sim, "var_id_column"),
+    )
+    parser_sim.add_argument(
         "--k",
         type=int,
         required=False,

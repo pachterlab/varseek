@@ -159,7 +159,7 @@ def sim(
     sequences=None,
     seq_id_column="seq_ID",
     var_column="mutation",
-    header_column="header",
+    var_id_column="header",
     variant_type_column = "vcrs_variant_type",
     k=59,
     w=54,
@@ -220,7 +220,7 @@ def sim(
     - sequences                         (str) Only applies if variants does not exist or have the expected columns. Path to the fasta file containing the sequences. Default: None
     - seq_id_column                     (str) Only applies if variants does not exist or have the expected columns. Name of the column containing the sequence IDs. Default: "seq_ID"
     - var_column                        (str) Only applies if variants does not exist or have the expected columns. Name of the column containing the variants. Default: "mutation"
-    - header_column                     (str) Only applies if variants does not exist or have the expected columns. Name of the column containing the variant header. Default: "header"
+    - var_id_column                     (str) Only applies if variants does not exist or have the expected columns. Name of the column containing the variant header. Default: "header"
     - variant_type_column               (str) Only applies if variants does not exist or have the expected columns. Name of the column containing the variant type. Default: "vcrs_variant_type"
     - k                                 (int) Only applies if variants does not exist or have the expected columns. Length of the k-mer to use for filtering. Default: 59
     - w                                 (int) Only applies if variants does not exist or have the expected columns. Length of the k-mer to use for filtering. Default: 54
@@ -304,10 +304,12 @@ def sim(
             raise ValueError("variants must be a csv path, tsv path, or dataframe")
     elif isinstance(variants, pd.DataFrame) and make_internal_copies:
         variants = variants.copy()
+
+    header_column = var_id_column
         
     if header_column not in variants.columns:
         try:
-            variants[header_column] = variants[seq_id_column] + ":" + variants[var_column]
+            variants[header_column] = variants[seq_id_column] + ":" + variants[var_column]  #!!! might not work for my genome-cdna combo pipeline
             logger.info(f"adding {header_column} column to variants dataframe as <seq_id_column>:<var_column>")
         except Exception as e:
             raise KeyError(f"variants must contain a 'header' column provided by {header_column}, or that can be created with <seq_id_column>:<var_column>.")
@@ -344,26 +346,20 @@ def sim(
             # Concatenate vertically (appending rows)
             sim_data_df = pd.concat([df_cdna, df_genome], axis=0)
 
-            # Save the result to a new CSV
-            sim_data_df.to_csv(update_df_out, index=False)
+            sim_data_df_columns_original = []  # because I did the concatenation, I will want to save it regardless
         else:
             if not os.path.exists(update_df_out):
                 logger.info("running varseek build")
-                varseek.build(sequences=sequences, variants=variants, out=vk_build_out_dir, w=read_w, k=read_k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, required_insertion_overlap_length=None, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, save_variants_updated_csv=True, variants_updated_csv_out=update_df_out, seq_id_column=seq_id_column, var_column=var_column, overwrite=True, **kwargs)
+                varseek.build(sequences=sequences, variants=variants, out=vk_build_out_dir, w=read_w, k=read_k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, required_insertion_overlap_length=None, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, save_variants_updated_csv=True, variants_updated_csv_out=update_df_out, seq_id_column=seq_id_column, var_column=var_column, var_id_column=var_id_column, overwrite=True, **kwargs)
 
             sim_data_df = pd.read_csv(update_df_out)
-
-        sim_data_df.rename(
-            columns={
-                "vcrs_header": header_column,
-                "vcrs_sequence": variant_sequence_read_parent_column,
-                "wt_sequence": ref_sequence_read_parent_column,
-            },
-            inplace=True,
-        )
-
-        sim_data_df_columns_original = list(sim_data_df.columns)
         
+            sim_data_df_columns_original = list(sim_data_df.columns)
+        
+        for old_column, new_column in [("vcrs_header", header_column), ("vcrs_sequence", variant_sequence_read_parent_column), ("wt_sequence", ref_sequence_read_parent_column)]:
+            if old_column in sim_data_df.columns and new_column not in sim_data_df.columns:
+                sim_data_df.rename(columns={old_column: new_column}, inplace=True)
+
         if variant_sequence_read_parent_rc_column not in sim_data_df.columns:
             sim_data_df[variant_sequence_read_parent_rc_column] = sim_data_df[variant_sequence_read_parent_column].apply(reverse_complement)
         if ref_sequence_read_parent_rc_column not in sim_data_df.columns:
@@ -416,6 +412,10 @@ def sim(
         filters = []
     if filter_null_rows_from_important_cols:
         filters.extend([f"{variant_sequence_read_parent_column}:is_not_null", f"{ref_sequence_read_parent_column}:is_not_null"])
+    if sample_type != "m":
+        filters.extend([f"wt_sequence_read_parent_length:greater_or_equal={read_length}"])
+    if sample_type != "w":  # should be handled by vk build's min_seq_len, but good to have in case this was not derived from vk build
+        filters.extend([f"mutant_sequence_read_parent_length:greater_or_equal={read_length}"])
 
     filters = list(dict.fromkeys(filters))  # equivalent to `list(set(filters))`, but maintains order of filters
 
@@ -748,7 +748,6 @@ def sim(
     os.remove(fasta_output_path_temp)
     logger.info(f"Wrote {total_fragments} variants to {reads_fastq_out}")
     if not make_dataframes:
-        report_time_elapsed(start_time, function_name="sim")
         simulated_df_dict = {
             "read_df": None,
             "variants": None,

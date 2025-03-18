@@ -465,10 +465,11 @@ def clean(
     adata.var.index.name = "variant"
     original_var_names = adata.var_names.copy()
 
-    if parity == "paired" and parity_kb_count == "single":
+    if parity == "paired" and parity_kb_count == "single" and adata.uns.get("corrected_barcodes") is None:  # the last part is to ensure I didn't make the correction already
         barcodes_file = os.path.join(kb_count_vcrs_dir, "matrix.sample.barcodes")
         bad_to_good_barcode_dict = make_good_barcodes_and_file_index_tuples(barcodes_file)
         adata.obs.index = adata.obs.index.map(lambda x: bad_to_good_barcode_dict.get(x, x))  # map from old (incorrect) barcodes to new (correct) barcodes  #!!! ensure the old barcodes don't linger anywhere else
+        adata.uns["corrected_barcodes"] = True
 
         # Convert to DataFrame for easy manipulation
         df = pd.DataFrame(adata.X.toarray() if hasattr(adata.X, "toarray") else adata.X, 

@@ -1,6 +1,7 @@
 """varseek count and specific helper functions."""
 
 import copy
+import anndata as ad
 import inspect
 import json
 import logging
@@ -15,6 +16,7 @@ from varseek.utils import (
     check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal,
     is_valid_int,
     load_in_fastqs,
+    make_good_barcodes_and_file_index_tuples,
     make_function_parameter_to_value_dict,
     report_time_elapsed,
     save_params_to_config_file,
@@ -81,9 +83,11 @@ def validate_input_count(params_dict):
             raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
 
     # strings
-    parity_valid_values = {"single", "paired"}
+    parity_valid_values = {"single", "paired", None}
     if params_dict["parity"] not in parity_valid_values:
         raise ValueError(f"Parity must be one of {parity_valid_values}")
+    if params_dict["technology"] in {"BULK", "SMARTSEQ2"} and params_dict["parity"] is None:
+        raise ValueError("Parity must be set to 'single' or 'paired' for bulk or smartseq2 data")
 
     if params_dict.get("parity_kb_count") is not None and params_dict.get("parity_kb_count") not in parity_valid_values:
         raise ValueError(f"parity_kb_count must be one of {parity_valid_values}")
@@ -94,7 +98,7 @@ def validate_input_count(params_dict):
     if params_dict.get("parity_kb_count") == "single" and params_dict["parity"] == "paired":
         logger.info("parity='paired' and parity_kb_count='single'. This means that kb count will run in single-end mode on this paired-end data, which will enable different pairs to be processed independently and thus potentially detect different variants. To turn this feature off, set parity_kb_count='paired'.")
 
-    strand_valid_values = {"unstranded", "forward", "reverse"}
+    strand_valid_values = {"unstranded", "forward", "reverse", None}
     if params_dict["strand"] not in strand_valid_values:
         raise ValueError(f"Strand must be one of {strand_valid_values}")
 
@@ -142,7 +146,7 @@ def count(
     technology,  # params
     k=59,
     qc_against_gene_matrix=False,
-    strand="unstranded",
+    strand=None,
     mm=False,
     union=False,
     parity="single",
@@ -175,7 +179,7 @@ def count(
 
     # Additional parameters
     - k                                     (int) The length of each k-mer in the kallisto reference index construction. Corresponds to `k` used in the earlier varseek commands (i.e., varseek ref). If using a downloaded index from varseek ref -d, then check the description for the k value used to construct this index with varseek ref --list_downloadable_references. Default: 59.
-    - strand                                (str)  The strandedness of the data. Either "unstranded", "forward", or "reverse". Default: "unstranded".
+    - strand                                (str)  The strandedness of the data. Either "unstranded", "forward", or "reverse". Default: None.
     - qc_against_gene_matrix                (bool): Whether to apply correction for qc against gene matrix. If a read maps to 2+ VCRSs that belong to different genes, then cross-reference with the reference genome to determine which gene the read belongs to, and set all VCRSs that do not correspond to this gene to 0 for that read. Also, cross-reference all reads that map to 1 VCRS and ensure that the reads maps to the gene corresponding to this VCRS, or else set this value to 0 in the count matrix. Default: True.
     - mm                                    (bool)  If True, use the multi-mapping reads. Default: False.
     - union                                 (bool)  If True, use the union of the read mappings. Default: False.
@@ -315,6 +319,8 @@ def count(
     k, threads = int(k), int(threads)
 
     # * 8. Start the actual function
+    technology = technology.upper()
+    
     if isinstance(fastqs, list):
         fastqs = tuple(fastqs)
 
@@ -324,11 +330,6 @@ def count(
     except ValueError as e:
         if sort_fastqs:
             logger.warning(f"Automatic FASTQ argument order sorting for kb count could not recognize FASTQ file name format. Skipping argument order sorting.")
-
-    if technology.lower() != "bulk" and "smartseq" not in technology.lower():
-        if parity != "single":
-            logger.info("Technology %s does not support paired end data. Setting parity to 'single'.", technology)
-            parity = "single"
 
     # so parity_vcrs is set correctly - copied from fastqpp
     concatenate_paired_fastqs = kwargs.get("concatenate_paired_fastqs", False)
@@ -392,11 +393,6 @@ def count(
 
     # # kb count, VCRS
     if not os.path.exists(file_signifying_successful_kb_count_vcrs_completion) or overwrite:
-        if kwargs.get("concatenate_paired_fastqs"):
-            parity_vcrs = "single"
-        else:
-            parity_vcrs = kwargs["parity_kb_count"]  # I set the default value earlier, so I don't need to use the .get method
-
         kb_count_command = [
             "kb",
             "count",
@@ -411,14 +407,16 @@ def count(
             "-x",
             technology,
             "--h5ad",
-            "--parity",
-            parity_vcrs,
-            "--strand",
-            strand,
             "-o",
             kb_count_vcrs_out_dir,
             "--overwrite",  # set overwrite here regardless of the overwrite argument because I would only even enter this block if kb count was only partially run (as seen by the lack of existing of file_signifying_successful_kb_count_vcrs_completion), in which case I should overwrite anyways
         ]
+
+        if strand:
+            kb_count_command.extend(["--strand", strand])
+        if technology in {"BULK", "SMARTSEQ2"}:
+            parity_vcrs = "single" if kwargs.get("concatenate_paired_fastqs") else kwargs["parity_kb_count"]  # I set the default value earlier, so I don't need to use the .get method
+            kb_count_command.extend(["--parity", parity_vcrs])
 
         if qc_against_gene_matrix:
             kb_count_command.extend(["--union", "--mm"])
@@ -454,6 +452,14 @@ def count(
         else:
             logger.info(f"Running kb count with command: {' '.join(kb_count_command)}")
             subprocess.run(kb_count_command, check=True)
+
+            if os.path.exists(adata_vcrs) and parity == "paired" and kwargs["parity_kb_count"] == "single":
+                adata = ad.read_h5ad(adata_vcrs)
+                barcodes_file = os.path.join(kb_count_vcrs_out_dir, "matrix.sample.barcodes")
+                bad_to_good_barcode_dict = make_good_barcodes_and_file_index_tuples(barcodes_file)
+                adata.obs.index = adata.obs.index.map(lambda x: bad_to_good_barcode_dict.get(x, x))  # map from old (incorrect) barcodes to new (correct) barcodes  #!!! ensure the old barcodes don't linger anywhere else
+                adata.uns["corrected_barcodes"] = True  # will be checked in vk clean
+                adata.write(adata_vcrs)
     else:
         logger.info(f"Skipping kb count because file {file_signifying_successful_kb_count_vcrs_completion} already exists and overwrite=False")
 

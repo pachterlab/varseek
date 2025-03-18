@@ -1155,7 +1155,7 @@ def build(
 
         mutations = mutations[mutations["vcrs_sequence_kmer_length"] >= min_seq_len]
 
-        logger.info("Removed %d variant kmers with length less than %d...", rows_less_than_minimum, min_seq_len)
+        logger.info("Removed %d variant-containing reference sequences with length less than %d...", rows_less_than_minimum, min_seq_len)
     else:
         rows_less_than_minimum = 0
 
@@ -1166,7 +1166,7 @@ def build(
         mutations = mutations[mutations["num_N"] <= max_ambiguous]
         mutations = mutations.drop(columns=["num_N"])
 
-        logger.info("Removed %d variant kmers containing more than %d 'N's...", num_rows_with_N, max_ambiguous)
+        logger.info("Removed %d variant-containing reference sequences containing more than %d 'N's...", num_rows_with_N, max_ambiguous)
     else:
         num_rows_with_N = 0
 

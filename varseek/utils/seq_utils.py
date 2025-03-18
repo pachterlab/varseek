@@ -803,7 +803,12 @@ def illumina_sort_order_for_kb_count_fastqs(filepath):
     return (sample_name, lane, file_type_order.get(file_type, 999))
 
 
-def sort_fastq_files_for_kb_count(fastq_files, technology=None, multiplexed=None, check_only=False, verbose=True):
+def sort_fastq_files_for_kb_count(fastq_files, technology=None, multiplexed=None, check_only=False):
+    if len(fastq_files) == 0:
+        raise ValueError("No FASTQ files provided")
+    if len(fastq_files) == 1:
+        return fastq_files
+    
     file_name_format = None
 
     try:

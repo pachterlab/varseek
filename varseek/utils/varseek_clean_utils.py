@@ -306,13 +306,13 @@ def make_good_barcodes_and_file_index_tuples(barcodes, include_file_index=False)
 
 
 
-def make_bus_df(kb_count_out, fastq_file_list, t2g_file, mm=False, union=False, technology="bulk", parity="single", bustools="bustools", check_only=False):  # make sure this is in the same order as passed into kb count - [sample1, sample2, etc] OR [sample1_pair1, sample1_pair2, sample2_pair1, sample2_pair2, etc]
+def make_bus_df(kb_count_out, fastq_file_list, t2g_file=None, mm=False, union=False, technology="bulk", parity="single", bustools="bustools", check_only=False):  # make sure this is in the same order as passed into kb count - [sample1, sample2, etc] OR [sample1_pair1, sample1_pair2, sample2_pair1, sample2_pair2, etc]
     with open(f"{kb_count_out}/kb_info.json", 'r') as f:
         kb_info_data = json.load(f)
     if "--num" not in kb_info_data.get("call", ""):
         raise ValueError("This function only works when kb count was run with --num (as this means that each row of the BUS file corresponds to exactly one read)")
     if "--parity paired" in kb_info_data.get("call", ""):
-        vcrs_parity = "paired"
+        vcrs_parity = "paired"  # same as parity_kb_count in vk count/clean
     else:
         vcrs_parity = "single"
     dlist_none_pattern = r"dlist\s*(?:=|\s+)?(?:'None'|None|\"None\")"
@@ -364,14 +364,15 @@ def make_bus_df(kb_count_out, fastq_file_list, t2g_file, mm=False, union=False, 
         )
 
         ec_df["transcript_ids"] = ec_df["transcript_ids"].astype(str)
-        ec_df["transcript_ids_list"] = ec_df["transcript_ids"].apply(lambda x: list(map(int, x.split(","))))
-        ec_df["transcript_names"] = ec_df["transcript_ids_list"].apply(lambda ids: [transcripts[i] for i in ids])
+        ec_df["transcript_ids_list"] = ec_df["transcript_ids"].apply(lambda x: tuple(map(int, x.split(","))))
+        ec_df["transcript_names"] = ec_df["transcript_ids_list"].apply(lambda ids: tuple(transcripts[i] for i in ids))
         ec_df.drop(columns=["transcript_ids", "transcript_ids_list"], inplace=True)  # drop transcript_ids
 
         #* t2g
-        print("loading in t2g df")
-        t2g_df = pd.read_csv(t2g_file, sep="\t", header=None, names=["transcript_id", "gene_name"])
-        t2g_dict = dict(zip(t2g_df["transcript_id"], t2g_df["gene_name"]))
+        if t2g_file is not None:
+            print("loading in t2g df")
+            t2g_df = pd.read_csv(t2g_file, sep="\t", header=None, names=["transcript_id", "gene_name"])
+            t2g_dict = dict(zip(t2g_df["transcript_id"], t2g_df["gene_name"]))
 
         #* bus
         bus_file = f"{kb_count_out}/output.bus"
@@ -387,6 +388,7 @@ def make_bus_df(kb_count_out, fastq_file_list, t2g_file, mm=False, union=False, 
             header=None,
             names=["barcode", "UMI", "EC", "count", "read_index"],
         )
+        bus_df.drop(columns=["count"], inplace=True)  # drop count (it's always 1)
 
         # TODO: if I have low memory mode, then break up bus_df and loop from here through end
         print("Merging fastq header df and ec_df into bus df")
@@ -407,10 +409,13 @@ def make_bus_df(kb_count_out, fastq_file_list, t2g_file, mm=False, union=False, 
             bus_df["file_index"] = "0"
         bus_df["file_index"] = bus_df["file_index"].astype("category")
 
-        print("Apply the mapping function to create gene name columns")
-        bus_df["gene_names"] = bus_df["transcript_names"].progress_apply(lambda x: map_transcripts_to_genes(x, t2g_dict))
-        print("Taking set of gene_names")
-        bus_df["gene_names"] = bus_df["gene_names"].progress_apply(lambda x: sorted(list(set(x))))
+        if t2g_file is not None:
+            print("Apply the mapping function to create gene name columns")
+            bus_df["gene_names"] = bus_df["transcript_names"].progress_apply(lambda x: map_transcripts_to_genes(x, t2g_dict))
+            print("Taking set of gene_names")
+            bus_df["gene_names"] = bus_df["gene_names"].progress_apply(lambda x: sorted(tuple(set(x))))
+        else:
+            bus_df["gene_names"] = bus_df["transcript_names"]
 
         print("Determining what counts in count matrix")
         if union or mm:
