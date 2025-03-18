@@ -242,6 +242,7 @@ def clean(
     adata_reference_genome_clean_out=None,
     vcf_out=None,
     save_vcf=False,  # optional saves
+    chunksize=None,
     dry_run=False,  # general
     overwrite=False,
     threads=2,
@@ -311,6 +312,7 @@ def clean(
     - vcf_out                               (str): Path to save the VCF file. Default: `out`/vcrs.vcf.
 
     # General:
+    - chunksize                             (int) Number of BUS file lines to process at a time. If None, then all lines will be processed at once. Default: None.
     - dry_run                               (bool): Whether to run in dry run mode. Default: False.
     - overwrite                             (bool): Whether to overwrite existing files. Default: False.
     - threads                               (int): Number of threads to use. Default: 2.

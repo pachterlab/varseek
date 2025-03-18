@@ -100,13 +100,10 @@ def get_header_set_from_fasta(synthetic_read_fa):
     return {header for header, _ in pyfastx.Fastx(synthetic_read_fa)}
 
 
-def create_identity_t2g(mutation_reference_file_fasta, out="./cancer_mutant_reference_t2g.txt"):
-    if not os.path.exists(out):
-        with open(out, "w", encoding="utf-8") as t2g:
-            for header, _ in pyfastx.Fastx(mutation_reference_file_fasta):
-                t2g.write(f"{header}\t{header}\n")
-    else:
-        print(f"{out} already exists")
+def create_identity_t2g(mutation_reference_file_fasta, out="./cancer_mutant_reference_t2g.txt", mode="w"):
+    with open(out, mode, encoding="utf-8") as t2g:
+        for header, _ in pyfastx.Fastx(mutation_reference_file_fasta):
+            t2g.write(f"{header}\t{header}\n")
 
 
 def load_t2g_as_dict(file_path):
@@ -1134,4 +1131,3 @@ def update_vcf_derived_df_with_multibase_duplication(mutations, seq_dict, seq_id
     mutations.loc[compare_mask, var_column] = "g." + mutations.loc[compare_mask, "start_pos"].astype(int).astype(str) + "_" + mutations.loc[compare_mask, "POS"].astype(str) + "dup"
 
     mutations.drop(columns=["ALT_first_base_trimmed", "ALT_len", "start_pos", "seq_slice"], inplace=True, errors="ignore")
-

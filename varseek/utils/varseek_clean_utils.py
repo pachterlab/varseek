@@ -28,7 +28,7 @@ from varseek.utils.seq_utils import (
     sort_fastq_files_for_kb_count,
     load_in_fastqs
 )
-from varseek.utils.logger_utils import set_up_logger
+from varseek.utils.logger_utils import set_up_logger, count_chunks
 
 logger = logging.getLogger(__name__)
 logger = set_up_logger(logger, logging_level="INFO", save_logs=False, log_dir=None)
@@ -306,7 +306,7 @@ def make_good_barcodes_and_file_index_tuples(barcodes, include_file_index=False)
 
 
 
-def make_bus_df(kb_count_out, fastq_file_list, t2g_file=None, mm=False, union=False, technology="bulk", parity="single", bustools="bustools", check_only=False):  # make sure this is in the same order as passed into kb count - [sample1, sample2, etc] OR [sample1_pair1, sample1_pair2, sample2_pair1, sample2_pair2, etc]
+def make_bus_df(kb_count_out, fastq_file_list, t2g_file=None, mm=False, union=False, technology="bulk", parity="single", bustools="bustools", check_only=False, chunksize=None, bad_to_good_barcode_dict=None):  # make sure this is in the same order as passed into kb count - [sample1, sample2, etc] OR [sample1_pair1, sample1_pair2, sample2_pair1, sample2_pair2, etc]
     with open(f"{kb_count_out}/kb_info.json", 'r') as f:
         kb_info_data = json.load(f)
     if "--num" not in kb_info_data.get("call", ""):
@@ -382,54 +382,55 @@ def make_bus_df(kb_count_out, fastq_file_list, t2g_file=None, mm=False, union=Fa
             create_bus_txt_file_command = [bustools, "text", "-o", bus_text_file, "-f", bus_file]  # bustools text -p -a -f -d output.bus
             subprocess.run(create_bus_txt_file_command, check=True)
         print("loading in bus df")
-        bus_df = pd.read_csv(
-            bus_text_file,
-            sep="\t",
-            header=None,
-            names=["barcode", "UMI", "EC", "count", "read_index"],
-        )
-        bus_df.drop(columns=["count"], inplace=True)  # drop count (it's always 1)
-
-        # TODO: if I have low memory mode, then break up bus_df and loop from here through end
-        print("Merging fastq header df and ec_df into bus df")
-        bus_df = bus_df.merge(fastq_header_df, on=["read_index", "barcode"], how="left")
-        bus_df = bus_df.merge(ec_df, on="EC", how="left")
-
-        if parity == "paired" and vcrs_parity == "single":
-            bad_to_good_barcode_dict = make_good_barcodes_and_file_index_tuples(barcodes, include_file_index=True)
+        if chunksize:
+            total_chunks = count_chunks(bus_text_file, chunksize)
+        for i, bus_df in enumerate(pd.read_csv(bus_text_file, sep="\t", header=None, names=["barcode", "UMI", "EC", "count", "read_index"], chunksize=chunksize)):
+            if chunksize:
+                print(f"Processing chunk {i+1}/{total_chunks}")
             
-            bus_df[['corrected_barcode', 'file_index']] = bus_df['barcode'].map(bad_to_good_barcode_dict).apply(pd.Series)
-            bus_df.drop(columns=["barcode"], inplace=True)
-            bus_df.rename(columns={"corrected_barcode": "barcode"}, inplace=True)
+            bus_df.drop(columns=["count"], inplace=True)  # drop count (it's always 1)
 
-            dup_mask = bus_df.duplicated(subset=['barcode', 'UMI', 'EC', 'read_index'], keep=False)  # Identify all rows that have duplicates (including first occurrences)
-            bus_df.loc[dup_mask, 'file_index'] = 'both'  # Set 'file_index' to 'all' for all duplicated rows
-            bus_df = bus_df.drop_duplicates(subset=['barcode', 'UMI', 'EC', 'read_index'], keep='first')  # Drop duplicate rows, keeping only the first occurrence
-        else:
-            bus_df["file_index"] = "0"
-        bus_df["file_index"] = bus_df["file_index"].astype("category")
+            # TODO: if I have low memory mode, then break up bus_df and loop from here through end
+            print("Merging fastq header df and ec_df into bus df")
+            bus_df = bus_df.merge(fastq_header_df, on=["read_index", "barcode"], how="left")
+            bus_df = bus_df.merge(ec_df, on="EC", how="left")
 
-        if t2g_file is not None:
-            print("Apply the mapping function to create gene name columns")
-            bus_df["gene_names"] = bus_df["transcript_names"].progress_apply(lambda x: map_transcripts_to_genes(x, t2g_dict))
-            print("Taking set of gene_names")
-            bus_df["gene_names"] = bus_df["gene_names"].progress_apply(lambda x: sorted(tuple(set(x))))
-        else:
-            bus_df["gene_names"] = bus_df["transcript_names"]
+            if parity == "paired" and vcrs_parity == "single":
+                if not bad_to_good_barcode_dict:
+                    bad_to_good_barcode_dict = make_good_barcodes_and_file_index_tuples(barcodes, include_file_index=True)
+                
+                bus_df[['corrected_barcode', 'file_index']] = bus_df['barcode'].map(bad_to_good_barcode_dict).apply(pd.Series)
+                bus_df.drop(columns=["barcode"], inplace=True)
+                bus_df.rename(columns={"corrected_barcode": "barcode"}, inplace=True)
 
-        print("Determining what counts in count matrix")
-        if union or mm:
-            # union or mm gets added to count matrix as long as dlist is not included in the EC
-            if used_dlist:
-                bus_df["counted_in_count_matrix"] = bus_df["transcript_names_final"].progress_apply(lambda x: "dlist" not in x)
+                dup_mask = bus_df.duplicated(subset=['barcode', 'UMI', 'EC', 'read_index'], keep=False)  # Identify all rows that have duplicates (including first occurrences)
+                bus_df.loc[dup_mask, 'file_index'] = 'both'  # Set 'file_index' to 'all' for all duplicated rows
+                bus_df = bus_df.drop_duplicates(subset=['barcode', 'UMI', 'EC', 'read_index'], keep='first')  # Drop duplicate rows, keeping only the first occurrence
             else:
-                bus_df["counted_in_count_matrix"] = True
-        else:
-            # only gets added to the count matrix if EC has exactly 1 gene
-            bus_df["counted_in_count_matrix"] = bus_df["gene_names"].progress_apply(lambda x: len(x) == 1)
-        
-        print("Saving bus df as parquet")
-        bus_df.to_parquet(f"{kb_count_out}/bus_df.parquet", index=False)
+                bus_df["file_index"] = "0"
+            bus_df["file_index"] = bus_df["file_index"].astype("category")
+
+            if t2g_file is not None:
+                print("Apply the mapping function to create gene name columns")
+                bus_df["gene_names"] = bus_df["transcript_names"].progress_apply(lambda x: map_transcripts_to_genes(x, t2g_dict))
+                print("Taking set of gene_names")
+                bus_df["gene_names"] = bus_df["gene_names"].progress_apply(lambda x: sorted(tuple(set(x))))
+            else:
+                bus_df["gene_names"] = bus_df["transcript_names"]
+
+            print("Determining what counts in count matrix")
+            if union or mm:
+                # union or mm gets added to count matrix as long as dlist is not included in the EC
+                if used_dlist:
+                    bus_df["counted_in_count_matrix"] = bus_df["transcript_names_final"].progress_apply(lambda x: "dlist" not in x)
+                else:
+                    bus_df["counted_in_count_matrix"] = True
+            else:
+                # only gets added to the count matrix if EC has exactly 1 gene
+                bus_df["counted_in_count_matrix"] = bus_df["gene_names"].progress_apply(lambda x: len(x) == 1)
+            
+            print(f"Saving bus df as parquet to {kb_count_out}/bus_df.parquet")
+            bus_df.to_parquet(f"{kb_count_out}/bus_df.parquet", index=False, append=(i > 0))
         return bus_df
         
     

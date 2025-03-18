@@ -44,7 +44,9 @@ from .utils import (
     download_cosmic_sequences,
     download_cosmic_mutations,
     merge_gtf_transcript_locations_into_cosmic_csv,
-    set_varseek_logging_level_and_filehandler
+    set_varseek_logging_level_and_filehandler,
+    count_chunks,
+    determine_write_mode
 )
 
 tqdm.pandas()
@@ -333,6 +335,7 @@ def build(
     translate=False,
     translate_start=None,
     translate_end=None,
+    chunksize=None,
     dry_run=False,
     list_supported_databases=False,
     overwrite=False,
@@ -434,6 +437,7 @@ def build(
                                          Only valid if translate=True. Default: None (translate from to the end of the sequence)
 
     # General arguments:
+    - chunksize                          (int) Number of variants to process at a time. If None, then all variants will be processed at once. Default: None.
     - dry_run                            (True/False) Whether to simulate the function call without executing it. Default: False.
     - list_supported_databases           (True/False) Whether to print the supported databases and sequences. Default: False.
     - overwrite                          (True/False) Whether to overwrite existing output files. Will return if any output file already exists. Default: False.
@@ -481,11 +485,30 @@ def build(
     if list_supported_databases:
         print_valid_values_for_variants_and_sequences_in_varseek_build()
         return None
-
+    
     # * 1. logger
     if save_logs and not log_out_dir:
         log_out_dir = os.path.join(out, "logs")
-    set_varseek_logging_level_and_filehandler(logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
+    if not kwargs.get("running_within_chunk_iteration", False):
+        set_varseek_logging_level_and_filehandler(logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
+
+    # * 1.5 Chunk iteration
+    if chunksize and return_variant_output:
+        raise ValueError("return_variant_output cannot be True when chunksize is specified. Please set return_variant_output to False.")
+    if chunksize is not None and isinstance(variants, str) and os.path.exists(variants):
+        params_dict = make_function_parameter_to_value_dict(1)
+        for key in ["variants", "chunksize"]:
+            params_dict.pop(key, None)
+        total_chunks = count_chunks(variants, chunksize)
+        for i, chunk in enumerate(pd.read_csv(variants, chunksize=chunksize)):
+            chunk_number = i + 1  # start at 1
+            logger.info(f"Processing chunk {chunk_number}/{total_chunks}")
+            build(variants=chunk, chunksize=None, chunk_number=chunk_number, running_within_chunk_iteration=True, **params_dict)  # running_within_chunk_iteration here for logger setup and report_time_elapsed decorator
+            if chunk_number == total_chunks:
+                return
+    
+    chunk_number = kwargs.get("chunk_number", 1)
+    first_chunk = (chunk_number == 1)
 
 
     # * 1.75. For the nargs="+" arguments, convert any list of length 1 to a string
@@ -550,7 +573,7 @@ def build(
     # make sure directories of all output files exist
     output_files = [vcrs_fasta_out, variants_updated_csv_out, id_to_header_csv_out, vcrs_t2g_out, wt_vcrs_fasta_out, wt_vcrs_t2g_out, removed_variants_text_out, filtering_report_text_out]
     for output_file in output_files:
-        if os.path.isfile(output_file) and not overwrite:
+        if os.path.isfile(output_file) and not overwrite and first_chunk:
             raise ValueError(f"Output file '{output_file}' already exists. Set 'overwrite=True' to overwrite it.")
         if os.path.dirname(output_file):
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
@@ -1213,7 +1236,7 @@ def build(
 
     # Save the report string to the specified path
     if save_filtering_report_text:
-        with open(filtering_report_text_out, "w", encoding="utf-8") as file:
+        with open(filtering_report_text_out, determine_write_mode(filtering_report_text_out, overwrite=overwrite, first_chunk=first_chunk), encoding="utf-8") as file:
             file.write(report)
 
     if translate and save_variants_updated_csv and store_full_sequences:
@@ -1287,7 +1310,7 @@ def build(
 
     # Save as a newline-separated text file
     if save_removed_variants_text:
-        with open(removed_variants_text_out, "w", encoding="utf-8") as file:
+        with open(removed_variants_text_out, determine_write_mode(removed_variants_text_out, overwrite=overwrite, first_chunk=first_chunk), encoding="utf-8") as file:
             for mutation in removed_mutation_set:
                 file.write(f"{mutation}\n")
 
@@ -1391,8 +1414,7 @@ def build(
 
         # Save the report string to the specified path
         if save_filtering_report_text:
-            filtering_report_write_mode = "a" if os.path.exists(filtering_report_text_out) else "w"
-            with open(filtering_report_text_out, filtering_report_write_mode, encoding="utf-8") as file:
+            with open(filtering_report_text_out, determine_write_mode(filtering_report_text_out, overwrite=overwrite, first_chunk=first_chunk), encoding="utf-8") as file:
                 file.write(merging_report)
 
         logger.info(merging_report)
@@ -1411,8 +1433,9 @@ def build(
 
     mutations.rename(columns={"header": "vcrs_header"}, inplace=True)
     if use_IDs:  # or (var_id_column in mutations.columns and not merge_identical):
-        mutations["vcrs_id"] = generate_unique_ids(len(mutations))
-        mutations[["vcrs_id", "vcrs_header"]].to_csv(id_to_header_csv_out, index=False)  # make the mapping csv
+        vcrs_id_start = ((chunk_number-1) * chunksize) + 1 if chunksize else 1
+        mutations["vcrs_id"] = generate_unique_ids(len(mutations), start=vcrs_id_start)
+        mutations[["vcrs_id", "vcrs_header"]].to_csv(id_to_header_csv_out, index=False, header=first_chunk, mode=determine_write_mode(id_to_header_csv_out, overwrite=overwrite, first_chunk=first_chunk))  # make the mapping csv
     else:
         mutations["vcrs_id"] = mutations["vcrs_header"]
     columns_to_keep.extend(["vcrs_id", "vcrs_header"])
@@ -1420,7 +1443,7 @@ def build(
     if save_variants_updated_csv:  # use variants_updated_csv_out if present,
         logger.info("Saving dataframe with updated variant info...")
         logger.warning("File size can be very large if the number of variants is large.")
-        mutations.to_csv(variants_updated_csv_out, index=False)
+        mutations.to_csv(variants_updated_csv_out, index=False, header=first_chunk, mode=determine_write_mode(variants_updated_csv_out, overwrite=overwrite, first_chunk=first_chunk))
         print(f"Updated variant info has been saved to {variants_updated_csv_out}")
 
     if len(mutations) > 0:
@@ -1443,18 +1466,18 @@ def build(
 
     # Save mutated sequences in new fasta file
     if not mutations.empty:
-        with open(vcrs_fasta_out, "w", encoding="utf-8") as fasta_file:
+        with open(vcrs_fasta_out, determine_write_mode(vcrs_fasta_out, overwrite=overwrite, first_chunk=first_chunk), encoding="utf-8") as fasta_file:
             fasta_file.write("".join(mutations["fasta_format"].values))
 
-        create_identity_t2g(vcrs_fasta_out, vcrs_t2g_out)
+        create_identity_t2g(vcrs_fasta_out, vcrs_t2g_out, mode=determine_write_mode(vcrs_t2g_out, overwrite=overwrite, first_chunk=first_chunk))
 
     logger.info("FASTA file containing VCRSs created at %s.", vcrs_fasta_out)
     logger.info("t2g file containing VCRSs created at %s.", vcrs_t2g_out)
 
     if save_wt_vcrs_fasta_and_t2g:
-        with open(wt_vcrs_fasta_out, "w", encoding="utf-8") as fasta_file:
+        with open(wt_vcrs_fasta_out, determine_write_mode(wt_vcrs_fasta_out, overwrite=overwrite, first_chunk=first_chunk), encoding="utf-8") as fasta_file:
             fasta_file.write("".join(mutations_with_exactly_1_wt_sequence_per_row["fasta_format_wt"].values))
-        create_identity_t2g(wt_vcrs_fasta_out, wt_vcrs_t2g_out)  # separate t2g is needed because it may have a subset of the rows of mutant (because it doesn't contain any VCRSs with merged mutations and 2+ originating WT sequences)
+        create_identity_t2g(wt_vcrs_fasta_out, wt_vcrs_t2g_out, mode=determine_write_mode(wt_vcrs_fasta_out, overwrite=overwrite, first_chunk=first_chunk))  # separate t2g is needed because it may have a subset of the rows of mutant (because it doesn't contain any VCRSs with merged mutations and 2+ originating WT sequences)
 
     # When stream_output is True, return list of mutated seqs
     if return_variant_output:

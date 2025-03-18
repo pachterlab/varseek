@@ -129,6 +129,7 @@ def ref(
     t2g_out=None,  # intentionally avoid having this name clash with the t2g from vk build and vk filter, as it could refer to either (depending on whether or not filtering will occur)
     fasta_out=None,  # intentionally avoid having this name clash with the fasta from vk build and vk filter, as it could refer to either (depending on whether or not filtering will occur)
     download=False,
+    chunksize=None,
     dry_run=False,
     list_downloadable_references=False,
     minimum_info_columns=True,
@@ -199,6 +200,7 @@ def ref(
 
     # General arguments:
     - download      (bool) If True, download prebuilt reference files (index, t2g, vcrs fasta) into `out` (or paths specified by index_out, t2g_out, and fasta_out, respectively). Default: False.
+    - chunksize     (int) Number of variants to process at a time. If None, then all variants will be processed at once. Default: None.
     - dry_run       (bool) If True, print the commands that would be run without actually running them. Default: False.
     - list_downloadable_references (bool) If True, list the available downloadable references. Default: False.
     - minimum_info_columns (bool) If True, run vk info with minimum columns. Default: True.
@@ -472,7 +474,7 @@ def ref(
         save_column_names_json_path = f"{out}/column_names_tmp.json"
 
         logger.info("Running vk build")
-        _ = vk.build(sequences=sequences, variants=variants, seq_id_column=seq_id_column, var_column=var_column, var_id_column=var_id_column, w=w, k=k, out=out, reference_out_dir=reference_out_dir, dry_run=dry_run, overwrite=True, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir, verbose=verbose, save_column_names_json_path=save_column_names_json_path, **kwargs_vk_build)  # overwrite=True rather than overwrite=overwrite because I only enter this condition if the file signifying success does not exist and/or overwrite is True anyways - this allows me to overwrite half-completed functions  # saves the temp json
+        _ = vk.build(sequences=sequences, variants=variants, seq_id_column=seq_id_column, var_column=var_column, var_id_column=var_id_column, w=w, k=k, out=out, reference_out_dir=reference_out_dir, chunksize=chunksize, dry_run=dry_run, overwrite=True, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir, verbose=verbose, save_column_names_json_path=save_column_names_json_path, **kwargs_vk_build)  # overwrite=True rather than overwrite=overwrite because I only enter this condition if the file signifying success does not exist and/or overwrite is True anyways - this allows me to overwrite half-completed functions  # saves the temp json
 
         # use values for columns and file paths as provided in vk build
         if os.path.exists(save_column_names_json_path):  # will only exist if variants in supported_databases_and_corresponding_reference_sequence_type
@@ -507,7 +509,7 @@ def ref(
             # eg kwargs_vk_info['mykwarg'] = mykwarg
 
             logger.info("Running vk info")
-            _ = vk.info(k=k, dlist_reference_source=dlist_reference_source, dlist_reference_ensembl_release=dlist_reference_ensembl_release, seq_id_column=seq_id_column, var_column=var_column, out=out, reference_out_dir=reference_out_dir, dry_run=dry_run, overwrite=True, threads=threads, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir, verbose=verbose, variants=variants, sequences=sequences, w=w, **kwargs_vk_info)  # overwrite=True rather than overwrite=overwrite because I only enter this condition if the file signifying success does not exist and/or overwrite is True anyways - this allows me to overwrite half-completed functions  # a kwargs of vk info but explicit in vk ref  # a kwargs of vk info but explicit in vk ref  # including input_dir
+            _ = vk.info(k=k, dlist_reference_source=dlist_reference_source, dlist_reference_ensembl_release=dlist_reference_ensembl_release, seq_id_column=seq_id_column, var_column=var_column, out=out, reference_out_dir=reference_out_dir, chunksize=chunksize, dry_run=dry_run, overwrite=True, threads=threads, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir, verbose=verbose, variants=variants, sequences=sequences, w=w, **kwargs_vk_info)  # overwrite=True rather than overwrite=overwrite because I only enter this condition if the file signifying success does not exist and/or overwrite is True anyways - this allows me to overwrite half-completed functions  # a kwargs of vk info but explicit in vk ref  # a kwargs of vk info but explicit in vk ref  # including input_dir
         else:
             logger.warning(f"Skipping vk info because {file_signifying_successful_vk_info_completion} already exists and overwrite=False")
 
@@ -519,7 +521,7 @@ def ref(
             # eg kwargs_vk_filter['mykwarg'] = mykwarg
 
             logger.info("Running vk filter")
-            _ = vk.filter(filters=filters, out=out, dry_run=dry_run, overwrite=True, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir, **kwargs_vk_filter)  # overwrite=True rather than overwrite=overwrite because I only enter this condition if the file signifying success does not exist and/or overwrite is True anyways - this allows me to overwrite half-completed functions
+            _ = vk.filter(filters=filters, out=out, chunksize=chunksize, dry_run=dry_run, overwrite=True, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir, **kwargs_vk_filter)  # overwrite=True rather than overwrite=overwrite because I only enter this condition if the file signifying success does not exist and/or overwrite is True anyways - this allows me to overwrite half-completed functions
         else:
             logger.warning(f"Skipping vk filter because {files_signifying_successful_vk_filter_completion} already exist and overwrite=False")
 

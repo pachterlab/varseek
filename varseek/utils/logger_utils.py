@@ -230,7 +230,8 @@ def report_time_elapsed(func):
         result = func(*args, **kwargs)
         elapsed_time = time.perf_counter() - start_time
         time_elapsed_message = f"Total runtime for vk {func.__name__}: {int(elapsed_time // 60)}m, {elapsed_time % 60:.2f}s"
-        logger.info(time_elapsed_message)
+        if not kwargs.get("running_within_chunk_iteration", False):
+            logger.info(time_elapsed_message)
         return result
     return wrapper
 
@@ -498,7 +499,7 @@ def make_positional_arguments_list_and_keyword_arguments_dict():
 
 def run_command_with_error_logging(command, verbose=True, track_time=False):
     if track_time:
-        start_time = time.time()
+        start_time = time.perf_counter()
     if isinstance(command, str):
         shell = True
     elif isinstance(command, list):
@@ -523,7 +524,7 @@ def run_command_with_error_logging(command, verbose=True, track_time=False):
         print(f"An unexpected error occurred: {e}")
 
     if track_time:
-        elapsed_time = time.time() - start_time
+        elapsed_time = time.perf_counter() - start_time
         minutes = int(elapsed_time // 60)
         seconds = elapsed_time % 60
         if verbose:
@@ -1013,3 +1014,11 @@ def check_memory_of_all_items_in_scope(scope_items, threshold=0, units='MB'):
     # Print results
     for name, size in memory_usage:
         print(f"{name}: {size:.3f} {units}")
+
+
+def count_chunks(file, chunk_size):
+    total_rows = sum(1 for _ in open(file)) - 1  # Subtract 1 for the header
+    return (total_rows + chunk_size - 1) // chunk_size  # Ceiling division
+
+def determine_write_mode(file, overwrite=False, first_chunk=True):
+    return "w" if not os.path.exists(file) or (overwrite and first_chunk) else "a"

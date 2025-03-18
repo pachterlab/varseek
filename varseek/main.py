@@ -519,6 +519,12 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "translate_end"),
     )
     parser_build.add_argument(
+        "--chunksize",
+        type=int,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "chunksize"),
+    )
+    parser_build.add_argument(
         "--dry_run",
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
@@ -862,6 +868,12 @@ def main():  # noqa: C901
         help=extract_help_from_doc(info, "make_kat_histogram"),
     )
     parser_info.add_argument(
+        "--chunksize",
+        type=int,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(info, "chunksize"),
+    )
+    parser_info.add_argument(
         "--dry_run",
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
@@ -1121,6 +1133,12 @@ def main():  # noqa: C901
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(filter, "return_variants_updated_filtered_csv_df"),
+    )
+    parser_filter.add_argument(
+        "--chunksize",
+        type=int,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(filter, "chunksize"),
     )
     parser_filter.add_argument(
         "--dry_run",
@@ -2072,6 +2090,12 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "save_vcf"),
     )
     parser_clean.add_argument(
+        "--chunksize",
+        type=int,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "chunksize"),
+    )
+    parser_clean.add_argument(
         "--dry_run",
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
@@ -2363,6 +2387,12 @@ def main():  # noqa: C901
         help=extract_help_from_doc(ref, "download"),
     )
     parser_ref.add_argument(
+        "--chunksize",
+        type=int,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(ref, "chunksize"),
+    )
+    parser_ref.add_argument(
         "--dry_run",
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
@@ -2545,6 +2575,12 @@ def main():  # noqa: C901
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(count, "disable_summarize"),
+    )
+    parser_count.add_argument(
+        "--chunksize",
+        type=int,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(count, "chunksize"),
     )
     parser_count.add_argument(
         "--dry_run",

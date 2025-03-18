@@ -9,7 +9,7 @@ import pytest
 
 import varseek as vk
 
-store_out_in_permanent_paths = True
+store_out_in_permanent_paths = False
 tests_dir = Path(__file__).resolve().parent
 pytest_permanent_out_dir_base = tests_dir / "pytest_output" / Path(__file__).stem
 current_datetime = datetime.now().strftime("date_%Y_%m_%d_time_%H%M_%S")
@@ -451,6 +451,27 @@ def test_csv_of_mutations(create_temp_files, out_dir):
     )
 
     assert result == ["GCCCCACCCCGCCCCTCCCCGCCCCACCCCACCCCTCCCCGCCCCACCCCGCCCCTCCCCG", "GCCCCTCCCCGCCCCACCCCGCCCCTCCCCACCCCACCCCG", "GCCCCACCCCGCCCCTCCCCGCCCCACCCCCCCCTCCCCGCCCCACCCCGCCCCTCCCCG", "CCCCTGCCCCACCCCGCCCCTCCCCGCCCCACCCC"]
+
+    assert_global_variables_zero()
+
+def test_csv_of_mutations_with_chunks(create_temp_files, out_dir):
+    mutation_temp_csv_file, sequence_temp_fasta_path = create_temp_files
+
+    result = vk.build(
+        sequences=sequence_temp_fasta_path,
+        variants=mutation_temp_csv_file,
+        required_insertion_overlap_length=None,
+        w=30,
+        k=31,
+        out=out_dir,
+        chunksize=2
+    )
+
+    fasta_file_path = out_dir / "vcrs.fa"
+    with fasta_file_path.open() as f:
+        sequences = [line.strip() for line in f if line.strip() and not line.startswith(">")]
+
+    assert sequences == ["GCCCCACCCCGCCCCTCCCCGCCCCACCCCACCCCTCCCCGCCCCACCCCGCCCCTCCCCG", "GCCCCTCCCCGCCCCACCCCGCCCCTCCCCACCCCACCCCG", "GCCCCACCCCGCCCCTCCCCGCCCCACCCCCCCCTCCCCGCCCCACCCCGCCCCTCCCCG", "CCCCTGCCCCACCCCGCCCCTCCCCGCCCCACCCC"]
 
     assert_global_variables_zero()
 

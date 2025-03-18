@@ -159,6 +159,7 @@ def count(
     disable_fastqpp=False,  # general
     disable_clean=False,
     disable_summarize=False,
+    chunksize=None,
     dry_run=False,
     overwrite=False,
     sort_fastqs=True,
@@ -199,6 +200,7 @@ def count(
     - disable_fastqpp                       (bool) If True, skip fastqpp step. Default: False.
     - disable_clean                         (bool) If True, skip clean step. Default: False.
     - disable_summarize                     (bool) If True, skip summarize step. Default: False.
+    - chunksize                             (int) Number of BUS file lines to process at a time. If None, then all lines will be processed at once. Default: None.
     - dry_run                               (bool) If True, print the commands that would be run without actually running them. Default: False.
     - overwrite                             (bool) If True, overwrite existing files. Default: False.
     - sort_fastqs                           (bool) If True, sort fastq files by kb count. If False, then still check the order but do not change anything. Default: True
@@ -541,7 +543,7 @@ def count(
             # eg kwargs_vk_clean['mykwarg'] = mykwarg
 
             logger.info("Running vk clean")
-            _ = vk.clean(adata_vcrs=adata_vcrs, vcrs_index=index, vcrs_t2g=t2g, technology=technology, fastqs=fastqs, k=k, qc_against_gene_matrix=qc_against_gene_matrix, mm=mm, union=union, parity=parity, out=out, dry_run=dry_run, overwrite=True, sort_fastqs=sort_fastqs, threads=threads, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir, **kwargs_vk_clean)  # kb_count_reference_genome_dir is passed in via kwargs, as is adata_reference_genome
+            _ = vk.clean(adata_vcrs=adata_vcrs, vcrs_index=index, vcrs_t2g=t2g, technology=technology, fastqs=fastqs, k=k, qc_against_gene_matrix=qc_against_gene_matrix, mm=mm, union=union, parity=parity, out=out, chunksize=chunksize, dry_run=dry_run, overwrite=True, sort_fastqs=sort_fastqs, threads=threads, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir, **kwargs_vk_clean)  # kb_count_reference_genome_dir is passed in via kwargs, as is adata_reference_genome
         else:
             logger.info(f"Skipping vk clean because file {file_signifying_successful_vk_clean_completion} already exists and overwrite=False")
         adata = adata_vcrs_clean_out  # for vk summarize

@@ -32,11 +32,10 @@ def convert_chromosome_value_to_int_when_possible(val):
 
 
 # Function to ensure unique IDs
-def generate_unique_ids(num_ids):
-    num_digits = len(str(num_ids))
-    generated_ids = [f"vcrs_{i+1:0{num_digits}}" for i in range(num_ids)]
+def generate_unique_ids(num_ids, start=1):
+    num_digits = len(str(num_ids + start - 1))
+    generated_ids = [f"vcrs_{i:0{num_digits}}" for i in range(start, start + num_ids)]
     return list(generated_ids)
-
 
 def translate_sequence(sequence, start, end):
     amino_acid_sequence = ""
