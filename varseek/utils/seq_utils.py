@@ -101,6 +101,9 @@ def get_header_set_from_fasta(synthetic_read_fa):
 
 
 def create_identity_t2g(mutation_reference_file_fasta, out="./cancer_mutant_reference_t2g.txt", mode="w"):
+    if os.path.getsize(mutation_reference_file_fasta) == 0:
+        logger.warning(f"File {mutation_reference_file_fasta} is empty. Skipping identity t2g creation.")
+        return
     with open(out, mode, encoding="utf-8") as t2g:
         for header, _ in pyfastx.Fastx(mutation_reference_file_fasta):
             t2g.write(f"{header}\t{header}\n")
@@ -944,58 +947,57 @@ def vcf_to_dataframe(vcf_file, additional_columns=True, explode_alt=True, filter
 
     """Convert a VCF file to a Pandas DataFrame."""
     vcf = pysam.VariantFile(vcf_file)
-    
-    if verbose and vcf.compression == "NONE":
-        number_of_lines_command = ["wc", "-l", vcf_file]
-        total = int(subprocess.run(number_of_lines_command, stdout=subprocess.PIPE).stdout.decode().split()[0])
-    else:
+    with pysam.VariantFile(vcf_file) as vcf:
         total=None
+        if verbose and vcf.compression == "NONE":
+            result = subprocess.run(["wc", "-l", vcf_file], stdout=subprocess.PIPE, text=True)
+            total = int(result.stdout.split()[0])
 
-    iterator = tqdm(vcf.fetch(), desc="Reading VCF", unit="records", total=total) if verbose else vcf.fetch()
+        iterator = tqdm(vcf.fetch(), desc="Reading VCF", unit="records", total=total) if verbose else vcf.fetch()
 
-    def generate_vcf_rows(iterator, additional_columns=False):
-        # Fetch each record in the VCF
-        for record in iterator:
-            # For each record, extract the desired fields
-            alts = ",".join(record.alts) if isinstance(record.alts, tuple) else record.alts  # alternate case includes None (when it is simply ".")
+        def generate_vcf_rows(iterator, additional_columns=False):
+            # Fetch each record in the VCF
+            for record in iterator:
+                # For each record, extract the desired fields
+                alts = ",".join(record.alts) if isinstance(record.alts, tuple) else record.alts  # alternate case includes None (when it is simply ".")
 
-            vcf_row = {
-                "CHROM": record.chrom,
-                "POS": record.pos,
-                "ID": record.id,
-                "REF": record.ref,
-                "ALT": alts,  # ALT can be multiple
-            }
+                vcf_row = {
+                    "CHROM": record.chrom,
+                    "POS": record.pos,
+                    "ID": record.id,
+                    "REF": record.ref,
+                    "ALT": alts,  # ALT can be multiple
+                }
 
-            if additional_columns:
-                vcf_row["QUAL"] = record.qual
-                vcf_row["FILTER"] = (";".join(record.filter.keys()) if record.filter else None,)  # FILTER keys
+                if additional_columns:
+                    vcf_row["QUAL"] = record.qual
+                    vcf_row["FILTER"] = (";".join(record.filter.keys()) if record.filter else None,)  # FILTER keys
 
-                # Add INFO fields
-                for key, value in record.info.items():
-                    vcf_row[f"INFO_{key}"] = value
+                    # Add INFO fields
+                    for key, value in record.info.items():
+                        vcf_row[f"INFO_{key}"] = value
 
-                # Add per-sample data (FORMAT fields)
-                for sample, sample_data in record.samples.items():
-                    for format_key, format_value in sample_data.items():
-                        vcf_row[f"{sample}_{format_key}"] = format_value
+                    # Add per-sample data (FORMAT fields)
+                    for sample, sample_data in record.samples.items():
+                        for format_key, format_value in sample_data.items():
+                            vcf_row[f"{sample}_{format_key}"] = format_value
 
-            yield vcf_row
+                yield vcf_row
 
-    # Create DataFrame from the generator
-    df = pd.DataFrame(generate_vcf_rows(iterator, additional_columns=additional_columns))
-    df['CHROM'] = df['CHROM'].astype('category')
-    # df['POS'] = df['POS'].astype('Int64')  # leave commented out - I do this later when I add the variant column
+        # Create DataFrame from the generator
+        df = pd.DataFrame(generate_vcf_rows(iterator, additional_columns=additional_columns))
+        df['CHROM'] = df['CHROM'].astype('category')
+        # df['POS'] = df['POS'].astype('Int64')  # leave commented out - I do this later when I add the variant column
 
-    if filter_empty_alt:
-        df = df[~df["ALT"].isin([None, "", "."])]
+        if filter_empty_alt:
+            df = df[~df["ALT"].isin([None, "", "."])]
 
-    if explode_alt:
-        # df["ALT_ORIGINAL"] = df["ALT"]
-        df["ALT"] = df["ALT"].str.split(",")  # Split ALT column into lists
-        df = df.explode("ALT", ignore_index=True)  # Expand the DataFrame
+        if explode_alt:
+            # df["ALT_ORIGINAL"] = df["ALT"]
+            df["ALT"] = df["ALT"].str.split(",")  # Split ALT column into lists
+            df = df.explode("ALT", ignore_index=True)  # Expand the DataFrame
 
-    return df
+        return df
 
 
 # def generate_mutation_notation_from_vcf_columns(row):
@@ -1131,3 +1133,48 @@ def update_vcf_derived_df_with_multibase_duplication(mutations, seq_dict, seq_id
     mutations.loc[compare_mask, var_column] = "g." + mutations.loc[compare_mask, "start_pos"].astype(int).astype(str) + "_" + mutations.loc[compare_mask, "POS"].astype(str) + "dup"
 
     mutations.drop(columns=["ALT_first_base_trimmed", "ALT_len", "start_pos", "seq_slice"], inplace=True, errors="ignore")
+
+
+def save_fasta_chunk(fasta_path, chunk_number, chunksize):
+    if fasta_path is None:
+        return None
+    
+    chunk_number -= 1  # since chunk_number is 1-indexed
+    if chunk_number < 0:
+        raise ValueError("chunk_number must be greater than 0")
+    
+    _, ext = os.path.splitext(fasta_path)
+    tmp_file = fasta_path.replace(ext, f"_chunked{ext}")
+
+    start_line = chunk_number * chunksize * 2
+    end_line = (chunk_number + 1) * chunksize * 2
+
+    with open(fasta_path) as f, open(tmp_file.name, "w") as out_f:
+        for line_num, line in enumerate(f):
+            if start_line <= line_num < end_line:
+                out_f.write(line)
+
+    return tmp_file
+
+def save_csv_chunk(csv_path, chunk_number, chunksize):
+    if csv_path is None:
+        return None
+
+    chunk_number -= 1  # since chunk_number is 1-indexed
+    if chunk_number < 0:
+        raise ValueError("chunk_number must be greater than 0")
+    
+    tmp_file = csv_path.replace(".csv", "_chunked.csv")
+    
+    start_line = (chunk_number * chunksize) + 1
+    end_line = ((chunk_number + 1) * chunksize) + 1
+
+    with open(csv_path, "r") as f, open(tmp_file, "w") as out_f:
+        header = next(f)  # Read and store the header
+        out_f.write(header)  # Always write the header first
+
+        for line_num, line in enumerate(f, start=1):  # Line counting starts after header
+            if start_line <= line_num < end_line:
+                out_f.write(line)
+    
+    return tmp_file

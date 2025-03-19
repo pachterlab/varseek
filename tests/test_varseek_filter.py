@@ -370,6 +370,41 @@ def test_multi_filter_min_max_metadata_df(toy_mutation_metadata_df_path, dlist_f
 
     pd.testing.assert_frame_equal(output_metadata_df_from_test, output_metadata_df_expected)
 
+def test_multi_filter_min_max_metadata_df_with_chunks(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_vcrs_fa_path, temporary_output_files, out_dir):
+    filters = ['numeric_value:greater_or_equal=3', 'numeric_value2:less_or_equal=7']
+
+    output_metadata_df, output_vcrs_fasta, output_dlist_fasta, output_id_to_header_csv, output_t2g = temporary_output_files["output_metadata_df"], temporary_output_files["output_vcrs_fasta"], temporary_output_files["output_dlist_fasta"], temporary_output_files["output_id_to_header_csv"], temporary_output_files["output_t2g"]
+
+    add_numeric_value_column_to_df_that_applies_range_of_len_df(toy_mutation_metadata_df_path, column_name="numeric_value")
+    add_numeric_value_column_to_df_that_applies_range_of_len_df(toy_mutation_metadata_df_path, column_name="numeric_value2")
+
+    _ = vk.filter(
+        input_dir = ".",
+        filters=filters,
+        out=out_dir,
+        variants_updated_vk_info_csv=toy_mutation_metadata_df_path,
+        dlist_fasta=dlist_file_small_path,
+        id_to_header_csv=toy_id_to_header_mapping_csv_path,
+        variants_updated_filtered_csv_out=output_metadata_df,
+        vcrs_filtered_fasta_out=output_vcrs_fasta,
+        dlist_filtered_fasta_out=output_dlist_fasta,
+        id_to_header_filtered_csv_out=output_id_to_header_csv,
+        vcrs_t2g_filtered_out=output_t2g,
+        return_variants_updated_filtered_csv_df=False,
+        overwrite=True,
+        chunksize=3
+    )
+
+    output_metadata_df_from_test = pd.read_csv(output_metadata_df)
+    
+    output_metadata_df_expected = pd.read_csv(toy_mutation_metadata_df_path)
+
+    # st()
+
+    output_metadata_df_expected = output_metadata_df_expected[(output_metadata_df_expected['numeric_value'] >= 3) & (output_metadata_df_expected['numeric_value2'] <= 7)].reset_index(drop=True)
+
+    pd.testing.assert_frame_equal(output_metadata_df_from_test, output_metadata_df_expected)
+
 
 def test_multi_filter_between_equal_metadata_df(toy_mutation_metadata_df_path, dlist_file_small_path, toy_id_to_header_mapping_csv_path, toy_t2g_path, toy_vcrs_fa_path, temporary_output_files, out_dir):
     filters = ['numeric_value:between_inclusive=2,7', 'chromosome_single:equal=1']

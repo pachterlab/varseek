@@ -1017,7 +1017,22 @@ def check_memory_of_all_items_in_scope(scope_items, threshold=0, units='MB'):
 
 
 def count_chunks(file, chunk_size):
-    total_rows = sum(1 for _ in open(file)) - 1  # Subtract 1 for the header
+    if not isinstance(file, (str, Path)):
+        raise ValueError("File path must be a string.")
+    file = str(file)  # convert Path to string
+    if file.endswith(".csv"):
+        with open(file) as f:
+            total_rows = sum(1 for _ in f) - 1  # Subtract 1 for the header
+    elif file.endswith(".fa") or file.endswith(".fasta") or file.endswith(".fa.gz") or file.endswith(".fasta.gz") or file.endswith(".fna") or file.endswith(".fna.gz") or file.endswith(".ffn") or file.endswith(".ffn.gz"):
+        import pyfastx
+        total_rows = sum(1 for _ in pyfastx.Fastx(file))
+    elif file.endswith(".vcf") or file.endswith(".vcf.gz"):
+        import pysam
+        with pysam.VariantFile(file) as vcf:
+            total_rows = sum(1 for _ in vcf.fetch())
+    else:
+        with open(file) as f:
+            total_rows = sum(1 for _ in f)
     return (total_rows + chunk_size - 1) // chunk_size  # Ceiling division
 
 def determine_write_mode(file, overwrite=False, first_chunk=True):

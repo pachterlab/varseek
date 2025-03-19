@@ -25,6 +25,9 @@ from .utils import (
     save_run_info,
     set_varseek_logging_level_and_filehandler,
     set_up_logger,
+    determine_write_mode,
+    count_chunks,
+    save_csv_chunk
 )
 
 logger = logging.getLogger(__name__)
@@ -202,20 +205,6 @@ def convert_txt_to_list(txt_path):
     with open(txt_path, "r", encoding="utf-8") as f:
         return [line.strip() for line in f if line.strip()]
 
-
-def filter_id_to_header_csv(id_to_header_csv, id_to_header_csv_filtered, filtered_df_vcrs_ids):
-    with open(id_to_header_csv, mode="r", encoding="utf-8") as infile, open(id_to_header_csv_filtered, mode="w", encoding="utf-8", newline="") as outfile:
-        reader = csv.reader(infile)
-        writer = csv.writer(outfile)
-
-        # Loop through each row in the input file
-        for row in reader:
-            key = row[0]  # Assuming the first column is the key
-            # Write row to output file if key is in filtered_df_vcrs_ids
-            if key in filtered_df_vcrs_ids:
-                writer.writerow(row)
-
-
 def make_filtering_report(variant_metadata_df, vcrs_header_column="vcrs_header", filtering_report_text_out=None, prior_filtering_report_dict=None):
     if "semicolon_count" not in variant_metadata_df.columns:  # already checked 'and vcrs_header_column in variant_metadata_df.columns' before
         variant_metadata_df["semicolon_count"] = variant_metadata_df[vcrs_header_column].str.count(";")
@@ -342,6 +331,7 @@ def filter(
     save_wt_vcrs_fasta_and_t2g=False,
     save_variants_updated_filtered_csvs=False,
     return_variants_updated_filtered_csv_df=False,
+    chunksize=None,
     dry_run=False,
     list_filter_rules=False,
     overwrite=False,
@@ -382,6 +372,7 @@ def filter(
     - return_variants_updated_filtered_csv_df     (bool) If True, return the filtered variant metadata dataframe. Default: False.
 
     # General arguments:
+    - chunksize                                    (int) Number of variants to process at a time. If None, then all variants will be processed at once. Default: None.
     - dry_run                                      (bool) If True, print the parameters and exit without running the function. Default: False.
     - list_filter_rules                            (bool) If True, print the available filter rules and exit without running the function. Default: False.
     - overwrite                                    (bool) If True, overwrite the output files if they already exist. Default: False.
@@ -413,11 +404,38 @@ def filter(
 
     if save_logs and not log_out_dir:
         log_out_dir = os.path.join(out, "logs")
-    set_varseek_logging_level_and_filehandler(logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
-
+    if not kwargs.get("running_within_chunk_iteration", False):
+        set_varseek_logging_level_and_filehandler(logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
 
     if isinstance(filters, (list, tuple)) and len(filters) == 1:
         filters = filters[0]
+
+    # * 1.5 Chunk iteration
+    if chunksize and return_variants_updated_filtered_csv_df:
+        raise ValueError("Cannot return variants_updated_filtered_csv_df when using chunksize. Please set return_variants_updated_filtered_csv_df to False.")
+    if chunksize is not None:
+        params_dict = make_function_parameter_to_value_dict(1)
+        for key in ["variants_updated_vk_info_csv", "id_to_header_csv", "chunksize"]:
+            params_dict.pop(key, None)
+        
+        variants_updated_vk_info_csv = os.path.join(input_dir, "variants_updated_vk_info.csv") if not variants_updated_vk_info_csv else variants_updated_vk_info_csv  # copy-paste from below (sorry)
+        id_to_header_csv = os.path.join(input_dir, "id_to_header_mapping.csv") if (not id_to_header_csv and os.path.isfile(os.path.join(input_dir, "id_to_header_mapping.csv"))) else None  # copy-paste from below
+        
+        total_chunks = count_chunks(variants_updated_vk_info_csv, chunksize)
+        for i in range(0, total_chunks):
+            chunk_number = i + 1  # start at 1
+            logger.info(f"Processing chunk {chunk_number}/{total_chunks}")
+            variants_updated_vk_info_csv_chunk = save_csv_chunk(csv_path=variants_updated_vk_info_csv, chunk_number=chunk_number, chunksize=chunksize)
+            id_to_header_csv_chunk = save_csv_chunk(csv_path=id_to_header_csv, chunk_number=chunk_number, chunksize=chunksize)
+            filter(variants_updated_vk_info_csv=variants_updated_vk_info_csv_chunk, id_to_header_csv=id_to_header_csv_chunk, id_to_header_csv_full=id_to_header_csv, chunksize=None, chunk_number=chunk_number, total_chunks=total_chunks, running_within_chunk_iteration=True, **params_dict)  # running_within_chunk_iteration here for logger setup and report_time_elapsed decorator
+            if chunk_number == total_chunks:
+                for tmp_file in [variants_updated_vk_info_csv_chunk, id_to_header_csv_chunk]:
+                    if isinstance(tmp_file, str) and os.path.exists(tmp_file):
+                        os.remove(tmp_file)
+                return
+            
+    chunk_number = kwargs.get("chunk_number", 1)
+    first_chunk = (chunk_number == 1)
 
     # * 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
@@ -514,7 +532,7 @@ def filter(
     # make sure directories of all output files exist
     output_files = [variants_updated_filtered_csv_out, variants_updated_exploded_filtered_csv_out, id_to_header_filtered_csv_out, dlist_filtered_fasta_out, vcrs_filtered_fasta_out, vcrs_t2g_filtered_out, wt_vcrs_filtered_fasta_out, wt_vcrs_t2g_filtered_out]
     for output_file in output_files:
-        if os.path.isfile(output_file) and not overwrite:
+        if os.path.isfile(output_file) and not overwrite and first_chunk:
             raise ValueError(f"Output file '{output_file}' already exists. Set 'overwrite=True' to overwrite it.")
         if os.path.dirname(output_file):
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
@@ -533,11 +551,13 @@ def filter(
 
     if isinstance(variants_updated_vk_info_csv, str):
         variant_metadata_df = pd.read_csv(variants_updated_vk_info_csv)
-    else:
+    elif isinstance(variants_updated_vk_info_csv, pd.DataFrame):
         if make_internal_copies:
             variant_metadata_df = variants_updated_vk_info_csv.copy()
         else:
             variant_metadata_df = variants_updated_vk_info_csv
+    else:
+        raise ValueError(f"Invalid variant metadata dataframe/csv path: {variants_updated_vk_info_csv}")
 
     vcrs_header_column = "vcrs_header"
 
@@ -567,7 +587,7 @@ def filter(
         filtered_df = filtered_df.drop(columns=["semicolon_count"])
 
     if save_variants_updated_filtered_csvs:
-        filtered_df.to_csv(variants_updated_filtered_csv_out, index=False)
+        filtered_df.to_csv(variants_updated_filtered_csv_out, index=False, header=first_chunk, mode=determine_write_mode(variants_updated_filtered_csv_out, overwrite=overwrite, first_chunk=first_chunk))
 
     # make vcrs_filtered_fasta_out
     if use_IDs:
@@ -579,13 +599,14 @@ def filter(
     if save_vcrs_filtered_fasta_and_t2g:
         filtered_df["fasta_format"] = ">" + filtered_df[output_fasta_header_column] + "\n" + filtered_df[vcrs_sequence_column] + "\n"
 
-        with open(vcrs_filtered_fasta_out, "w", encoding="utf-8") as fasta_file:
+        mode=determine_write_mode(vcrs_filtered_fasta_out, overwrite=overwrite, first_chunk=first_chunk)
+        with open(vcrs_filtered_fasta_out, mode, encoding="utf-8") as fasta_file:
             fasta_file.write("".join(filtered_df["fasta_format"].values))
 
         filtered_df.drop(columns=["fasta_format"], inplace=True)
 
         # make vcrs_t2g_filtered_out
-        create_identity_t2g(vcrs_filtered_fasta_out, vcrs_t2g_filtered_out)
+        create_identity_t2g(vcrs_filtered_fasta_out, vcrs_t2g_filtered_out, mode=determine_write_mode(vcrs_t2g_filtered_out, overwrite=overwrite, first_chunk=first_chunk))
 
     # make wt_vcrs_filtered_fasta_out and wt_vcrs_t2g_filtered_out iff save_wt_vcrs_fasta_and_t2g is True
     if save_wt_vcrs_fasta_and_t2g:
@@ -602,28 +623,55 @@ def filter(
 
         variants_with_exactly_1_wt_sequence_per_row["fasta_format_wt"] = ">" + variants_with_exactly_1_wt_sequence_per_row[output_fasta_header_column] + "\n" + variants_with_exactly_1_wt_sequence_per_row["wt_sequence"] + "\n"
 
-        with open(wt_vcrs_filtered_fasta_out, "w", encoding="utf-8") as fasta_file:
+        mode=determine_write_mode(wt_vcrs_filtered_fasta_out, overwrite=overwrite, first_chunk=first_chunk)
+        with open(wt_vcrs_filtered_fasta_out, mode, encoding="utf-8") as fasta_file:
             fasta_file.write("".join(variants_with_exactly_1_wt_sequence_per_row["fasta_format_wt"].values))
 
-        create_identity_t2g(wt_vcrs_filtered_fasta_out, wt_vcrs_t2g_filtered_out)
+        filtered_df.drop(columns=["fasta_format_wt"], inplace=True)
 
-        fasta_summary_stats(vcrs_filtered_fasta_out)
+        create_identity_t2g(wt_vcrs_filtered_fasta_out, wt_vcrs_t2g_filtered_out, mode=determine_write_mode(wt_vcrs_t2g_filtered_out, overwrite=overwrite, first_chunk=first_chunk))
 
-    filtered_df.reset_index(drop=True, inplace=True)
+    if kwargs.get("running_within_chunk_iteration", False):
+        if chunk_number != kwargs.get("total_chunks", 0):
+            return  # go back to the iteration
+        else:
+            filtered_df_vcrs_ids = set(pd.read_csv(variants_updated_filtered_csv_out, usecols=[vcrs_id_column])[vcrs_id_column])
+    else:
+        filtered_df.reset_index(drop=True, inplace=True)
+        filtered_df_vcrs_ids = set(filtered_df[vcrs_id_column])  # no need to use output_fasta_header_column here because output_fasta_header_column is only necessary when saving the fasta files (this is using the IDs just to check for membership, not to save to a file any differently)
 
-    filtered_df_vcrs_ids = set(filtered_df[vcrs_id_column])  # no need to use output_fasta_header_column here because output_fasta_header_column is only necessary when saving the fasta files (this is using the IDs just to check for membership, not to save to a file any differently)
+    # make id_to_header_filtered_csv_out iff id_to_header_csv exists
+    if kwargs.get("id_to_header_csv_full"):  # for chunking
+        id_to_header_csv = kwargs.get("id_to_header_csv_full")
+    if id_to_header_csv and os.path.isfile(id_to_header_csv):
+        if not chunksize:
+            id_to_header_df = pd.read_csv(id_to_header_csv)
+            id_to_header_df = id_to_header_df[id_to_header_df['vcrs_id'].isin(filtered_df_vcrs_ids)]
+            id_to_header_df.to_csv(id_to_header_filtered_csv_out, index=False)
+            del id_to_header_df
+        else:
+            first_chunk_inner = True
+            for chunk in pd.read_csv(id_to_header_csv, chunksize=chunksize):
+                chunk = chunk[chunk['vcrs_id'].isin(filtered_df_vcrs_ids)]  # filter the chink
+                if not chunk.empty:
+                    chunk.to_csv(id_to_header_filtered_csv_out, mode="w" if first_chunk_inner else "a", index=False, header=first_chunk_inner)  # Append data to CSV, writing header only for the first chunk
+                    first_chunk_inner = False
+            
 
     # make variants_updated_exploded_filtered_csv_out iff variants_updated_exploded_vk_info_csv exists
     if save_variants_updated_filtered_csvs and variants_updated_exploded_vk_info_csv and os.path.isfile(variants_updated_exploded_vk_info_csv):
-        variant_metadata_df_exploded = pd.read_csv(variants_updated_exploded_vk_info_csv)
-
-        # Filter variant_metadata_df_exploded based on these unique values
-        filtered_variant_metadata_df_exploded = variant_metadata_df_exploded[variant_metadata_df_exploded[vcrs_id_column].isin(filtered_df_vcrs_ids)]
-
-        filtered_variant_metadata_df_exploded.to_csv(variants_updated_exploded_filtered_csv_out, index=False)
-
-        # Delete the DataFrame from memory
-        del filtered_variant_metadata_df_exploded
+        if not chunksize:
+            variant_metadata_df_exploded = pd.read_csv(variants_updated_exploded_vk_info_csv)
+            filtered_variant_metadata_df_exploded = variant_metadata_df_exploded[variant_metadata_df_exploded[vcrs_id_column].isin(filtered_df_vcrs_ids)]  # Filter variant_metadata_df_exploded based on these unique values
+            filtered_variant_metadata_df_exploded.to_csv(variants_updated_exploded_filtered_csv_out, index=False)
+            del filtered_variant_metadata_df_exploded
+        else:
+            first_chunk_inner = True
+            for chunk in pd.read_csv(variants_updated_exploded_vk_info_csv, chunksize=chunksize):
+                chunk = chunk[chunk[vcrs_id_column].isin(filtered_df_vcrs_ids)]  # filter the chink
+                if not chunk.empty:
+                    chunk.to_csv(id_to_header_filtered_csv_out, mode="w" if first_chunk_inner else "a", index=False, header=first_chunk_inner)  # Append data to CSV, writing header only for the first chunk
+                    first_chunk_inner = False
 
     # make dlist_filtered_fasta_out iff dlist_fasta exists
     if dlist_fasta and os.path.isfile(dlist_fasta):
@@ -635,10 +683,6 @@ def filter(
             filter_fasta(dlist_genome_fasta, dlist_genome_filtered_fasta_out, filtered_df_vcrs_ids)  # TODO: same as above (when use_IDs=False...)
         if dlist_cdna_fasta and os.path.isfile(dlist_cdna_fasta):
             filter_fasta(dlist_cdna_fasta, dlist_cdna_filtered_fasta_out, filtered_df_vcrs_ids)  # TODO: same as above (when use_IDs=False...)
-
-    # make id_to_header_filtered_csv_out iff id_to_header_csv exists
-    if id_to_header_csv and os.path.isfile(id_to_header_csv):
-        filter_id_to_header_csv(id_to_header_csv, id_to_header_filtered_csv_out, filtered_df_vcrs_ids)
 
     if save_vcrs_filtered_fasta_and_t2g:
         logger.info(f"Output fasta file with filtered variants: {vcrs_filtered_fasta_out}")

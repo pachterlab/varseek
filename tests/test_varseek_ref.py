@@ -26,6 +26,7 @@ columns_to_drop_info_filter = None  # drops columns for info and filter df - wil
 make_new_gt = True
 store_out_in_permanent_paths = True
 threads = 2
+chunksize = None  # None or int>0
 
 test_directory = Path(__file__).resolve().parent
 ground_truth_folder = os.path.join(test_directory, "pytest_ground_truth")
@@ -182,7 +183,8 @@ def test_vk_ref(cosmic_csv_path, out_dir):
         threads = threads,
         filters = filters,  # filter args
         save_variants_updated_filtered_csvs=True,
-        verbose=True
+        verbose=True,
+        chunksize=chunksize
     )
 
     # file name, file type, columns to drop for comparison

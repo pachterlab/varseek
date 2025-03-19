@@ -315,6 +315,8 @@ def toy_id_to_header_mapping_csv_path(vcrs_id_and_header_and_sequence_standard_l
 
     # write csv
     with open(str(temp_id_to_header_mapping_csv), 'w', encoding="utf-8") as id_to_header_mapping_out:
+        id_to_header_mapping_out.write("vcrs_id,vcrs_header\n")  # add headers
+        
         for i in range(len(vcrs_id_list)):
             id_to_header_mapping_out.write(f"{vcrs_id_list[i]},{vcrs_header_list[i]}\n")
 

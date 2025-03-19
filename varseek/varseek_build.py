@@ -177,6 +177,36 @@ def calculate_end_mutation_overlap_with_left_flank(row):
 
     return end_mut_nucleotides_with_left_flank(sequence_to_check, original_sequence)
 
+def iterate_through_vcf_in_chunks(variants, params_dict, chunksize):
+    import pysam
+    tmp_file = variants.replace(".vcf", "_chunked.vcf")
+    with pysam.VariantFile(variants, "r") as vcf:
+        header = str(vcf.header)  # Store the header lines
+
+        chunk = []
+        chunk_number = 1
+
+        for i, record in enumerate(vcf):
+            chunk.append(str(record))
+
+            # Process the chunk once it reaches the desired size
+            if (i + 1) % chunksize == 0:
+                with open(tmp_file, "w") as f:
+                    f.write(header + "".join(chunk))
+                build(variants=tmp_file, chunksize=None, chunk_number=chunk_number, running_within_chunk_iteration=True, **params_dict)  # running_within_chunk_iteration here for logger setup and report_time_elapsed decorator
+                chunk = []  # Reset the chunk
+                chunk_number += 1
+
+        # Process any remaining variants
+        if chunk:
+            with open(tmp_file, "w") as f:
+                f.write(header + "".join(chunk))
+            build(variants=tmp_file, chunksize=None, chunk_number=chunk_number, running_within_chunk_iteration=True, **params_dict)  # running_within_chunk_iteration here for logger setup and report_time_elapsed decorator
+
+        if isinstance(tmp_file, str) and os.path.exists(tmp_file):
+            os.remove(tmp_file)
+        return
+
 
 def validate_input_build(params_dict):
     # Required parameters
@@ -495,17 +525,24 @@ def build(
     # * 1.5 Chunk iteration
     if chunksize and return_variant_output:
         raise ValueError("return_variant_output cannot be True when chunksize is specified. Please set return_variant_output to False.")
-    if chunksize is not None and isinstance(variants, str) and os.path.exists(variants):
+    if chunksize is not None and isinstance(variants, (str, Path)) and os.path.exists(variants):
+        variants = str(variants)  # convert Path to string
         params_dict = make_function_parameter_to_value_dict(1)
         for key in ["variants", "chunksize"]:
             params_dict.pop(key, None)
         total_chunks = count_chunks(variants, chunksize)
-        for i, chunk in enumerate(pd.read_csv(variants, chunksize=chunksize)):
-            chunk_number = i + 1  # start at 1
-            logger.info(f"Processing chunk {chunk_number}/{total_chunks}")
-            build(variants=chunk, chunksize=None, chunk_number=chunk_number, running_within_chunk_iteration=True, **params_dict)  # running_within_chunk_iteration here for logger setup and report_time_elapsed decorator
-            if chunk_number == total_chunks:
-                return
+        if variants.endswith(".csv") or variants.endswith(".tsv"):
+            sep = "\t" if variants.endswith(".tsv") else ","
+            for i, chunk in enumerate(pd.read_csv(variants, sep=sep, chunksize=chunksize)):
+                chunk_number = i + 1  # start at 1
+                logger.info(f"Processing chunk {chunk_number}/{total_chunks}")
+                build(variants=chunk, chunksize=None, chunk_number=chunk_number, running_within_chunk_iteration=True, **params_dict)  # running_within_chunk_iteration here for logger setup and report_time_elapsed decorator
+                if chunk_number == total_chunks:
+                    return
+        elif variants.endswith(".vcf") or variants.endswith(".vcf.gz"):
+            iterate_through_vcf_in_chunks(variants, params_dict, chunksize)
+        else:
+            raise ValueError(f"Unsupported file type for chunk iteration: {variants}")
     
     chunk_number = kwargs.get("chunk_number", 1)
     first_chunk = (chunk_number == 1)
@@ -832,7 +869,8 @@ def build(
 
     if "variant_type" not in mutations.columns:
         add_variant_type(mutations, var_column)
-    mutations['variant_type'] = mutations['variant_type'].astype('category')  # new as of 3/2025
+    variant_types = ["substitution", "deletion", "duplication", "insertion", "inversion", "delins"]
+    mutations['variant_type'] = mutations['variant_type'].astype(pd.CategoricalDtype(categories=variant_types))  # new as of 3/2025
 
     # Link sequences to their mutations using the sequence identifiers
     if store_full_sequences or ".vcf" in mutations_path:
@@ -1477,7 +1515,7 @@ def build(
     if save_wt_vcrs_fasta_and_t2g:
         with open(wt_vcrs_fasta_out, determine_write_mode(wt_vcrs_fasta_out, overwrite=overwrite, first_chunk=first_chunk), encoding="utf-8") as fasta_file:
             fasta_file.write("".join(mutations_with_exactly_1_wt_sequence_per_row["fasta_format_wt"].values))
-        create_identity_t2g(wt_vcrs_fasta_out, wt_vcrs_t2g_out, mode=determine_write_mode(wt_vcrs_fasta_out, overwrite=overwrite, first_chunk=first_chunk))  # separate t2g is needed because it may have a subset of the rows of mutant (because it doesn't contain any VCRSs with merged mutations and 2+ originating WT sequences)
+        create_identity_t2g(wt_vcrs_fasta_out, wt_vcrs_t2g_out, mode=determine_write_mode(wt_vcrs_t2g_out, overwrite=overwrite, first_chunk=first_chunk))  # separate t2g is needed because it may have a subset of the rows of mutant (because it doesn't contain any VCRSs with merged mutations and 2+ originating WT sequences)
 
     # When stream_output is True, return list of mutated seqs
     if return_variant_output:

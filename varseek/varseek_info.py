@@ -52,6 +52,10 @@ from varseek.utils import (
     splitext_custom,
     swap_ids_for_headers_in_fasta,
     triplet_stats,
+    count_chunks,
+    save_fasta_chunk,
+    save_csv_chunk,
+    determine_write_mode
 )
 
 tqdm.pandas()
@@ -289,6 +293,7 @@ def info(
     save_variants_updated_exploded_vk_info_csv=False,
     make_pyfastx_summary_file=False,
     make_kat_histogram=False,
+    chunksize=None,
     dry_run=False,
     list_columns=False,
     overwrite=False,
@@ -351,6 +356,7 @@ def info(
     - make_kat_histogram                 (bool) Whether to make a histogram of the k-mer abundances using kat. Default: False.
 
     # General arguments:
+    - chunksize                          (int) Number of variants to process at a time. If None, then all variants will be processed at once. Default: None.
     - dry_run                            (bool) Whether to do a dry run (i.e., print the parameters and return without running the function). Default: False.
     - list_columns                       (bool) Whether to list the possible values for `columns_to_include` and their descriptions and immediately exit. Default: False.
     - overwrite                          (bool) Whether to overwrite the output files if they already exist. Default: False.
@@ -387,11 +393,38 @@ def info(
     
     if save_logs and not log_out_dir:
         log_out_dir = os.path.join(out, "logs")
-    set_varseek_logging_level_and_filehandler(logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
-
+    if not kwargs.get("running_within_chunk_iteration", False):
+        set_varseek_logging_level_and_filehandler(logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
 
     if isinstance(columns_to_include, (list, tuple)) and len(columns_to_include) == 1:
         columns_to_include = columns_to_include[0]
+
+    # * 1.5 Chunk iteration
+    if chunksize is not None:
+        params_dict = make_function_parameter_to_value_dict(1)
+        for key in ["vcrs_fasta", "variants_updated_csv", "id_to_header_csv", "chunksize"]:
+            params_dict.pop(key, None)
+        
+        vcrs_fasta = os.path.join(input_dir, "vcrs.fa") if not vcrs_fasta else vcrs_fasta  # copy-paste from below (sorry)
+        variants_updated_csv = os.path.join(input_dir, "variants_updated.csv") if (not variants_updated_csv and os.path.isfile(os.path.join(input_dir, "variants_updated.csv"))) else None  # copy-paste from below
+        id_to_header_csv = os.path.join(input_dir, "id_to_header_mapping.csv") if (not id_to_header_csv and os.path.isfile(os.path.join(input_dir, "id_to_header_mapping.csv"))) else None  # copy-paste from below
+        
+        total_chunks = count_chunks(vcrs_fasta, chunksize)
+        for i in range(0, total_chunks):
+            chunk_number = i + 1  # start at 1
+            logger.info(f"Processing chunk {chunk_number}/{total_chunks}")
+            vcrs_fasta_chunk = save_fasta_chunk(fasta_path=vcrs_fasta, chunk_number=chunk_number, chunksize=chunksize)
+            variants_updated_csv_chunk = save_csv_chunk(csv_path=variants_updated_csv, chunk_number=chunk_number, chunksize=chunksize)
+            id_to_header_csv_chunk = save_csv_chunk(csv_path=id_to_header_csv, chunk_number=chunk_number, chunksize=chunksize)
+            info(vcrs_fasta=vcrs_fasta_chunk, variants_updated_csv=variants_updated_csv_chunk, id_to_header_csv=id_to_header_csv_chunk, chunksize=None, chunk_number=chunk_number, running_within_chunk_iteration=True, **params_dict)  # running_within_chunk_iteration here for logger setup and report_time_elapsed decorator
+            if chunk_number == total_chunks:
+                for tmp_file in [vcrs_fasta_chunk, variants_updated_csv_chunk, id_to_header_csv_chunk]:
+                    if isinstance(tmp_file, str) and os.path.exists(tmp_file):
+                        os.remove(tmp_file)
+                return
+    
+    chunk_number = kwargs.get("chunk_number", 1)
+    first_chunk = (chunk_number == 1)
 
     # * 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
@@ -455,7 +488,7 @@ def info(
     # make sure directories of all output files exist
     output_files = [variants_updated_vk_info_csv_out, variants_updated_exploded_vk_info_csv_out, dlist_genome_fasta_out, dlist_cdna_fasta_out, dlist_combined_fasta_out]
     for output_file in output_files:
-        if os.path.isfile(output_file) and not overwrite:
+        if os.path.isfile(output_file) and not overwrite and first_chunk:
             raise ValueError(f"Output file '{output_file}' already exists. Set 'overwrite=True' to overwrite it.")
         if os.path.dirname(output_file):
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
@@ -819,6 +852,8 @@ def info(
                 mutation_metadata_df=mutation_metadata_df,
                 bowtie2_build=bowtie2_build,
                 bowtie2=bowtie2,
+                overwrite=overwrite,
+                first_chunk=first_chunk,
             )
         except Exception as e:
             logger.error("Error aligning to normal genome and building alignment_to_reference: %s", e)
@@ -1056,14 +1091,14 @@ def info(
     mutation_metadata_df.drop(columns=["header_list", "order_list"], inplace=True, errors="ignore")
 
     logger.info("Saving variant metadata")
-    mutation_metadata_df.to_csv(variants_updated_vk_info_csv_out, index=False)
+    mutation_metadata_df.to_csv(variants_updated_vk_info_csv_out, index=False, header=first_chunk, mode=determine_write_mode(variants_updated_vk_info_csv_out, overwrite=overwrite, first_chunk=first_chunk))
 
     # CELL
     if save_variants_updated_exploded_vk_info_csv:
         if vcrs_header_has_merged_values:
             logger.info("Saving exploded variant metadata")
             mutation_metadata_df_exploded = explode_df(mutation_metadata_df, columns_to_explode, verbose=verbose)
-            mutation_metadata_df_exploded.to_csv(variants_updated_exploded_vk_info_csv_out, index=False)
+            mutation_metadata_df_exploded.to_csv(variants_updated_exploded_vk_info_csv_out, index=False, header=first_chunk, mode=determine_write_mode(variants_updated_vk_info_csv_out, overwrite=overwrite, first_chunk=first_chunk))
         else:
             logger.info("Variant data has no merged values, so skipping exploding")
 

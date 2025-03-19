@@ -721,3 +721,28 @@ def test_vcf(vcf_file_and_corresponding_sequences, out_dir):
     assert vcf_output_pytest_df.equals(vcf_output_ground_truth_df)
 
     assert_global_variables_zero()
+
+def test_vcf_chunks(vcf_file_and_corresponding_sequences, out_dir):
+    vcf_file_path, sequences_fasta_path, vcf_output_ground_truth_df = vcf_file_and_corresponding_sequences
+
+    _ = vk.build(
+        variants=vcf_file_path,
+        sequences=sequences_fasta_path,
+        out=out_dir,
+        save_variants_updated_csv=True,
+        overwrite=True,
+        w=6,
+        k=7,
+        max_ambiguous=999,
+        optimize_flanking_regions=False,
+        remove_seqs_with_wt_kmers=False,
+        min_seq_len=None,
+        merge_identical=False,
+        chunksize=3
+    )
+
+    vcf_output_pytest_df = pd.read_csv(out_dir / "variants_updated.csv")
+
+    assert vcf_output_pytest_df.equals(vcf_output_ground_truth_df)
+
+    assert_global_variables_zero()

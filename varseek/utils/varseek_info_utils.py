@@ -20,7 +20,8 @@ from tqdm import tqdm
 from varseek.utils.logger_utils import (
     get_file_name_without_extensions_or_full_path,
     splitext_custom,
-    set_up_logger
+    set_up_logger,
+    determine_write_mode
 )
 from varseek.utils.seq_utils import (
     create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting,
@@ -102,13 +103,15 @@ def capitalize_sequences(input_file, output_file=None):
         raise e
 
 
-def parse_sam_and_extract_sequences(sam_file, ref_genome_file, output_fasta_file, k=31, dfk_length=None, capitalize=True, remove_duplicates=False, check_for_bad_cigars=True):
+def parse_sam_and_extract_sequences(sam_file, ref_genome_file, output_fasta_file, k=31, dfk_length=None, capitalize=True, remove_duplicates=False, check_for_bad_cigars=True, overwrite=False, first_chunk=True):
     if dfk_length is None:
         dfk_length = k + 2
 
     ref_genome = {header: sequence for header, sequence in pyfastx.Fastx(ref_genome_file)}
 
-    with open(sam_file, "r", encoding="utf-8") as f, open(output_fasta_file, "w", encoding="utf-8") as dlist_fasta:
+    mode = determine_write_mode(output_fasta_file, overwrite=overwrite, first_chunk=first_chunk)
+
+    with open(sam_file, "r", encoding="utf-8") as f, open(output_fasta_file, mode, encoding="utf-8") as dlist_fasta:
         bad_cigar = 0
         for line in f:
             if line.startswith("@"):
@@ -1499,6 +1502,8 @@ def align_to_normal_genome_and_build_dlist(
     dlist_fasta_file_genome_full=None,
     dlist_fasta_file_cdna_full=None,
     dlist_fasta_file=None,
+    overwrite=False,
+    first_chunk=True
 ):
     bowtie_stat_file = f"{output_stat_folder}/bowtie_alignment.txt"
 
@@ -1527,8 +1532,7 @@ def align_to_normal_genome_and_build_dlist(
 
         if not dlist_fasta_file_genome_full:
             dlist_fasta_file_genome_full = f"{out_dir_notebook}/dlist_genome.fa"
-        if not os.path.exists(dlist_fasta_file_genome_full):
-            parse_sam_and_extract_sequences(output_sam_file_genome, dlist_reference_genome_fasta, dlist_fasta_file_genome_full, k=k, capitalize=True, remove_duplicates=False)
+        parse_sam_and_extract_sequences(output_sam_file_genome, dlist_reference_genome_fasta, dlist_fasta_file_genome_full, k=k, capitalize=True, remove_duplicates=False, overwrite=overwrite, first_chunk=first_chunk)
 
         dlist_substring_genome_df = get_vcrs_headers_that_are_substring_dlist(
             mutation_reference_file_fasta=mutations,
@@ -1586,8 +1590,7 @@ def align_to_normal_genome_and_build_dlist(
 
         if not dlist_fasta_file_cdna_full:
             dlist_fasta_file_cdna_full = f"{out_dir_notebook}/dlist_cdna.fa"
-        if not os.path.exists(dlist_fasta_file_cdna_full):
-            parse_sam_and_extract_sequences(output_sam_file_cdna, dlist_reference_cdna_fasta, dlist_fasta_file_cdna_full, k=k, capitalize=True, remove_duplicates=False)
+        parse_sam_and_extract_sequences(output_sam_file_cdna, dlist_reference_cdna_fasta, dlist_fasta_file_cdna_full, k=k, capitalize=True, remove_duplicates=False, overwrite=overwrite, first_chunk=first_chunk)
 
         dlist_substring_cdna_df = get_vcrs_headers_that_are_substring_dlist(
             mutation_reference_file_fasta=mutations,
