@@ -12,7 +12,7 @@ sequences_fasta_path = "cds"  # can replace with file path to cds file if desire
 threads = 2
 
 # only if cosmic_mutations_path does not exist
-cosmic_version = "100"
+cosmic_version = "101"
 grch = "37"
 os.environ['COSMIC_EMAIL'] = 'your_email'  # replace with your email, or store in an environment variable COSMIC_EMAIL; only needed if cosmic_mutations_path does not exist
 os.environ['COSMIC_PASSWORD'] = 'your_password'  # replace with your password, or store in an environment variable COSMIC_PASSWORD; only needed if cosmic_mutations_path does not exist

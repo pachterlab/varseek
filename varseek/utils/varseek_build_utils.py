@@ -307,7 +307,7 @@ def join_keys_with_same_values(original_dict):
     return concatenated_dict
 
 
-def download_cosmic_mutations(gtf, gtf_transcript_id_column, reference_out_dir, cosmic_version, cosmic_email, cosmic_password, columns_to_keep, grch, mutations_original, sequences, cds_file, cdna_file, var_id_column, logger, verbose):
+def download_cosmic_mutations(gtf, gtf_transcript_id_column, reference_out_dir, cosmic_version, cosmic_email, cosmic_password, columns_to_keep, grch, mutations_original, sequences, cds_file, cdna_file, var_id_column, verbose):
     reference_out_cosmic = f"{reference_out_dir}/cosmic"
     if int(cosmic_version) == 100:
         mutations = f"{reference_out_cosmic}/CancerMutationCensus_AllData_Tsv_v{cosmic_version}_GRCh{grch}_v2/CancerMutationCensus_AllData_v{cosmic_version}_GRCh{grch}_mutation_workflow.csv"

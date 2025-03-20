@@ -98,9 +98,9 @@ def validate_input_ref(params_dict):
 
 # a list of dictionaries with keys "variants", "sequences", and "description"
 downloadable_references = [
-    {"description": "COSMIC Cancer Mutation Census version 100 - Ensembl GRCh37 release 93 cDNA reference annotations. w=47, k=51, dlist_reference_source=t2t. Header format (showing the column(s) from the original database used): 'seq_ID':'mutation_cdna'.", "download_command": "vk ref -v cosmic_cmc -s cdna -w 47 -k 51 --dlist_reference_source t2t -d"},
-    {"description": "COSMIC Cancer Mutation Census version 100 - Ensembl GRCh37 release 93 cDNA reference annotations. w=47, k=51, dlist_reference_source=grch37. Header format (showing the column(s) from the original database used): 'seq_ID':'mutation_cdna'.", "download_command": "vk ref -v cosmic_cmc -s cdna -w 47 -k 51 --dlist_reference_source grch37 -d"},
-    # {"variants": "cosmic_cmc", "sequences": "genome", "description": "COSMIC Cancer Mutation Census version 100 - Ensembl GRCh37 release 93 genome reference annotations. w=47,k=51. Header format (showing the column(s) from the original database used): 'chromosome':'mutation_genome'"},
+    {"description": "COSMIC Cancer Mutation Census version 101 - Ensembl GRCh37 release 93 cDNA reference annotations. w=47, k=51, dlist_reference_source=t2t. Header format (showing the column(s) from the original database used): 'seq_ID':'mutation_cdna'.", "download_command": "vk ref -v cosmic_cmc -s cdna -w 47 -k 51 --dlist_reference_source t2t -d"},
+    {"description": "COSMIC Cancer Mutation Census version 101 - Ensembl GRCh37 release 93 cDNA reference annotations. w=47, k=51, dlist_reference_source=grch37. Header format (showing the column(s) from the original database used): 'seq_ID':'mutation_cdna'.", "download_command": "vk ref -v cosmic_cmc -s cdna -w 47 -k 51 --dlist_reference_source grch37 -d"},
+    # {"variants": "cosmic_cmc", "sequences": "genome", "description": "COSMIC Cancer Mutation Census version 101 - Ensembl GRCh37 release 93 genome reference annotations. w=47,k=51. Header format (showing the column(s) from the original database used): 'chromosome':'mutation_genome'"},
 ]
 
 

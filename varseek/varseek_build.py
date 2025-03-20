@@ -630,7 +630,7 @@ def build(
     if not k:
         k = w + 1
 
-    cosmic_version = kwargs.get("cosmic_version", "101")
+    cosmic_version = kwargs.get("cosmic_version", "101")  #!! if I change this value, make sure to change vk clean's VCF df download accordingly
     cosmic_grch = kwargs.get("cosmic_grch", None)
     insertion_size_limit = kwargs.get("insertion_size_limit", None)
     min_seq_len = kwargs.get("min_seq_len", k)
@@ -746,7 +746,7 @@ def build(
     if isinstance(mutations, str) and mutations in supported_databases_and_corresponding_reference_sequence_type:
         # TODO: expand beyond COSMIC (utilize the variant_file_name key in supported_databases_and_corresponding_reference_sequence_type)
         if "cosmic" in mutations:
-            mutations, mutations_path, seq_id_column, var_column, var_id_column, columns_to_keep = download_cosmic_mutations(gtf, gtf_transcript_id_column, reference_out_dir, cosmic_version, cosmic_email, cosmic_password, columns_to_keep, grch, mutations, sequences, cds_file, cdna_file, var_id_column, logger, verbose)
+            mutations, mutations_path, seq_id_column, var_column, var_id_column, columns_to_keep = download_cosmic_mutations(gtf, gtf_transcript_id_column, reference_out_dir, cosmic_version, cosmic_email, cosmic_password, columns_to_keep, grch, mutations, sequences, cds_file, cdna_file, var_id_column, verbose)
 
         if save_column_names_json_path:
             # save seq_id_column, var_column, var_id_column in temp json for vk ref

@@ -888,14 +888,54 @@ def make_vaf_matrix(adata_mutant_vcrs_path, adata_wt_vcrs_path, adata_vaf_output
     return adata_vaf_output
 
 
-def add_vcf_info_to_cosmic_tsv(cosmic_tsv, reference_genome_fasta, cosmic_df_out=None, cosmic_cdna_info_csv=None, mutation_source="cds"):
+def add_vcf_info_to_cosmic_tsv(cosmic_tsv=None, reference_genome_fasta=None, cosmic_df_out=None, sequences="cds", cosmic_version=101, cosmic_email=None, cosmic_password=None):
     import pysam
+    import gget
+    from varseek.utils.varseek_build_utils import convert_mutation_cds_locations_to_cdna
+
+    if cosmic_tsv is None:
+        cosmic_tsv = f"CancerMutationCensus_AllData_Tsv_v{cosmic_version}_GRCh37/CancerMutationCensus_AllData_v{cosmic_version}_GRCh37.tsv"
+    if reference_genome_fasta is None:
+        reference_genome_fasta = "Homo_sapiens.GRCh37.dna.primary_assembly.fa"
+    
+    cosmic_cdna_info_df = None
+    cosmic_cdna_info_csv = cosmic_tsv.replace(".tsv", "_mutation_workflow.csv")
+    reference_genome_fasta_dir = os.path.dirname(reference_genome_fasta) if os.path.dirname(reference_genome_fasta) else "."
+
+    if not os.path.exists(cosmic_tsv) or (not os.path.exists(cosmic_cdna_info_csv) and sequences == "cdna"):
+        reference_out_cosmic = os.path.dirname(os.path.dirname(cosmic_tsv)) if os.path.dirname(os.path.dirname(cosmic_tsv)) else "."
+        gget.cosmic(
+            None,
+            grch_version=37,
+            cosmic_version=cosmic_version,
+            out=reference_out_cosmic,
+            mutation_class="cancer",
+            download_cosmic=True,
+            keep_genome_info=True,
+            remove_duplicates=True,
+            email=cosmic_email,
+            password=cosmic_password,
+        )
+        if sequences == "cdna":
+            cds_file = os.path.join(reference_genome_fasta_dir, "Homo_sapiens.GRCh37.cds.all.fa")
+            cdna_file = os.path.join(reference_genome_fasta_dir, "Homo_sapiens.GRCh37.cdna.all.fa")
+            if not os.path.exists(cds_file):
+                subprocess.run(["gget", "ref", "-w", "cds", "-r", "93", "--out_dir", reference_genome_fasta_dir, "-d", "human_grch37"], check=True)
+                subprocess.run(["gunzip", f"{cds_file}.gz"], check=True)
+            if not os.path.exists(cdna_file):
+                subprocess.run(["gget", "ref", "-w", "cdna", "-r", "93", "--out_dir", reference_genome_fasta_dir, "-d", "human_grch37"], check=True)
+                subprocess.run(["gunzip", f"{cdna_file}.gz"], check=True)
+            cosmic_cdna_info_df = convert_mutation_cds_locations_to_cdna(input_csv_path=cosmic_cdna_info_csv, output_csv_path=cosmic_cdna_info_csv, cds_fasta_path=cds_file, cdna_fasta_path=cdna_file)
+    if not os.path.exists(reference_genome_fasta):
+        subprocess.run(["gget", "ref", "-w", "dna", "-r", "93", "--out_dir", reference_genome_fasta_dir, "-d", "human_grch37"], check=True)
+        subprocess.run(["gunzip", f"{reference_genome_fasta}.gz"], check=True)
 
     # load in COSMIC tsv with columns CHROM, POS, ID, REF, ALT
     cosmic_df = pd.read_csv(cosmic_tsv, sep="\t", usecols=["Mutation genome position GRCh37", "GENOMIC_WT_ALLELE_SEQ", "GENOMIC_MUT_ALLELE_SEQ", "ACCESSION_NUMBER", "Mutation CDS", "MUTATION_URL"])
 
-    if mutation_source == "cdna":
-        cosmic_cdna_info_df = pd.read_csv(cosmic_cdna_info_csv, usecols=["mutation_id", "mutation_cdna"])
+    if sequences == "cdna":
+        if not isinstance(cosmic_cdna_info_df, pd.DataFrame):
+            cosmic_cdna_info_df = pd.read_csv(cosmic_cdna_info_csv, usecols=["mutation_id", "mutation_cdna"])
         cosmic_cdna_info_df = cosmic_cdna_info_df.rename(columns={"mutation_cdna": "Mutation cDNA"})
 
     cosmic_df = add_variant_type(cosmic_df, "Mutation CDS")
@@ -908,9 +948,9 @@ def add_vcf_info_to_cosmic_tsv(cosmic_tsv, reference_genome_fasta, cosmic_df_out
 
     cosmic_df = cosmic_df.rename(columns={"GENOMIC_WT_ALLELE_SEQ": "REF", "GENOMIC_MUT_ALLELE_SEQ": "ALT", "MUTATION_URL": "mutation_id"})
 
-    if mutation_source == "cds":
+    if sequences == "cds":
         cosmic_df["ID"] = cosmic_df["ACCESSION_NUMBER"] + ":" + cosmic_df["Mutation CDS"]
-    elif mutation_source == "cdna":
+    elif sequences == "cdna":
         cosmic_df["mutation_id"] = cosmic_df["mutation_id"].str.extract(r"id=(\d+)")
         cosmic_df["mutation_id"] = cosmic_df["mutation_id"].astype(int, errors="raise")
         cosmic_df = cosmic_df.merge(cosmic_cdna_info_df[["mutation_id", "Mutation cDNA"]], on="mutation_id", how="left")
@@ -1037,6 +1077,63 @@ def write_to_vcf(adata_var, output_file, buffer_size=10_000):
         # Write any remaining lines
         if buffer:
             vcf_file.writelines(buffer)
+
+def cleaned_adata_to_vcf(adata_var, vcf_data_df, output_vcf = "variants.vcf"):
+    # Ensure proper columns
+    if isinstance(vcf_data_df, str) and os.path.isfile(vcf_data_df) and vcf_data_df.endswith(".csv"):
+        vcf_data_df = pd.read_csv(vcf_data_df)
+    elif isinstance(vcf_data_df, pd.DataFrame):
+        pass
+    else:
+        raise ValueError("vcf_data_df must be a CSV file path or a pandas DataFrame")
+    
+    if any(col not in vcf_data_df.columns for col in ["ID", "CHROM", "POS", "REF", "ALT"]):
+        raise ValueError("vcf_data_df must contain columns ID, CHROM, POS, REF, ALT")
+    if any(col not in adata_var.columns for col in ["vcrs_header", "vcrs_count", "number_obs"]):
+        raise ValueError("adata_var must contain columns vcrs_header, vcrs_count, number_obs")
+    
+    
+    # only keep the VCRSs that have a count > 0, and only keep relevant columns
+    adata_var_temp = adata_var[["vcrs_header", "vcrs_count", "number_obs"]].loc[adata_var["vcrs_count"] > 0].copy()
+
+    # make copy column that won't be exploded so that I know how to groupby later
+    adata_var_temp["vcrs_header_copy"] = adata_var_temp["vcrs_header"]
+
+    # rename to have VCF-like column names
+    adata_var_temp.rename(columns={"vcrs_count": "DP", "number_obs": "NS", "vcrs_header": "ID"}, inplace=True)
+
+    # explode across semicolons so that I can merge in vcf_data_df
+    adata_var_temp = adata_var_temp.assign(
+        ID=adata_var_temp["ID"].str.split(";")
+    ).explode("ID").reset_index(drop=True)
+
+    # merge in vcf_data_df (eg cosmic_df)
+    adata_var_temp = adata_var_temp.merge(vcf_data_df, on="ID", how="left")
+
+    # collapse across semicolons so that I get my VCRSs back
+    adata_var_temp = (
+        adata_var_temp
+        .groupby("vcrs_header_copy", sort=False)  # Group by vcrs_header_copy while preserving order
+        .agg({
+            "ID": lambda x: ";".join(x),  # Reconstruct ID as a single string
+            "CHROM": set,  # Collect CHROM values in the same order as rows
+            "POS": set,    # Collect POS values
+            "REF": set,    # Collect REF values
+            "ALT": set,    # Collect ALT values
+            "DP": "first",
+            "NS": "first",
+        })
+        .reset_index()  # Reset index for cleaner result
+        .drop(columns=["vcrs_header_copy"])
+    )
+
+    # only keep the VCRSs that have a single value for CHROM, POS, REF, ALT - there could be some merged headers that have identical VCF information (eg same genomic mutation but for different splice variants), so I can't just drop all merged headers
+    for col in ["CHROM", "POS", "REF", "ALT"]:
+        adata_var_temp = adata_var_temp[adata_var_temp[col].apply(lambda x: len(set(x)) == 1)].copy()
+        adata_var_temp[col] = adata_var_temp[col].apply(lambda x: list(x)[0])
+
+    # write to VCF
+    write_to_vcf(adata_var_temp, output_vcf)
 
 
 

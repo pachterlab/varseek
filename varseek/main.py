@@ -2060,6 +2060,18 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "gene_id_column"),
     )
     parser_clean.add_argument(
+        "--vcf_data_csv",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "vcf_data_csv"),
+    )
+    parser_clean.add_argument(
+        "--variants",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "variants"),
+    )
+    parser_clean.add_argument(
         "--out",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
