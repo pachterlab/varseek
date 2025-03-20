@@ -595,3 +595,93 @@ def get_last_vcrs_number(filename):
     match = re.search(r"vcrs_(\d+)", last_line)
     number = int(match.group(1)) if match else None
     return number
+
+
+
+def merge_fasta_file_headers(input_fasta, use_IDs=False, id_to_header_csv_out=None):
+    output_fasta = input_fasta.replace(".fa", "_merged.fa")
+    
+    # Create two temporary files for the intermediate steps.
+    with tempfile.NamedTemporaryFile(delete=False, mode='w+', suffix='.tsv') as temp_tsv:
+        temp_tsv_name = temp_tsv.name
+    with tempfile.NamedTemporaryFile(delete=False, mode='w+', suffix='.tsv') as sorted_tsv:
+        sorted_tsv_name = sorted_tsv.name
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.fasta') as merged_fasta:
+        merged_fasta_name = merged_fasta.name
+
+    try:
+        # Step 1: Convert FASTA to a single-line, tab-separated file (sequence<tab>header)
+        awk_cmd = f"""awk 'BEGIN {{FS="\\n"; RS=">"; ORS=""}} 
+            NR > 1 {{
+                split($0, lines, "\\n");
+                header = lines[1];
+                seq = "";
+                for (i = 2; i <= length(lines); i++) {{
+                    seq = seq lines[i];
+                }}
+                print seq "\\t" header "\\n";
+            }}' {input_fasta} > {temp_tsv_name}"""
+        subprocess.run(awk_cmd, shell=True, check=True, executable="/bin/bash")
+
+        # Step 2: Sort the temporary file by sequence (first column)
+        sort_cmd = f"sort -k1,1 -k2,2 {temp_tsv_name} > {sorted_tsv_name}"
+        subprocess.run(sort_cmd, shell=True, check=True, executable="/bin/bash")
+
+        
+        step_3_output_fasta = merged_fasta_name if use_IDs else output_fasta
+        # Step 3: Merge headers for identical sequences
+        awk_merge_cmd = f"""awk -F'\\t' 'BEGIN {{ prevSeq = ""; mergedHeader = "" }}
+            {{
+                if ($1 == prevSeq) {{
+                    mergedHeader = mergedHeader ";" $2;
+                }} else {{
+                    if (prevSeq != "") {{
+                        print ">" mergedHeader "\\n" prevSeq;
+                    }}
+                    prevSeq = $1;
+                    mergedHeader = $2;
+                }}
+            }}
+            END {{
+                if (prevSeq != "") {{
+                    print ">" mergedHeader "\\n" prevSeq;
+                }}
+            }}' {sorted_tsv_name} > {step_3_output_fasta}"""
+        subprocess.run(awk_merge_cmd, shell=True, check=True, executable="/bin/bash")
+
+        if use_IDs:
+            # Step 4: Count the number of merged FASTA records.
+            count_cmd = f"grep -c '^>' {merged_fasta_name}"
+            count_output = subprocess.check_output(count_cmd, shell=True, executable="/bin/bash").strip()
+            total_records = int(count_output)
+            num_digits = len(str(total_records))
+
+            # Step 5: Replace headers with generated IDs and write a mapping CSV.
+            # This AWK command processes the merged FASTA, replacing headers with new IDs,
+            # and outputs a mapping (new ID, original merged header) to a CSV file.
+            awk_id_cmd = f"""awk -v num_digits={num_digits} -v mapping_file="{id_to_header_csv_out}" 'BEGIN {{
+                    count = 1;
+                    print "vcrs_id,vcrs_header" > mapping_file;
+                }}
+                /^>/ {{
+                    original = substr($0, 2);
+                    new_id = sprintf("vcrs_%0*d", num_digits, count);
+                    print ">" new_id;
+                    print new_id "," original >> mapping_file;
+                    count++;
+                    next;
+                }}
+                {{
+                    print;
+                }}' {merged_fasta_name} > {output_fasta}"""
+            subprocess.run(awk_id_cmd, shell=True, check=True, executable="/bin/bash")
+
+        os.remove(input_fasta)
+        os.rename(output_fasta, input_fasta)
+
+    finally:
+        # Delete the temporary files.
+        os.remove(temp_tsv_name)
+        os.remove(sorted_tsv_name)
+        if os.path.exists(merged_fasta_name):
+            os.remove(merged_fasta_name)

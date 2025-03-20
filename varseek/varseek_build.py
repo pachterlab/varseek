@@ -42,6 +42,7 @@ from .utils import (
     translate_sequence,
     vcf_to_dataframe,
     wt_fragment_and_mutant_fragment_share_kmer,
+    merge_fasta_file_headers,
     download_cosmic_sequences,
     download_cosmic_mutations,
     merge_gtf_transcript_locations_into_cosmic_csv,
@@ -526,8 +527,8 @@ def build(
     # * 1.5 Chunk iteration
     if chunksize and return_variant_output:
         raise ValueError("return_variant_output cannot be True when chunksize is specified. Please set return_variant_output to False.")
-    if chunksize and kwargs.get("merge_identical", True):
-        raise ValueError("merge_identical cannot be True when chunksize is specified. Please set merge_identical to False.")
+    if chunksize and kwargs.get("merge_identical", True) and save_variants_updated_csv:
+        raise ValueError("both merge_identical and save_variants_updated_csv cannot be True when chunksize is specified. Please set merge_identical to False and/or save_variants_updated_csv to False.")
     if chunksize is not None and isinstance(variants, (str, Path)) and os.path.exists(variants):
         variants = str(variants)  # convert Path to string
         params_dict = make_function_parameter_to_value_dict(1)
@@ -541,6 +542,12 @@ def build(
                 logger.info(f"Processing chunk {chunk_number}/{total_chunks}")
                 build(variants=chunk, chunksize=None, chunk_number=chunk_number, total_rows=total_rows, running_within_chunk_iteration=True, **params_dict)  # running_within_chunk_iteration here for logger setup and report_time_elapsed decorator
                 if chunk_number == total_chunks:
+                    if kwargs.get("merge_identical", True):
+                        vcrs_fasta_out = os.path.join(out, "vcrs.fa") if not vcrs_fasta_out else vcrs_fasta_out  # copy-paste from below
+                        id_to_header_csv_out = os.path.join(out, "id_to_header_mapping.csv") if not id_to_header_csv_out else id_to_header_csv_out  # copy-paste from below
+                        vcrs_t2g_out = os.path.join(out, "vcrs_t2g.txt") if not vcrs_t2g_out else vcrs_t2g_out  # copy-paste from below
+                        merge_fasta_file_headers(vcrs_fasta_out, use_IDs=kwargs.get("use_IDs", True), id_to_header_csv_out=id_to_header_csv_out)
+                        create_identity_t2g(vcrs_fasta_out, vcrs_t2g_out, mode="w")
                     return
         elif variants.endswith(".vcf") or variants.endswith(".vcf.gz"):
             iterate_through_vcf_in_chunks(variants, params_dict, chunksize)

@@ -747,3 +747,48 @@ def test_vcf_chunks(vcf_file_and_corresponding_sequences, out_dir):
     assert vcf_output_pytest_df.equals(vcf_output_ground_truth_df)
 
     assert_global_variables_zero()
+
+
+
+
+@pytest.fixture
+def toy_vcrs_fa_path_for_merge_testing(tmp_path):
+    # Create a temporary FASTA file
+    temp_fasta_file = tmp_path / "toy_vcrs_for_merging.fasta"
+
+    vcrs_header_list = ["header1", "header2", "header3", "header4", "aheader5", "header6"]
+    vcrs_sequence_list = ["AAAAAA", "AAAAAA", "GGGGGGG", "CCCCCCC", "AAAAAA", "CCCCCCC"]
+
+    with open(str(temp_fasta_file), 'w', encoding="utf-8") as fasta_file:
+        for i in range(len(vcrs_sequence_list)):
+            fasta_file.write(f">{vcrs_header_list[i]}\n")
+            fasta_file.write(f"{vcrs_sequence_list[i]}\n")
+        
+    return str(temp_fasta_file)
+
+from varseek.utils import merge_fasta_file_headers, create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting
+def test_fasta_merging_with_awk(toy_vcrs_fa_path_for_merge_testing, tmp_path):
+    merge_fasta_file_headers(toy_vcrs_fa_path_for_merge_testing, use_IDs=False)
+    
+    fasta_dict_test = dict(create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(toy_vcrs_fa_path_for_merge_testing))
+    fasta_dict_gt = {"aheader5;header1;header2": "AAAAAA", "header3": "GGGGGGG", "header4;header6": "CCCCCCC"}
+
+    assert fasta_dict_test == fasta_dict_gt
+
+def test_fasta_merging_with_awk_using_IDs(toy_vcrs_fa_path_for_merge_testing, tmp_path):
+    id_to_header_csv_out = tmp_path / "id_to_header.csv"
+    merge_fasta_file_headers(toy_vcrs_fa_path_for_merge_testing, use_IDs=True, id_to_header_csv_out=id_to_header_csv_out)
+    
+    fasta_dict_test = dict(create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(toy_vcrs_fa_path_for_merge_testing))
+    fasta_dict_gt = {"vcrs_1": "AAAAAA", "vcrs_2": "CCCCCCC", "vcrs_3": "GGGGGGG"}  # the order of these might be a little funny, but it doesn't really matter
+
+    assert fasta_dict_test == fasta_dict_gt
+
+    id_to_header_df_test = pd.read_csv(id_to_header_csv_out)
+    id_to_header_df_gt = pd.DataFrame({"vcrs_id": ["vcrs_1", "vcrs_2", "vcrs_3"], "vcrs_header": ["aheader5;header1;header2", "header4;header6", "header3"]})
+
+    assert id_to_header_df_test.equals(id_to_header_df_gt)
+
+
+
+

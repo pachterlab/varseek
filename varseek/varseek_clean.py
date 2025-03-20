@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import scipy.sparse as sp
 import subprocess
 import time
 from pathlib import Path
@@ -724,6 +725,13 @@ def clean(
         )
 
     adata.var["vcrs_count"] = adata.X.sum(axis=0).A1 if hasattr(adata.X, "A1") else np.asarray(adata.X.sum(axis=0)).flatten()
+
+    if sp.issparse(adata.X):
+        # Sparse matrix handling
+        adata.var["number_obs"] = np.array((adata.X != 0).sum(axis=0)).flatten()
+    else:
+        # Dense matrix handling
+        adata.var["number_obs"] = (adata.X != 0).sum(axis=0)
 
     if save_vcf:
         make_vcf(vcf_out)  # TODO: write this

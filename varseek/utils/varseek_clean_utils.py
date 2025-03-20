@@ -991,7 +991,7 @@ def add_vcf_info_to_cosmic_tsv(cosmic_tsv, reference_genome_fasta, cosmic_df_out
 
 
 # TODO: make sure this works for rows with just ID and everything else blank (due to different mutations being concatenated)
-def write_to_vcf(adata_var, output_file):
+def write_to_vcf(adata_var, output_file, buffer_size=10_000):
     """
     Write adata.var DataFrame to a VCF file.
 
@@ -1008,18 +1008,36 @@ def write_to_vcf(adata_var, output_file):
         vcf_file.write('##INFO=<ID=NS,Number=1,Type=Integer,Description="Number of Samples">\n')
         vcf_file.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
 
-        # Write each row of the DataFrame
-        for _, row in adata_var.iterrows():
-            # Construct INFO field
-            info_fields = [
-                f"DP={row['DP']}" if pd.notna(row["DP"]) else None,
-                f"AF={row['AF']}" if pd.notna(row["AF"]) else None,
-                f"NS={row['NS']}" if pd.notna(row["NS"]) else None,
-            ]
+        # Extract all column data as NumPy arrays (faster access)
+        chroms, poss, ids, refs, alts, dps, nss, afs = (
+            adata_var["CHROM"].values, adata_var["POS"].values, adata_var["ID"].values,
+            adata_var["REF"].values, adata_var["ALT"].values, adata_var["DP"].values,
+            adata_var["NS"].values,
+            adata_var["AF"].values if "AF" in adata_var else np.full(len(adata_var), np.nan)  # Handle optional AF column
+        )
+
+        # Iterate over pre-extracted values
+        buffer = []
+        for chrom, pos, id_, ref, alt, dp, ns, af in zip(chroms, poss, ids, refs, alts, dps, nss, afs):
+            # Construct INFO field efficiently
+            info_fields = [f"DP={dp}" if pd.notna(dp) else None,
+                        f"NS={ns}" if pd.notna(ns) else None]
+            if pd.notna(af):
+                info_fields.append(f"AF={af}")
+
             info = ";".join(filter(None, info_fields))
 
-            # Write VCF row
-            vcf_file.write(f"{row['CHROM']}\t{row['POS']}\t{row['ID']}\t{row['REF']}\t{row['ALT']}\t.\tPASS\t{info}\n")
+            buffer.append(f"{chrom}\t{pos}\t{id_}\t{ref}\t{alt}\t.\tPASS\t{info}\n")
+
+            # Write to file in chunks
+            if len(buffer) >= buffer_size:
+                vcf_file.writelines(buffer)
+                buffer.clear()  # Reset buffer
+        
+        # Write any remaining lines
+        if buffer:
+            vcf_file.writelines(buffer)
+
 
 
 # TODO: make sure this works for rows with just ID and everything else blank (due to different mutations being concatenated)
