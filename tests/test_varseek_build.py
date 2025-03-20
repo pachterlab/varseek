@@ -464,6 +464,7 @@ def test_csv_of_mutations_with_chunks(create_temp_files, out_dir):
         w=30,
         k=31,
         out=out_dir,
+        merge_identical=False,
         chunksize=2
     )
 

@@ -37,9 +37,9 @@ pytest_permanent_out_dir_base = test_directory / "pytest_output" / Path(__file__
 current_datetime = datetime.now().strftime("date_%Y_%m_%d_time_%H%M_%S")
 
 #$ TOGGLE THIS SECTION TO HAVE THIS FILE RECOGNIZED BY PYTEST (commented out means it will be recognized, uncommented means it will be hidden)
-# # If "tests/test_ref.py" is not explicitly in the command line arguments, skip this module. - notice that uncommenting this will hide it from vscode such that I can't press the debug button
-# if not any("test_varseek_ref.py" in arg for arg in sys.argv):
-#     pytest.skip("Skipping test_varseek_ref.py due to its slow nature; run this file by explicity including the file i.e., 'pytest tests/test_varseek_ref.py'", allow_module_level=True)
+# If "tests/test_ref.py" is not explicitly in the command line arguments, skip this module. - notice that uncommenting this will hide it from vscode such that I can't press the debug button
+if not any("test_varseek_ref.py" in arg for arg in sys.argv):
+    pytest.skip("Skipping test_varseek_ref.py due to its slow nature; run this file by explicity including the file i.e., 'pytest tests/test_varseek_ref.py'", allow_module_level=True)
 
 @pytest.fixture
 def out_dir(tmp_path, request):
