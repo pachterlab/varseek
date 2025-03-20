@@ -856,6 +856,7 @@ def info(
                 bowtie2=bowtie2,
                 overwrite=overwrite,
                 first_chunk=first_chunk,
+                chunk_number=chunk_number,
             )
         except Exception as e:
             logger.error("Error aligning to normal genome and building alignment_to_reference: %s", e)

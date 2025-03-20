@@ -103,15 +103,13 @@ def capitalize_sequences(input_file, output_file=None):
         raise e
 
 
-def parse_sam_and_extract_sequences(sam_file, ref_genome_file, output_fasta_file, k=31, dfk_length=None, capitalize=True, remove_duplicates=False, check_for_bad_cigars=True, overwrite=False, first_chunk=True):
+def parse_sam_and_extract_sequences(sam_file, ref_genome_file, output_fasta_file, k=31, dfk_length=None, capitalize=True, remove_duplicates=False, check_for_bad_cigars=True):
     if dfk_length is None:
         dfk_length = k + 2
 
     ref_genome = {header: sequence for header, sequence in pyfastx.Fastx(ref_genome_file)}
 
-    mode = determine_write_mode(output_fasta_file, overwrite=overwrite, first_chunk=first_chunk)
-
-    with open(sam_file, "r", encoding="utf-8") as f, open(output_fasta_file, mode, encoding="utf-8") as dlist_fasta:
+    with open(sam_file, "r", encoding="utf-8") as f, open(output_fasta_file, "w", encoding="utf-8") as dlist_fasta:
         bad_cigar = 0
         for line in f:
             if line.startswith("@"):
@@ -1244,16 +1242,16 @@ def run_bowtie_build_dlist(ref_fa, ref_folder, ref_prefix, bowtie2_build, thread
         logger.info("Bowtie2 build complete")
 
 
-def run_bowtie_alignment_dlist(output_sam_file, read_fa, ref_folder, ref_prefix, bowtie2, threads=2, k=31, strandedness=False, N_penalty=1, max_ambiguous_vcrs=0, output_stat_file=None, overwrite=False, first_chunk=True):
-    mode = determine_write_mode(output_sam_file, overwrite=overwrite, first_chunk=first_chunk)
+def run_bowtie_alignment_dlist(output_sam_file, read_fa, ref_folder, ref_prefix, bowtie2, threads=2, k=31, strandedness=False, N_penalty=1, max_ambiguous_vcrs=0, output_stat_file=None, chunk_number=None):
     os.makedirs(os.path.dirname(output_sam_file), exist_ok=True)
+
+    if chunk_number and chunk_number != 1:
+        output_sam_file_copy = output_sam_file.replace(".sam", f"_chunk{chunk_number-1}.sam")
+        shutil.copy(output_sam_file, output_sam_file_copy)
     
     logger.info("Running bowtie2 alignment")
 
     bowtie_reference_prefix = os.path.join(ref_folder, ref_prefix)
-
-    output_sam_file_tmp = f"{output_sam_file}.tmp"
-    output_sam_file_for_command = output_sam_file_tmp if mode == "a" else output_sam_file
 
     bowtie2_alignment_command = [
         bowtie2,  # Path to the bowtie2 executable
@@ -1286,7 +1284,7 @@ def run_bowtie_alignment_dlist(output_sam_file, read_fa, ref_folder, ref_prefix,
         "-U",
         read_fa,  # Input FASTA file
         "-S",
-        output_sam_file_for_command,  # Output SAM file
+        output_sam_file,  # Output SAM file
     ]
 
     if strandedness:
@@ -1299,11 +1297,6 @@ def run_bowtie_alignment_dlist(output_sam_file, read_fa, ref_folder, ref_prefix,
         text=True,
         check=True,
     )
-
-    if mode == "a":  # append the files
-        with open(output_sam_file_tmp, "rb") as tmp, open(output_sam_file, "ab") as out:
-            out.write(tmp.read())
-        os.remove(output_sam_file_tmp)
 
     if output_stat_file is not None:
         if os.path.exists(output_stat_file):
@@ -1517,19 +1510,20 @@ def align_to_normal_genome_and_build_dlist(
     dlist_fasta_file_cdna_full=None,
     dlist_fasta_file=None,
     overwrite=False,
-    first_chunk=True
+    first_chunk=True,
+    chunk_number=None,
 ):
     bowtie_stat_file = f"{output_stat_folder}/bowtie_alignment.txt"
-
-    ref_folder_genome_bowtie = f"{reference_out}/bowtie_index_genome"
-    ref_prefix_genome_full = f"{ref_folder_genome_bowtie}/{ref_prefix}"
-    output_sam_file_genome = f"{out_dir_notebook}/bowtie_vcrs_kmers_to_genome/alignment.sam"
 
     if not dlist_reference_genome_fasta and not dlist_reference_cdna_fasta:
         logger.info("No reference fasta files provided for alignment")
         return
 
     if dlist_reference_genome_fasta:
+        ref_folder_genome_bowtie = f"{reference_out}/bowtie_index_genome"
+        ref_prefix_genome_full = f"{ref_folder_genome_bowtie}/{ref_prefix}"
+        output_sam_file_genome = f"{out_dir_notebook}/bowtie_vcrs_kmers_to_genome/alignment.sam"
+
         if not os.path.exists(ref_folder_genome_bowtie) or not os.listdir(ref_folder_genome_bowtie):
             run_bowtie_build_dlist(
                 ref_fa=dlist_reference_genome_fasta,
@@ -1539,7 +1533,7 @@ def align_to_normal_genome_and_build_dlist(
                 threads=threads,
             )
 
-        run_bowtie_alignment_dlist(output_sam_file=output_sam_file_genome, read_fa=mutations, ref_folder=ref_folder_genome_bowtie, ref_prefix=ref_prefix_genome_full, k=k, bowtie2=bowtie2, threads=threads, strandedness=strandedness, N_penalty=N_penalty, max_ambiguous_vcrs=max_ambiguous_vcrs, output_stat_file=bowtie_stat_file, overwrite=overwrite, first_chunk=first_chunk)
+        run_bowtie_alignment_dlist(output_sam_file=output_sam_file_genome, read_fa=mutations, ref_folder=ref_folder_genome_bowtie, ref_prefix=ref_prefix_genome_full, k=k, bowtie2=bowtie2, threads=threads, strandedness=strandedness, N_penalty=N_penalty, max_ambiguous_vcrs=max_ambiguous_vcrs, output_stat_file=bowtie_stat_file, chunk_number=chunk_number)
 
         dlist_genome_df = create_df_of_dlist_headers(output_sam_file_genome, header_column_name=vcrs_id_column, k=k)
 
@@ -1547,13 +1541,12 @@ def align_to_normal_genome_and_build_dlist(
             dlist_fasta_file_genome_full = f"{out_dir_notebook}/dlist_genome.fa"
         dlist_write_mode = determine_write_mode(dlist_fasta_file_genome_full, overwrite=overwrite, first_chunk=first_chunk)
         dlist_fasta_file_genome_full_tmp = f"{dlist_fasta_file_genome_full}.tmp"
-        dlist_fasta_file_genome_full_for_command = dlist_fasta_file_genome_full_tmp if dlist_write_mode == "a" else dlist_fasta_file_genome_full
         
-        parse_sam_and_extract_sequences(output_sam_file_genome, dlist_reference_genome_fasta, dlist_fasta_file_genome_full_for_command, k=k, capitalize=True, remove_duplicates=False, overwrite=overwrite, first_chunk=first_chunk)
+        parse_sam_and_extract_sequences(output_sam_file_genome, dlist_reference_genome_fasta, dlist_fasta_file_genome_full_tmp, k=k, capitalize=True, remove_duplicates=False)
 
         dlist_substring_genome_df = get_vcrs_headers_that_are_substring_dlist(
             mutation_reference_file_fasta=mutations,
-            dlist_fasta_file=dlist_fasta_file_genome_full_for_command,
+            dlist_fasta_file=dlist_fasta_file_genome_full_tmp,
             strandedness=strandedness,
             header_column_name=vcrs_id_column,
         )
@@ -1564,7 +1557,7 @@ def align_to_normal_genome_and_build_dlist(
         dlist_genome_df["substring_alignment_to_reference"] = dlist_genome_df["substring_alignment_to_reference"].fillna(False)
 
         if max_ambiguous_reference < 9999:  #! be careful of changing this number - it is related to the condition in varseek info - max_ambiguous_reference = 99999
-            remove_Ns_fasta(dlist_fasta_file_genome_full_for_command, max_ambiguous_reference=max_ambiguous_reference)
+            remove_Ns_fasta(dlist_fasta_file_genome_full_tmp, max_ambiguous_reference=max_ambiguous_reference)
 
         dlist_genome_df = dlist_genome_df.rename(columns={"alignment_to_reference": "alignment_to_reference_genome", "substring_alignment_to_reference": "substring_alignment_to_reference_genome", "alignment_to_reference_count": "alignment_to_reference_count_genome", "substring_alignment_to_reference_count": "substring_alignment_to_reference_count_genome"})
 
@@ -1596,6 +1589,8 @@ def align_to_normal_genome_and_build_dlist(
             with open(dlist_fasta_file_genome_full_tmp, "rb") as tmp, open(dlist_fasta_file_genome_full, "ab") as out:
                 out.write(tmp.read())
             os.remove(dlist_fasta_file_genome_full_tmp)
+        else:
+            os.rename(dlist_fasta_file_genome_full_tmp, dlist_fasta_file_genome_full)
 
     if dlist_reference_cdna_fasta:
         ref_folder_cdna_bowtie = f"{reference_out}/bowtie_index_transcriptome"
@@ -1605,7 +1600,7 @@ def align_to_normal_genome_and_build_dlist(
         if not os.path.exists(ref_folder_cdna_bowtie) or not os.listdir(ref_folder_cdna_bowtie):
             run_bowtie_build_dlist(ref_fa=dlist_reference_cdna_fasta, ref_folder=ref_folder_cdna_bowtie, ref_prefix=ref_prefix_cdna_full, bowtie2_build=bowtie2_build, threads=threads)
 
-        run_bowtie_alignment_dlist(output_sam_file=output_sam_file_cdna, read_fa=mutations, ref_folder=ref_folder_cdna_bowtie, ref_prefix=ref_prefix_cdna_full, k=k, bowtie2=bowtie2, threads=threads, strandedness=strandedness, N_penalty=N_penalty, max_ambiguous_vcrs=max_ambiguous_vcrs, output_stat_file=bowtie_stat_file, overwrite=overwrite, first_chunk=first_chunk)
+        run_bowtie_alignment_dlist(output_sam_file=output_sam_file_cdna, read_fa=mutations, ref_folder=ref_folder_cdna_bowtie, ref_prefix=ref_prefix_cdna_full, k=k, bowtie2=bowtie2, threads=threads, strandedness=strandedness, N_penalty=N_penalty, max_ambiguous_vcrs=max_ambiguous_vcrs, output_stat_file=bowtie_stat_file, chunk_number=chunk_number)
 
         dlist_cdna_df = create_df_of_dlist_headers(output_sam_file_cdna, header_column_name=vcrs_id_column, k=k)
 
@@ -1613,13 +1608,12 @@ def align_to_normal_genome_and_build_dlist(
             dlist_fasta_file_cdna_full = f"{out_dir_notebook}/dlist_cdna.fa"
         dlist_write_mode = determine_write_mode(dlist_fasta_file_cdna_full, overwrite=overwrite, first_chunk=first_chunk)
         dlist_fasta_file_cdna_full_tmp = f"{dlist_fasta_file_cdna_full}.tmp"
-        dlist_fasta_file_cdna_full_for_command = dlist_fasta_file_cdna_full_tmp if dlist_write_mode == "a" else dlist_fasta_file_cdna_full
 
-        parse_sam_and_extract_sequences(output_sam_file_cdna, dlist_reference_cdna_fasta, dlist_fasta_file_cdna_full, k=k, capitalize=True, remove_duplicates=False, overwrite=overwrite, first_chunk=first_chunk)
+        parse_sam_and_extract_sequences(output_sam_file_cdna, dlist_reference_cdna_fasta, dlist_fasta_file_cdna_full_tmp, k=k, capitalize=True, remove_duplicates=False)
 
         dlist_substring_cdna_df = get_vcrs_headers_that_are_substring_dlist(
             mutation_reference_file_fasta=mutations,
-            dlist_fasta_file=dlist_fasta_file_cdna_full_for_command,
+            dlist_fasta_file=dlist_fasta_file_cdna_full_tmp,
             strandedness=strandedness,
             header_column_name=vcrs_id_column,
         )
@@ -1632,7 +1626,7 @@ def align_to_normal_genome_and_build_dlist(
         dlist_cdna_df["substring_alignment_to_reference"] = dlist_cdna_df["substring_alignment_to_reference"].fillna(False)
 
         if max_ambiguous_reference < 9999:  #! be careful of changing this number - it is related to the condition in varseek info - max_ambiguous_reference = 99999
-            remove_Ns_fasta(dlist_fasta_file_cdna_full_for_command, max_ambiguous_reference=max_ambiguous_reference)
+            remove_Ns_fasta(dlist_fasta_file_cdna_full_tmp, max_ambiguous_reference=max_ambiguous_reference)
 
         dlist_cdna_df = dlist_cdna_df.rename(columns={"alignment_to_reference": "alignment_to_reference_cdna", "substring_alignment_to_reference": "substring_alignment_to_reference_cdna", "alignment_to_reference_count": "alignment_to_reference_count_cdna", "substring_alignment_to_reference_count": "substring_alignment_to_reference_count_cdna"})
 
@@ -1662,6 +1656,8 @@ def align_to_normal_genome_and_build_dlist(
             with open(dlist_fasta_file_cdna_full_tmp, "rb") as tmp, open(dlist_fasta_file_cdna_full, "ab") as out:
                 out.write(tmp.read())
             os.remove(dlist_fasta_file_cdna_full_tmp)
+        else:
+            os.rename(dlist_fasta_file_cdna_full_tmp, dlist_fasta_file_cdna_full)
 
     if dlist_reference_genome_fasta and not dlist_reference_cdna_fasta:
         logger.info(f"Total in genome: {count_genome_total}")

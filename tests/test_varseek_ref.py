@@ -26,7 +26,7 @@ columns_to_drop_info_filter = None  # drops columns for info and filter df - wil
 make_new_gt = False
 store_out_in_permanent_paths = True
 threads = 2
-chunksize = 5000  # None or int>0
+chunksize = None  # None or int>0
 
 test_directory = Path(__file__).resolve().parent
 ground_truth_folder = os.path.join(test_directory, "pytest_ground_truth")
@@ -144,14 +144,20 @@ def test_vk_ref(cosmic_csv_path, out_dir):
 
     w = 47
     k = 51
-    columns_to_include = "alignment_to_reference"  #!!! all
+    columns_to_include = "all"
     filters=(
         "alignment_to_reference:is_not_true",
         # "substring_alignment_to_reference:is_not_true",  # filter out variants that are a substring of the reference genome  #* uncomment this and erase the line above when implementing d-list
-        # "pseudoaligned_to_reference_despite_not_truly_aligning:is_not_true",  # filter out variants that pseudoaligned to human genome despite not truly aligning
-        # "num_distinct_triplets:greater_than=2",  # filters out VCRSs with <= 2 unique triplets
-    ) #!!! uncomment the last 2 filters
-    merge_identical = False  #!!! set to True
+        "pseudoaligned_to_reference_despite_not_truly_aligning:is_not_true",  # filter out variants that pseudoaligned to human genome despite not truly aligning
+        "num_distinct_triplets:greater_than=2",  # filters out VCRSs with <= 2 unique triplets
+    )
+    merge_identical = True
+
+    if chunksize is not None:
+        ground_truth_folder = os.path.join(test_directory, "pytest_ground_truth_with_chunks")
+        columns_to_include = "alignment_to_reference"
+        filters = ("alignment_to_reference:is_not_true",)
+        merge_identical = False
 
     if make_new_gt:
         os.makedirs(ground_truth_folder, exist_ok=True)
