@@ -278,16 +278,16 @@ def main():  # noqa: C901
     parent_parser.add_argument("-v", "--version", action="store_true", help="Print version.")
 
 
-    # Check if a flag is passed that causes a script to exist early, thus making normally required arguments optiona (eg I can call vk build --list_supported_databases without providing -s and -v)
+    # Check if a flag is passed that causes a script to exist early, thus making normally required arguments optiona (eg I can call vk build --list_prebuilt_indices without providing -s and -v)
     list_information_and_exit_flag_dict = {}
-    for list_information_and_exit_flag in ("list_supported_databases", "list_columns", "list_filter_rules", "list_downloadable_references"):
+    for list_information_and_exit_flag in ("list_prebuilt_indices", "list_columns", "list_filter_rules", "list_downloadable_references"):
         list_information_and_exit_flag_dict[list_information_and_exit_flag] = False
         for i, arg in enumerate(sys.argv):
             if arg == f"--{list_information_and_exit_flag}":
                 list_information_and_exit_flag_dict[list_information_and_exit_flag] = True
                 break
     
-    vk_build_list_information_and_exit_flag_present = list_information_and_exit_flag_dict["list_supported_databases"] 
+    vk_build_list_information_and_exit_flag_present = list_information_and_exit_flag_dict["list_prebuilt_indices"] 
     vk_info_list_information_and_exit_flag_present = list_information_and_exit_flag_dict["list_columns"]
     vk_filter_list_information_and_exit_flag_present = list_information_and_exit_flag_dict["list_filter_rules"] 
     vk_ref_list_information_and_exit_flag_present = any(list_information_and_exit_flag_dict.values())
@@ -531,10 +531,10 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "dry_run"),
     )
     parser_build.add_argument(
-        "--list_supported_databases",
+        "--list_prebuilt_indices",
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "list_supported_databases"),
+        help=extract_help_from_doc(build, "list_prebuilt_indices"),
     )
     parser_build.add_argument(
         "--overwrite",

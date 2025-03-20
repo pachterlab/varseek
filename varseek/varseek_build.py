@@ -217,7 +217,7 @@ def validate_input_build(params_dict):
     mutations = params_dict.get("variants")  # apologies for the naming confusion
 
     if not isinstance(sequences, (list, tuple, str, Path)):
-        raise ValueError(f"sequences must be a nucleotide string, a list of nucleotide strings, a path to a reference genome, or a string specifying a reference genome supported by varseek. Got {type(sequences)}\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
+        raise ValueError(f"sequences must be a nucleotide string, a list of nucleotide strings, a path to a reference genome, or a string specifying a reference genome supported by varseek. Got {type(sequences)}\nTo see a list of supported variant databases and reference genomes, please use the 'list_prebuilt_indices' flag/argument.")
     if isinstance(sequences, (list, tuple)):
         if not all(isinstance(seq, str) for seq in sequences):
             raise ValueError("All elements in sequences must be nucleotide strings.")
@@ -233,11 +233,11 @@ def validate_input_build(params_dict):
         elif isinstance(mutations, str) and supported_databases_and_corresponding_reference_sequence_type.get(mutations, {}).get("sequence_file_names", {}).get(sequences, None):  # a supported reference genome
             pass
         else:
-            raise ValueError(f"sequences must be a nucleotide string, a list of nucleotide strings, a path to a reference genome, or a string specifying a reference genome supported by varseek. Got {sequences} of type {type(sequences)}.\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
+            raise ValueError(f"sequences must be a nucleotide string, a list of nucleotide strings, a path to a reference genome, or a string specifying a reference genome supported by varseek. Got {sequences} of type {type(sequences)}.\nTo see a list of supported variant databases and reference genomes, please use the 'list_prebuilt_indices' flag/argument.")
 
     # mutations
     if not isinstance(mutations, (list, tuple, str, Path, pd.DataFrame)):
-        raise ValueError(f"variants must be a string, a list of strings, a path to a variant database, or a string specifying a variant database supported by varseek. Got {mutations} of type {type(mutations)}\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
+        raise ValueError(f"variants must be a string, a list of strings, a path to a variant database, or a string specifying a variant database supported by varseek. Got {mutations} of type {type(mutations)}\nTo see a list of supported variant databases and reference genomes, please use the 'list_prebuilt_indices' flag/argument.")
     if isinstance(mutations, list) and not all((isinstance(mut, str) and mut.startswith(("c.", "g."))) for mut in mutations):
         raise ValueError("All elements in variants must be strings that start with 'c.' or 'g.'.")
     if isinstance(mutations, str):
@@ -245,11 +245,11 @@ def validate_input_build(params_dict):
             pass
         elif mutations in supported_databases_and_corresponding_reference_sequence_type:  # a supported mutation database
             if sequences not in supported_databases_and_corresponding_reference_sequence_type[mutations]["sequence_download_commands"]:
-                raise ValueError(f"sequences {sequences} not internally supported.\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
+                raise ValueError(f"sequences {sequences} not internally supported.\nTo see a list of supported variant databases and reference genomes, please use the 'list_prebuilt_indices' flag/argument.")
         elif os.path.isfile(mutations) and any(x in os.path.basename(mutations) for x in accepted_build_file_types):  # a path to a mutation database with a valid extension (I avoid using 'endswith' becasue I want to check for compressed versions too - I can handle compressed versions, as pandas reads in CSVs/TSVs and pysam reads in VCFs)
             pass
         else:
-            raise ValueError(f"variants must be a string, a list of strings, a path to a variant database, or a string specifying a variant database supported by varseek. Got {type(mutations)}.\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
+            raise ValueError(f"variants must be a string, a list of strings, a path to a variant database, or a string specifying a variant database supported by varseek. Got {type(mutations)}.\nTo see a list of supported variant databases and reference genomes, please use the 'list_prebuilt_indices' flag/argument.")
 
     # Directories
     if not isinstance(params_dict.get("out", None), (str, Path)):
@@ -319,7 +319,7 @@ def validate_input_build(params_dict):
         ("save_filtering_report_text", False),
         ("dry_run", False),
         ("verbose", False),
-        ("list_supported_databases", False),
+        ("list_prebuilt_indices", False),
         ("overwrite", False),
     ]:
         if not (isinstance(params_dict.get(param_name), bool) or (optional_status and params_dict.get(param_name) is None)):
@@ -369,7 +369,7 @@ def build(
     translate_end=None,
     chunksize=None,
     dry_run=False,
-    list_supported_databases=False,
+    list_prebuilt_indices=False,
     overwrite=False,
     logging_level=None,
     save_logs=False,
@@ -408,7 +408,7 @@ def build(
                                         NOTE: The `sequences` reference genome assembly (e.g., GRCh37 vs. GRCh38) and release (if source is cDNA or CDS, e.g., Ensembl release 111) must match the source used to annotate the variants.
                                         NOTE: For VCF input, the reference source is always the genome (i.e., never the cDNA or CDS). The arguments `var_column` and `seq_id_column` are not needed for VCF input (will be automatically set).
                                         The `var_id_column` ID column can be provided if wanting to use the value from the ID column in the VCF as the variant ID instead of the default HGVS ID.
-                                        5) A value supported internally by vk ref (str), along with a value internally supported by vk ref corresponding to this variants value (str). See vk ref --list_supported_databases for more information.
+                                        5) A value supported internally by vk ref (str), along with a value internally supported by vk ref corresponding to this variants value (str). See vk ref --list_prebuilt_indices for more information.
 
     - sequences                         (str) Sequences to which to apply the variants from `variants`. See the 'variants' argument for more information on the input formats for `sequences` and their corresponding `variants` formats.
                                         NOTE: Only the letters until the first space or dot will be used as sequence identifiers
@@ -471,7 +471,7 @@ def build(
     # General arguments:
     - chunksize                          (int) Number of variants to process at a time. If None, then all variants will be processed at once. Default: None.
     - dry_run                            (True/False) Whether to simulate the function call without executing it. Default: False.
-    - list_supported_databases           (True/False) Whether to print the supported databases and sequences. Default: False.
+    - list_prebuilt_indices           (True/False) Whether to print the supported databases and sequences. Default: False.
     - overwrite                          (True/False) Whether to overwrite existing output files. Will return if any output file already exists. Default: False.
     - logging_level                      (str) Logging level. Can also be set with the environment variable VARSEEK_LOGGING_LEVEL. Default: INFO.
     - save_logs                          (True/False) Whether to save logs to a file. Default: False.
@@ -514,7 +514,7 @@ def build(
     global intronic_mutations, posttranslational_region_mutations, unknown_mutations, uncertain_mutations, ambiguous_position_mutations, variants_incorrect_wt_base, mut_idx_outside_seq
 
     # * 0. Informational arguments that exit early
-    if list_supported_databases:
+    if list_prebuilt_indices:
         print_valid_values_for_variants_and_sequences_in_varseek_build()
         return None
     

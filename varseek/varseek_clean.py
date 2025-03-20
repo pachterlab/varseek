@@ -752,7 +752,7 @@ def clean(
                 vcf_data_csv = add_vcf_info_to_cosmic_tsv(cosmic_tsv=cosmic_tsv, reference_genome_fasta=cosmic_reference_genome_fasta, cosmic_df_out=vcf_data_csv, sequences=sequences, cosmic_version=cosmic_version, cosmic_email=cosmic_email, cosmic_password=cosmic_password)
             # insert other supported databases here
             else:
-                raise ValueError("vcf_data_csv must be provided if variants is supported. Supported databases can be viewed with `vk ref --list_supported_databases`.")
+                raise ValueError("vcf_data_csv must be provided if variants is supported. Supported databases can be viewed with `vk ref --list_prebuilt_indices`.")
         cleaned_adata_to_vcf(adata.var, vcf_data_df=vcf_data_csv, output_vcf=vcf_out)
 
     if isinstance(adata_reference_genome, anndata.AnnData):

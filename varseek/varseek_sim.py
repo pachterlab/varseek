@@ -57,15 +57,15 @@ def validate_input_sim(params_dict):
     if isinstance(variants, (str, Path)):
         if variants in supported_databases_and_corresponding_reference_sequence_type:
             if sequences not in supported_databases_and_corresponding_reference_sequence_type[variants]["sequence_download_commands"]:
-                raise ValueError(f"sequences {sequences} not internally supported.\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
+                raise ValueError(f"sequences {sequences} not internally supported.\nTo see a list of supported variant databases and reference genomes, please use the 'list_prebuilt_indices' flag/argument.")
             elif os.path.isfile(variants) and variants.endswith(accepted_build_file_types):  # a path to a variant database with a valid extension
                 pass
             else:
-                raise ValueError(f"variants must be a df, a path to a variant database, or a string specifying a variant database supported by varseek. Got {type(variants)}.\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
+                raise ValueError(f"variants must be a df, a path to a variant database, or a string specifying a variant database supported by varseek. Got {type(variants)}.\nTo see a list of supported variant databases and reference genomes, please use the 'list_prebuilt_indices' flag/argument.")
     elif isinstance(variants, pd.DataFrame):
         pass
     else:
-        raise ValueError(f"variants must be a df, a path to a variant database, or a string specifying a variant database supported by varseek. Got {type(variants)}.\nTo see a list of supported variant databases and reference genomes, please use the 'list_supported_databases' flag/argument.")
+        raise ValueError(f"variants must be a df, a path to a variant database, or a string specifying a variant database supported by varseek. Got {type(variants)}.\nTo see a list of supported variant databases and reference genomes, please use the 'list_prebuilt_indices' flag/argument.")
 
     # integers - optional just means that it's in kwargs
     for param_name, min_value, optional_value in [

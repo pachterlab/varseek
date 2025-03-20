@@ -170,7 +170,7 @@ def ref(
                     NOTE: The `sequences` reference genome assembly (e.g., GRCh37 vs. GRCh38) and release (if source is cDNA or CDS, e.g., Ensembl release 111) must match the source used to annotate the variants.
                     NOTE: For VCF input, the reference source is always the genome (i.e., never the cDNA or CDS). The arguments `var_column` and `seq_id_column` are not needed for VCF input (will be automatically set).
                     The `var_id_column` ID column can be provided if wanting to use the value from the ID column in the VCF as the variant ID instead of the default HGVS ID.
-                    5) A value supported internally by vk ref (str), along with a value internally supported by vk ref corresponding to this variants value (str). See vk ref --list_supported_databases for more information.
+                    5) A value supported internally by vk ref (str), along with a value internally supported by vk ref corresponding to this variants value (str). See vk ref --list_prebuilt_indices for more information.
 
     - sequences     (str) Sequences to which to apply the variants from `variants`. See the 'variants' argument for more information on the input formats for `sequences` and their corresponding `variants` formats.
                     NOTE: Only the letters until the first space or dot will be used as sequence identifiers
@@ -221,7 +221,7 @@ def ref(
             print(f"Description: {downloadable_reference['description']}\nDownload command: {downloadable_reference['download_command']}\n")
         return None
 
-    if kwargs.get("list_supported_databases"):  # from vk build
+    if kwargs.get("list_prebuilt_indices"):  # from vk build
         vk.varseek_build.print_valid_values_for_variants_and_sequences_in_varseek_build()
         return None
     if kwargs.get("list_columns"):  # from vk info
