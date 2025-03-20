@@ -32,8 +32,10 @@ def convert_chromosome_value_to_int_when_possible(val):
 
 
 # Function to ensure unique IDs
-def generate_unique_ids(num_ids, start=1):
-    num_digits = len(str(num_ids + start - 1))
+def generate_unique_ids(num_ids, start=1, total_rows=None):
+    if total_rows is None:
+        total_rows = num_ids
+    num_digits = len(str(total_rows + start - 1))
     generated_ids = [f"vcrs_{i:0{num_digits}}" for i in range(start, start + num_ids)]
     return list(generated_ids)
 
@@ -580,3 +582,16 @@ def improve_genome_strand_information(cosmic_reference_file_mutation_csv, mutati
         df.to_csv(output_mutations_path, index=False)
 
     return df
+
+
+def get_last_vcrs_number(filename):
+    import csv
+    if not os.path.isfile(filename):
+        return 1
+    with open(filename, "r") as f:
+        last_line = list(csv.reader(f))[-1][0]  # Read last row, first column
+
+    # Extract number using regex
+    match = re.search(r"vcrs_(\d+)", last_line)
+    number = int(match.group(1)) if match else None
+    return number

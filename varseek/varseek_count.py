@@ -300,7 +300,7 @@ def count(
     adata_reference_genome = f"{kb_count_reference_genome_out_dir}/counts_unfiltered/adata.h5ad" if not kwargs.get("adata_reference_genome") else kwargs.get("adata_reference_genome")  # from vk clean
     adata_vcrs_clean_out = f"{out}/adata_cleaned.h5ad" if not kwargs.get("adata_vcrs_clean_out") else kwargs.get("adata_vcrs_clean_out")  # from vk clean
     adata_reference_genome_clean_out = f"{out}/adata_cleaned.h5ad" if not kwargs.get("adata_reference_genome_clean_out") else kwargs.get("adata_reference_genome_clean_out")  # from vk clean
-    vcf_out = os.path.join(out, "vcf") if not kwargs.get("vcf_out") else kwargs["vcf_out"]  # from vk clean
+    vcf_out = os.path.join(out, "variants.vcf") if not kwargs.get("vcf_out") else kwargs["vcf_out"]  # from vk clean
     stats_file = os.path.join(vk_summarize_out_dir, "varseek_summarize_stats.txt") if not kwargs.get("stats_file") else kwargs["stats_file"]  # from vk summarize
 
     for file in [stats_file]:  # purposely excluded adata_reference_genome because it is fine if someone provides this as input even if overwrite=False; and purposely excluded adata_vcrs, adata_vcrs_clean_out, adata_reference_genome_clean_out, kb_count_vcrs_out_dir, kb_count_reference_genome_out_dir for the reasons provided in vk ref

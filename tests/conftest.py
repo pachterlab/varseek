@@ -82,6 +82,56 @@ def compare_two_id_to_header_mappings(id_to_header_csv, id_to_header_csv_ground_
     id_to_header_dict_ground_truth = make_mapping_dict(id_to_header_csv_ground_truth, dict_key="id")
     assert id_to_header_dict == id_to_header_dict_ground_truth
 
+def compare_two_fastqs(fastq1, fastq2):
+    with open(fastq1, 'r') as f1, open(fastq2, 'r') as f2:
+        lines1 = f1.readlines()
+        lines2 = f2.readlines()
+
+    assert len(lines1) == len(lines2), "Fastq files differ in number of lines."
+    
+    for line1, line2 in zip(lines1, lines2):
+        assert line1.strip() == line2.strip(), f"Fastq files differ at line: {line1.strip()} vs {line2.strip()}"
+
+def compare_two_anndata_objects(adata1, adata2):
+    assert np.array_equal(adata1.X, adata2.X) and adata1.obs.equals(adata2.obs) and adata1.var.equals(adata2.var) and adata1.uns == adata2.uns and adata1.obsm.equals(adata2.obsm) and adata1.varm.equals(adata2.varm) and adata1.layers == adata2.layers
+
+def compare_two_vcfs(vcf1, vcf2):
+    import pysam
+
+    # Open VCF files
+    vcf1_file = pysam.VariantFile(vcf1)
+    vcf2_file = pysam.VariantFile(vcf2)
+
+    # Compare headers
+    vcf1_headers = str(vcf1_file.header)
+    vcf2_headers = str(vcf2_file.header)
+    
+    assert vcf1_headers == vcf2_headers, "Headers differ between VCF files."
+
+    # Extract and sort variant records
+    v1_records = sorted((rec.chrom, rec.pos, rec.ref, tuple(rec.alts), rec.qual, rec.filter.keys(), rec.info.items()) 
+                        for rec in vcf1_file)
+    
+    v2_records = sorted((rec.chrom, rec.pos, rec.ref, tuple(rec.alts), rec.qual, rec.filter.keys(), rec.info.items()) 
+                        for rec in vcf2_file)
+
+    # Compare number of records
+    assert len(v1_records) == len(v2_records), f"Number of records differ: {len(v1_records)} vs {len(v2_records)}"
+
+    # Compare variants record by record
+    for i, (rec1, rec2) in enumerate(zip(v1_records, v2_records)):
+        assert rec1 == rec2, f"Difference at record {i+1}: {rec1} vs {rec2}"
+
+    print("VCF files are identical.")
+
+
+def compare_two_vk_summarize_txt_files(file1, file2):
+    with open(file1, "r") as f1, open(file2, "r") as f2:
+        lines1 = f1.readlines()
+        lines2 = f2.readlines()
+
+    assert lines1 == lines2, "Files differ."
+
 
 import hashlib
 def compute_checksum(file_path, algorithm='sha256'):

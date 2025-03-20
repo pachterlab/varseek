@@ -541,6 +541,7 @@ def sim(
     skipped = 0
     
     with open(fasta_output_path_temp, "w", encoding="utf-8") as fa_file:
+        # TODO: replace itertuples with iterating through columns as iterators/lists for speedup
         for row in tqdm(sampled_reference_df.itertuples(index=False), total=len_sampled_reference_df, desc="Looping through variants to simulate reads", unit="variants"):
             # try:
             header = getattr(row, header_column, None)

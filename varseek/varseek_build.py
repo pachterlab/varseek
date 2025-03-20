@@ -26,6 +26,7 @@ from .utils import (
     convert_chromosome_value_to_int_when_possible,
     convert_mutation_cds_locations_to_cdna,
     create_identity_t2g,
+    get_last_vcrs_number,
     add_variant_type_column_to_vcf_derived_df,
     add_variant_column_to_vcf_derived_df,
     generate_unique_ids,
@@ -525,18 +526,20 @@ def build(
     # * 1.5 Chunk iteration
     if chunksize and return_variant_output:
         raise ValueError("return_variant_output cannot be True when chunksize is specified. Please set return_variant_output to False.")
+    if chunksize and kwargs.get("merge_identical", True):
+        raise ValueError("merge_identical cannot be True when chunksize is specified. Please set merge_identical to False.")
     if chunksize is not None and isinstance(variants, (str, Path)) and os.path.exists(variants):
         variants = str(variants)  # convert Path to string
         params_dict = make_function_parameter_to_value_dict(1)
         for key in ["variants", "chunksize"]:
             params_dict.pop(key, None)
-        total_chunks = count_chunks(variants, chunksize)
+        total_chunks, total_rows = count_chunks(variants, chunksize, return_tuple_with_total_rows=True)
         if variants.endswith(".csv") or variants.endswith(".tsv"):
             sep = "\t" if variants.endswith(".tsv") else ","
             for i, chunk in enumerate(pd.read_csv(variants, sep=sep, chunksize=chunksize)):
                 chunk_number = i + 1  # start at 1
                 logger.info(f"Processing chunk {chunk_number}/{total_chunks}")
-                build(variants=chunk, chunksize=None, chunk_number=chunk_number, running_within_chunk_iteration=True, **params_dict)  # running_within_chunk_iteration here for logger setup and report_time_elapsed decorator
+                build(variants=chunk, chunksize=None, chunk_number=chunk_number, total_rows=total_rows, running_within_chunk_iteration=True, **params_dict)  # running_within_chunk_iteration here for logger setup and report_time_elapsed decorator
                 if chunk_number == total_chunks:
                     return
         elif variants.endswith(".vcf") or variants.endswith(".vcf.gz"):
@@ -546,6 +549,7 @@ def build(
     
     chunk_number = kwargs.get("chunk_number", 1)
     first_chunk = (chunk_number == 1)
+    total_rows = kwargs.get("total_rows", None)
 
 
     # * 1.75. For the nargs="+" arguments, convert any list of length 1 to a string
@@ -1185,7 +1189,7 @@ def build(
 
     if remove_seqs_with_wt_kmers:
         if verbose:
-            tqdm.pandas(desc="Removing mutant fragments that share a kmer with wt fragments")
+            tqdm.pandas(desc="Removing VCRSs that share a k-mer with their respective non-variant sequence")
 
         mutations["wt_fragment_and_mutant_fragment_share_kmer"] = mut_apply(
             lambda row: wt_fragment_and_mutant_fragment_share_kmer(
@@ -1471,8 +1475,8 @@ def build(
 
     mutations.rename(columns={"header": "vcrs_header"}, inplace=True)
     if use_IDs:  # or (var_id_column in mutations.columns and not merge_identical):
-        vcrs_id_start = ((chunk_number-1) * chunksize) + 1 if chunksize else 1
-        mutations["vcrs_id"] = generate_unique_ids(len(mutations), start=vcrs_id_start)
+        vcrs_id_start = get_last_vcrs_number(id_to_header_csv_out) + 1 if not first_chunk else 1
+        mutations["vcrs_id"] = generate_unique_ids(len(mutations), start=vcrs_id_start, total_rows=total_rows)
         mutations[["vcrs_id", "vcrs_header"]].to_csv(id_to_header_csv_out, index=False, header=first_chunk, mode=determine_write_mode(id_to_header_csv_out, overwrite=overwrite, first_chunk=first_chunk))  # make the mapping csv
     else:
         mutations["vcrs_id"] = mutations["vcrs_header"]
@@ -1482,7 +1486,7 @@ def build(
         logger.info("Saving dataframe with updated variant info...")
         logger.warning("File size can be very large if the number of variants is large.")
         mutations.to_csv(variants_updated_csv_out, index=False, header=first_chunk, mode=determine_write_mode(variants_updated_csv_out, overwrite=overwrite, first_chunk=first_chunk))
-        print(f"Updated variant info has been saved to {variants_updated_csv_out}")
+        logger.info(f"Updated variant info has been saved to {variants_updated_csv_out}")
 
     if len(mutations) > 0:
         mutations["fasta_format"] = ">" + mutations["vcrs_id"] + "\n" + mutations["vcrs_sequence"] + "\n"

@@ -309,7 +309,7 @@ def clean(
     - adata_vcrs_clean_out                  (str): Path to save the cleaned VCRS AnnData object. Default: `out`/adata_cleaned.h5ad.
     - adata_reference_genome_clean_out      (str): Path to save the cleaned reference genome AnnData object. Default: `out`/adata_reference_genome_cleaned.h5ad.
     - save_vcf                              (bool): Whether to save the VCF file. Default: True.
-    - vcf_out                               (str): Path to save the VCF file. Default: `out`/vcrs.vcf.
+    - vcf_out                               (str): Path to save the VCF file. Default: `out`/variants.vcf.
 
     # General:
     - chunksize                             (int) Number of BUS file lines to process at a time. If None, then all lines will be processed at once. Default: None.
@@ -389,7 +389,7 @@ def clean(
 
     adata_vcrs_clean_out = os.path.join(out, "adata_cleaned.h5ad") if not adata_vcrs_clean_out else adata_vcrs_clean_out
     adata_reference_genome_clean_out = os.path.join(out, "adata_reference_genome_cleaned.h5ad") if not adata_reference_genome_clean_out else adata_reference_genome_clean_out
-    vcf_out = os.path.join(out, "vcrs.vcf") if not vcf_out else vcf_out
+    vcf_out = os.path.join(out, "variants.vcf") if not vcf_out else vcf_out
 
     for output_path in [output_figures_dir, adata_vcrs_clean_out, adata_reference_genome_clean_out]:
         if os.path.exists(output_path) and not overwrite:
@@ -453,6 +453,8 @@ def clean(
 
     if isinstance(adata, str) and os.path.exists(adata) and adata.endswith(".h5ad"):
         adata = ad.read_h5ad(adata)
+
+    adata.var = adata.var.rename_axis("VCRS")  # rename index
 
     if adata.var.index[0].startswith("vcrs_"):
         adata.var["vcrs_id"] = adata.var.index

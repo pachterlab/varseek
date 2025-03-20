@@ -396,8 +396,8 @@ def info(
     if not kwargs.get("running_within_chunk_iteration", False):
         set_varseek_logging_level_and_filehandler(logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
 
-    if isinstance(columns_to_include, (list, tuple)) and len(columns_to_include) == 1:
-        columns_to_include = columns_to_include[0]
+    if isinstance(columns_to_include, str):
+        columns_to_include = [columns_to_include]
 
     # * 1.5 Chunk iteration
     if chunksize is not None:
@@ -626,7 +626,7 @@ def info(
     else:
         mutation_metadata_df_exploded = mutation_metadata_df
         mutation_metadata_df_exploded["header"] = mutation_metadata_df_exploded["vcrs_header"]
-        mutation_metadata_df_exploded["order"] = [0]
+        mutation_metadata_df_exploded["order"] = [[0]] * len(mutation_metadata_df_exploded)
 
     if var_id_column is not None:
         mutation_metadata_df_exploded.rename(columns={"header": var_id_column}, inplace=True)
@@ -764,6 +764,8 @@ def info(
                     output_plot_folder=output_plot_folder,
                     columns_to_include=columns_to_include,
                     columns_to_explode=columns_to_explode,
+                    overwrite=overwrite,
+                    first_chunk=first_chunk,
                 )
             except Exception as e:
                 logger.error(f"Error calculating total gene info: {e}")

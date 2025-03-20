@@ -1149,7 +1149,7 @@ def save_fasta_chunk(fasta_path, chunk_number, chunksize):
     start_line = chunk_number * chunksize * 2
     end_line = (chunk_number + 1) * chunksize * 2
 
-    with open(fasta_path) as f, open(tmp_file.name, "w") as out_f:
+    with open(fasta_path) as f, open(tmp_file, "w") as out_f:
         for line_num, line in enumerate(f):
             if start_line <= line_num < end_line:
                 out_f.write(line)

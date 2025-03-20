@@ -16,6 +16,7 @@ import functools
 from collections import OrderedDict
 from datetime import date, datetime
 from pathlib import Path
+from tqdm import tqdm
 
 import anndata as ad
 import numpy as np
@@ -232,6 +233,7 @@ def report_time_elapsed(func):
         time_elapsed_message = f"Total runtime for vk {func.__name__}: {int(elapsed_time // 60)}m, {elapsed_time % 60:.2f}s"
         if not kwargs.get("running_within_chunk_iteration", False):
             logger.info(time_elapsed_message)
+        tqdm.pandas(desc="")  # just to reset the description
         return result
     return wrapper
 
@@ -1016,7 +1018,7 @@ def check_memory_of_all_items_in_scope(scope_items, threshold=0, units='MB'):
         print(f"{name}: {size:.3f} {units}")
 
 
-def count_chunks(file, chunk_size):
+def count_chunks(file, chunk_size, return_tuple_with_total_rows=False):
     if not isinstance(file, (str, Path)):
         raise ValueError("File path must be a string.")
     file = str(file)  # convert Path to string
@@ -1033,7 +1035,11 @@ def count_chunks(file, chunk_size):
     else:
         with open(file) as f:
             total_rows = sum(1 for _ in f)
-    return (total_rows + chunk_size - 1) // chunk_size  # Ceiling division
+    number_of_chunks = (total_rows + chunk_size - 1) // chunk_size  # Ceiling division
+    if return_tuple_with_total_rows:
+        return number_of_chunks, total_rows
+    else:
+        return number_of_chunks
 
 def determine_write_mode(file, overwrite=False, first_chunk=True):
     return "w" if not os.path.exists(file) or (overwrite and first_chunk) else "a"

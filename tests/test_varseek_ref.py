@@ -23,10 +23,10 @@ from .conftest import (
 
 sample_size = 12_000  # 2,000 each for each of the 6 mutation types
 columns_to_drop_info_filter = None  # drops columns for info and filter df - will not throw an error if the column does not exist in the df  # ["cdna_and_genome_same", "nearby_variants", "VCRSs_with_overlapping_kmers"] - the order of the VCRS headers was messed up for some reason
-make_new_gt = True
+make_new_gt = False
 store_out_in_permanent_paths = True
 threads = 2
-chunksize = None  # None or int>0
+chunksize = 5000  # None or int>0
 
 test_directory = Path(__file__).resolve().parent
 ground_truth_folder = os.path.join(test_directory, "pytest_ground_truth")
@@ -37,9 +37,9 @@ pytest_permanent_out_dir_base = test_directory / "pytest_output" / Path(__file__
 current_datetime = datetime.now().strftime("date_%Y_%m_%d_time_%H%M_%S")
 
 #$ TOGGLE THIS SECTION TO HAVE THIS FILE RECOGNIZED BY PYTEST (commented out means it will be recognized, uncommented means it will be hidden)
-# If "tests/test_ref.py" is not explicitly in the command line arguments, skip this module. - notice that uncommenting this will hide it from vscode such that I can't press the debug button
-if not any("test_varseek_ref.py" in arg for arg in sys.argv):
-    pytest.skip("Skipping test_varseek_ref.py due to its slow nature; run this file by explicity including the file i.e., 'pytest tests/test_varseek_ref.py'", allow_module_level=True)
+# # If "tests/test_ref.py" is not explicitly in the command line arguments, skip this module. - notice that uncommenting this will hide it from vscode such that I can't press the debug button
+# if not any("test_varseek_ref.py" in arg for arg in sys.argv):
+#     pytest.skip("Skipping test_varseek_ref.py due to its slow nature; run this file by explicity including the file i.e., 'pytest tests/test_varseek_ref.py'", allow_module_level=True)
 
 @pytest.fixture
 def out_dir(tmp_path, request):
@@ -144,13 +144,14 @@ def test_vk_ref(cosmic_csv_path, out_dir):
 
     w = 47
     k = 51
-    columns_to_include = "all"
+    columns_to_include = "alignment_to_reference"  #!!! all
     filters=(
         "alignment_to_reference:is_not_true",
         # "substring_alignment_to_reference:is_not_true",  # filter out variants that are a substring of the reference genome  #* uncomment this and erase the line above when implementing d-list
-        "pseudoaligned_to_reference_despite_not_truly_aligning:is_not_true",  # filter out variants that pseudoaligned to human genome despite not truly aligning
-        "num_distinct_triplets:greater_than=2",  # filters out VCRSs with <= 2 unique triplets
-    )
+        # "pseudoaligned_to_reference_despite_not_truly_aligning:is_not_true",  # filter out variants that pseudoaligned to human genome despite not truly aligning
+        # "num_distinct_triplets:greater_than=2",  # filters out VCRSs with <= 2 unique triplets
+    ) #!!! uncomment the last 2 filters
+    merge_identical = False  #!!! set to True
 
     if make_new_gt:
         os.makedirs(ground_truth_folder, exist_ok=True)
@@ -184,8 +185,14 @@ def test_vk_ref(cosmic_csv_path, out_dir):
         filters = filters,  # filter args
         save_variants_updated_filtered_csvs=True,
         verbose=True,
-        chunksize=chunksize
+        chunksize=chunksize,
+        merge_identical=merge_identical,
     )
+
+    if make_new_gt and len(os.listdir(ground_truth_folder)) != 0:
+        # rename the ground truth files to avoid overwriting
+        os.rename(ground_truth_folder, ground_truth_folder + "_old_" + current_datetime)
+    os.makedirs(ground_truth_folder, exist_ok=True)
 
     # file name, file type, columns to drop for comparison
     global columns_to_drop_info_filter  # should be unnecessary but got an error without it
@@ -208,6 +215,8 @@ def test_vk_ref(cosmic_csv_path, out_dir):
     for file, file_type, columns_to_drop_info_filter in files_to_compare_and_file_type:
         test_path = os.path.join(out_dir, file)
         ground_truth_path = os.path.join(ground_truth_folder, file)
+        if not os.path.isfile(test_path) and (make_new_gt or not os.path.isfile(ground_truth_path)):
+            continue
         if make_new_gt:
             shutil.copy(test_path, ground_truth_path)
         apply_file_comparison(test_path, ground_truth_path, file_type, columns_to_drop_info_filter)
