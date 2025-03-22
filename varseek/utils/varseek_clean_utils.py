@@ -5,6 +5,7 @@ from pathlib import Path
 
 import anndata as ad
 import numpy as np
+import sys
 import pandas as pd
 import pyfastx
 import scipy.sparse as sp
@@ -305,7 +306,6 @@ def make_good_barcodes_and_file_index_tuples(barcodes, include_file_index=False)
     return bad_to_good_barcode_dict
 
 
-
 def make_bus_df(kb_count_out, fastq_file_list, t2g_file=None, mm=False, union=False, technology="bulk", parity="single", bustools="bustools", check_only=False, chunksize=None, bad_to_good_barcode_dict=None):  # make sure this is in the same order as passed into kb count - [sample1, sample2, etc] OR [sample1_pair1, sample1_pair2, sample2_pair1, sample2_pair2, etc]
     with open(f"{kb_count_out}/kb_info.json", 'r') as f:
         kb_info_data = json.load(f)
@@ -384,13 +384,13 @@ def make_bus_df(kb_count_out, fastq_file_list, t2g_file=None, mm=False, union=Fa
         print("loading in bus df")
         if chunksize:
             total_chunks = count_chunks(bus_text_file, chunksize)
-        for i, bus_df in enumerate(pd.read_csv(bus_text_file, sep="\t", header=None, names=["barcode", "UMI", "EC", "count", "read_index"], chunksize=chunksize)):
-            if chunksize:
+        else:
+            chunksize = sys.maxsize  # ensures 1 chunk
+            total_chunks = 1
+        for i, bus_df in enumerate(pd.read_csv(bus_text_file, sep=r"\s+", header=None, names=["barcode", "UMI", "EC", "count", "read_index"], usecols=["barcode", "UMI", "EC", "read_index"], chunksize=chunksize)):
+            if total_chunks > 1:
                 print(f"Processing chunk {i+1}/{total_chunks}")
-            
-            bus_df.drop(columns=["count"], inplace=True)  # drop count (it's always 1)
 
-            # TODO: if I have low memory mode, then break up bus_df and loop from here through end
             print("Merging fastq header df and ec_df into bus df")
             bus_df = bus_df.merge(fastq_header_df, on=["read_index", "barcode"], how="left")
             bus_df = bus_df.merge(ec_df, on="EC", how="left")
@@ -930,8 +930,12 @@ def add_vcf_info_to_cosmic_tsv(cosmic_tsv=None, reference_genome_fasta=None, cos
         subprocess.run(["gget", "ref", "-w", "dna", "-r", "93", "--out_dir", reference_genome_fasta_dir, "-d", "human_grch37"], check=True)
         subprocess.run(["gunzip", f"{reference_genome_fasta}.gz"], check=True)
 
+    print("JMR-1")
+
     # load in COSMIC tsv with columns CHROM, POS, ID, REF, ALT
     cosmic_df = pd.read_csv(cosmic_tsv, sep="\t", usecols=["Mutation genome position GRCh37", "GENOMIC_WT_ALLELE_SEQ", "GENOMIC_MUT_ALLELE_SEQ", "ACCESSION_NUMBER", "Mutation CDS", "MUTATION_URL"])
+
+    print("JMR0")
 
     if sequences == "cdna":
         if not isinstance(cosmic_cdna_info_df, pd.DataFrame):
@@ -980,10 +984,10 @@ def add_vcf_info_to_cosmic_tsv(cosmic_tsv=None, reference_genome_fasta=None, cos
     cosmic_df.loc[cosmic_df["variant_type"] == "duplication", "original_nucleotide"] = cosmic_df.loc[cosmic_df["ID"].str.contains("dup", na=False), "ALT"].str[-1]
 
     # deal with start of 1, insertion
-    cosmic_df.loc[(cosmic_df["GENOME_END_POS"].astype(int) == 1) & (cosmic_df["variant_type"] == "insertion"), "original_nucleotide"] = cosmic_df.loc[(cosmic_df["GENOME_END_POS"].astype(int) == 1) & (cosmic_df["variant_type"] == "insertion"), ["CHROM", "POS"]].progress_apply(lambda row: get_nucleotide_from_reference(row["CHROM"], int(row["GENOME_END_POS"])), axis=1)
+    cosmic_df.loc[(cosmic_df["GENOME_END_POS"].astype(int) == 1) & (cosmic_df["variant_type"] == "insertion"), "original_nucleotide"] = cosmic_df.loc[(cosmic_df["GENOME_END_POS"].astype(int) == 1) & (cosmic_df["variant_type"] == "insertion"), ["CHROM", "GENOME_END_POS"]].progress_apply(lambda row: get_nucleotide_from_reference(row["CHROM"], int(row["GENOME_END_POS"])), axis=1)
 
     # deal with start of 1, deletion
-    cosmic_df.loc[(cosmic_df["POS"].astype(int) == 1) & (cosmic_df["variant_type"] == "deletion"), "original_nucleotide"] = cosmic_df.loc[(cosmic_df["POS"].astype(int) == 1) & (cosmic_df["variant_type"] == "deletion"), ["CHROM", "POS"]].progress_apply(lambda row: get_nucleotide_from_reference(row["CHROM"], int(row["GENOME_END_POS"]) + 1), axis=1)
+    cosmic_df.loc[(cosmic_df["POS"].astype(int) == 1) & (cosmic_df["variant_type"] == "deletion"), "original_nucleotide"] = cosmic_df.loc[(cosmic_df["POS"].astype(int) == 1) & (cosmic_df["variant_type"] == "deletion"), ["CHROM", "GENOME_END_POS"]].progress_apply(lambda row: get_nucleotide_from_reference(row["CHROM"], int(row["GENOME_END_POS"]) + 1), axis=1)
 
     # # deal with (-) strand - commented out because the vcf should all be relative to the forward strand, not the cdna
     # cosmic_df.loc[cosmic_df['strand'] == '-', 'original_nucleotide'] = cosmic_df.loc[cosmic_df['strand'] == '-', 'original_nucleotide'].apply(get_complement)
@@ -1060,7 +1064,7 @@ def write_to_vcf(adata_var, output_file, buffer_size=10_000):
         buffer = []
         for chrom, pos, id_, ref, alt, dp, ns, af in zip(chroms, poss, ids, refs, alts, dps, nss, afs):
             # Construct INFO field efficiently
-            info_fields = [f"DP={dp}" if pd.notna(dp) else None,
+            info_fields = [f"DP={int(dp)}" if pd.notna(dp) else None,
                         f"NS={ns}" if pd.notna(ns) else None]
             if pd.notna(af):
                 info_fields.append(f"AF={af}")

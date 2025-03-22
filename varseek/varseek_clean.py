@@ -558,7 +558,6 @@ def clean(
         )
 
     if qc_against_gene_matrix:
-        # TODO: test this
         adata = adjust_variant_adata_by_normal_gene_matrix(adata, kb_count_vcrs_dir=kb_count_vcrs_dir, kb_count_reference_genome_dir=kb_count_reference_genome_dir, id_to_header_csv=id_to_header_csv, vcrs_t2g=vcrs_t2g, t2g_standard=None, fastq_file_list=fastqs, mm=mm, union=union, technology=technology, parity=parity, bustools=bustools)
 
     if sum_rows and adata.shape[0] > 1:
@@ -656,8 +655,14 @@ def clean(
                     save=True,
                 )
 
-                # * TODO: move violin plot file path
-                violin_plot_path = f"{output_figures_dir}/qc_violin_plot.png"
+                violin_plot_path = os.path.join(output_figures_dir, "qc_violin_plot.pdf")
+                os.rename(
+                    os.path.join("figures", "violin.pdf"),
+                    violin_plot_path,
+                )
+
+                if os.path.isdir("figures") and len(os.listdir("figures")) == 0:
+                    os.rmdir("figures")
 
                 adata_reference_genome = adata_reference_genome[adata_reference_genome.obs.pct_counts_mt < filter_cells_by_max_mt_content, :].copy()  # filter cells by high MT content
 
@@ -738,6 +743,7 @@ def clean(
         )
 
     adata.var["vcrs_count"] = adata.X.sum(axis=0).A1 if hasattr(adata.X, "A1") else np.asarray(adata.X.sum(axis=0)).flatten()
+    adata.var["vcrs_count"] = adata.var["vcrs_count"].fillna(0).astype("Int32")
 
     if sp.issparse(adata.X):
         # Sparse matrix handling
@@ -745,6 +751,8 @@ def clean(
     else:
         # Dense matrix handling
         adata.var["number_obs"] = (adata.X != 0).sum(axis=0)
+
+    adata.var["number_obs"] = adata.var["number_obs"].astype("Int32")
 
     if save_vcf:
         if not vcf_data_csv or not os.path.exists(vcf_data_csv):

@@ -295,15 +295,21 @@ def sim(
     # don't account for number_of_reads_per_variant_alt (can be all), number_of_reads_per_variant_ref (can be all), error_rate (float), max_errors (can be float("inf"))
 
     # * 8. Start the function
-    if isinstance(variants, str) and os.path.exists(variants):
+    if isinstance(variants, (str, Path)):
+        variants = str(variants)
+        if not os.path.exists(variants):
+            raise ValueError(f"variants path {variants} does not exist.")
         if ".tsv" in variants:
             variants = pd.read_csv(variants, sep="\t")
         elif ".csv" in variants:
             variants = pd.read_csv(variants)
         else:
             raise ValueError("variants must be a csv path, tsv path, or dataframe")
-    elif isinstance(variants, pd.DataFrame) and make_internal_copies:
-        variants = variants.copy()
+    elif isinstance(variants, pd.DataFrame):
+        if make_internal_copies:
+            variants = variants.copy()
+    else:
+        raise ValueError("variants must be a csv path, tsv path, or dataframe")
 
     header_column = var_id_column
         

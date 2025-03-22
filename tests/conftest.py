@@ -1,6 +1,9 @@
 import os
 import random
+from scipy.sparse import issparse
 import tempfile
+import anndata as ad
+import json
 from pathlib import Path
 from io import StringIO
 
@@ -92,8 +95,20 @@ def compare_two_fastqs(fastq1, fastq2):
     for line1, line2 in zip(lines1, lines2):
         assert line1.strip() == line2.strip(), f"Fastq files differ at line: {line1.strip()} vs {line2.strip()}"
 
-def compare_two_anndata_objects(adata1, adata2):
-    assert np.array_equal(adata1.X, adata2.X) and adata1.obs.equals(adata2.obs) and adata1.var.equals(adata2.var) and adata1.uns == adata2.uns and adata1.obsm.equals(adata2.obsm) and adata1.varm.equals(adata2.varm) and adata1.layers == adata2.layers
+def compare_two_anndata_objects(adata1, adata2, check_obsm=False, check_varm=False, check_layers=False):
+    adata1 = ad.read_h5ad(adata1) if isinstance(adata1, str) else adata1
+    adata2 = ad.read_h5ad(adata2) if isinstance(adata2, str) else adata2
+    assert np.array_equal(adata1.X.toarray() if issparse(adata1.X) else adata1.X, adata2.X.toarray() if issparse(adata2.X) else adata2.X)
+    assert adata1.obs.equals(adata2.obs)
+    assert adata1.var.equals(adata2.var) 
+    assert adata1.uns == adata2.uns 
+    if check_obsm:
+        assert (adata1.obsm.keys() == adata2.obsm.keys() and all(np.array_equal(adata1.obsm[k], adata2.obsm[k]) for k in adata1.obsm.keys()))
+    if check_varm:
+        assert (adata1.varm.keys() == adata2.varm.keys() and all(np.array_equal(adata1.varm[k], adata2.varm[k]) for k in adata1.varm.keys()))
+    if check_layers:
+        assert (adata1.layers.keys() == adata2.layers.keys() and all(np.array_equal(adata1.layers[key], adata2.layers[key]) for key in adata1.layers.keys()))
+
 
 def compare_two_vcfs(vcf1, vcf2):
     import pysam
@@ -131,6 +146,15 @@ def compare_two_vk_summarize_txt_files(file1, file2):
         lines2 = f2.readlines()
 
     assert lines1 == lines2, "Files differ."
+
+def compare_two_jsons(file1, file2):
+    # Load JSON files
+    with open(file1) as f1, open(file2) as f2:
+        json1 = json.load(f1)
+        json2 = json.load(f2)
+
+    # Compare as dictionaries
+    print(json1 == json2)
 
 
 import hashlib

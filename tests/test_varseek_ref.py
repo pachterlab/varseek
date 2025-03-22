@@ -29,7 +29,7 @@ threads = 2
 chunksize = None  # None or int>0
 
 test_directory = Path(__file__).resolve().parent
-ground_truth_folder = os.path.join(test_directory, "pytest_ground_truth")
+ground_truth_folder = os.path.join(test_directory, "pytest_ground_truth_ref")
 reference_folder_parent = os.path.join(os.path.dirname(test_directory), "data", "reference")
 ensembl_grch37_release93_folder = os.path.join(reference_folder_parent, "ensembl_grch37_release93")
 cosmic_csv_path_starting = os.path.join(reference_folder_parent, "cosmic", "CancerMutationCensus_AllData_Tsv_v100_GRCh37_v2", "CancerMutationCensus_AllData_v100_GRCh37_mutation_workflow.csv")
@@ -154,7 +154,7 @@ def test_vk_ref(cosmic_csv_path, out_dir):
     merge_identical = True
 
     if chunksize is not None:
-        ground_truth_folder = os.path.join(test_directory, "pytest_ground_truth_with_chunks")
+        ground_truth_folder = os.path.join(test_directory, "pytest_ground_truth_ref_with_chunks")
         columns_to_include = "alignment_to_reference"
         filters = ("alignment_to_reference:is_not_true",)
         merge_identical = False
@@ -224,6 +224,7 @@ def test_vk_ref(cosmic_csv_path, out_dir):
         if not os.path.isfile(test_path) and (make_new_gt or not os.path.isfile(ground_truth_path)):
             continue
         if make_new_gt:
+            os.makedirs(os.path.dirname(ground_truth_path), exist_ok=True)
             shutil.copy(test_path, ground_truth_path)
         apply_file_comparison(test_path, ground_truth_path, file_type, columns_to_drop_info_filter)
 

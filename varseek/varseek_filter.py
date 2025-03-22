@@ -125,6 +125,11 @@ def apply_filters(df, filters, filtering_report_text_out=None):
     message = f"Total variants filtered: {number_of_variants_total_difference}; total VCRSs filtered: {number_of_vcrss_difference}; unique variants filtered: {number_of_unique_variants_difference}; merged variants filtered: {number_of_merged_variants_difference}"
     logger.info(message)
 
+    # Save the report string to the specified path
+    if isinstance(filtering_report_text_out, str):
+        with open(filtering_report_text_out, "a", encoding="utf-8") as file:
+            file.write(message)
+
     return df
 
 
