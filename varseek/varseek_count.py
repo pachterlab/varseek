@@ -146,6 +146,9 @@ def count(
     technology,  # params
     k=59,
     qc_against_gene_matrix=False,
+    account_for_strand_bias=False,
+    strand_bias_end=None,
+    read_length=None,
     strand=None,
     mm=False,
     union=False,
@@ -180,8 +183,11 @@ def count(
 
     # Additional parameters
     - k                                     (int) The length of each k-mer in the kallisto reference index construction. Corresponds to `k` used in the earlier varseek commands (i.e., varseek ref). If using a downloaded index from varseek ref -d, then check the description for the k value used to construct this index with varseek ref --list_downloadable_references. Default: 59.
-    - strand                                (str)  The strandedness of the data. Either "unstranded", "forward", or "reverse". Default: None.
     - qc_against_gene_matrix                (bool): Whether to apply correction for qc against gene matrix. If a read maps to 2+ VCRSs that belong to different genes, then cross-reference with the reference genome to determine which gene the read belongs to, and set all VCRSs that do not correspond to this gene to 0 for that read. Also, cross-reference all reads that map to 1 VCRS and ensure that the reads maps to the gene corresponding to this VCRS, or else set this value to 0 in the count matrix. Default: True.
+    - account_for_strand_bias               (bool): Whether to account for strand bias from stranded single-cell technologies. Default: False.
+    - strand_bias_end                       (str): The end of the read to use for strand bias correction. Either "5p" or "3p". Must be provided if and only if account_for_strand_bias=True. Default: None.
+    - read_length                           (int): The read length used in the experiment. Must be provided if and only if account_for_strand_bias=True. Default: None.
+    - strand                                (str)  The strandedness of the data. Either "unstranded", "forward", or "reverse". Default: None.
     - mm                                    (bool)  If True, use the multi-mapping reads. Default: False.
     - union                                 (bool)  If True, use the union of the read mappings. Default: False.
     - parity                                (str)  The parity of the reads for vk fastqpp. Either "single" or "paired". Only used if technology is bulk or a smart-seq. For parity in kb count, see parity_kb_count. Default: "single".
@@ -543,7 +549,7 @@ def count(
             # eg kwargs_vk_clean['mykwarg'] = mykwarg
 
             logger.info("Running vk clean")
-            _ = vk.clean(adata_vcrs=adata_vcrs, vcrs_index=index, vcrs_t2g=t2g, technology=technology, fastqs=fastqs, k=k, qc_against_gene_matrix=qc_against_gene_matrix, mm=mm, union=union, parity=parity, out=out, chunksize=chunksize, dry_run=dry_run, overwrite=True, sort_fastqs=sort_fastqs, threads=threads, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir, **kwargs_vk_clean)  # kb_count_reference_genome_dir is passed in via kwargs, as is adata_reference_genome
+            _ = vk.clean(adata_vcrs=adata_vcrs, vcrs_index=index, vcrs_t2g=t2g, technology=technology, fastqs=fastqs, k=k, qc_against_gene_matrix=qc_against_gene_matrix, account_for_strand_bias=account_for_strand_bias, strand_bias_end=strand_bias_end, read_length=read_length, mm=mm, union=union, parity=parity, out=out, chunksize=chunksize, dry_run=dry_run, overwrite=True, sort_fastqs=sort_fastqs, threads=threads, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir, **kwargs_vk_clean)  # kb_count_reference_genome_dir is passed in via kwargs, as is adata_reference_genome
         else:
             logger.info(f"Skipping vk clean because file {file_signifying_successful_vk_clean_completion} already exists and overwrite=False")
         adata = adata_vcrs_clean_out  # for vk summarize

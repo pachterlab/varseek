@@ -1850,6 +1850,26 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "disable_qc_against_gene_matrix", disable=True),
     )
     parser_clean.add_argument(
+        "--account_for_strand_bias",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "account_for_strand_bias"),
+    )
+    parser_clean.add_argument(
+        "--strand_bias_end",
+        type=str,
+        choices=["5p", "3p"],
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "strand_bias_end"),
+    )
+    parser_clean.add_argument(
+        "--read_length",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "read_length"),
+    )
+    parser_clean.add_argument(
         "--filter_cells_by_min_counts",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
@@ -2510,6 +2530,26 @@ def main():  # noqa: C901
         action="store_false",
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(count, "disable_qc_against_gene_matrix", disable=True),
+    )
+    parser_count.add_argument(
+        "--account_for_strand_bias",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(count, "account_for_strand_bias"),
+    )
+    parser_count.add_argument(
+        "--strand_bias_end",
+        type=str,
+        choices=["5p", "3p"],
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(count, "strand_bias_end"),
+    )
+    parser_count.add_argument(
+        "--read_length",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(count, "read_length"),
     )
     parser_count.add_argument(
         "--strand",

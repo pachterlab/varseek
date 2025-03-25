@@ -19,6 +19,7 @@ from varseek.constants import (
     complement,
     fastq_extensions,
     technology_barcode_and_umi_dict,
+    mutation_pattern,
 )
 from varseek.utils.seq_utils import (
     add_variant_type,
@@ -1238,3 +1239,106 @@ def cleaned_adata_to_vcf(variant_data, vcf_data_df, output_vcf = "variants.vcf",
 
 #                 # Write VCF row
 #                 vcf_file.write(f"{chrom}\t{pos}\t{var_id}\t{ref}\t{alt}\t.\tPASS\t{info}\n")
+
+
+def extract_nucleotide_positions_and_actual_variant(variant):
+    if pd.isna(variant):
+        return pd.Series([None, None])
+    
+    parts = variant.split(";")  # Split semicolon-separated variants
+    extracted = [pd.Series(s).str.extract(mutation_pattern) for s in parts]  # Apply extraction
+    extracted_df = pd.concat(extracted, ignore_index=True)  # Combine results
+    
+    return pd.Series([";".join(extracted_df[col].dropna().astype(str)) for col in extracted_df.columns])
+
+def classify_variant(variant):
+    if pd.isna(variant):
+        return "unknown"
+
+    parts = variant.split(";")  # Handle semicolon-separated values
+    sources = []
+    
+    for part in parts:
+        if part.startswith("c."):
+            sources.append("transcriptome")
+        elif part.startswith("g."):
+            sources.append("genome")
+        else:
+            sources.append("unknown")
+
+    return ";".join(sources)  # Preserve semicolon format
+
+def assign_transcript_id(row, transcript_df):
+    seq_ids = row["seq_ID"].split(";")
+    positions = row["variant_start_genome_position"].split(";")
+    sources = row["variant_source"].split(";")
+
+    transcript_ids = []
+
+    for seq_id, pos, source in zip(seq_ids, positions, sources):
+        if source == "genome":
+            # Query transcript_df for transcript mapping
+            match = transcript_df[
+                (transcript_df["chromosome"] == seq_id) & 
+                (transcript_df["start"] <= int(pos)) & 
+                (transcript_df["end"] >= int(pos))
+            ]
+            transcript_id = ";".join(match["transcript_ID"].tolist()) if not match.empty else "unknown"
+        else:
+            transcript_id = seq_id  # If not genome, use seq_ID directly
+
+        transcript_ids.append(transcript_id)
+
+    return ";".join(transcript_ids)  # Preserve semicolon-separated format
+
+def remove_variants_from_adata_for_stranded_technologies(adata, strand_bias_end, read_length, header_column="vcrs_header", variant_source=None, gtf=None):
+    if isinstance(adata, str):
+        adata = ad.read_h5ad(adata)
+    elif isinstance(adata, ad.AnnData):
+        pass
+    else:
+        raise ValueError("adata must be an AnnData object or a path to an AnnData object")
+    
+    if strand_bias_end not in {"5p", "3p"}:
+        raise ValueError("strand_bias_end must be either '5p' or '3p'")
+    
+    if isinstance(read_length, (str, float)):
+        read_length = int(read_length)
+    if not isinstance(read_length, int):
+        raise ValueError("read_length must be an integer")
+    
+    if header_column not in adata.var.columns:
+        raise ValueError(f"header_column {header_column} not found in adata.var columns")
+
+    adata.var[["seq_ID", "variant"]] = adata.var[header_column].apply(lambda x: pd.Series(
+        [";".join([s.split(":")[0] for s in x.split(";")]),
+        ";".join([s.split(":")[1] for s in x.split(";")])]
+    ))
+
+    adata.var[["nucleotide_positions", "actual_variant"]] = adata.var["variant"].apply(extract_nucleotide_positions_and_actual_variant)
+
+    if not variant_source:  # detect automatically per-variant
+        adata.var["variant_source"] = adata.var["actual_variant"].apply(classify_variant)
+
+    adata.var[["variant_start_transcript_position", "variant_end_transcript_position"]] = adata.var["nucleotide_positions"].apply(lambda x: pd.Series(
+        [";".join([s.split("_")[0] for s in x.split(";")]),
+        ";".join([s.split("_")[1] for s in x.split(";")])]
+    ))
+
+    if variant_source != "transcriptome" or strand_bias_end == "3p":
+        gtf_cols = ["chromosome", "source", "feature", "start", "end", "score", "strand", "frame", "attributes"]
+        gtf_df = pd.read_csv(gtf, sep="\t", comment="#", names=gtf_cols)
+        transcript_df = gtf_df[gtf_df["feature"] == "transcript"].copy()
+        transcript_df["transcript_ID"] = transcript_df["attributes"].str.extract(r'transcript_id "([^"]+)"')
+    
+    if variant_source != "transcriptome":
+        adata.var.rename(columns={"seq_ID": "chromosome", "variant_start_transcript_position": "variant_start_genome_position", "variant_end_transcript_position": "variant_end_genome_position"}, inplace=True)
+        adata.var["transcript_ID"] = adata.var.apply(lambda row: assign_transcript_id(row, transcript_df), axis=1)
+    else:
+        adata.var.rename(columns={"seq_ID": "transcript_ID"}, inplace=True)
+
+    if strand_bias_end == "5p":
+        pass
+    else:
+        adata.var["transcript_length"]
+        pass
