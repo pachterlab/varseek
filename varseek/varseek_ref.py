@@ -98,8 +98,7 @@ def validate_input_ref(params_dict):
 
 # a list of dictionaries with keys "variants", "sequences", and "description"
 downloadable_references = [
-    {"description": "COSMIC Cancer Mutation Census version 101 - Ensembl GRCh37 release 93 cDNA reference annotations. w=47, k=51, dlist_reference_source=t2t. Header format (showing the column(s) from the original database used): 'seq_ID':'mutation_cdna'.", "download_command": "vk ref -v cosmic_cmc -s cdna -w 47 -k 51 --dlist_reference_source t2t -d"},
-    {"description": "COSMIC Cancer Mutation Census version 101 - Ensembl GRCh37 release 93 cDNA reference annotations. w=47, k=51, dlist_reference_source=grch37. Header format (showing the column(s) from the original database used): 'seq_ID':'mutation_cdna'.", "download_command": "vk ref -v cosmic_cmc -s cdna -w 47 -k 51 --dlist_reference_source grch37 -d"},
+    {"description": "COSMIC Cancer Mutation Census version 101 - Ensembl GRCh37 release 93 cDNA reference annotations. w=47, k=51, dlist_reference_source=t2t. Header format (showing the column(s) from the original database used): 'seq_ID':'mutation_cdna'.", "download_command": "vk ref -v cosmic_cmc -s cdna -d"},
     # {"variants": "cosmic_cmc", "sequences": "genome", "description": "COSMIC Cancer Mutation Census version 101 - Ensembl GRCh37 release 93 genome reference annotations. w=47,k=51. Header format (showing the column(s) from the original database used): 'chromosome':'mutation_genome'"},
 ]
 
@@ -115,7 +114,8 @@ def ref(
         "alignment_to_reference:is_not_true",
         # "substring_alignment_to_reference:is_not_true",  # filter out variants that are a substring of the reference genome  #* uncomment this and erase the line above when implementing d-list
         "pseudoaligned_to_reference_despite_not_truly_aligning:is_not_true",  # filter out variants that pseudoaligned to human genome despite not truly aligning
-        "num_distinct_triplets:greater_than=2",  # filters out VCRSs with <= 2 unique triplets
+        "triplet_complexity:top_percent=90",  # filters out VCRSs in bottom 10% of triplet complexity
+        "longest_homopolymer_length:less_or_equal=10",  # filters out VCRSs in bottom 10% of triplet complexity
     ),
     dlist=None,
     dlist_reference_source=None,
@@ -271,7 +271,7 @@ def ref(
         save_params_to_config_file(params_dict, config_file)  # $ Now I am done with params_dict
 
         run_info_file = os.path.join(out, "config", "vk_ref_run_info.txt")
-        save_run_info(run_info_file)
+        save_run_info(run_info_file, params_dict=params_dict, function_name="ref")
 
     # * 4.5. Pop out any unallowable arguments
     for key, unallowable_set in varseek_ref_unallowable_arguments.items():
@@ -391,6 +391,10 @@ def ref(
 
     # download if download argument is True
     if download:
+        if variants == "cosmic_cmc":  # if someone sets variants==cosmic_cmc, then they are likely looking for the only cosmic_cmc available for download
+            w = 47
+            k = 51
+            dlist_reference_source = "t2t"
         prebuilt_vk_ref_files_key = f"variants={variants},sequences={sequences},w={w},k={k},dlist_reference_source={dlist_reference_source}"  # matches constants.py and server
         if prebuilt_vk_ref_files_key not in prebuilt_vk_ref_files:
             raise ValueError(f"Invalid combination of parameters for downloading prebuilt reference files. Supported combinations are: {list(prebuilt_vk_ref_files.keys())}")

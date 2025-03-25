@@ -18,7 +18,7 @@ from .utils import (
     filter_fasta,
     make_function_parameter_to_value_dict,
     make_mapping_dict,
-    print_varseek_dry_run,
+    get_varseek_dry_run,
     report_time_elapsed,
     safe_literal_eval,
     save_params_to_config_file,
@@ -451,7 +451,7 @@ def filter(
 
     # * 3. Dry-run
     if dry_run:
-        print_varseek_dry_run(params_dict, function_name="filter")
+        print(get_varseek_dry_run(params_dict, function_name="filter"))
         return
 
     # * 4. Save params to config file and run info file
@@ -459,7 +459,7 @@ def filter(
     save_params_to_config_file(params_dict, config_file)
 
     run_info_file = os.path.join(out, "config", "vk_filter_run_info.txt")
-    save_run_info(run_info_file)
+    save_run_info(run_info_file, params_dict=params_dict, function_name="filter")
 
     # * 5. Set up default folder/file input paths, and make sure the necessary ones exist
     # have the option to filter other dlists as kwargs

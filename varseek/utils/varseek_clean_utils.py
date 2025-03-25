@@ -9,6 +9,7 @@ import sys
 import pandas as pd
 import pyfastx
 import scipy.sparse as sp
+import pysam
 from scipy.sparse import csr_matrix
 import json
 import logging
@@ -27,9 +28,11 @@ from varseek.utils.seq_utils import (
     make_mapping_dict,
     safe_literal_eval,
     sort_fastq_files_for_kb_count,
-    load_in_fastqs
+    load_in_fastqs,
+    parquet_column_list_to_tuple,
+    parquet_column_tuple_to_list
 )
-from varseek.utils.logger_utils import set_up_logger, count_chunks
+from varseek.utils.logger_utils import set_up_logger, count_chunks, determine_write_mode
 
 logger = logging.getLogger(__name__)
 logger = set_up_logger(logger, logging_level="INFO", save_logs=False, log_dir=None)
@@ -306,7 +309,7 @@ def make_good_barcodes_and_file_index_tuples(barcodes, include_file_index=False)
     return bad_to_good_barcode_dict
 
 
-def make_bus_df(kb_count_out, fastq_file_list, t2g_file=None, mm=False, union=False, technology="bulk", parity="single", bustools="bustools", check_only=False, chunksize=None, bad_to_good_barcode_dict=None):  # make sure this is in the same order as passed into kb count - [sample1, sample2, etc] OR [sample1_pair1, sample1_pair2, sample2_pair1, sample2_pair2, etc]
+def make_bus_df(kb_count_out, fastq_file_list, t2g_file=None, mm=False, union=False, technology="bulk", parity="single", bustools="bustools", check_only=False, chunksize=None, bad_to_good_barcode_dict=None, save_type="parquet"):  # make sure this is in the same order as passed into kb count - [sample1, sample2, etc] OR [sample1_pair1, sample1_pair2, sample2_pair1, sample2_pair2, etc]
     with open(f"{kb_count_out}/kb_info.json", 'r') as f:
         kb_info_data = json.load(f)
     if "--num" not in kb_info_data.get("call", ""):
@@ -387,6 +390,8 @@ def make_bus_df(kb_count_out, fastq_file_list, t2g_file=None, mm=False, union=Fa
         else:
             chunksize = sys.maxsize  # ensures 1 chunk
             total_chunks = 1
+        
+        bus_out_path = f"{kb_count_out}/bus_df.{save_type}"
         for i, bus_df in enumerate(pd.read_csv(bus_text_file, sep=r"\s+", header=None, names=["barcode", "UMI", "EC", "count", "read_index"], usecols=["barcode", "UMI", "EC", "read_index"], chunksize=chunksize)):
             if total_chunks > 1:
                 print(f"Processing chunk {i+1}/{total_chunks}")
@@ -429,8 +434,16 @@ def make_bus_df(kb_count_out, fastq_file_list, t2g_file=None, mm=False, union=Fa
                 # only gets added to the count matrix if EC has exactly 1 gene
                 bus_df["counted_in_count_matrix"] = bus_df["gene_names"].progress_apply(lambda x: len(x) == 1)
             
-            print(f"Saving bus df as parquet to {kb_count_out}/bus_df.parquet")
-            bus_df.to_parquet(f"{kb_count_out}/bus_df.parquet", index=False, append=(i > 0))
+            print(f"Saving bus df to {bus_out_path}") if total_chunks == 1 else print(f"Saving chunk {i+1}/{total_chunks} of bus df to {bus_out_path}")
+            first_chunk = (i == 0)
+            if save_type == "parquet":  # parquet benefits over csv: much smaller file size (~10% of csv size), and saves data types upon saving and loading
+                parquet_column_tuple_to_list(bus_df)  # parquet doesn't like tuples - it only likes lists - if wanting to load back in the data as a tuple later, then use parquet_column_list_to_tuple
+                bus_df.to_parquet(bus_out_path, index=False, append=not first_chunk)
+            elif save_type == "csv":  # csv benefits over parquet: human-readable, can be read/iterated in chunks, and supports tuples (which take about 3/4 the RAM of strings/lists)
+                bus_df.csv(bus_out_path, index=False, header=first_chunk, mode=determine_write_mode(bus_out_path, overwrite=True, first_chunk=first_chunk))
+        
+        if total_chunks > 1:
+            print("Returning the last chunk of bus_df")
         return bus_df
         
     
@@ -704,7 +717,7 @@ def match_paired_ends_after_single_end_run(bus_df_path, gene_name_type="vcrs_id"
 
 
 # TODO: unsure if this works for sc
-def adjust_variant_adata_by_normal_gene_matrix(adata, kb_count_vcrs_dir, kb_count_reference_genome_dir, id_to_header_csv=None, adata_output_path=None, vcrs_t2g=None, t2g_standard=None, fastq_file_list=None, mm=False, union=False, technology="bulk", parity="single", bustools="bustools", ignore_barcodes=False, check_only=False):
+def adjust_variant_adata_by_normal_gene_matrix(adata, kb_count_vcrs_dir, kb_count_reference_genome_dir, id_to_header_csv=None, adata_output_path=None, vcrs_t2g=None, t2g_standard=None, fastq_file_list=None, mm=False, union=False, technology="bulk", parity="single", bustools="bustools", ignore_barcodes=False, check_only=False, chunksize=None):
     if not adata:
         adata = f"{kb_count_vcrs_dir}/counts_unfiltered/adata.h5ad"
     if isinstance(adata, str):
@@ -726,7 +739,8 @@ def adjust_variant_adata_by_normal_gene_matrix(adata, kb_count_vcrs_dir, kb_coun
             technology=technology,
             parity=parity,
             bustools=bustools,
-            check_only=check_only
+            check_only=check_only,
+            chunksize=chunksize
         )
     else:
         bus_df_mutation = pd.read_csv(bus_df_mutation_path)
@@ -889,7 +903,6 @@ def make_vaf_matrix(adata_mutant_vcrs_path, adata_wt_vcrs_path, adata_vaf_output
 
 
 def add_vcf_info_to_cosmic_tsv(cosmic_tsv=None, reference_genome_fasta=None, cosmic_df_out=None, sequences="cds", cosmic_version=101, cosmic_email=None, cosmic_password=None):
-    import pysam
     import gget
     from varseek.utils.varseek_build_utils import convert_mutation_cds_locations_to_cdna
 
@@ -930,12 +943,8 @@ def add_vcf_info_to_cosmic_tsv(cosmic_tsv=None, reference_genome_fasta=None, cos
         subprocess.run(["gget", "ref", "-w", "dna", "-r", "93", "--out_dir", reference_genome_fasta_dir, "-d", "human_grch37"], check=True)
         subprocess.run(["gunzip", f"{reference_genome_fasta}.gz"], check=True)
 
-    print("JMR-1")
-
     # load in COSMIC tsv with columns CHROM, POS, ID, REF, ALT
     cosmic_df = pd.read_csv(cosmic_tsv, sep="\t", usecols=["Mutation genome position GRCh37", "GENOMIC_WT_ALLELE_SEQ", "GENOMIC_MUT_ALLELE_SEQ", "ACCESSION_NUMBER", "Mutation CDS", "MUTATION_URL"])
-
-    print("JMR0")
 
     if sequences == "cdna":
         if not isinstance(cosmic_cdna_info_df, pd.DataFrame):
@@ -1035,43 +1044,68 @@ def add_vcf_info_to_cosmic_tsv(cosmic_tsv=None, reference_genome_fasta=None, cos
 
 
 # TODO: make sure this works for rows with just ID and everything else blank (due to different mutations being concatenated)
-def write_to_vcf(adata_var, output_file, buffer_size=10_000):
+def write_to_vcf(adata_var, output_file, save_vcf_samples=False, adata=None, buffer_size=10_000):
     """
     Write adata.var DataFrame to a VCF file.
 
     Parameters:
-        adata_var (pd.DataFrame): DataFrame with VCF columns (CHROM, POS, REF, ALT, ID, DP, AF, NS).
+        adata_var (pd.DataFrame): DataFrame with VCF columns (CHROM, POS, REF, ALT, ID, AO, AF, NS).
         output_file (str): Path to the output VCF file.
     """
+    if save_vcf_samples:
+        filtered_VCRSs = adata_var['ID'].astype(str).tolist()
+        adata_filtered = adata[:, adata.var['vcrs_header'].isin(set(filtered_VCRSs))].copy()  # Subset adata to keep only the variables in filtered_ids
+        if adata_var['ID'].tolist() != adata_filtered.var['vcrs_header'].tolist():  # different orders
+            correct_order = adata_filtered.var.set_index('vcrs_header').loc[adata_var['ID']].index  # Get the correct order of indices based on adata_var['ID']
+            adata_filtered = adata_filtered[:, correct_order].copy()  # Reorder adata_filtered.var and adata_filtered.X
+    
     # Open VCF file for writing
     with open(output_file, "w", encoding="utf-8") as vcf_file:
+        # TODO: eventually add ref depth in addition to alt depth (I would add RO (ref depth) and DP (ref+alt depth) and AF (alt/[ref+alt]) to INFO, add DP to FORMAT/samples, and either add RO or AD to FORMAT/samples (AD is more standardized but would change the output of the varseek pipeline))
         # Write VCF header
         vcf_file.write("##fileformat=VCFv4.2\n")
-        vcf_file.write('##INFO=<ID=DP,Number=1,Type=Integer,Description="Total Depth">\n')
-        vcf_file.write('##INFO=<ID=AF,Number=A,Type=Float,Description="Variant Allele Frequency">\n')
+        vcf_file.write("##source=varseek\n")
         vcf_file.write('##INFO=<ID=NS,Number=1,Type=Integer,Description="Number of Samples">\n')
-        vcf_file.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
+        vcf_file.write('##INFO=<ID=AO,Number=1,Type=Integer,Description="ALT Depth">\n')
+        # vcf_file.write('##INFO=<ID=RO,Number=1,Type=Integer,Description="REF Depth">\n')
+        # vcf_file.write('##INFO=<ID=DP,Number=1,Type=Integer,Description="Total depth">\n')
+        # vcf_file.write('##INFO=<ID=AF,Number=A,Type=Float,Description="Variant Allele Frequency">\n')
+        headers = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO"
+        if save_vcf_samples:
+            vcf_file.write('##FORMAT=<ID=AO,Number=1,Type=Integer,Description="ALT Depth per sample">\n')
+            # vcf_file.write('##FORMAT=<ID=RO,Number=1,Type=Integer,Description="REF Depth per sample">\n')  #? use RO or AD but not both
+            # vcf_file.write('##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allelic depths for the REF and ALT alleles per sample">\n')
+            # vcf_file.write('##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Total Depth per sample">\n')
+            headers += "\tFORMAT\t" + "\t".join(adata_filtered.obs_names)
+        vcf_file.write(f"{headers}\n")
 
         # Extract all column data as NumPy arrays (faster access)
         chroms, poss, ids, refs, alts, dps, nss, afs = (
             adata_var["CHROM"].values, adata_var["POS"].values, adata_var["ID"].values,
-            adata_var["REF"].values, adata_var["ALT"].values, adata_var["DP"].values,
+            adata_var["REF"].values, adata_var["ALT"].values, adata_var["AO"].values,
             adata_var["NS"].values,
             adata_var["AF"].values if "AF" in adata_var else np.full(len(adata_var), np.nan)  # Handle optional AF column
         )
 
         # Iterate over pre-extracted values
         buffer = []
-        for chrom, pos, id_, ref, alt, dp, ns, af in zip(chroms, poss, ids, refs, alts, dps, nss, afs):
+        for idx, (chrom, pos, id_, ref, alt, dp, ns, af) in enumerate(zip(chroms, poss, ids, refs, alts, dps, nss, afs)):
             # Construct INFO field efficiently
-            info_fields = [f"DP={int(dp)}" if pd.notna(dp) else None,
+            info_fields = [f"AO={int(dp)}" if pd.notna(dp) else None,
                         f"NS={ns}" if pd.notna(ns) else None]
             if pd.notna(af):
                 info_fields.append(f"AF={af}")
 
             info = ";".join(filter(None, info_fields))
 
-            buffer.append(f"{chrom}\t{pos}\t{id_}\t{ref}\t{alt}\t.\tPASS\t{info}\n")
+            vcf_line = f"{chrom}\t{pos}\t{id_}\t{ref}\t{alt}\t.\tPASS\t{info}"
+            if save_vcf_samples:
+                X_col = adata_filtered.X[:, idx]
+                if hasattr(X_col, "toarray"):  # Check if it's sparse
+                    X_col = X_col.toarray()
+                vcf_line += "\tAO\t" + "\t".join(map(str, X_col.flatten().tolist()))
+
+            buffer.append(f"{vcf_line}\n")
 
             # Write to file in chunks
             if len(buffer) >= buffer_size:
@@ -1082,7 +1116,20 @@ def write_to_vcf(adata_var, output_file, buffer_size=10_000):
         if buffer:
             vcf_file.writelines(buffer)
 
-def cleaned_adata_to_vcf(adata_var, vcf_data_df, output_vcf = "variants.vcf"):
+def cleaned_adata_to_vcf(variant_data, vcf_data_df, output_vcf = "variants.vcf", save_vcf_samples=False, adata=None):
+    # variant_data should be adata or adata.var/df
+    # if variant_data is adata, then adata will be automatically populated; if it is df, then adata will be None unless explicitely provided
+    if isinstance(variant_data, str) and os.path.isfile(variant_data) and variant_data.endswith(".h5ad"):
+        adata = ad.read_h5ad(variant_data)
+        adata_var = adata.var
+    elif isinstance(variant_data, ad.AnnData):
+        adata = variant_data
+        adata_var = variant_data.var
+    elif isinstance(variant_data, str) and os.path.isfile(variant_data) and variant_data.endswith(".csv"):
+        adata_var = pd.read_csv(variant_data)
+    elif isinstance(variant_data, pd.DataFrame):
+        adata_var = variant_data
+
     # Ensure proper columns
     if isinstance(vcf_data_df, str) and os.path.isfile(vcf_data_df) and vcf_data_df.endswith(".csv"):
         vcf_data_df = pd.read_csv(vcf_data_df)
@@ -1095,7 +1142,10 @@ def cleaned_adata_to_vcf(adata_var, vcf_data_df, output_vcf = "variants.vcf"):
         raise ValueError("vcf_data_df must contain columns ID, CHROM, POS, REF, ALT")
     if any(col not in adata_var.columns for col in ["vcrs_header", "vcrs_count", "number_obs"]):
         raise ValueError("adata_var must contain columns vcrs_header, vcrs_count, number_obs")
+    if save_vcf_samples and not isinstance(adata, ad.AnnData):
+        raise ValueError("adata must be provided as an anndata object or path to an anndata object if save_vcf_samples is True")
     
+    output_vcf = str(output_vcf)  # for Path
     
     # only keep the VCRSs that have a count > 0, and only keep relevant columns
     adata_var_temp = adata_var[["vcrs_header", "vcrs_count", "number_obs"]].loc[adata_var["vcrs_count"] > 0].copy()
@@ -1104,7 +1154,7 @@ def cleaned_adata_to_vcf(adata_var, vcf_data_df, output_vcf = "variants.vcf"):
     adata_var_temp["vcrs_header_copy"] = adata_var_temp["vcrs_header"]
 
     # rename to have VCF-like column names
-    adata_var_temp.rename(columns={"vcrs_count": "DP", "number_obs": "NS", "vcrs_header": "ID"}, inplace=True)
+    adata_var_temp.rename(columns={"vcrs_count": "AO", "number_obs": "NS", "vcrs_header": "ID"}, inplace=True)
 
     # explode across semicolons so that I can merge in vcf_data_df
     adata_var_temp = adata_var_temp.assign(
@@ -1124,7 +1174,7 @@ def cleaned_adata_to_vcf(adata_var, vcf_data_df, output_vcf = "variants.vcf"):
             "POS": set,    # Collect POS values
             "REF": set,    # Collect REF values
             "ALT": set,    # Collect ALT values
-            "DP": "first",
+            "AO": "first",
             "NS": "first",
         })
         .reset_index()  # Reset index for cleaner result
@@ -1137,53 +1187,54 @@ def cleaned_adata_to_vcf(adata_var, vcf_data_df, output_vcf = "variants.vcf"):
         adata_var_temp[col] = adata_var_temp[col].apply(lambda x: list(x)[0])
 
     # write to VCF
-    write_to_vcf(adata_var_temp, output_vcf)
+    buffer_size = 10_000 if not save_vcf_samples else 1_000  # ensure buffer is smaller when using samples
+    write_to_vcf(adata_var_temp, output_vcf, save_vcf_samples=save_vcf_samples, adata=adata, buffer_size=buffer_size)
 
 
 
-# TODO: make sure this works for rows with just ID and everything else blank (due to different mutations being concatenated)
-def write_vcfs_for_rows(adata, adata_wt_vcrs, adata_vaf, output_dir):
-    """
-    Write a VCF file for each row (variant) in adata.var.
+# # TODO: make sure this works for rows with just ID and everything else blank (due to different mutations being concatenated)
+# def write_vcfs_for_rows(adata, adata_wt_vcrs, adata_vaf, output_dir):
+#     """
+#     Write a VCF file for each row (variant) in adata.var.
 
-    Parameters:
-        adata: AnnData object with mutant counts.
-        adata_wt_vcrs: AnnData object with wild-type counts.
-        adata_vaf: AnnData object with VAF values.
-        output_dir: Directory to save VCF files.
-    """
-    for idx, row in adata.var.iterrows():
-        # Extract VCF fields from adata.var
-        chrom = row["CHROM"]
-        pos = row["POS"]
-        var_id = row["ID"]
-        ref = row["REF"]
-        alt = row["ALT"]
-        vcrs_id = row["vcrs_id"]  # This is the index for the column in the matrices
+#     Parameters:
+#         adata: AnnData object with mutant counts.
+#         adata_wt_vcrs: AnnData object with wild-type counts.
+#         adata_vaf: AnnData object with VAF values.
+#         output_dir: Directory to save VCF files.
+#     """
+#     for idx, row in adata.var.iterrows():
+#         # Extract VCF fields from adata.var
+#         chrom = row["CHROM"]
+#         pos = row["POS"]
+#         var_id = row["ID"]
+#         ref = row["REF"]
+#         alt = row["ALT"]
+#         vcrs_id = row["vcrs_id"]  # This is the index for the column in the matrices
 
-        # Extract corresponding matrix values
-        mutant_counts = adata[:, vcrs_id].X.flatten()  # Extract as 1D array
-        wt_counts = adata_wt_vcrs[:, vcrs_id].X.flatten()  # Extract as 1D array
-        vaf_values = adata_vaf[:, vcrs_id].X.flatten()  # Extract as 1D array
+#         # Extract corresponding matrix values
+#         mutant_counts = adata[:, vcrs_id].X.flatten()  # Extract as 1D array
+#         wt_counts = adata_wt_vcrs[:, vcrs_id].X.flatten()  # Extract as 1D array
+#         vaf_values = adata_vaf[:, vcrs_id].X.flatten()  # Extract as 1D array
 
-        # Create VCF file for the row
-        output_file = f"{output_dir}/{var_id}.vcf"
-        with open(output_file, "w", encoding="utf-8") as vcf_file:
-            # Write VCF header
-            vcf_file.write("##fileformat=VCFv4.2\n")
-            vcf_file.write('##INFO=<ID=RD,Number=1,Type=Integer,Description="Total Depth">\n')
-            vcf_file.write('##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency">\n')
-            vcf_file.write('##INFO=<ID=NS,Number=1,Type=Integer,Description="Number of Samples">\n')
-            vcf_file.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
+#         # Create VCF file for the row
+#         output_file = f"{output_dir}/{var_id}.vcf"
+#         with open(output_file, "w", encoding="utf-8") as vcf_file:
+#             # Write VCF header
+#             vcf_file.write("##fileformat=VCFv4.2\n")
+#             vcf_file.write('##INFO=<ID=RD,Number=1,Type=Integer,Description="Total Depth">\n')
+#             vcf_file.write('##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency">\n')
+#             vcf_file.write('##INFO=<ID=NS,Number=1,Type=Integer,Description="Number of Samples">\n')
+#             vcf_file.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
 
-            # Iterate through samples (rows in the matrix)
-            for sample_idx, mutant_count in enumerate(mutant_counts):
-                # Calculate RD and AF
-                rd = mutant_count + wt_counts[sample_idx]
-                af = vaf_values[sample_idx]
+#             # Iterate through samples (rows in the matrix)
+#             for sample_idx, mutant_count in enumerate(mutant_counts):
+#                 # Calculate RD and AF
+#                 rd = mutant_count + wt_counts[sample_idx]
+#                 af = vaf_values[sample_idx]
 
-                # INFO field
-                info = f"RD={int(rd)};AF={af:.3f};NS=1"
+#                 # INFO field
+#                 info = f"RD={int(rd)};AF={af:.3f};NS=1"
 
-                # Write VCF row
-                vcf_file.write(f"{chrom}\t{pos}\t{var_id}\t{ref}\t{alt}\t.\tPASS\t{info}\n")
+#                 # Write VCF row
+#                 vcf_file.write(f"{chrom}\t{pos}\t{var_id}\t{ref}\t{alt}\t.\tPASS\t{info}\n")

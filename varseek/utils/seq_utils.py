@@ -1178,3 +1178,23 @@ def save_csv_chunk(csv_path, chunk_number, chunksize):
                 out_f.write(line)
     
     return tmp_file
+
+def parquet_column_list_to_tuple(df, cols=None):
+    if cols is None:
+        cols = df.columns
+    elif isinstance(cols, str):
+        cols = [cols]
+    for col in cols:
+        first_value = df[col].dropna().iloc[0] if not df[col].dropna().empty else None
+        if isinstance(first_value, list):
+            df[col] = df[col].apply(tuple)
+
+def parquet_column_tuple_to_list(df, cols=None):
+    if cols is None:
+        cols = df.columns
+    elif isinstance(cols, str):
+        cols = [cols]
+    for col in df.columns:
+        first_value = df[col].dropna().iloc[0] if not df[col].dropna().empty else None
+        if isinstance(first_value, tuple):
+            df[col] = df[col].apply(list)

@@ -1,9 +1,17 @@
 # import varseek as vk
 import os
+import logging
 
 import pandas as pd
 
 from varseek.utils import report_time_and_memory_of_script
+
+logger = logging.getLogger(__name__)
+logger.setLevel("INFO")
+formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s", "%H:%M:%S")
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
 
 ### ARGUMENTS ###
 number_of_variants_list = [1, 4, 16, 64, 256, 1024, 4096]  # number of variants, in thousands
@@ -46,7 +54,7 @@ if not os.path.isfile(sequences_fasta_path):
     ref_sequence_download_command = f"gget ref -w cds -r 93 --out_dir {reference_out_dir} -d {gget_ref_species}"
     sequences_download_command_list = ref_sequence_download_command.split(" ")
 
-    print(f"Downloading reference sequences with {' '.join(sequences_download_command_list)}. Note that this requires curl >=7.73.0")
+    logger.info(f"Downloading reference sequences with {' '.join(sequences_download_command_list)}. Note that this requires curl >=7.73.0")
     subprocess.run(sequences_download_command_list, check=True)
     subprocess.run(["gunzip", f"{sequences_fasta_path}.gz"], check=True)
 
@@ -56,6 +64,7 @@ if not os.path.isfile(cosmic_mutations_path):
     cosmic_mutations_path = os.path.join(reference_out_dir, "CancerMutationCensus_AllData_Tsv_v100_GRCh37_v2", "CancerMutationCensus_AllData_v100_GRCh37_mutation_workflow.csv")
     os.makedirs(os.path.dirname(cosmic_mutations_path), exist_ok=True)
     
+    logger.info(f"Downloading COSMIC mutations with gget")
     gget.cosmic(
         None,
         grch_version=grch,
@@ -69,9 +78,11 @@ if not os.path.isfile(cosmic_mutations_path):
         password=os.environ.get('COSMIC_PASSWORD'),
     )
 
+logger.info("Loading in COSMIC mutations")
 cosmic_df = pd.read_csv(cosmic_mutations_path)
 
 for number_of_variants in number_of_variants_list:
+    logger.info(f"Subsampling {number_of_variants} variants")
     number_of_variants *= 1000
     cosmic_df_subsampled = cosmic_df.sample(n=number_of_variants, random_state=random_seed)
     output_file = os.path.join(output_dir, f"vk_ref_threads_{threads}_variants_{number_of_variants}_time_and_memory.txt")

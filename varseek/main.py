@@ -2102,6 +2102,12 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "save_vcf"),
     )
     parser_clean.add_argument(
+        "--save_vcf_samples",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "save_vcf_samples"),
+    )
+    parser_clean.add_argument(
         "--chunksize",
         type=int,
         default=argparse.SUPPRESS,  # Remove from args if not provided

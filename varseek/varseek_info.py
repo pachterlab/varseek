@@ -41,7 +41,7 @@ from varseek.utils import (
     make_mapping_dict,
     plot_histogram_of_nearby_mutations_7_5,
     plot_kat_histogram,
-    print_varseek_dry_run,
+    get_varseek_dry_run,
     report_time_elapsed,
     reverse_complement,
     safe_literal_eval,
@@ -435,7 +435,7 @@ def info(
 
     # * 3. Dry-run
     if dry_run:
-        print_varseek_dry_run(params_dict, function_name="info")
+        print(get_varseek_dry_run(params_dict, function_name="info"))
         return
 
     # * 4. Save params to config file and run info file
@@ -443,7 +443,7 @@ def info(
     save_params_to_config_file(params_dict, config_file)
 
     run_info_file = os.path.join(out, "config", "vk_info_run_info.txt")
-    save_run_info(run_info_file)
+    save_run_info(run_info_file, params_dict=params_dict, function_name="info")
 
     # * 5. Set up default folder/file input paths, and make sure the necessary ones exist
     if not vcrs_fasta:

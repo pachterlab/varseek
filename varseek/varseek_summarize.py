@@ -13,7 +13,7 @@ from varseek.utils import (
     check_file_path_is_string_with_valid_extension,
     is_valid_int,
     make_function_parameter_to_value_dict,
-    print_varseek_dry_run,
+    get_varseek_dry_run,
     report_time_elapsed,
     save_params_to_config_file,
     save_run_info,
@@ -103,7 +103,7 @@ def summarize(
 
     # * 3. Dry-run
     if dry_run:
-        print_varseek_dry_run(params_dict, function_name="summarize")
+        print(get_varseek_dry_run(params_dict, function_name="summarize"))
         return
 
     # * 4. Save params to config file and run info file
@@ -111,7 +111,7 @@ def summarize(
     save_params_to_config_file(params_dict, config_file)
 
     run_info_file = os.path.join(out, "config", "vk_summarize_run_info.txt")
-    save_run_info(run_info_file)
+    save_run_info(run_info_file, params_dict=params_dict, function_name="summarize")
 
     # * 5. Set up default folder/file input paths, and make sure the necessary ones exist
     # all input files for vk summarize are required in the varseek workflow, so this is skipped

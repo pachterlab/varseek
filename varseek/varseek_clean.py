@@ -25,7 +25,7 @@ from varseek.utils import (
     make_function_parameter_to_value_dict,
     match_adata_orders,
     plot_knee_plot,
-    print_varseek_dry_run,
+    get_varseek_dry_run,
     remove_adata_columns,
     report_time_elapsed,
     save_params_to_config_file,
@@ -35,7 +35,6 @@ from varseek.utils import (
     make_good_barcodes_and_file_index_tuples,
     write_to_vcf,
     cleaned_adata_to_vcf,
-    write_vcfs_for_rows,
     set_varseek_logging_level_and_filehandler
 )
 
@@ -243,6 +242,7 @@ def clean(
     adata_reference_genome_clean_out=None,
     vcf_out=None,
     save_vcf=False,  # optional saves
+    save_vcf_samples=False,
     chunksize=None,
     dry_run=False,  # general
     overwrite=False,
@@ -313,6 +313,7 @@ def clean(
     - adata_vcrs_clean_out                  (str): Path to save the cleaned VCRS AnnData object. Default: `out`/adata_cleaned.h5ad.
     - adata_reference_genome_clean_out      (str): Path to save the cleaned reference genome AnnData object. Default: `out`/adata_reference_genome_cleaned.h5ad.
     - save_vcf                              (bool): Whether to save the VCF file. Default: True.
+    - save_vcf_samples                      (bool): Whether to save samples in the VCF. If many samples (including single-cell), can lead to very large files. Default: False.
     - vcf_out                               (str): Path to save the VCF file. Default: `out`/variants.vcf.
 
     # General:
@@ -355,7 +356,7 @@ def clean(
 
     # * 3. Dry-run and set out folder (must to it up here or else config will save in the wrong place)
     if dry_run:
-        print_varseek_dry_run(params_dict, function_name="clean")
+        print(get_varseek_dry_run(params_dict, function_name="clean"))
         return None
 
     # * 4. Save params to config file and run info file
@@ -363,7 +364,7 @@ def clean(
     save_params_to_config_file(params_dict, config_file)
 
     run_info_file = os.path.join(out, "config", "vk_info_run_info.txt")
-    save_run_info(run_info_file)
+    save_run_info(run_info_file, params_dict=params_dict, function_name="clean")
 
     # * 5. Set up default folder/file input paths, and make sure the necessary ones exist
     if kb_count_reference_genome_dir and not adata_reference_genome:
@@ -481,6 +482,7 @@ def clean(
         adata.var["vcrs_header"] = adata.var.index
 
     adata.var.index.name = "variant"
+    adata.var.index = adata.var["vcrs_header"]  # set the index to the vcrs_header
     original_var_names = adata.var_names.copy()
 
     if parity == "paired" and parity_kb_count == "single" and adata.uns.get("corrected_barcodes") is None:  # the last part is to ensure I didn't make the correction already
@@ -558,7 +560,7 @@ def clean(
         )
 
     if qc_against_gene_matrix:
-        adata = adjust_variant_adata_by_normal_gene_matrix(adata, kb_count_vcrs_dir=kb_count_vcrs_dir, kb_count_reference_genome_dir=kb_count_reference_genome_dir, id_to_header_csv=id_to_header_csv, vcrs_t2g=vcrs_t2g, t2g_standard=None, fastq_file_list=fastqs, mm=mm, union=union, technology=technology, parity=parity, bustools=bustools)
+        adata = adjust_variant_adata_by_normal_gene_matrix(adata, kb_count_vcrs_dir=kb_count_vcrs_dir, kb_count_reference_genome_dir=kb_count_reference_genome_dir, id_to_header_csv=id_to_header_csv, vcrs_t2g=vcrs_t2g, t2g_standard=None, fastq_file_list=fastqs, mm=mm, union=union, technology=technology, parity=parity, bustools=bustools, chunksize=chunksize)
 
     if sum_rows and adata.shape[0] > 1:
         # Sum across barcodes (rows)
@@ -761,7 +763,7 @@ def clean(
             # insert other supported databases here
             else:
                 raise ValueError("vcf_data_csv must be provided if variants is supported. Supported databases can be viewed with `vk ref --list_prebuilt_indices`.")
-        cleaned_adata_to_vcf(adata.var, vcf_data_df=vcf_data_csv, output_vcf=vcf_out)
+        cleaned_adata_to_vcf(adata.var, vcf_data_df=vcf_data_csv, output_vcf=vcf_out, save_vcf_samples=save_vcf_samples, adata=adata)
 
     if isinstance(adata_reference_genome, anndata.AnnData):
         adata_reference_genome.write(adata_reference_genome_clean_out)

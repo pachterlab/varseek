@@ -262,7 +262,7 @@ def count(
         save_params_to_config_file(params_dict, config_file)  # $ Now I am done with params_dict
 
         run_info_file = os.path.join(out, "config", "vk_count_run_info.txt")
-        save_run_info(run_info_file)
+        save_run_info(run_info_file, params_dict=params_dict, function_name="count")
 
     # * 4.5 Pop out any unallowable arguments
     for key, unallowable_set in varseek_count_unallowable_arguments.items():

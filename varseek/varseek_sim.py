@@ -21,7 +21,7 @@ from .utils import (
     is_valid_int,
     make_function_parameter_to_value_dict,
     merge_synthetic_read_info_into_variants_metadata_df,
-    print_varseek_dry_run,
+    get_varseek_dry_run,
     report_time_elapsed,
     reverse_complement,
     save_params_to_config_file,
@@ -262,7 +262,7 @@ def sim(
 
     # * 3. Dry-run
     if dry_run:
-        print_varseek_dry_run(params_dict, function_name="sim")
+        print(get_varseek_dry_run(params_dict, function_name="sim"))
         return None
 
     # * 4. Save params to config file and run info file
@@ -270,7 +270,7 @@ def sim(
     save_params_to_config_file(params_dict, config_file)
 
     run_info_file = os.path.join(out, "config", "vk_sim_run_info.txt")
-    save_run_info(run_info_file)
+    save_run_info(run_info_file, params_dict=params_dict, function_name="sim")
 
     # * 5. input stuff
     # no need

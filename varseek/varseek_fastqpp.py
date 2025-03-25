@@ -15,7 +15,7 @@ from .utils import (
     load_in_fastqs,
     make_function_parameter_to_value_dict,
     perform_fastp_trimming_and_filtering,
-    print_varseek_dry_run,
+    get_varseek_dry_run,
     replace_low_quality_bases_with_N_list,
     report_time_elapsed,
     run_fastqc_and_multiqc,
@@ -213,7 +213,7 @@ def fastqpp(
 
     # * 3. Dry-run
     if dry_run:
-        print_varseek_dry_run(params_dict, function_name="fastqpp")
+        print(get_varseek_dry_run(params_dict, function_name="fastqpp"))
         fastqpp_dict = {"original": fastqs, "final": fastqs}
         return fastqpp_dict
 
@@ -222,7 +222,7 @@ def fastqpp(
     save_params_to_config_file(params_dict, config_file)
 
     run_info_file = os.path.join(out, "config", "vk_fastqpp_run_info.txt")
-    save_run_info(run_info_file)
+    save_run_info(run_info_file, params_dict=params_dict, function_name="fastqpp")
 
     # * 5. Set up default folder/file input paths, and make sure the necessary ones exist
     # all input files for vk fastqpp are required in the varseek workflow, so this is skipped

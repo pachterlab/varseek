@@ -342,6 +342,30 @@ def return_kb_arguments(command, remove_dashes=False):
     return kb_arguments
 
 
+def get_varseek_dry_run(params, function_name=None, remove_passwords=True):
+    output = []
+    
+    if function_name:
+        if function_name not in {"build", "info", "filter", "fastqpp", "clean", "summarize", "ref", "count", "sim"}:
+            raise ValueError(f"function_name must be one of build, info, filter, fastqpp, clean, summarize, ref, count, sim. Got {function_name}")
+        output.append(f"varseek.varseek_{function_name}.{function_name}(")
+    
+    for param_key, param_value in params.items():
+        if isinstance(param_value, str):
+            param_value = f'"{param_value}"'
+        
+        if "password" in param_key.lower() and remove_passwords:
+            param_value = "******"
+
+        output.append(f"  {param_key} = {param_value},")
+    
+    if function_name:
+        output.append(")")
+
+    output_string = "\n".join(output)
+    return output_string
+
+
 def print_varseek_dry_run(params, function_name=None, remove_passwords=True):
     if function_name:
         if function_name not in {"build", "info", "filter", "fastqpp", "clean", "summarize", "ref", "count"}:
@@ -898,26 +922,28 @@ def authenticate_cosmic_credentials_via_server(encoded_token):
         return False
 
 
-def get_python_function_call():
+def get_python_function_call(decorated=False):
     # Get the calling frame
-    frame = inspect.currentframe().f_back.f_back.f_back.f_back  # goes 4 up - 1 to get_python_function_call, 1 to get_python_or_cli_function_call, 1 to save_run_info, and 1 to the function of interest
+    frame = inspect.currentframe().f_back.f_back.f_back.f_back.f_back  # goes 4 up - 1 to get_python_function_call, 1 to get_python_or_cli_function_call, 1 to save_run_info, and 1 to the function of interest
+    if decorated:
+        frame = frame.f_back  # goes 1 more up for the decorator
     function_call = inspect.getsource(frame).strip()
 
     return function_call
 
 
-def get_python_or_cli_function_call():
+def get_python_or_cli_function_call(params_dict=None, function_name=None):
     len_sys_argv = len(sys.argv)
     if len_sys_argv == 1:  # Python script
-        function_call = get_python_function_call()
+        function_call = get_varseek_dry_run(params_dict, function_name=function_name)
     elif len_sys_argv == 2 and "ipykernel" in sys.argv[0]:  # Jupyter notebook python
-        function_call = get_python_function_call()
+        function_call = get_varseek_dry_run(params_dict, function_name=function_name)
     else:  # command line (terminal or Jupyter with '!')
         function_call = " ".join(sys.argv)
     return function_call
 
 
-def save_run_info(out_file="run_info.txt", remove_passwords=True):
+def save_run_info(out_file="run_info.txt", params_dict=None, function_name=None, remove_passwords=True):
     from varseek import (
         __version__,  # keep internal to this function to avoid circular import
     )
@@ -928,7 +954,7 @@ def save_run_info(out_file="run_info.txt", remove_passwords=True):
     else:
         os.makedirs(out_file_directory, exist_ok=True)
 
-    function_call = get_python_or_cli_function_call()
+    function_call = get_python_or_cli_function_call(params_dict=params_dict, function_name=function_name)
 
     if remove_passwords:
         # for python calls
