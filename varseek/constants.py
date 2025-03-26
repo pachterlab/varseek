@@ -18,9 +18,52 @@ from collections import defaultdict
 fasta_extensions = (".fa", ".fasta", ".fa.gz", ".fasta.gz", ".fna", ".fna.gz", ".ffn", ".ffn.gz")
 fastq_extensions = (".fq", ".fastq", ".fq.gz", ".fastq.gz")
 
-technology_valid_values = {"10xv1", "10xv2", "10xv3", "Bulk", "SmartSeq2", "BDWTA", "CELSeq", "CELSeq2", "DropSeq", "inDropsv1", "inDropsv2", "inDropsv3", "SCRBSeq", "SmartSeq3", "SPLiT", "STORM", "SureCell", "VASA", "Visium"}
-non_single_cell_technologies = {"Bulk", "Visium"}
+technology_valid_values = {"10XV1", "10XV2", "10XV3", "10XV3_ULTIMA", "BDWTA", "BULK", "CELSEQ", "CELSEQ2", "DROPSEQ", "INDROPSV1", "INDROPSV2", "INDROPSV3", "SCRUBSEQ", "SMARTSEQ2", "SMARTSEQ3", "SPLIT-SEQ", "STORMSEQ", "SURECELL", "VISIUM"}
+non_single_cell_technologies = {"BULK", "VISIUM"}
 supported_downloadable_normal_reference_genomes_with_kb_ref = {"human", "mouse", "dog", "monkey", "zebrafish"}  # see full list at https://github.com/pachterlab/kallisto-transcriptome-indices/
+technology_to_strand_bias_mapping = {
+    "10XV1": ("5p", "3p"),
+    "10XV2": ("5p", "3p"),
+    "10XV3": ("5p", "3p"),
+    "10XV3_ULTIMA": ("5p", "3p"),
+    "BDWTA": ("3p",),
+    "BULK": None,
+    "CELSEQ": ("3p",),
+    "CELSEQ2": ("3p",),
+    "DROPSEQ": ("3p",),
+    "INDROPSV1": ("3p",),
+    "INDROPSV2": ("3p",),
+    "INDROPSV3": ("3p",),
+    "SCRUBSEQ": ("3p",),
+    "SMARTSEQ2": None,
+    "SMARTSEQ3": None,
+    "SPLIT-SEQ": ("3p",),
+    "STORMSEQ": ("3p",),
+    "SURECELL": ("3p",),
+    "VISIUM": ("3p",),
+}
+technology_to_file_index_with_transcripts_mapping = {
+    "10XV1": 2,
+    "10XV2": 1,
+    "10XV3": 1,
+    "10XV3_ULTIMA": 0,
+    "BDWTA": 1,
+    "BULK": 0,
+    "CELSEQ": 1,
+    "CELSEQ2": 1,
+    "DROPSEQ": 1,
+    "INDROPSV1": 1,
+    "INDROPSV2": 0,
+    "INDROPSV3": 2,
+    "SCRUBSEQ": 1,
+    "SMARTSEQ2": 0,
+    "SMARTSEQ3": 0,
+    "SPLIT-SEQ": 0,
+    "STORMSEQ": 0,
+    "SURECELL": 1,
+    "VISIUM": 1,
+}
+
 
 complement_trans = str.maketrans("ACGTNacgtn.", "TGCANtgcan.")
 

@@ -1870,6 +1870,12 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "read_length"),
     )
     parser_clean.add_argument(
+        "--gtf",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "gtf"),
+    )
+    parser_clean.add_argument(
         "--filter_cells_by_min_counts",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
@@ -2589,6 +2595,12 @@ def main():  # noqa: C901
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(count, "reference_genome_t2g"),
+    )
+    parser_count.add_argument(
+        "--gtf",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(count, "gtf"),
     )
     parser_count.add_argument(
         "-o",

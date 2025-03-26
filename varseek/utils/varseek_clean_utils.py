@@ -8,9 +8,8 @@ import numpy as np
 import sys
 import pandas as pd
 import pyfastx
-import scipy.sparse as sp
 import pysam
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, issparse
 import json
 import logging
 from tqdm import tqdm
@@ -34,6 +33,7 @@ from varseek.utils.seq_utils import (
     parquet_column_tuple_to_list
 )
 from varseek.utils.logger_utils import set_up_logger, count_chunks, determine_write_mode
+from varseek.utils.varseek_info_utils import identify_variant_source
 
 logger = logging.getLogger(__name__)
 logger = set_up_logger(logger, logging_level="INFO", save_logs=False, log_dir=None)
@@ -410,7 +410,7 @@ def make_bus_df(kb_count_out, fastq_file_list, t2g_file=None, mm=False, union=Fa
                 bus_df.rename(columns={"corrected_barcode": "barcode"}, inplace=True)
 
                 dup_mask = bus_df.duplicated(subset=['barcode', 'UMI', 'EC', 'read_index'], keep=False)  # Identify all rows that have duplicates (including first occurrences)
-                bus_df.loc[dup_mask, 'file_index'] = 'both'  # Set 'file_index' to 'all' for all duplicated rows
+                bus_df.loc[dup_mask, 'file_index'] = 'both'  # Set 'file_index' to 'both' for all duplicated rows
                 bus_df = bus_df.drop_duplicates(subset=['barcode', 'UMI', 'EC', 'read_index'], keep='first')  # Drop duplicate rows, keeping only the first occurrence
             else:
                 bus_df["file_index"] = "0"
@@ -850,7 +850,7 @@ def make_vaf_matrix(adata_mutant_vcrs_path, adata_wt_vcrs_path, adata_vaf_output
     mutant_X = adata_mutant_vcrs.X
     wt_X = adata_wt_vcrs_padded.X
 
-    if sp.issparse(mutant_X) and sp.issparse(wt_X):
+    if issparse(mutant_X) and issparse(wt_X):
         # Calculate the denominator: mutant_X + wt_X (element-wise addition for sparse matrices)
         denominator = mutant_X + wt_X
 
@@ -1241,58 +1241,52 @@ def cleaned_adata_to_vcf(variant_data, vcf_data_df, output_vcf = "variants.vcf",
 #                 vcf_file.write(f"{chrom}\t{pos}\t{var_id}\t{ref}\t{alt}\t.\tPASS\t{info}\n")
 
 
-def extract_nucleotide_positions_and_actual_variant(variant):
-    if pd.isna(variant):
-        return pd.Series([None, None])
-    
-    parts = variant.split(";")  # Split semicolon-separated variants
-    extracted = [pd.Series(s).str.extract(mutation_pattern) for s in parts]  # Apply extraction
-    extracted_df = pd.concat(extracted, ignore_index=True)  # Combine results
-    
-    return pd.Series([";".join(extracted_df[col].dropna().astype(str)) for col in extracted_df.columns])
-
-def classify_variant(variant):
-    if pd.isna(variant):
-        return "unknown"
-
-    parts = variant.split(";")  # Handle semicolon-separated values
-    sources = []
-    
-    for part in parts:
-        if part.startswith("c."):
-            sources.append("transcriptome")
-        elif part.startswith("g."):
-            sources.append("genome")
-        else:
-            sources.append("unknown")
-
-    return ";".join(sources)  # Preserve semicolon format
 
 def assign_transcript_id(row, transcript_df):
-    seq_ids = row["seq_ID"].split(";")
-    positions = row["variant_start_genome_position"].split(";")
-    sources = row["variant_source"].split(";")
+    seq_id = row["chromosome"]
+    position = row["variant_start_genome_position"]
+    source = row["variant_source"]
 
-    transcript_ids = []
+    if source == "genome":
+        # Query transcript_df for transcript mapping
+        match = transcript_df[
+            (transcript_df["chromosome"] == seq_id) & 
+            (transcript_df["start"] <= int(position)) & 
+            (transcript_df["end"] >= int(position))
+        ]
+        transcript_id = match["transcript_ID"] if not match.empty else "unknown"
+    else:
+        transcript_id = seq_id  # If not genome, use seq_ID directly
 
-    for seq_id, pos, source in zip(seq_ids, positions, sources):
-        if source == "genome":
-            # Query transcript_df for transcript mapping
-            match = transcript_df[
-                (transcript_df["chromosome"] == seq_id) & 
-                (transcript_df["start"] <= int(pos)) & 
-                (transcript_df["end"] >= int(pos))
-            ]
-            transcript_id = ";".join(match["transcript_ID"].tolist()) if not match.empty else "unknown"
-        else:
-            transcript_id = seq_id  # If not genome, use seq_ID directly
+    return transcript_id
 
-        transcript_ids.append(transcript_id)
+    # use it with adata_var_exploded.apply(lambda row: assign_transcript_id(row, transcript_df), axis=1)
 
-    return ";".join(transcript_ids)  # Preserve semicolon-separated format
+
+# def assign_transcript_ids(adata_var_exploded, transcript_df):
+#     # Merge transcript_df into adata_var_exploded based on genome position
+#     merged_df = adata_var_exploded.merge(
+#         transcript_df,
+#         on="chromosome",
+#         how="left",
+#         suffixes=("", "_transcript")  # Avoid column name conflicts
+#     )
+
+#     # Assign transcript_ID based on conditions
+#     merged_df["transcript_ID"] = merged_df.apply(
+#         lambda row: row["transcript_ID_transcript"] 
+#         if (row["variant_source"] == "genome") and (row["start"] <= row["start_variant_position_genome"] <= row["end"])
+#         else row["chromosome"],
+#         axis=1
+#     )
+
+#     # Keep only necessary columns
+#     adata_var_exploded = merged_df[adata_var_exploded.columns.tolist() + ["transcript_ID"]]
+
 
 def remove_variants_from_adata_for_stranded_technologies(adata, strand_bias_end, read_length, header_column="vcrs_header", variant_source=None, gtf=None):
-    if isinstance(adata, str):
+    #* Type-checking
+    if isinstance(adata, str):  # adata is anndata object or path to h5ad
         adata = ad.read_h5ad(adata)
     elif isinstance(adata, ad.AnnData):
         pass
@@ -1309,36 +1303,88 @@ def remove_variants_from_adata_for_stranded_technologies(adata, strand_bias_end,
     
     if header_column not in adata.var.columns:
         raise ValueError(f"header_column {header_column} not found in adata.var columns")
-
-    adata.var[["seq_ID", "variant"]] = adata.var[header_column].apply(lambda x: pd.Series(
-        [";".join([s.split(":")[0] for s in x.split(";")]),
-        ";".join([s.split(":")[1] for s in x.split(";")])]
-    ))
-
-    adata.var[["nucleotide_positions", "actual_variant"]] = adata.var["variant"].apply(extract_nucleotide_positions_and_actual_variant)
-
-    if not variant_source:  # detect automatically per-variant
-        adata.var["variant_source"] = adata.var["actual_variant"].apply(classify_variant)
-
-    adata.var[["variant_start_transcript_position", "variant_end_transcript_position"]] = adata.var["nucleotide_positions"].apply(lambda x: pd.Series(
-        [";".join([s.split("_")[0] for s in x.split(";")]),
-        ";".join([s.split("_")[1] for s in x.split(";")])]
-    ))
-
-    if variant_source != "transcriptome" or strand_bias_end == "3p":
-        gtf_cols = ["chromosome", "source", "feature", "start", "end", "score", "strand", "frame", "attributes"]
-        gtf_df = pd.read_csv(gtf, sep="\t", comment="#", names=gtf_cols)
-        transcript_df = gtf_df[gtf_df["feature"] == "transcript"].copy()
-        transcript_df["transcript_ID"] = transcript_df["attributes"].str.extract(r'transcript_id "([^"]+)"')
     
-    if variant_source != "transcriptome":
-        adata.var.rename(columns={"seq_ID": "chromosome", "variant_start_transcript_position": "variant_start_genome_position", "variant_end_transcript_position": "variant_end_genome_position"}, inplace=True)
-        adata.var["transcript_ID"] = adata.var.apply(lambda row: assign_transcript_id(row, transcript_df), axis=1)
-    else:
-        adata.var.rename(columns={"seq_ID": "transcript_ID"}, inplace=True)
+    if variant_source not in {None, "transcriptome", "genome"}:
+        raise ValueError("variant_source must be either None, 'transcriptome', or 'genome'")
+    
+    #* Load in gtf df if needed
+    if variant_source == "genome" or strand_bias_end == "3p":
+        if gtf is None:
+            raise ValueError("gtf must be provided if variant_source is 'genome' or strand_bias_end is '3p'")
+        if isinstance(gtf, str):
+            gtf_cols = ["chromosome", "source", "feature", "start", "end", "score", "strand", "frame", "attributes"]
+            gtf_df = pd.read_csv(gtf, sep="\t", comment="#", names=gtf_cols)
+            transcript_df = gtf_df[gtf_df["feature"] == "transcript"].copy()
+            transcript_df["transcript_ID"] = transcript_df["attributes"].str.extract(r'transcript_id "([^"]+)"')
+        elif isinstance(gtf, pd.DataFrame):
+            transcript_df = gtf
+        else:
+            raise ValueError("gtf must be a path to a GTF file or a pandas DataFrame")
+        transcript_df = transcript_df.drop_duplicates(subset="transcript_ID", keep="first")
 
-    if strand_bias_end == "5p":
-        pass
+    #* Explode adata.var
+    adata_var = adata.var.copy()
+    adata_var_exploded = adata_var.assign(vcrs_header=adata_var["vcrs_header"].str.split(";")).explode("vcrs_header")
+
+    #* Split variant column into seq_ID and variant
+    adata_var_exploded[["seq_ID", "variant"]] = adata_var_exploded[header_column].str.split(":", expand=True)
+
+    #* Split variant into nucleotide positions and actual variant
+    adata_var_exploded[["nucleotide_positions", "actual_variant"]] = adata_var_exploded["variant"].str.extract(mutation_pattern)
+
+    #* Classify variant source
+    if not variant_source:  # detect automatically per-variant
+        identify_variant_source(adata_var_exploded, variant_column="variant", variant_source_column="variant_source", choices = ("transcriptome", "genome"))
+    
+    unique_variant_sources = adata_var_exploded["variant_source"].unique()
+    if len(unique_variant_sources) == 1:
+        variant_source = unique_variant_sources[0]
+    if variant_source != "transcriptome" and gtf is None:
+        raise ValueError("gtf must be provided if genome-derived variants are present in adata.var")
+
+    #* Find transcript start and end positions
+    split_positions = adata_var_exploded["nucleotide_positions"].str.split("_", expand=True)
+    adata_var_exploded["start_variant_position"] = split_positions[0]
+    if split_positions.shape[1] > 1:
+        adata_var_exploded["end_variant_position"] = split_positions[1].fillna(split_positions[0])
     else:
-        adata.var["transcript_length"]
-        pass
+        adata_var_exploded["end_variant_position"] = adata_var_exploded["start_variant_position"]
+
+    adata_var_exploded.loc[adata_var_exploded["end_variant_position"].isna(), "end_variant_position"] = adata_var_exploded["start_variant_position"]
+    adata_var_exploded[["start_variant_position", "end_variant_position"]] = adata_var_exploded[["start_variant_position", "end_variant_position"]].astype(int)
+    
+    #* Assign transcript ID for genome variants
+    if variant_source != "transcriptome":
+        adata_var_exploded.rename(columns={"seq_ID": "chromosome", "start_variant_position": "start_variant_position_genome", "end_variant_position": "end_variant_position_genome"}, inplace=True)
+        # assign_transcript_ids(adata_var_exploded, transcript_df)  # faster (works with merge instead of apply) but RAM-intensive (left-merges GTF into adata_var_exploded by chromosome alone)
+        adata_var_exploded["transcript_ID"] = adata_var_exploded.apply(lambda row: assign_transcript_id(row, transcript_df), axis=1)
+    else:
+        adata_var_exploded.rename(columns={"seq_ID": "transcript_ID"}, inplace=True)
+
+    #* Filter based on strand bias
+    if strand_bias_end == "5p":  #* 5': mutation start is less than or equal to read length
+        adata_var_exploded = adata_var_exploded[adata_var_exploded["start_variant_position"] <= read_length]
+    else:  #* 3': mutation end is greater than or equal to (transcript length - read length)
+        adata_var_exploded = adata_var_exploded.merge(
+            transcript_df[["transcript_ID", "start", "end"]],
+            on="transcript_ID",
+            how="left"
+        ).rename(columns={"start": "start_transcript_position_genome", "end": "end_transcript_position_genome"}).set_index(adata_var_exploded.index)
+
+        adata_var_exploded["transcript_length"] = adata_var_exploded["end_transcript_position_genome"] - adata_var_exploded["start_transcript_position_genome"] + 1
+        
+        adata_var_exploded = adata_var_exploded[adata_var_exploded["end_variant_position"] >= (adata_var_exploded["transcript_length"] - read_length)]
+
+    #* Collapse
+    adata_var = adata_var_exploded.groupby(adata_var_exploded.index)["vcrs_header"].apply(lambda x: ";".join(sorted(x))).reset_index()
+
+    valid_indices = set(adata_var["index"])  # Get the valid column indices from df_collapsed
+    cols_to_keep = [i for i in range(adata.n_vars) if str(i) in valid_indices]  # Identify columns to keep (i.e., only the valid indices)
+    adata_var.drop(columns=["index"], inplace=True)  # Drop the index column
+
+    # Subset adata
+    adata = adata[:, cols_to_keep]
+    adata.var.reset_index(drop=True, inplace=True)
+    adata.var["vcrs_header"] = adata_var["vcrs_header"].values  # will fix cases like where ENST0000001:c.50G>A;ENST0000006:c.1001G>A --> ENST0000001:c.50G>A
+
+    return adata

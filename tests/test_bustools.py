@@ -111,4 +111,25 @@ def test_bustools_df_bulk_parity_single(temp_fastq_file, temp_fasta_file, temp_i
     assert np.array_equal(adata.X.toarray(), np.array([[0., 1., 0., 0., 0., 0.]]))
 
 def test_bustools_df_bulk_parity_paired(temp_fastq_file, temp_fasta_file, temp_index_file, temp_t2g_file, temp_kb_count_out_folder):
-    pass
+    k = "31"
+    kb_ref_command = ["kb", "ref", "--workflow", "custom", "-t", "2", "-i", str(temp_index_file), "--d-list", "None", "-k", k, str(temp_fasta_file)]
+    subprocess.run(kb_ref_command, check=True)
+    create_identity_t2g(temp_fasta_file, temp_t2g_file)
+    
+    kb_count_command = ["kb", "count", "-t", "2", "-k", str(k), "-i", str(temp_index_file), "-g", str(temp_t2g_file), "-x", "bulk", "--strand", "forward", "--num", "--h5ad", "--parity", "paired", "-o", str(temp_kb_count_out_folder), str(temp_fastq_file)]
+    subprocess.run(kb_count_command, check=True)
+
+    bustools = None
+    if not bustools:
+        bustools_binary_path_command = "kb info | grep 'bustools:' | awk '{print $3}' | sed 's/[()]//g'"
+        bustools = subprocess.run(bustools_binary_path_command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, text=True, check=True).stdout.strip()
+
+    bus_df = make_bus_df(kb_count_out = temp_kb_count_out_folder, fastq_file_list = temp_fastq_file, t2g_file = temp_t2g_file, mm = False, union = False, technology = "bulk", bustools = bustools, check_only=True)
+    read_to_ref_dict = dict(zip(bus_df['fastq_header'], bus_df['gene_names']))
+
+    assert read_to_ref_dict == {'seq1': ['vcrs1', 'vcrs6'], 'seq2': ['vcrs2'], 'seq3': ['vcrs1', 'vcrs6'], 'seq5': ['vcrs2', 'vcrs4', 'vcrs5']}
+
+    adata_path = f"{temp_kb_count_out_folder}/counts_unfiltered/adata.h5ad"
+    adata = ad.read_h5ad(adata_path)
+
+    assert np.array_equal(adata.X.toarray(), np.array([[0., 1., 0., 0., 0., 0.]]))

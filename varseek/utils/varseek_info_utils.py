@@ -1722,13 +1722,10 @@ def align_to_normal_genome_and_build_dlist(
         return (mutation_metadata_df, sequence_names_set_union_genome_and_cdna)
 
 
-def identify_variant_source(mutation_metadata_df_exploded, variant_source_column="variant_source"):
-    # intentionally modifies mutation_metadata_df_exploded in-place
-    choices = ["cdna", "genome"]
-
+def identify_variant_source(mutation_metadata_df_exploded, variant_column="variant_used_for_vcrs", variant_source_column="variant_source", choices=("cdna", "genome")):
     conditions = [
-        mutation_metadata_df_exploded["variant_used_for_vcrs"].str.startswith("c.", na=False),
-        mutation_metadata_df_exploded["variant_used_for_vcrs"].str.startswith("g.", na=False),
+        mutation_metadata_df_exploded[variant_column].str.startswith("c.", na=False),
+        mutation_metadata_df_exploded[variant_column].str.startswith("g.", na=False),
     ]  # if it finds ":c.", make it "cdna"; if it finds ":g.", make it "genome"; if it finds both or neither, make it "unknown"
 
     mutation_metadata_df_exploded[variant_source_column] = np.select(conditions, choices, default="unknown")

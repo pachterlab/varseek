@@ -9,6 +9,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
+import pandas as pd
 
 import varseek as vk
 from varseek.utils import (
@@ -155,6 +156,7 @@ def count(
     parity="single",
     reference_genome_index=None,  # optional inputs
     reference_genome_t2g=None,
+    gtf=None,
     out=".",  # optional outputs
     kb_count_vcrs_out_dir=None,
     kb_count_reference_genome_out_dir=None,
@@ -195,6 +197,7 @@ def count(
     # Optional input arguments
     - reference_genome_index                (str) Path to index file for the "normal" reference genome. Created if not provided. Only used if qc_against_gene_matrix=True (see vk clean --help). Default: None.
     - reference_genome_t2g                  (str) Path to t2g file for the "normal" reference genome. Created if not provided. Only used if qc_against_gene_matrix=True (see vk clean --help). Default: None.
+    - gtf                                   (str): Path to the GTF file. Only used when account_for_strand_bias=True and either (1) strand_bias_end='3p' and/or (2) some VCRSs are derived from genome sequences. Default: None.
 
     # Optional output file paths: (only needed if changing/customizing file names or locations):
     - out                                   (str) Output directory. Default: ".".
@@ -466,6 +469,17 @@ def count(
                 barcodes_file = os.path.join(kb_count_vcrs_out_dir, "matrix.sample.barcodes")
                 bad_to_good_barcode_dict = make_good_barcodes_and_file_index_tuples(barcodes_file)
                 adata.obs.index = adata.obs.index.map(lambda x: bad_to_good_barcode_dict.get(x, x))  # map from old (incorrect) barcodes to new (correct) barcodes  #!!! ensure the old barcodes don't linger anywhere else
+
+                # Convert to DataFrame for easy manipulation
+                df = pd.DataFrame(adata.X.toarray() if hasattr(adata.X, "toarray") else adata.X, 
+                        index=adata.obs.index, 
+                        columns=adata.var.index)
+                
+                # sum across pairs
+                df_grouped = df.groupby(df.index).sum()
+
+                # Create new AnnData object
+                adata = ad.AnnData(X=df_grouped.values, obs=pd.DataFrame(index=df_grouped.index), var=adata.var)
                 adata.uns["corrected_barcodes"] = True  # will be checked in vk clean
                 adata.write(adata_vcrs)
     else:
@@ -499,16 +513,16 @@ def count(
             "-x",
             technology,
             "--h5ad",
-            "--parity",
-            parity,
-            "--strand",
-            strand,
             "-o",
             kb_count_reference_genome_out_dir,
         ]
 
+        if strand:
+            kb_count_standard_index_command.extend(["--strand", strand])
         if qc_against_gene_matrix or kwargs.get("num"):
             kb_count_standard_index_command.extend(["--num"])
+        if technology in {"BULK", "SMARTSEQ2"}:
+            kb_count_standard_index_command.extend(["--parity", parity])
 
         # assumes any argument in varseek count matches kb count identically, except dashes replaced with underscores
         params_dict_kb_count_standard = make_function_parameter_to_value_dict(1)  # will reflect any updated values to variables found in vk count signature and anything in kwargs
@@ -549,7 +563,7 @@ def count(
             # eg kwargs_vk_clean['mykwarg'] = mykwarg
 
             logger.info("Running vk clean")
-            _ = vk.clean(adata_vcrs=adata_vcrs, vcrs_index=index, vcrs_t2g=t2g, technology=technology, fastqs=fastqs, k=k, qc_against_gene_matrix=qc_against_gene_matrix, account_for_strand_bias=account_for_strand_bias, strand_bias_end=strand_bias_end, read_length=read_length, mm=mm, union=union, parity=parity, out=out, chunksize=chunksize, dry_run=dry_run, overwrite=True, sort_fastqs=sort_fastqs, threads=threads, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir, **kwargs_vk_clean)  # kb_count_reference_genome_dir is passed in via kwargs, as is adata_reference_genome
+            _ = vk.clean(adata_vcrs=adata_vcrs, vcrs_index=index, vcrs_t2g=t2g, technology=technology, fastqs=fastqs, k=k, qc_against_gene_matrix=qc_against_gene_matrix, account_for_strand_bias=account_for_strand_bias, strand_bias_end=strand_bias_end, read_length=read_length, gtf=gtf, mm=mm, union=union, parity=parity, out=out, chunksize=chunksize, dry_run=dry_run, overwrite=True, sort_fastqs=sort_fastqs, threads=threads, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir, **kwargs_vk_clean)  # kb_count_reference_genome_dir is passed in via kwargs, as is adata_reference_genome
         else:
             logger.info(f"Skipping vk clean because file {file_signifying_successful_vk_clean_completion} already exists and overwrite=False")
         adata = adata_vcrs_clean_out  # for vk summarize
