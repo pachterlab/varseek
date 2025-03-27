@@ -120,11 +120,11 @@ def validate_input_clean(params_dict):
         raise ValueError(f"filter_cells_by_max_mt_content must be an integer between 0 and 100, or None. Got {params_dict.get('filter_cells_by_max_mt_content')}.")
 
     # boolean
-    for param_name in ["use_binary_matrix", "drop_empty_columns", "apply_single_end_mode_on_paired_end_data_correction", "split_reads_by_Ns_and_low_quality_bases", "apply_dlist_correction", "qc_against_gene_matrix", "doublet_detection", "remove_doublets", "cpm_normalization", "sum_rows", "mm", "union", "save_vcf", "dry_run", "overwrite", "account_for_strand_bias"]:
+    for param_name in ["use_binary_matrix", "drop_empty_columns", "apply_single_end_mode_on_paired_end_data_correction", "split_reads_by_Ns_and_low_quality_bases", "apply_dlist_correction", "qc_against_gene_matrix", "doublet_detection", "remove_doublets", "cpm_normalization", "sum_rows", "mm", "save_vcf", "dry_run", "overwrite", "account_for_strand_bias"]:
         if not isinstance(params_dict.get(param_name), bool):
             raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
     if not isinstance(params_dict.get("multiplexed"), bool) and params_dict.get("multiplexed") is not None:
-        raise ValueError(f"multiplexed must be a boolean pr None. Got {params_dict.get('multiplexed')} of type {type(params_dict.get('multiplexed'))}.")
+        raise ValueError(f"multiplexed must be a boolean or None. Got {params_dict.get('multiplexed')} of type {type(params_dict.get('multiplexed'))}.")
 
     # sets
     for param_name in ["vcrs_id_set_to_exclusively_keep", "vcrs_id_set_to_exclude", "transcript_set_to_exclusively_keep", "transcript_set_to_exclude", "gene_set_to_exclusively_keep", "gene_set_to_exclude"]:
@@ -229,7 +229,6 @@ def clean(
     gene_set_to_exclude=None,
     k=None,
     mm=False,
-    union=False,
     parity="single",
     multiplexed=None,
     sort_fastqs=True,
@@ -299,7 +298,6 @@ def clean(
     - gene_set_to_exclude                   (str or Set(str) or None): If a set, will exclude the genes in this set. If a list/tuple, will convert to a set and then exclude the genes in this set. If a string, will load the text file and exclude the genes in this set. Default: None.
     - k                                     (int): K-mer length used for the k-mer index. Used only when apply_dlist_correction=True. Default: None.
     - mm                                    (bool): Whether to count multimapped reads in the adata count matrix. Only used when apply_single_end_mode_on_paired_end_data_correction, apply_dlist_correction, or qc_against_gene_matrix is True. Default: False.
-    - union                                 (bool): Whether to count unioned reads in the adata count matrix. Only used when apply_single_end_mode_on_paired_end_data_correction, apply_dlist_correction, or qc_against_gene_matrix is True. Default: False.
     - parity                                (str) "single" or "paired". Only relevant if technology is bulk or a smart-seq. Default: "single"
     - multiplexed                           (bool) Indicates that the fastq files are multiplexed. Only used if sort_fastqs=True and technology is a smartseq technology. Default: None
     - sort_fastqs                           (bool): Whether to sort the fastqs. Default: True.
@@ -601,7 +599,7 @@ def clean(
         )
 
     if qc_against_gene_matrix:
-        adata = adjust_variant_adata_by_normal_gene_matrix(adata, kb_count_vcrs_dir=kb_count_vcrs_dir, kb_count_reference_genome_dir=kb_count_reference_genome_dir, id_to_header_csv=id_to_header_csv, vcrs_t2g=vcrs_t2g, t2g_standard=None, fastq_file_list=fastqs, mm=mm, union=union, technology=technology, parity=parity, bustools=bustools, chunksize=chunksize)
+        adata = adjust_variant_adata_by_normal_gene_matrix(adata, kb_count_vcrs_dir=kb_count_vcrs_dir, kb_count_reference_genome_dir=kb_count_reference_genome_dir, id_to_header_csv=id_to_header_csv, vcrs_t2g=vcrs_t2g, t2g_standard=None, fastq_file_list=fastqs, mm=mm, technology=technology, parity=parity, bustools=bustools, chunksize=chunksize)
 
     if account_for_strand_bias:
         if strand_bias_end is None:

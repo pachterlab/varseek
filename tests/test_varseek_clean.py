@@ -234,23 +234,23 @@ import subprocess
 @pytest.fixture
 def temp_fastq_file(tmp_path):
     fastq_content = (
-        "@seq1\n"
+        "@seq1_1\n"
         "CCCAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGA\n"
         "+\n"
         "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII\n"
-        "@seq2\n"
+        "@seq2_1\n"
         "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC\n"
         "+\n"
         "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII\n"
-        "@seq3\n"
+        "@seq3_1\n"
         "CCCAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGA\n"
         "+\n"
         "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII\n"
-        "@seq4\n"
+        "@seq4_1\n"
         "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT\n"
         "+\n"
         "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII\n"
-        "@seq5\n"
+        "@seq5_1\n"
         "AAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAA\n"
         "+\n"
         "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII\n"
@@ -263,23 +263,23 @@ def temp_fastq_file(tmp_path):
 @pytest.fixture
 def temp_fastq_file_pair(tmp_path):
     fastq_content = (
-        "@seq1\n"
+        "@seq1_2\n"
         "GAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGTATTCTCGACTACGACACGACACGACACGACACGACACGACACGACACGACACGACACGAC\n"
         "+\n"
         "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII\n"
-        "@seq2\n"
+        "@seq2_2\n"
         "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC\n"
         "+\n"
         "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII\n"
-        "@seq3\n"
+        "@seq3_2\n"
         "AAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAA\n"
         "+\n"
         "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII\n"
-        "@seq4\n"
+        "@seq4_2\n"
         "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT\n"
         "+\n"
         "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII\n"
-        "@seq5\n"
+        "@seq5_2\n"
         "AAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAAAAGGAAGGAA\n"
         "+\n"
         "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII\n"
@@ -368,10 +368,10 @@ def test_bustools_df_bulk_parity_single(temp_fastq_file, temp_fasta_file, temp_i
         bustools_binary_path_command = "kb info | grep 'bustools:' | awk '{print $3}' | sed 's/[()]//g'"
         bustools = subprocess.run(bustools_binary_path_command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, text=True, check=True).stdout.strip()
 
-    bus_df = make_bus_df(kb_count_out = temp_kb_count_out_folder, fastq_file_list = temp_fastq_file, t2g_file = temp_t2g_file, mm = False, union = False, technology = "bulk", bustools = bustools, check_only=True)
+    bus_df = make_bus_df(kb_count_out = temp_kb_count_out_folder, fastq_file_list = temp_fastq_file, t2g_file = temp_t2g_file, mm = False, technology = "bulk", bustools = bustools, check_only=True)
     read_to_ref_dict = dict(zip(bus_df['fastq_header'], bus_df['gene_names']))
 
-    assert read_to_ref_dict == {'seq1': ['vcrs1', 'vcrs6'], 'seq2': ['vcrs2'], 'seq3': ['vcrs1', 'vcrs6'], 'seq5': ['vcrs2', 'vcrs4', 'vcrs5']}
+    assert read_to_ref_dict == {'seq1_1': ['vcrs1', 'vcrs6'], 'seq2_1': ['vcrs2'], 'seq3_1': ['vcrs1', 'vcrs6'], 'seq5_1': ['vcrs2', 'vcrs4', 'vcrs5']}
 
     adata_path = f"{temp_kb_count_out_folder}/counts_unfiltered/adata.h5ad"
     adata = ad.read_h5ad(adata_path)
@@ -392,10 +392,10 @@ def test_bustools_df_bulk_parity_paired(temp_fastq_file, temp_fastq_file_pair, t
         bustools_binary_path_command = "kb info | grep 'bustools:' | awk '{print $3}' | sed 's/[()]//g'"
         bustools = subprocess.run(bustools_binary_path_command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, text=True, check=True).stdout.strip()
 
-    bus_df = make_bus_df(kb_count_out = temp_kb_count_out_folder, fastq_file_list = [temp_fastq_file, temp_fastq_file_pair], t2g_file = temp_t2g_file, mm = False, union = False, technology = "bulk", bustools = bustools, check_only=True)
+    bus_df = make_bus_df(kb_count_out = temp_kb_count_out_folder, fastq_file_list = [temp_fastq_file, temp_fastq_file_pair], t2g_file = temp_t2g_file, mm = False, technology = "bulk", bustools = bustools, check_only=True)
     read_to_ref_dict = dict(zip(bus_df['fastq_header'], bus_df['gene_names']))
 
-    assert read_to_ref_dict == {'seq1': ['vcrs1'], 'seq2': ['vcrs2'], 'seq5': ['vcrs2', 'vcrs4', 'vcrs5']}
+    assert read_to_ref_dict == {'seq1_1': ['vcrs1'], 'seq2_1': ['vcrs2'], 'seq5_1': ['vcrs2', 'vcrs4', 'vcrs5']}
 
     adata_path = f"{temp_kb_count_out_folder}/counts_unfiltered/adata.h5ad"
     adata = ad.read_h5ad(adata_path)
@@ -416,10 +416,10 @@ def test_bustools_df_10xv3(temp_fastq_file, temp_fastq_R1, temp_fasta_file, temp
         bustools_binary_path_command = "kb info | grep 'bustools:' | awk '{print $3}' | sed 's/[()]//g'"
         bustools = subprocess.run(bustools_binary_path_command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, text=True, check=True).stdout.strip()
 
-    bus_df = make_bus_df(kb_count_out = temp_kb_count_out_folder, fastq_file_list = [temp_fastq_R1, temp_fastq_file], t2g_file = temp_t2g_file, mm = False, union = False, technology = "bulk", bustools = bustools, check_only=True)
+    bus_df = make_bus_df(kb_count_out = temp_kb_count_out_folder, fastq_file_list = [temp_fastq_R1, temp_fastq_file], t2g_file = temp_t2g_file, mm = False, technology = "bulk", bustools = bustools, check_only=True)
     read_to_ref_dict = dict(zip(bus_df['fastq_header'], bus_df['gene_names']))
 
-    assert read_to_ref_dict == {'seq1': ['vcrs1'], 'seq2': ['vcrs2'], 'seq5': ['vcrs2', 'vcrs4', 'vcrs5']}
+    assert read_to_ref_dict == {'seq1_1': ['vcrs1', 'vcrs6'], 'seq2_1': ['vcrs2'], 'seq3_1': ['vcrs1', 'vcrs6'], 'seq5_1': ['vcrs2', 'vcrs4', 'vcrs5']}
 
     adata_path = f"{temp_kb_count_out_folder}/counts_unfiltered/adata.h5ad"
     adata = ad.read_h5ad(adata_path)
