@@ -19,6 +19,7 @@ from varseek.constants import (
     fastq_extensions,
     technology_barcode_and_umi_dict,
     mutation_pattern,
+    technology_to_file_index_with_transcripts_mapping
 )
 from varseek.utils.seq_utils import (
     add_variant_type,
@@ -190,7 +191,7 @@ def make_bus_df(kb_count_out, fastq_file_list, t2g_file=None, mm=False, technolo
         #* fastq df
         fastq_header_df = pd.DataFrame(columns=["read_index", "fastq_header", "barcode"])
         for i, fastq_file in enumerate(fastq_file_list):
-            if vcrs_parity == "paired" and i % 2 == 1:
+            if vcrs_parity == "paired" and i % 2 == 1:  #!!! technology_to_file_index_with_transcripts_mapping
                 continue  # if vcrs_parity is paired, then only include the read headers from file0
             fastq_file = str(fastq_file)  # important for temp files
             fastq_header_list = [header.strip() for header, _, _ in tqdm(pyfastx.Fastx(fastq_file), desc="Processing FASTQ headers")]
