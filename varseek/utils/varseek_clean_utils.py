@@ -12,6 +12,7 @@ import pysam
 from scipy.sparse import csr_matrix, issparse
 import json
 import logging
+import gzip
 from tqdm import tqdm
 
 from varseek.constants import (
@@ -19,7 +20,9 @@ from varseek.constants import (
     fastq_extensions,
     technology_barcode_and_umi_dict,
     mutation_pattern,
-    technology_to_file_index_with_transcripts_mapping
+    technology_to_file_index_with_transcripts_mapping,
+    technology_to_number_of_files_mapping,
+    technology_to_file_index_with_barcode_and_barcode_start_and_end_position_mapping
 )
 from varseek.utils.seq_utils import (
     add_variant_type,
@@ -130,7 +133,7 @@ def find_hamming_1_match(barcode, whitelist):
         barcode_list[i] = original_base  # Restore original base
     return None  # No match found
 
-def make_bus_df(kb_count_out, fastq_file_list, t2g_file=None, mm=False, technology="bulk", parity="single", bustools="bustools", check_only=False, chunksize=None, bad_to_good_barcode_dict=None, save_type="parquet"):  # make sure this is in the same order as passed into kb count - [sample1, sample2, etc] OR [sample1_pair1, sample1_pair2, sample2_pair1, sample2_pair2, etc]
+def make_bus_df(kb_count_out, fastq_file_list, t2g_file=None, mm=False, technology="bulk", parity="single", bustools="bustools", check_only=True, chunksize=None, bad_to_good_barcode_dict=None, correct_barcodes_of_hamming_distance_one=False, save_type="parquet"):  # make sure this is in the same order as passed into kb count - [sample1, sample2, etc] OR [sample1_pair1, sample1_pair2, sample2_pair1, sample2_pair2, etc]
     with open(f"{kb_count_out}/kb_info.json", 'r') as f:
         kb_info_data = json.load(f)
     if "--num" not in kb_info_data.get("call", ""):
@@ -147,6 +150,8 @@ def make_bus_df(kb_count_out, fastq_file_list, t2g_file=None, mm=False, technolo
         
     fastq_file_list = load_in_fastqs(fastq_file_list)
     fastq_file_list = sort_fastq_files_for_kb_count(fastq_file_list, technology=technology, check_only=check_only)
+
+    list_or_tuple = list if save_type == "parquet" else tuple
     
     #* transcripts
     print("loading in transcripts")
@@ -165,7 +170,7 @@ def make_bus_df(kb_count_out, fastq_file_list, t2g_file=None, mm=False, technolo
     )
     ec_df["transcript_ids"] = ec_df["transcript_ids"].astype(str)
     ec_df["transcript_ids_list"] = ec_df["transcript_ids"].apply(lambda x: tuple(map(int, x.split(","))))
-    ec_df["transcript_names"] = ec_df["transcript_ids_list"].apply(lambda ids: tuple(transcripts[i] for i in ids))
+    ec_df["transcript_names"] = ec_df["transcript_ids_list"].apply(lambda ids: list_or_tuple(transcripts[i] for i in ids))  # list_or_tuple is list if parquet else tuple (tuple is lower memory but doesn't work with parquet)
     ec_df.drop(columns=["transcript_ids", "transcript_ids_list"], inplace=True)  # drop transcript_ids
 
     #* t2g
@@ -175,136 +180,837 @@ def make_bus_df(kb_count_out, fastq_file_list, t2g_file=None, mm=False, technolo
         t2g_dict = dict(zip(t2g_df["transcript_id"], t2g_df["gene_name"]))
         t2g_dict["dlist"] = "dlist"
 
+    number_of_files = technology_to_number_of_files_mapping[technology.upper()]
+    if isinstance(number_of_files, dict):
+        number_of_files = number_of_files[vcrs_parity]
+    barcode_file_index_tuple = technology_to_file_index_with_barcode_and_barcode_start_and_end_position_mapping[technology.upper()]
+    if barcode_file_index_tuple is None:
+        barcode_file_index = None
+    else:
+        if isinstance(barcode_file_index_tuple[0], tuple):
+            barcode_file_index = list(set(group[0] for group in barcode_file_index_tuple))[0]
+            if len(barcode_file_index) > 1:
+                raise ValueError(f"Error: {technology} has multiple file indices for barcodes, please specify which one to use in kb count")
+            barcode_start_positions_list = [group[1] for group in barcode_file_index_tuple]  # get the start positions for each group
+            barcode_end_positions_list = [group[2] for group in barcode_file_index_tuple]  # get the end positions for each group
+        else:
+            barcode_file_index = barcode_file_index_tuple[0]
+            barcode_start_positions_list = [barcode_file_index_tuple[1]]  # if only one group, then use the start position
+            barcode_end_positions_list = [barcode_file_index_tuple[2]]
+    transcript_file_index = technology_to_file_index_with_transcripts_mapping[technology.upper()]
+
     technology = technology.lower()
-    if technology != "bulk":
+    if technology not in {"bulk", "smartseq2"}:
         parity = "single"
-    if technology == "bulk":
-        #* barcodes
+
+    #* barcodes
+    barcodes = None
+    if barcode_file_index is None:  # including bulk
         print("loading in barcodes")
         with open(f"{kb_count_out}/matrix.sample.barcodes", encoding="utf-8") as f:
             barcodes = f.read().splitlines()
 
-        if len(fastq_file_list) // 2 == len(barcodes):
-            vcrs_parity = "paired"  # just a sanity check
-            barcodes = [x for x in barcodes for _ in range(2)]  # converts ["AAA", "AAC"] to ["AAA", "AAA", "AAC", "AAC"]
-        
-        #* fastq df
-        fastq_header_df = pd.DataFrame(columns=["read_index", "fastq_header", "barcode"])
-        for i, fastq_file in enumerate(fastq_file_list):
-            if vcrs_parity == "paired" and i % 2 == 1:  #!!! technology_to_file_index_with_transcripts_mapping
-                continue  # if vcrs_parity is paired, then only include the read headers from file0
+    if barcodes and (len(fastq_file_list) // 2 == len(barcodes)):
+        vcrs_parity = "paired"  # just a sanity check
+        barcodes = [x for x in barcodes for _ in range(2)]  # converts ["AAA", "AAC"] to ["AAA", "AAA", "AAC", "AAC"]
+    
+    #* fastq df
+    fastq_header_list, barcode_list, fastq_header_file_index = None, None, None
+    fastq_header_df = pd.DataFrame(columns=["read_index", "fastq_header", "barcode", "file_index"])
+    for i, fastq_file in enumerate(fastq_file_list):
+        if i % number_of_files == transcript_file_index:
             fastq_file = str(fastq_file)  # important for temp files
             fastq_header_list = [header.strip() for header, _, _ in tqdm(pyfastx.Fastx(fastq_file), desc="Processing FASTQ headers")]
-            barcode_list = barcodes[i]
-
-            new_rows = pd.DataFrame({"read_index": range(len(fastq_header_list)), "fastq_header": fastq_header_list, "barcode": barcode_list})
-            fastq_header_df = pd.concat([fastq_header_df, new_rows], ignore_index=True)
-
-        #* bus
-        bus_file = f"{kb_count_out}/output.bus"
-        bus_text_file = f"{kb_count_out}/output_sorted_bus.txt"
-        if not os.path.exists(bus_text_file):
-            print("running bustools text")
-            create_bus_txt_file_command = [bustools, "text", "-o", bus_text_file, "-f", bus_file]  # bustools text -p -a -f -d output.bus
-            subprocess.run(create_bus_txt_file_command, check=True)
-        print("loading in bus df")
-        if chunksize:
-            total_chunks = count_chunks(bus_text_file, chunksize)
+            if barcode_file_index is None:  # including bulk
+                barcode_list = barcodes[i]
+            fastq_header_file_index = i
+        elif barcode_file_index is not None and i % number_of_files == barcode_file_index:  # bulk handled right above
+            barcode_list = []
+            for _, seq, _ in tqdm(pyfastx.Fastx(fastq_file), desc=f"Retrieving FASTQ barcodes from file {(i // number_of_files) + 1} of {len(fastq_file_list) // number_of_files}"):
+                barcode = ""
+                for start_pos, end_pos in zip(barcode_start_positions_list, barcode_end_positions_list):
+                    barcode += seq[start_pos:end_pos]  # extract the barcode from the sequence
+                barcode_list.append(barcode)
         else:
-            chunksize = sys.maxsize  # ensures 1 chunk
-            total_chunks = 1
-        
-        bus_out_path = f"{kb_count_out}/bus_df.{save_type}"
-        for i, bus_df in enumerate(pd.read_csv(bus_text_file, sep=r"\s+", header=None, names=["barcode", "UMI", "EC", "count", "read_index"], usecols=["barcode", "UMI", "EC", "read_index"], chunksize=chunksize)):
-            if total_chunks > 1:
-                print(f"Processing chunk {i+1}/{total_chunks}")
+            continue
 
-            print("Merging fastq header df and ec_df into bus df")
-            bus_df = bus_df.merge(fastq_header_df, on=["read_index", "barcode"], how="left")
-            bus_df = bus_df.merge(ec_df, on="EC", how="left")
+        if fastq_header_list is not None and barcode_list is not None:
+            num_rows = len(fastq_header_list)
+            new_rows = pd.DataFrame({"read_index": range(num_rows), "fastq_header": fastq_header_list, "barcode": barcode_list, "file_index": [fastq_header_file_index] * num_rows})
+            fastq_header_df = pd.concat([fastq_header_df, new_rows], ignore_index=True)
+            fastq_header_list, barcode_list, fastq_header_file_index = None, None, None
 
-            if parity == "paired" and vcrs_parity == "single":
-                if not bad_to_good_barcode_dict:
-                    bad_to_good_barcode_dict = make_good_barcodes_and_file_index_tuples(barcodes, include_file_index=True)
-                
-                bus_df[['corrected_barcode', 'file_index']] = bus_df['barcode'].map(bad_to_good_barcode_dict).apply(pd.Series)
-                bus_df.drop(columns=["barcode"], inplace=True)
-                bus_df.rename(columns={"corrected_barcode": "barcode"}, inplace=True)
-
-                # # problematic because (1) it erases the fact that the 2nd read really did have an alignment and (2) if misses cases where read1_1 maps to VCRS1 (EC1), and read1_2 maps to VCRS1 and VCRS2 (EC2) - VCRS1 will be double-counted, but this wouldn't catch those cases
-                # dup_mask = bus_df.duplicated(subset=['barcode', 'UMI', 'EC', 'read_index'], keep=False)  # Identify all rows that have duplicates (including first occurrences)
-                # bus_df.loc[dup_mask, 'file_index'] = 'both'  # Set 'file_index' to 'both' for all duplicated rows
-                # bus_df = bus_df.drop_duplicates(subset=['barcode', 'UMI', 'EC', 'read_index'], keep='first')  # Drop duplicate rows, keeping only the first occurrence
-            else:
-                bus_df["file_index"] = "0"
-            bus_df["file_index"] = bus_df["file_index"].astype("category")
-            if technology == "bulk":
-                bus_df["barcode"] = bus_df["barcode"].astype("category")
-
-            if t2g_file is not None:
-                print("Apply the mapping function to create gene name columns")
-                bus_df["gene_names"] = bus_df["transcript_names"].progress_apply(lambda x: map_transcripts_to_genes(x, t2g_dict))
-                print("Taking set of gene_names")
-                bus_df["gene_names"] = bus_df["gene_names"].progress_apply(lambda x: sorted(tuple(set(x))))
-            else:
-                bus_df["gene_names"] = bus_df["transcript_names"]
-
-            print("Determining what counts in count matrix")
-            if mm:
-                # mm gets added to count matrix as long as dlist is not included in the EC (same with union - union controls whether unioned reads make it to bus file, and mm controls whether multimapped/unioned reads are counted in adata)
-                if used_dlist:
-                    bus_df["counted_in_count_matrix"] = bus_df["gene_names"].progress_apply(lambda x: "dlist" not in x)
-                else:
-                    bus_df["counted_in_count_matrix"] = True
-                bus_df["count_matrix_value"] = np.where(bus_df["counted_in_count_matrix"] & (bus_df["gene_names"].str.len() > 0), 1/bus_df["gene_names"].str.len(), 0)  # 0 for rows where bus_df["counted_in_count_matrix"] is False, and for rows where it's True, it's equal to the length of bus_df["gene_names"]
-            else:
-                # only gets added to the count matrix if EC has exactly 1 gene and no dlist entry
-                if used_dlist:
-                    bus_df["counted_in_count_matrix"] = bus_df["gene_names"].progress_apply(lambda x: len(x) == 1 and x != ("dlist",))
-                else:
-                    bus_df["counted_in_count_matrix"] = bus_df["gene_names"].str.len() == 1
-                bus_df["count_matrix_value"] = np.where(bus_df["counted_in_count_matrix"], 1, 0)
-            
-            print(f"Saving bus df to {bus_out_path}") if total_chunks == 1 else print(f"Saving chunk {i+1}/{total_chunks} of bus df to {bus_out_path}")
-            first_chunk = (i == 0)
-            if save_type == "parquet":  # parquet benefits over csv: much smaller file size (~10% of csv size), and saves data types upon saving and loading
-                parquet_column_tuple_to_list(bus_df)  # parquet doesn't like tuples - it only likes lists - if wanting to load back in the data as a tuple later, then use parquet_column_list_to_tuple
-                bus_df.to_parquet(bus_out_path, index=False, append=not first_chunk)
-            elif save_type == "csv":  # csv benefits over parquet: human-readable, can be read/iterated in chunks, and supports tuples (which take about 3/4 the RAM of strings/lists)
-                bus_df.csv(bus_out_path, index=False, header=first_chunk, mode=determine_write_mode(bus_out_path, overwrite=True, first_chunk=first_chunk))
-        
+    #* bus
+    bus_file = f"{kb_count_out}/output.bus"
+    bus_text_file = f"{kb_count_out}/output_sorted_bus.txt"
+    if not os.path.exists(bus_text_file):
+        print("running bustools text")
+        create_bus_txt_file_command = [bustools, "text", "-o", bus_text_file, "-f", bus_file]  # bustools text -p -a -f -d output.bus
+        subprocess.run(create_bus_txt_file_command, check=True)
+    print("loading in bus df")
+    if chunksize:
+        total_chunks = count_chunks(bus_text_file, chunksize)
+    else:
+        chunksize = sys.maxsize  # ensures 1 chunk
+        total_chunks = 1
+    
+    bus_out_path = f"{kb_count_out}/bus_df.{save_type}"
+    for i, bus_df in enumerate(pd.read_csv(bus_text_file, sep=r"\s+", header=None, names=["barcode", "UMI", "EC", "count", "read_index"], usecols=["barcode", "UMI", "EC", "read_index"], chunksize=chunksize)):
         if total_chunks > 1:
-            print("Returning the last chunk of bus_df")
-        return bus_df
+            print(f"Processing chunk {i+1}/{total_chunks}")
+
+        print("Merging fastq header df and ec_df into bus df")
+        bus_df = bus_df.merge(fastq_header_df, on=["read_index", "barcode"], how="left")
+        bus_df = bus_df.merge(ec_df, on="EC", how="left")
+
+        if parity == "paired" and vcrs_parity == "single":
+            if not bad_to_good_barcode_dict:
+                bad_to_good_barcode_dict = make_good_barcodes_and_file_index_tuples(barcodes, include_file_index=False)
+            
+            bus_df['corrected_barcode'] = bus_df['barcode'].map(bad_to_good_barcode_dict).apply(pd.Series)
+            bus_df.drop(columns=["barcode"], inplace=True)
+            bus_df.rename(columns={"corrected_barcode": "barcode"}, inplace=True)
+
+        bus_df["file_index"] = bus_df["file_index"].astype("category")
+        bus_df["read_index"] = bus_df["read_index"].astype("int64")
+        if barcode_file_index is None:  # including bulk:
+            bus_df["barcode"] = bus_df["barcode"].astype("category")
+        else:
+            if correct_barcodes_of_hamming_distance_one:
+                #* Barcode Hamming distance 1 correction
+                # Load whitelist into a set
+                with open(f"{kb_count_out}/counts_unfiltered/cells_x_genes.barcodes.txt", encoding="utf-8") as f:  # use f"{kb_count_out}/10x_version3_whitelist.txt" for full list of valid barcodes
+                    whitelist = set(line.strip() for line in f)
+                
+                bus_df["barcode_true"] = None
+                
+                # exact matches
+                bus_df.loc[bus_df["barcode"].isin(whitelist), "barcode_true"] = bus_df["barcode"]
+
+                # Find Hamming-1 matches for remaining None values
+                # tqdm.pandas(desc="Correcting unmatched barcodes to Hamming-1 matches")
+                bus_df.loc[pd.isna(bus_df["barcode_true"]), "barcode_true"] = bus_df.loc[
+                    pd.isna(bus_df["barcode_true"])
+                ].apply(lambda row: find_hamming_1_match(row["barcode"], whitelist), axis=1)
+
+                bus_df = bus_df.dropna(subset=["barcode_true"])  # Drop rows where "barcode_true" is None
+                bus_df = bus_df.drop(columns=["barcode"]).rename(columns={"barcode_true": "barcode"})       # Drop the "barcode" column, and rename "barcode_true" to "barcode"
+
+        if t2g_file is not None:
+            print("Apply the mapping function to create gene name columns")
+            bus_df["gene_names"] = bus_df["transcript_names"].progress_apply(lambda x: map_transcripts_to_genes(x, t2g_dict))
+            print("Taking set of gene_names")
+            bus_df["gene_names"] = bus_df["gene_names"].progress_apply(lambda x: list_or_tuple(sorted(set(x))))  # list_or_tuple is list if parquet else tuple (tuple is lower memory but doesn't work with parquet)
+        else:
+            bus_df["gene_names"] = bus_df["transcript_names"]
+
+        print("Determining what counts in count matrix")
+        if mm:
+            # mm gets added to count matrix as long as dlist is not included in the EC (same with union - union controls whether unioned reads make it to bus file, and mm controls whether multimapped/unioned reads are counted in adata)
+            if used_dlist:
+                bus_df["counted_in_count_matrix"] = bus_df["gene_names"].progress_apply(lambda x: "dlist" not in x)
+            else:
+                bus_df["counted_in_count_matrix"] = True
+            bus_df["count_matrix_value"] = np.where(bus_df["counted_in_count_matrix"] & (bus_df["gene_names"].str.len() > 0), 1/bus_df["gene_names"].str.len(), 0)  # 0 for rows where bus_df["counted_in_count_matrix"] is False, and for rows where it's True, it's equal to the length of bus_df["gene_names"]
+        else:
+            # only gets added to the count matrix if EC has exactly 1 gene and no dlist entry
+            if used_dlist:
+                bus_df["counted_in_count_matrix"] = bus_df["gene_names"].progress_apply(lambda x: len(x) == 1 and x != ("dlist",))
+            else:
+                bus_df["counted_in_count_matrix"] = bus_df["gene_names"].str.len() == 1
+            bus_df["count_matrix_value"] = np.where(bus_df["counted_in_count_matrix"], 1, 0)
         
+        print(f"Saving bus df to {bus_out_path}") if total_chunks == 1 else print(f"Saving chunk {i+1}/{total_chunks} of bus df to {bus_out_path}")
+        first_chunk = (i == 0)
+        if save_type == "parquet":  # parquet benefits over csv: much smaller file size (~10% of csv size), and saves data types upon saving and loading
+            # parquet_column_tuple_to_list(bus_df)  # parquet doesn't like tuples - it only likes lists - if wanting to load back in the data as a tuple later, then use parquet_column_list_to_tuple - commented out because I use list_or_tuple instead
+            bus_df.to_parquet(bus_out_path, index=False, append=not first_chunk)
+        elif save_type == "csv":  # csv benefits over parquet: human-readable, can be read/iterated in chunks, and supports tuples (which take about 3/4 the RAM of strings/lists)
+            bus_df.csv(bus_out_path, index=False, header=first_chunk, mode=determine_write_mode(bus_out_path, overwrite=True, first_chunk=first_chunk))
     
-    
-    else:  #!!! WRITE FOR SINGLE-CELL
-        for i, fastq_file in enumerate(fastq_file_list):
-            pass
-
-        #* barcodes
-        # Load whitelist into a set
-        with open(f"{kb_count_out}/counts_unfiltered/cells_x_genes.barcodes.txt", encoding="utf-8") as f:  # use f"{kb_count_out}/10x_version3_whitelist.txt" for full list of valid barcodes
-            whitelist = set(line.strip() for line in f)
+    if total_chunks > 1:
+        print("Returning the last chunk of bus_df")
+    return bus_df
         
-        # correct for bad barcodes
-        bus_df["barcode_true"] = None
-        
-        # exact matches
-        bus_df.loc[bus_df["barcode"].isin(whitelist), "barcode_true"] = bus_df["barcode"]
-
-        # Find Hamming-1 matches for remaining None values
-        # tqdm.pandas(desc="Correcting unmatched barcodes to Hamming-1 matches")
-        bus_df.loc[pd.isna(bus_df["barcode_true"]), "barcode_true"] = bus_df.loc[
-            pd.isna(bus_df["barcode_true"])
-        ].apply(lambda row: find_hamming_1_match(row["barcode"], whitelist), axis=1)
-
-        bus_df = bus_df.dropna(subset=["barcode_true"])  # Drop rows where "barcode_true" is None
-        bus_df = bus_df.drop(columns=["barcode"]).rename(columns={"barcode_true": "barcode"})       # Drop the "barcode" column, and rename "barcode_true" to "barcode"
 
 
-#!!! add back here
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def check_if_read_dlisted_by_one_of_its_respective_dlist_sequences(vcrs_header, vcrs_header_to_seq_dict, dlist_header_to_seq_dict, k):
+    # do a bowtie (or manual) alignment of breaking the vcrs seq into k-mers and aligning to the dlist seqs dervied from the same vcrs header
+    dlist_header_to_seq_dict_filtered = {key: value for key, value in dlist_header_to_seq_dict.items() if vcrs_header == key.rsplit("_", 1)[0]}
+    vcrs_sequence = vcrs_header_to_seq_dict[vcrs_header]
+    for i in range(len(vcrs_sequence) - k + 1):
+        kmer = vcrs_sequence[i : (i + k)]
+        for dlist_sequence in dlist_header_to_seq_dict_filtered.values():
+            if kmer in dlist_sequence:
+                return True
+    return False
+
+
+def increment_adata_based_on_dlist_fns(adata, vcrs_fasta, dlist_fasta, kb_count_out, index, t2g, fastq, newer_kallisto, k=31, mm=False, technology="bulk", bustools="bustools", ignore_barcodes=False):
+    run_kb_count_dry_run(
+        index=index,
+        t2g=t2g,
+        fastq=fastq,
+        kb_count_out=kb_count_out,
+        newer_kallisto=newer_kallisto,
+        k=k,
+        threads=1,
+    )
+
+    if not os.path.exists(f"{kb_count_out}/bus_df.csv"):
+        bus_df = make_bus_df(kb_count_out, fastq, t2g_file=t2g, mm=mm, union=False, technology=technology, bustools=bustools, ignore_barcodes=ignore_barcodes)
+    else:
+        bus_df = pd.read_csv(f"{kb_count_out}/bus_df.csv")
+
+    # with open(f"{kb_count_out}/transcripts.txt", encoding="utf-8") as f:
+    #     dlist_index = str(sum(1 for line in file))
+
+    n_rows, n_cols = adata.X.shape
+    increment_matrix = csr_matrix((n_rows, n_cols))
+
+    vcrs_header_to_seq_dict = create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(vcrs_fasta)
+    dlist_header_to_seq_dict = create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(dlist_fasta)
+    var_names_to_idx_in_adata_dict = {name: idx for idx, name in enumerate(adata.var_names)}
+
+    # Apply to the whole column at once
+    bus_df["gene_names_final"] = bus_df["gene_names_final"].apply(safe_literal_eval)  # TODO: consider looking through gene_names_final_set rather than gene_names_final for possible speedup (but make sure safe_literal_eval supports this)
+
+    # iterate through bus_df rows
+    for _, row in bus_df.iterrows():
+        if "dlist" in row["gene_names_final"] and (mm or len(row["gene_names_final"]) == 2):  # don't replace with row['counted_in_count_matrix'] because this is the bus from when I ran union
+            read_dlisted_by_one_of_its_respective_dlist_sequences = False
+            for vcrs_header in row["gene_names_final"]:
+                if vcrs_header != "dlist":
+                    read_dlisted_by_one_of_its_respective_dlist_sequences = check_if_read_dlisted_by_one_of_its_respective_dlist_sequences(
+                        vcrs_header=vcrs_header,
+                        vcrs_header_to_seq_dict=vcrs_header_to_seq_dict,
+                        dlist_header_to_seq_dict=dlist_header_to_seq_dict,
+                        k=k,
+                    )
+                    if read_dlisted_by_one_of_its_respective_dlist_sequences:
+                        break
+            if not read_dlisted_by_one_of_its_respective_dlist_sequences:
+                # barcode_idx = [i for i, name in enumerate(adata.obs_names) if barcode.endswith(name)][0]  # if I did not remove the padding
+                barcode_idx = np.where(adata.obs_names == row["barcode"])[0][0]  # if I previously removed the padding
+                vcrs_idxs = [var_names_to_idx_in_adata_dict[header] for header in row["gene_names_final"] if header in var_names_to_idx_in_adata_dict]
+
+                increment_matrix[barcode_idx, vcrs_idxs] += row["count"]
+
+    # print("Gene list:", list(adata.var.index))
+    # print(
+    #     "Increment matrix",
+    #     (increment_matrix.toarray() if hasattr(increment_matrix, "toarray") else increment_matrix),
+    # )
+    # print(
+    #     "Adata matrix original",
+    #     adata.X.toarray() if hasattr(adata.X, "toarray") else adata.X,
+    # )
+
+    if not isinstance(adata.X, csr_matrix):
+        adata.X = adata.X.tocsr()
+
+    if not isinstance(increment_matrix, csr_matrix):
+        increment_matrix = increment_matrix.tocsr()
+
+    # Add the two sparse matrices
+    adata.X = adata.X + increment_matrix
+
+    adata.X = csr_matrix(adata.X)
+
+    # print(
+    #     "Adata matrix final",
+    #     adata.X.toarray() if hasattr(adata.X, "toarray") else adata.X,
+    # )
+
+    return adata
+
+
+# to be clear, this removes double counting of the same VCRS on each paired end, which is valid when fragment length < 2*read length OR for long insertions that make VCRS very long (such that the VCRS spans across both ends even when considering the region between the ends)
+def decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_mode(adata, fastq, kb_count_out, t2g, mm, bustools="bustools", split_Ns=False, paired_end_fastqs=False, paired_end_suffix_length=2, technology="bulk", keep_only_insertions=True, ignore_barcodes=False):
+    if not split_Ns and not paired_end_fastqs:
+        raise ValueError("At least one of split_Ns or paired_end_fastqs must be True")
+    if technology.lower() != "bulk":
+        raise ValueError("This function currently only works with bulk RNA-seq data")
+
+    if not os.path.exists(f"{kb_count_out}/bus_df.csv"):
+        bus_df = make_bus_df(kb_count_out, fastq, t2g_file=t2g, mm=mm, union=False, technology=technology, bustools=bustools, ignore_barcodes=ignore_barcodes)
+    else:
+        bus_df = pd.read_csv(f"{kb_count_out}/bus_df.csv")
+
+    if "vcrs_variant_type" not in adata.var.columns:
+        adata.var = add_vcrs_variant_type(adata.var, var_column="vcrs_header")
+
+    if keep_only_insertions:  # valid when fragment length >= 2*read length
+        # Can only count for insertions (lengthens the VCRS)
+        variant_types_with_a_chance_of_being_double_counted_after_N_split = {
+            "insertion",
+            "delins",
+            "mixed",
+        }
+
+        # Filter and retrieve the set of 'vcrs_header' values
+        potentially_double_counted_reference_items = set(adata.var["vcrs_id"][adata.var["vcrs_variant_type"].isin(variant_types_with_a_chance_of_being_double_counted_after_N_split)])
+
+        # filter bus_df to only keep rows where bus_df['gene_names_final'] contains a gene that is in potentially_double_counted_reference_items
+        pattern = "|".join(potentially_double_counted_reference_items)
+        bus_df = bus_df[bus_df["gene_names_final"].str.contains(pattern, regex=True)]
+
+    n_rows, n_cols = adata.X.shape
+    decrement_matrix = csr_matrix((n_rows, n_cols))
+    bus_df["gene_names_final"] = bus_df["gene_names_final"].apply(safe_literal_eval)
+
+    tested_read_header_bases = set()
+
+    var_names_to_idx_in_adata_dict = {name: idx for idx, name in enumerate(adata.var_names)}
+
+    for _, row in bus_df.iterrows():
+        if row["counted_in_count_matrix"]:
+            read_header_base = row["fastq_header"]
+            if split_Ns:  # assumes the form READHEADERpairedendportion:START-END
+                read_header_base = read_header_base.rsplit(":", 1)[0]  # now will be of the form READHEADERpairedendportion
+            if paired_end_fastqs:  # assumes the form READHEADERpairedendportion
+                read_header_base = read_header_base[:-paired_end_suffix_length]  # now will be of the form READHEADER
+            if read_header_base not in tested_read_header_bases:  # here to make sure I don't double-count the decrementing
+                filtered_bus_df = bus_df[bus_df["gene_names_final"].str.contains(read_header_base)]
+                # Calculate the count of matching rows with the same 'EC' and 'barcode'
+                count = sum(1 for _, item in filtered_bus_df.iterrows() if item["EC"] == row["EC"] and item["barcode"] == row["barcode"]) - 1  # Subtract 1 to avoid counting the current row itself
+
+                if count > 0:
+                    barcode_idx = np.where(adata.obs_names == row["barcode"])[0][0]  # if I previously removed the padding
+                    vcrs_idxs = [var_names_to_idx_in_adata_dict[header] for header in row["gene_names_final"] if header in var_names_to_idx_in_adata_dict]
+                    decrement_matrix[barcode_idx, vcrs_idxs] += count
+                tested_read_header_bases.add(read_header_base)
+
+    if not isinstance(adata.X, csr_matrix):
+        adata.X = adata.X.tocsr()
+
+    if not isinstance(decrement_matrix, csr_matrix):
+        decrement_matrix = decrement_matrix.tocsr()
+
+    # Add the two sparse matrices
+    adata.X = adata.X - decrement_matrix
+
+    adata.X = csr_matrix(adata.X)
+
+    return adata
+
+def create_umi_to_barcode_dict(bus_file, bustools="bustools", barcode_length=16, key_to_use="umi"):
+    umi_to_barcode_dict = {}
+
+    # Define the command
+    # bustools text -p -a -f -d output.bus
+    command = [
+        bustools,
+        "text",
+        "-p",
+        "-a",
+        "-f",
+        "-d",
+        bus_file,
+    ]
+
+    # Run the command and capture the output
+    result = subprocess.run(command, stdout=subprocess.PIPE, text=True, check=True)
+
+    # Loop through each line of the output (excluding the last line 'Read in X BUS records')
+    for line in result.stdout.strip().split("\n"):
+        # Split the line into columns (assuming it's tab or space-separated)
+        columns = line.split("\t")  # If columns are space-separated, use .split()
+        if key_to_use == "umi":
+            umi = columns[2]
+        elif key_to_use == "fastq_header_position":
+            umi = columns[5]
+        else:
+            raise ValueError("key_to_use must be either 'umi' or 'fastq_header_position'")
+        barcode = columns[0]  # remember there will be A's for padding to 32 characters
+        barcode = barcode[(32 - barcode_length) :]  # * remove the padding
+        umi_to_barcode_dict[umi] = barcode
+
+    return umi_to_barcode_dict
+
+
+def make_bus_df_original(kallisto_out, fastq_file_list, t2g_file, mm=False, union=False, technology="bulk", parity="single", bustools="bustools", ignore_barcodes=False):  # make sure this is in the same order as passed into kb count - [sample1, sample2, etc] OR [sample1_pair1, sample1_pair2, sample2_pair1, sample2_pair2, etc]  # technology flag of kb
+    print("loading in transcripts")
+    with open(f"{kallisto_out}/transcripts.txt", encoding="utf-8") as f:
+        transcripts = f.read().splitlines()  # get transcript at index 0 with transcript[0], and index of transcript named "name" with transcript.index("name")
+
+    transcripts.append("dlist")  # add dlist to the end of the list
+
+    technology = technology.lower()
+
+    if technology == "bulk" or "smartseq" in technology.lower():  # smartseq does not have barcodes
+        print("loading in barcodes")
+        with open(f"{kallisto_out}/matrix.sample.barcodes", encoding="utf-8") as f:
+            barcodes = f.read().splitlines()  # get transcript at index 0 with transcript[0], and index of transcript named "name" with transcript.index("name")
+    else:
+        if technology == "bulk" and ignore_barcodes:
+            raise ValueError("ignore_barcodes is only supported for bulk RNA-seq data")
+
+        try:
+            barcode_start = technology_barcode_and_umi_dict[technology]["barcode_start"]
+            barcode_end = technology_barcode_and_umi_dict[technology]["barcode_end"]
+            umi_start = technology_barcode_and_umi_dict[technology]["umi_start"]
+            umi_end = technology_barcode_and_umi_dict[technology]["umi_end"]
+        except KeyError:
+            print(f"technology {technology} currently not supported. Supported are {list(technology_barcode_and_umi_dict.keys())}")
+
+        pass  # TODO: write this (will involve technology parameter to get barcode from read)
+
+    fastq_header_df = pd.DataFrame(columns=["read_index", "fastq_header", "barcode"])
+
+    if parity == "paired":
+        fastq_header_df["fastq_header_pair"] = None
+
+    if isinstance(fastq_file_list, (str, Path)):
+        fastq_file_list = [str(fastq_file_list)]
+
+    skip_upcoming_fastq = False
+
+    for i, fastq_file in enumerate(fastq_file_list):
+        if skip_upcoming_fastq:
+            skip_upcoming_fastq = False
+            continue
+        # important for temp files
+        fastq_file = str(fastq_file)
+
+        print("loading in fastq headers")
+        if fastq_file.endswith(fastq_extensions):
+            fastq_header_list = get_header_set_from_fastq(fastq_file, output_format="list")
+        elif fastq_file.endswith(".txt"):
+            with open(fastq_file, encoding="utf-8") as f:
+                fastq_header_list = f.read().splitlines()
+        else:
+            raise ValueError(f"fastq file {fastq_file} does not have a supported extension")
+
+        if technology == "bulk" or "smartseq" in technology.lower():
+            if ignore_barcodes:
+                barcode_list = barcodes[0]
+            else:
+                barcode_list = barcodes[i]
+        else:
+            fq_dict = pyfastx.Fastq(fastq_file, build_index=True)
+            barcode_list = [fq_dict[i].seq[barcode_start:barcode_end] for i in range(len(fq_dict))]
+
+        new_rows = pd.DataFrame({"read_index": range(len(fastq_header_list)), "fastq_header": fastq_header_list, "barcode": barcode_list})  # Position/index values  # List values
+
+        if parity == "paired":
+            fastq_file_pair = str(fastq_file_list[i + 1])
+            if fastq_file_pair.endswith(fastq_extensions):
+                new_rows["fastq_header_pair"] = get_header_set_from_fastq(fastq_file_pair, output_format="list")
+            elif fastq_file_pair.endswith(".txt"):
+                with open(fastq_file_pair, encoding="utf-8") as f:
+                    new_rows["fastq_header_pair"] = f.read().splitlines()
+
+            skip_upcoming_fastq = True  # because it will be the pair
+
+        fastq_header_df = pd.concat([fastq_header_df, new_rows], ignore_index=True)
+
+    # Get equivalence class that matches to 0-indexed line number of target ID
+    print("loading in ec matrix")
+    ec_df = pd.read_csv(
+        f"{kallisto_out}/matrix.ec",
+        sep="\t",
+        header=None,
+        names=["EC", "transcript_ids"],
+    )
+    ec_df["transcript_ids"] = ec_df["transcript_ids"].astype(str)
+    ec_df["transcript_ids_list"] = ec_df["transcript_ids"].str.split(",")
+    ec_df["transcript_ids_list"] = ec_df["transcript_ids_list"].apply(lambda x: list(map(int, x)))
+    ec_df["transcript_ids_list"] = ec_df["transcript_ids"].apply(lambda x: list(map(int, x.split(","))))
+    ec_df["transcript_names"] = ec_df["transcript_ids_list"].apply(lambda ids: [transcripts[i] for i in ids])
+
+    print("loading in t2g df")
+    t2g_df = pd.read_csv(t2g_file, sep="\t", header=None, names=["transcript_id", "gene_name"])
+    t2g_dict = dict(zip(t2g_df["transcript_id"], t2g_df["gene_name"]))
+
+    # Get bus output (converted to txt)
+    bus_file = f"{kallisto_out}/output.bus"
+    bus_text_file = f"{kallisto_out}/output_sorted_bus.txt"
+    if not os.path.exists(bus_text_file):
+        print("running bustools text")
+        bus_txt_file_existed_originally = False
+        create_bus_txt_file_command = [bustools, "text", "-o", bus_text_file, "-f", bus_file]
+        subprocess.run(create_bus_txt_file_command, check=True)
+        # bustools text -p -a -f -d output.bus
+    else:
+        bus_txt_file_existed_originally = True
+
+    print("loading in bus df")
+    bus_df = pd.read_csv(
+        bus_text_file,
+        sep="\t",
+        header=None,
+        names=["barcode", "UMI", "EC", "count", "read_index"],
+    )
+
+    if ignore_barcodes:
+        bus_df["barcode"] = barcodes[0]  # set all barcodes to the first barcode in barcodes list
+
+    if not bus_txt_file_existed_originally:
+        os.remove(bus_text_file)
+
+    # TODO: if I have low memory mode, then break up bus_df and loop from here through end
+    bus_df = bus_df.merge(fastq_header_df, on=["read_index", "barcode"], how="left")
+
+    print("merging ec df into bus df")
+    bus_df = bus_df.merge(ec_df, on="EC", how="left")
+
+    if technology != "bulk":
+        bus_df_collapsed_1 = bus_df.groupby(["barcode", "UMI", "EC"], as_index=False).agg(
+            {
+                "count": "sum",  # Sum counts
+                "read_index": lambda x: list(x),  # Combine ints in a list
+                "fastq_header": lambda x: list(x),  # Combine strings in a list
+                "transcript_ids": "first",  # Take the first value for all other columns
+                "transcript_ids_list": "first",  # Take the first value for all other columns
+                "transcript_names": "first",  # Take the first value for all other columns
+            }
+        )
+
+        bus_df_collapsed_2 = bus_df_collapsed_1.groupby(["barcode", "UMI"], as_index=False).agg(
+            {
+                "EC": lambda x: list(x),
+                "count": "sum",  # Sum the 'count' column
+                "read_index": lambda x: sum(x, []),  # Concatenate lists in 'read_index'
+                "fastq_header": lambda x: sum(x, []),  # Concatenate lists in 'fastq_header'
+                "transcript_ids": lambda x: ",".join(x),  # Join strings in 'transcript_ids_list' with commas  # may contain duplicates indices
+                "transcript_ids_list": lambda x: sum(x, []),  # Concatenate lists for 'transcript_ids_list'
+                "transcript_names": lambda x: sum(x, []),  # Concatenate lists for 'transcript_names'
+            }
+        )
+
+        # Add new columns for the intersected lists
+        bus_df_collapsed_2["transcript_names_final"] = bus_df_collapsed_1.groupby(["barcode", "UMI"])["transcript_names"].apply(intersect_lists).values
+        bus_df_collapsed_2["transcript_ids_list_final"] = bus_df_collapsed_1.groupby(["barcode", "UMI"])["transcript_ids_list"].apply(intersect_lists).values
+
+        bus_df = bus_df_collapsed_2
+
+    else:  # technology == "bulk"
+        # bus_df.rename(columns={"transcript_ids_list": "transcript_ids_list_final", "transcript_names": "transcript_names_final"}, inplace=True)
+        bus_df["transcript_ids_list_final"] = bus_df["transcript_ids_list"]
+        bus_df["transcript_names_final"] = bus_df["transcript_names"]
+
+    print("Apply the mapping function to create gene name columns")
+    # mapping transcript to gene names
+    bus_df["gene_names"] = bus_df["transcript_names"].apply(lambda x: map_transcripts_to_genes(x, t2g_dict))
+    bus_df["gene_names_final"] = bus_df["transcript_names_final"].apply(lambda x: map_transcripts_to_genes(x, t2g_dict))
+
+    bus_df["gene_names_final_set"] = bus_df["gene_names_final"].apply(set)
+
+    print("added counted in matrix column")
+    if union or mm:
+        # union or mm gets added to count matrix as long as dlist is not included in the EC
+        bus_df["counted_in_count_matrix"] = bus_df["transcript_names_final"].apply(lambda x: "dlist" not in x)
+    else:
+        # only gets added to the count matrix if EC has exactly 1 gene
+        bus_df["counted_in_count_matrix"] = bus_df["gene_names_final_set"].apply(lambda x: len(x) == 1)
+
+    # adata_path = f"{kallisto_out}/counts_unfiltered/adata.h5ad"
+    # adata = ad.read_h5ad(adata_path)
+    # barcode_length = len(adata.obs.index[0])
+    # bus_df['barcode_without_padding'] = bus_df['barcode'].str[(32 - barcode_length):]
+
+    # so now I can iterate through this dataframe for the columns where counted_in_count_matrix is True - barcode will be the cell/sample (adata row), gene_names_final will be the list of gene name(s) (adata column), and count will be the number added to this entry of the matrix (always 1 for bulk)
+
+    # save bus_df
+    print("saving bus df")
+    bus_df.to_csv(f"{kallisto_out}/bus_df.csv", index=False)
+    return bus_df
+
+
+# TODO: test
+def match_paired_ends_after_single_end_run(bus_df_path, gene_name_type="vcrs_id", id_to_header_csv=None):
+    if os.path.exists(bus_df_path):
+        bus_df = pd.read_csv(bus_df_path)
+    else:
+        raise FileNotFoundError(f"{bus_df_path} does not exist")
+
+    paired_end_suffix_length = 2  # * only works for /1 and /2 notation
+    bus_df["fastq_header_without_paired_end_suffix"] = bus_df["fastq_header"].str[:-paired_end_suffix_length]
+
+    # get the paired ends side-by-side
+    df_1 = bus_df[bus_df["fastq_header"].str.endswith("/1")].copy()  # * only works for /1 and /2 notation
+    df_2 = bus_df[bus_df["fastq_header"].str.endswith("/2")].copy()
+
+    # Remove the "/1" and "/2" suffix for merging on entry numbers
+    df_1["entry_number"] = df_1["fastq_name"].str.extract(r"(\d+)/1").astype(int)
+    df_2["entry_number"] = df_2["fastq_name"].str.extract(r"(\d+)/2").astype(int)
+
+    # Merge based on entry numbers to create paired columns
+    paired_df = pd.merge(df_1, df_2, on="entry_number", suffixes=("_1", "_2"))
+
+    # Select and rename columns
+    paired_df = paired_df.rename(
+        columns={
+            "fastq_name_1": "fastq_header",
+            "gene_names_final_1": "gene_names_final",
+            "fastq_name_2": "fastq_header_pair",
+            "gene_names_final_2": "gene_names_final_pair",
+        }
+    )
+
+    # Merge paired information back into the original bus_df
+    bus_df = bus_df.merge(
+        paired_df[
+            [
+                "fastq_header",
+                "gene_names_final",
+                "fastq_header_pair",
+                "gene_names_final_pair",
+            ]
+        ],
+        on=["fastq_header", "gene_names_final"],
+        how="left",
+    )
+
+    bus_df["gene_names_final"] = bus_df["gene_names_final"].apply(safe_literal_eval)
+    bus_df["gene_names_final_pair"] = bus_df["gene_names_final_pair"].apply(safe_literal_eval)
+
+    if gene_name_type == "vcrs_id":
+        id_to_header_dict = make_mapping_dict(id_to_header_csv, dict_key="id")
+
+        bus_df["vcrs_header_list"] = bus_df["gene_names_final"].apply(lambda gene_list: [id_to_header_dict.get(gene, gene) for gene in gene_list])
+
+        bus_df["vcrs_header_list_pair"] = bus_df["gene_names_final_pair"].apply(lambda gene_list: [id_to_header_dict.get(gene, gene) for gene in gene_list])
+
+        bus_df["ensembl_transcript_list"] = [value.split(":")[0] for value in bus_df["vcrs_header_list"]]
+        bus_df["ensembl_transcript_list_pair"] = [value.split(":")[0] for value in bus_df["vcrs_header_list_pair"]]
+
+        # TODO: map ENST to ENSG
+        bus_df["gene_list"] = ""
+        bus_df["gene_list_pair"] = ""
+    else:
+        bus_df["gene_list"] = bus_df["gene_names_final"]
+        bus_df["gene_list_pair"] = bus_df["gene_names_final_pair"]
+
+    bus_df["paired_ends_map_to_different_genes"] = bus_df.apply(
+        lambda row: (isinstance(row["gene_list"], list) and bool(row["gene_list"]) and isinstance(row["gene_list_pair"], list) and bool(row["gene_list_pair"]) and not set(row["gene_list"]).intersection(row["gene_list_pair"])),
+        axis=1,
+    )
+
+    return bus_df
+
+
+# TODO: unsure if this works for sc
+def adjust_variant_adata_by_normal_gene_matrix(adata, kb_count_vcrs_dir, kb_count_reference_genome_dir, id_to_header_csv=None, adata_output_path=None, vcrs_t2g=None, t2g_standard=None, fastq_file_list=None, mm=False, technology="bulk", parity="single", bustools="bustools", ignore_barcodes=False, check_only=False, chunksize=None):
+    if not adata:
+        adata = f"{kb_count_vcrs_dir}/counts_unfiltered/adata.h5ad"
+    if isinstance(adata, str):
+        adata = ad.read_h5ad(adata)
+
+    fastq_file_list = load_in_fastqs(fastq_file_list)
+    fastq_file_list = sort_fastq_files_for_kb_count(fastq_file_list, technology=technology, check_only=check_only)
+
+    bus_df_mutation_path = f"{kb_count_vcrs_dir}/bus_df.csv"
+    bus_df_standard_path = f"{kb_count_reference_genome_dir}/bus_df.csv"
+
+    if not os.path.exists(bus_df_mutation_path):
+        bus_df_mutation = make_bus_df(
+            kb_count_out=kb_count_vcrs_dir,
+            fastq_file_list=fastq_file_list,
+            t2g_file=vcrs_t2g,
+            mm=mm,
+            technology=technology,
+            parity=parity,
+            bustools=bustools,
+            check_only=check_only,
+            chunksize=chunksize
+        )
+    else:
+        bus_df_mutation = pd.read_csv(bus_df_mutation_path)
+
+    bus_df_mutation["gene_names_final"] = bus_df_mutation["gene_names_final"].apply(safe_literal_eval)
+    bus_df_mutation.rename(columns={"gene_names_final": "VCRS_headers_final", "count": "count_value"}, inplace=True)
+
+    if id_to_header_csv:
+        bus_df_mutation.rename(columns={"VCRS_headers_final": "VCRS_ids_final"}, inplace=True)
+        id_to_header_dict = make_mapping_dict(id_to_header_csv, dict_key="id")
+        bus_df_mutation["VCRS_headers_final"] = bus_df_mutation["VCRS_ids_final"].apply(lambda name_list: [id_to_header_dict.get(name, name) for name in name_list])
+
+    bus_df_mutation["transcripts_VCRS"] = bus_df_mutation["VCRS_headers_final"].apply(lambda string_list: tuple({s.split(":")[0] for s in string_list}))
+
+    if not os.path.exists(bus_df_standard_path):
+        bus_df_standard = make_bus_df(
+            kallisto_out=kb_count_reference_genome_dir,
+            fastq_file_list=fastq_file_list,  # make sure this is in the same order as passed into kb count - [sample1, sample2, etc] OR [sample1_pair1, sample1_pair2, sample2_pair1, sample2_pair2, etc]
+            t2g_file=t2g_standard,
+            mm=mm,
+            technology=technology,
+            parity=parity,
+            bustools=bustools,
+        )
+    else:
+        bus_df_standard = pd.read_csv(bus_df_standard_path, usecols=["barcode", "UMI", "fastq_header", "transcript_names_final"])
+
+    bus_df_standard["transcript_names_final"] = bus_df_standard["transcript_names_final"].apply(safe_literal_eval)
+    bus_df_standard["transcripts_standard"] = bus_df_standard["transcript_names_final"].apply(lambda name_list: tuple(re.match(r"^(ENST\d+)", name).group(0) if re.match(r"^(ENST\d+)", name) else name for name in name_list))
+
+    if ignore_barcodes:
+        columns_for_merging = ["UMI", "fastq_header", "transcripts_standard"]
+        columns_for_merging_without_transcripts_standard = ["UMI", "fastq_header"]
+    else:
+        columns_for_merging = ["barcode", "UMI", "fastq_header", "transcripts_standard"]
+        columns_for_merging_without_transcripts_standard = ["barcode", "UMI", "fastq_header"]
+
+    bus_df_mutation = bus_df_mutation.merge(bus_df_standard[columns_for_merging], on=columns_for_merging_without_transcripts_standard, how="left", suffixes=("", "_standard"))  # keep barcode designations of mutation bus df (which aligns with the adata object)
+
+    # TODO: I think this might be the inverse logic in the "any" line
+    bus_df_mutation["vcrs_matrix_received_a_count_from_a_read_that_aligned_to_a_different_gene"] = bus_df_mutation.apply(lambda row: (row["counted_in_count_matrix"] and any(transcript in row["transcripts_standard"] for transcript in row["transcripts_vcrs"])), axis=1)
+
+    n_rows, n_cols = adata.X.shape
+    decrement_matrix = csr_matrix((n_rows, n_cols))
+
+    var_names_to_idx_in_adata_dict = {name: idx for idx, name in enumerate(adata.var_names)}
+
+    # iterate through the rows where the erroneous counting occurred
+    for row in bus_df_mutation.loc[bus_df_mutation["vcrs_matrix_received_a_count_from_a_read_that_aligned_to_a_different_gene"]].itertuples():
+        barcode_idx = np.where(adata.obs_names == row.barcode)[0][0]  # if I previously removed the padding
+        vcrs_idxs = [var_names_to_idx_in_adata_dict[header] for header in row.VCRS_ids_final if header in var_names_to_idx_in_adata_dict]
+
+        decrement_matrix[barcode_idx, vcrs_idxs] += row.count_value
+
+    if not isinstance(adata.X, csr_matrix):
+        adata.X = adata.X.tocsr()
+
+    if not isinstance(decrement_matrix, csr_matrix):
+        decrement_matrix = decrement_matrix.tocsr()
+
+    # Add the two sparse matrices
+    adata.X = adata.X - decrement_matrix
+
+    adata.X = csr_matrix(adata.X)
+
+    # save adata
+    if not adata_output_path:
+        adata_output_path = f"{kb_count_vcrs_dir}/counts_unfiltered/adata_adjusted_by_gene_alignments.h5ad"
+
+    adata.write(adata_output_path)
+
+    return adata
+
+
+def match_adata_orders(adata, adata_ref):
+    # Ensure cells (obs) are in the same order
+    adata = adata[adata_ref.obs_names]
+
+    # Add missing genes to adata
+    missing_genes = adata_ref.var_names.difference(adata.var_names)
+    padding_matrix = csr_matrix((adata.n_obs, len(missing_genes)))  # Sparse zero matrix
+
+    # Create a padded AnnData for missing genes
+    adata_padded = ad.AnnData(X=padding_matrix, obs=adata.obs, var=pd.DataFrame(index=missing_genes))
+
+    # Concatenate the original and padded AnnData objects
+    adata_padded = ad.concat([adata, adata_padded], axis=1)
+
+    # Reorder genes to match adata_ref
+    adata_padded = adata_padded[:, adata_ref.var_names]
+
+    return adata_padded
+
+
+def make_vaf_matrix(adata_mutant_vcrs_path, adata_wt_vcrs_path, adata_vaf_output=None, mutant_vcf=None):
+    adata_mutant_vcrs = ad.read_h5ad(adata_mutant_vcrs_path)
+    adata_wt_vcrs = ad.read_h5ad(adata_wt_vcrs_path)
+
+    adata_mutant_vcrs_path_out = adata_mutant_vcrs_path.replace(".h5ad", "_with_vaf.h5ad")
+    adata_wt_vcrs_path_out = adata_wt_vcrs_path.replace(".h5ad", "_with_vaf.h5ad")
+
+    adata_wt_vcrs_padded = match_adata_orders(adata=adata_wt_vcrs, adata_ref=adata_mutant_vcrs)
+
+    # Perform element-wise division (handle sparse matrices)
+    mutant_X = adata_mutant_vcrs.X
+    wt_X = adata_wt_vcrs_padded.X
+
+    if issparse(mutant_X) and issparse(wt_X):
+        # Calculate the denominator: mutant_X + wt_X (element-wise addition for sparse matrices)
+        denominator = mutant_X + wt_X
+
+        # Avoid division by zero by setting zeros in the denominator to NaN
+        denominator.data[denominator.data == 0] = np.nan
+
+        # Calculate VAF: mutant_X / (mutant_X + wt_X)
+        result_matrix = mutant_X.multiply(1 / denominator)
+
+        # Handle NaNs and infinities resulting from division
+        result_matrix.data[np.isnan(result_matrix.data)] = 0.0  # Set NaNs to 0
+        result_matrix.data[np.isinf(result_matrix.data)] = 0.0  # Set infinities to 0
+    else:
+        # Calculate VAF for dense matrices
+        denominator = mutant_X + wt_X
+        result_matrix = np.nan_to_num(mutant_X / denominator, nan=0.0, posinf=0.0, neginf=0.0)
+
+    # Create a new AnnData object with the result
+    adata_result = ad.AnnData(X=result_matrix, obs=adata_mutant_vcrs.obs, var=adata_mutant_vcrs.var)
+
+    if not adata_vaf_output:
+        adata_vaf_output = "./adata_vaf.h5ad"
+
+    # Save the result as an AnnData object
+    adata_result.write(adata_vaf_output)
+
+    # merge wt allele depth into mutant adata
+    # Ensure indices of adata2.var and adata1.var are aligned
+    merged_var = adata_mutant_vcrs.var.copy()  # Start with adata1.var
+
+    # Add the "vcrs_count" from adata2 as "wt_count" into adata1.var
+    merged_var["wt_count"] = adata_wt_vcrs.var["vcrs_count"].rename("wt_count")
+
+    # Assign the updated var back to adata1
+    adata_mutant_vcrs.var = merged_var
+
+    # Ensure there are no division by zero errors
+    vcrs_count = adata_mutant_vcrs.var["vcrs_count"]
+    wt_count = adata_mutant_vcrs.var["wt_count"]
+
+    # Calculate VAF
+    adata_mutant_vcrs.var["vaf_across_samples"] = vcrs_count / (vcrs_count + wt_count)
+
+    # wherever wt_count has a NaN, I want adata_mutant_vcrs.var["vaf_across_samples"] to have a NaN
+    adata_mutant_vcrs.var.loc[wt_count.isna(), "vaf_across_samples"] = pd.NA
+
+    adata_mutant_vcrs.write(adata_mutant_vcrs_path_out)
+    adata_wt_vcrs.write(adata_wt_vcrs_path_out)
+
+    return adata_vaf_output
 
 
 def add_vcf_info_to_cosmic_tsv(cosmic_tsv=None, reference_genome_fasta=None, cosmic_df_out=None, sequences="cds", cosmic_version=101, cosmic_email=None, cosmic_password=None):
@@ -795,29 +1501,68 @@ def remove_variants_from_adata_for_stranded_technologies(adata, strand_bias_end,
 
 
 
-def kb_extract_all_alternative(fastq_file_list, kb_count_out_dir, t2g_file, technology, kb_extract_out_dir="kb_extract_out", mm=False, bustools="bustools"):
+def kb_extract_all_alternative(fastq_file_list, kb_count_out_dir, t2g_file, technology, index_file=None, kb_extract_out_dir="kb_extract_out", gzip_output=True, mm=False, union=False, parity="single", strand=None, threads=2, overwrite=False, verbose=False, tmp=None, keep_tmp=False, aa=False, kallisto="kallisto", bustools="bustools"):
+    if not overwrite and (os.path.exists(kb_extract_out_dir) and len(os.listdir(kb_extract_out_dir)) > 0):
+        raise ValueError(f"Output directory '{kb_extract_out_dir}' already exists and is not empty. Set 'overwrite=True' to overwrite existing files or choose a different output directory.")
+    if overwrite or not os.path.exists(kb_count_out_dir) or len(os.listdir(kb_count_out_dir)) == 0:
+        kb_count_command = ["kb", "count", "-t", str(threads), "-i", index_file, "-g", t2g_file, "-x", technology, "--num", "-o", kb_count_out_dir]
+        if mm:
+            kb_count_command.append("--mm")
+        if union:
+            kb_count_command.append("--union")
+        if technology.lower() in {"bulk", "smartseq2"}:
+            kb_count_command += ["--parity", parity]
+        if strand:
+            kb_count_command += ["--strand", strand]
+        if verbose:
+            kb_count_command.append("--verbose")
+        if tmp:
+            kb_count_command += ["--tmp", tmp]
+        if keep_tmp:
+            kb_count_command += ["--keep-tmp"]
+        if aa:
+            kb_count_command.append("--aa")
+        if overwrite:
+            kb_count_command.append("--overwrite")
+        if kallisto != "kallisto":
+            kb_count_command += ["--kallisto", kallisto]
+        if bustools != "bustools":
+            kb_count_command += ["--bustools", bustools]
+        kb_count_command += fastq_file_list
+        subprocess.run(kb_count_command, check=True)
+    
     fastq_file_list_pyfastx = []
     for fastq_file in fastq_file_list:
         fastq_file_list_pyfastx.append(pyfastx.Fastq(fastq_file, build_index=True))
 
-    bus_df = make_bus_df(kb_count_out_dir, fastq_file_list, t2g_file, technology=technology, mm=mm, bustools=bustools)
+    bus_df = make_bus_df(kb_count_out_dir, fastq_file_list, t2g_file, technology=technology, mm=mm, bustools=bustools, correct_barcodes_of_hamming_distance_one=False)
     bus_df = bus_df[bus_df["counted_in_count_matrix"]]  # to only keep reads that were counted in count matrix
-    bus_df["gene_names_str"] = bus_df["gene_names"].apply(lambda x: x[0])  # cast to string
 
-    for gene_name in bus_df["gene_names_str"].unique():  # Get unique gene names
+    open_func = gzip.open if gzip_output else open
+    mode = "wt" if gzip_output else "w"  # 'wt' for text mode in gzip
+
+    unique_genes = sorted(set().union(*bus_df["gene_names"]))
+    for gene_name in unique_genes:  # Get unique gene names
         print(f"Processing {gene_name}")
-        temp_df = bus_df[bus_df["gene_names_str"] == gene_name]  # Filter
-        fastq_headers = temp_df["fastq_header"].tolist()  # Get values as a list
+        temp_df = bus_df[bus_df["gene_names"].apply(lambda x: gene_name in x)]
 
         gene_dir = os.path.join(kb_extract_out_dir, gene_name)
         os.makedirs(gene_dir, exist_ok=True)
         
         aligned_reads_file = os.path.join(gene_dir, "1.fastq")
-        with open(aligned_reads_file, "w") as f:
-            for header in fastq_headers:
-                for fastq_file in fastq_file_list_pyfastx:
-                    if header in fastq_file.index:
-                        sequence = fastq_file[header].seq
-                        qualities = fastq_file[header].qual
-                        f.write(f"@{header}\n{sequence}\n+\n{qualities}\n")
-                        break
+        with open_func(aligned_reads_file, mode) as f:
+            for header, file_index, read_index in zip(temp_df["fastq_header"], temp_df["file_index"], temp_df["read_index"]):
+                fastq_file = fastq_file_list_pyfastx[file_index]
+                sequence = fastq_file[read_index].seq
+                qualities = fastq_file[read_index].qual
+                f.write(f"@{header}\n{sequence}\n+\n{qualities}\n")
+            
+            # # an old solution - imperfect because (1) it loops through each fastq each time, (2) it does lookup by header rather than index, and (3) it must convert all keys into a set to check for membership
+            # for header in temp_df["fastq_header"].tolist():
+            #     for fastq_file in fastq_file_list_pyfastx:
+            #         if header in set(fastq_file.keys()):
+            #             sequence = fastq_file[header].seq
+            #             qualities = fastq_file[header].qual
+            #             f.write(f"@{header}\n{sequence}\n+\n{qualities}\n")
+                        
+

@@ -63,6 +63,71 @@ technology_to_file_index_with_transcripts_mapping = {
     "SURECELL": 1,
     "VISIUM": 1,
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# follows same format as "barcode" in kb --list
+technology_to_file_index_with_barcode_and_barcode_start_and_end_position_mapping = {
+    "10XV1": (0,0,14),
+    "10XV2": (0,0,16),
+    "10XV3": (0,0,16),
+    "10XV3_ULTIMA": (0,22,38),
+    "BDWTA": ((0,0,9), (0,21,30), (0,43,52)),
+    "BULK": None,
+    "CELSEQ": (0,0,8),
+    "CELSEQ2": (0,6,12),
+    "DROPSEQ": (0,0,12),
+    "INDROPSV1": ((0,0,11), (0,30,38)),
+    "INDROPSV2": ((1,0,11), (1,30,38)),
+    "INDROPSV3": (0,0,8),
+    "SCRUBSEQ": (0,0,6),
+    "SMARTSEQ2": None,
+    "SMARTSEQ3": None,
+    "SPLIT-SEQ": ((1,10,18), (1,48,56), (1,78,86)),
+    "STORMSEQ": None,
+    "SURECELL": ((0,0,6), (0,21,27), (0,42,48)),
+    "VISIUM": (0,0,16),
+}
+technology_to_number_of_files_mapping = {
+    "10XV1": 3,
+    "10XV2": 2,
+    "10XV3": 2,
+    "10XV3_ULTIMA": 1,
+    "BDWTA": 2,
+    "BULK": {"single": 1, "paired": 2},
+    "CELSEQ": 2,
+    "CELSEQ2": 2,
+    "DROPSEQ": 2,
+    "INDROPSV1": 2,
+    "INDROPSV2": 1,
+    "INDROPSV3": 3,
+    "SCRUBSEQ": 2,
+    "SMARTSEQ2": {"single": 1, "paired": 2},
+    "SMARTSEQ3": 2,
+    "SPLIT-SEQ": 2,
+    "STORMSEQ": 2,
+    "SURECELL": 2,
+    "VISIUM": 2,
+}
 # None means no barcode/umi
 technology_barcode_and_umi_dict = {
     "bulk": {"barcode_start": None, "barcode_end": None, "umi_start": None, "umi_end": None, "spacer_start": None, "spacer_end": None},

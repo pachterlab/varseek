@@ -1197,4 +1197,4 @@ def parquet_column_tuple_to_list(df, cols=None):
     for col in df.columns:
         first_value = df[col].dropna().iloc[0] if not df[col].dropna().empty else None
         if isinstance(first_value, tuple):
-            df[col] = df[col].apply(list)
+            df["col"].astype(object).tolist()
