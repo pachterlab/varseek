@@ -1501,7 +1501,7 @@ def remove_variants_from_adata_for_stranded_technologies(adata, strand_bias_end,
 
 
 
-def kb_extract_all_alternative(fastq_file_list, kb_count_out_dir, t2g_file, technology, index_file=None, kb_extract_out_dir="kb_extract_out", gzip_output=True, mm=False, union=False, parity="single", strand=None, threads=2, overwrite=False, verbose=False, tmp=None, keep_tmp=False, aa=False, kallisto="kallisto", bustools="bustools"):
+def kb_extract_all_alternative(fastq_file_list, t2g_file, technology, index_file=None, kb_count_out_dir="kb_count_out", kb_extract_out_dir="kb_extract_out", gzip_output=True, mm=False, union=False, parity="single", strand=None, threads=2, overwrite=False, verbose=False, tmp=None, keep_tmp=False, aa=False, kallisto="kallisto", bustools="bustools"):
     if not overwrite and (os.path.exists(kb_extract_out_dir) and len(os.listdir(kb_extract_out_dir)) > 0):
         raise ValueError(f"Output directory '{kb_extract_out_dir}' already exists and is not empty. Set 'overwrite=True' to overwrite existing files or choose a different output directory.")
     if overwrite or not os.path.exists(kb_count_out_dir) or len(os.listdir(kb_count_out_dir)) == 0:
