@@ -10,6 +10,7 @@ import pandas as pd
 import pyfastx
 import pysam
 from scipy.sparse import csr_matrix, issparse
+from scipy.stats import mode
 import json
 import logging
 import gzip
@@ -143,7 +144,7 @@ def make_bus_df(kb_count_out, fastq_file_list, technology=None, t2g_file=None, m
     else:
         vcrs_parity = "single"
     if technology is None:
-        match = re.search(r"-x (\S+)", kb_info_data["call"])
+        match = re.search(r"-x (\S+)", kb_info_data.get("call", ""))
         technology = match.group(1) if match else None
         if technology is None:
             raise ValueError("Please provide technology to continue")
@@ -189,6 +190,7 @@ def make_bus_df(kb_count_out, fastq_file_list, technology=None, t2g_file=None, m
         t2g_df = t2g_df[["transcript_id", "gene_name"]].copy()  # keep only first 2 columns
         t2g_dict = dict(zip(t2g_df["transcript_id"], t2g_df["gene_name"]))
         t2g_dict["dlist"] = "dlist"
+        del t2g_df
 
     number_of_files = technology_to_number_of_files_mapping[technology.upper()]
     if isinstance(number_of_files, dict):
@@ -272,6 +274,7 @@ def make_bus_df(kb_count_out, fastq_file_list, technology=None, t2g_file=None, m
         print("Merging fastq header df and ec_df into bus df")
         bus_df = bus_df.merge(fastq_header_df, on=["read_index", "barcode"], how="left")
         bus_df = bus_df.merge(ec_df, on="EC", how="left")
+        del fastq_header_df, ec_df  # free up memory
 
         if parity == "paired" and vcrs_parity == "single":
             if not bad_to_good_barcode_dict:
@@ -343,7 +346,7 @@ def make_bus_df(kb_count_out, fastq_file_list, technology=None, t2g_file=None, m
     return bus_df
         
 
-def adjust_variant_adata_by_normal_gene_matrix(adata, kb_count_vcrs_dir, kb_count_reference_genome_dir, technology, fastq_file_list=None, adata_output_path=None, vcrs_t2g=None, t2g_standard=None, mm=False, parity="single", bustools="bustools", check_only=False, save_type="parquet"):
+def adjust_variant_adata_by_normal_gene_matrix(adata, kb_count_vcrs_dir, kb_count_reference_genome_dir, technology, t2g_standard, fastq_file_list=None, adata_output_path=None, mm=False, parity="single", bustools="bustools", check_only=False, save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=True):
     if not adata:
         adata = f"{kb_count_vcrs_dir}/counts_unfiltered/adata.h5ad"
     if isinstance(adata, str):
@@ -362,7 +365,7 @@ def adjust_variant_adata_by_normal_gene_matrix(adata, kb_count_vcrs_dir, kb_coun
             kb_count_out=kb_count_vcrs_dir,
             fastq_file_list=fastq_file_list,
             technology=technology,
-            t2g_file=vcrs_t2g,
+            t2g_file=None,
             mm=mm,
             parity=parity,
             bustools=bustools,
@@ -381,8 +384,19 @@ def adjust_variant_adata_by_normal_gene_matrix(adata, kb_count_vcrs_dir, kb_coun
             raise ValueError(f"Unsupported save type: {save_type}")
 
     bus_df_mutation.rename(columns={"gene_names": "vcrs_names"}, inplace=True)
-    bus_df_mutation["transcripts_vcrs"] = bus_df_mutation["vcrs_names"].apply(lambda string_list: tuple({s.split(":")[0] for s in string_list}))
-    bus_df_mutation["genes_vcrs"] = bus_df_mutation["vcrs_names"].apply(lambda string_list: tuple({s.split(":")[0] for s in string_list}))  #!!!!!
+    bus_df_mutation["transcripts_vcrs"] = bus_df_mutation["vcrs_names"].apply(lambda string_list: list({s.split(":")[0] for s in string_list}))
+
+    #* map transcripts of VCRS's to their respective genes using t2g_standard
+    t2g_df = pd.read_csv(t2g_standard, sep="\t", header=None)
+    t2g_df.rename(columns={0: "transcript_id", 1: "gene_name"}, inplace=True)
+    t2g_df = t2g_df[["transcript_id", "gene_name"]].copy()  # keep only first 2 columns
+    t2g_dict = dict(zip(t2g_df["transcript_id"], t2g_df["gene_name"]))
+    t2g_dict["dlist"] = "dlist"
+    del t2g_df
+
+    print("Apply the mapping function to create gene name columns")
+    bus_df_mutation["genes_vcrs"] = bus_df_mutation["transcripts_vcrs"].progress_apply(lambda x: map_transcripts_to_genes(x, t2g_dict))
+    bus_df_mutation.drop(columns=["transcripts_vcrs"], inplace=True)
 
     #* create a dataframe of the BUS file for normal reference genome
     bus_df_standard_path = f"{kb_count_reference_genome_dir}/bus_df.csv"
@@ -399,26 +413,134 @@ def adjust_variant_adata_by_normal_gene_matrix(adata, kb_count_vcrs_dir, kb_coun
             chunksize=1,
             correct_barcodes_of_hamming_distance_one=True,
         )
-        bus_df_standard = bus_df_standard[["barcode", "UMI", "read_index", "gene_names"]].copy()
+        bus_df_standard = bus_df_standard[["barcode", "read_index", "gene_names"]].copy()
     else:
         if save_type == "parquet":
-            bus_df_standard = pd.read_parquet(bus_df_standard_path, columns=["barcode", "UMI", "read_index", "gene_names"])
+            bus_df_standard = pd.read_parquet(bus_df_standard_path, columns=["barcode", "read_index", "gene_names"])
         elif save_type == "csv":
-            bus_df_standard = pd.read_csv(bus_df_standard_path, usecols=["barcode", "UMI", "read_index", "gene_names"])
+            bus_df_standard = pd.read_csv(bus_df_standard_path, usecols=["barcode", "read_index", "gene_names"])
         else:
             raise ValueError(f"Unsupported save type: {save_type}")
         
     bus_df_mutation.rename(columns={"gene_names": "genes_standard"}, inplace=True)
 
+    #* merge normal genome read alignments (gene_names from its bus df) into VCRS's bus df by barcode + read_index
+    bus_df = bus_df_mutation.merge(bus_df_standard, on=["barcode", "read_index"], how="left")  # will have columns barcode, UMI, read_index, vcrs_names, genes_vcrs, genes_standard
+
+    #* remove barcode padding
+    bus_df.rename(columns={"barcode": "barcode_with_padding"}, inplace=True)
+    true_barcode_length = len(adata.obs.index[0])  # in contrast to the length of 32 in BUS file
+    bus_df["barcode"] = bus_df["barcode_with_padding"].str[-true_barcode_length:]  # removes padding - keeps only the last true_barcode_length characters
+    bus_df.drop(columns=["barcode_with_padding"], inplace=True)
+
+    #* if parity == paired and vcrs_parity == single: (1) make a df copy; (2) groupby same barcode + read_index; (3) take union of mapped VCRSs, and the intersection of mapped genes; (4) assign these exclusively to the first read of the pair, and give the 2nd read of the pair nothing
+    with open(f"{kb_count_vcrs_dir}/kb_info.json", 'r') as f:
+        kb_info_data = json.load(f)
+    if "--parity paired" in kb_info_data.get("call", ""):
+        vcrs_parity = "paired"  # same as parity_kb_count in vk count/clean
+    else:
+        vcrs_parity = "single"
+
+    if parity == "paired" and vcrs_parity == "single":
+        # (1) make a df copy
+        bus_df_copy = bus_df[["barcode", "read_index", "vcrs_names", "genes_vcrs", "genes_standard"]].copy()
+
+        # (2) groupby same barcode + read_index; (3) take union of mapped VCRSs, and the intersection of mapped genes
+        bus_df_copy = bus_df_copy.groupby(["barcode", "read_index"]).agg({
+            "genes_standard": lambda x: sorted(set.intersection(*map(set, x))),  
+            "vcrs_names": lambda x: sorted(set.union(*map(set, x))),
+            "genes_vcrs": lambda x: sorted(set.union(*map(set, x)))
+        }).reset_index()
+
+        # (4) assign these exclusively to the first read of the pair, and give the 2nd read of the pair nothing
+        bus_df = bus_df[["barcode", "UMI", "read_index"]].copy()
+        bus_df = bus_df.drop_duplicates(subset=["barcode", "read_index"], keep="first")
+        bus_df = bus_df.merge(bus_df_copy, on=["barcode", "read_index"], how="left")
+
+    #* groupby barcode + UMI, taking the list of read_index, the mode of vcrs_names, and the union of genes_standard
+    if technology.upper() != "BULK":
+        bus_df.drop(columns=["genes_vcrs"], inplace=True)  # drop genes_vcrs column, because I will need to remake later
+        
+        # groupby barcode + UMI, taking the list of read_index, the mode of vcrs_names, and the union of genes_standard
+        bus_df = bus_df.groupby(["barcode", "UMI"]).agg({
+            "read_index": list,  
+            "vcrs_names": lambda x: mode(x, keepdims=True)[0][0],  
+            "genes_standard": lambda x: sorted(set.union(*map(set, x)))  
+        }).reset_index()
+
+        # repeat of above; could likely simplify in the future
+        bus_df["transcripts_vcrs"] = bus_df["vcrs_names"].apply(lambda string_list: list({s.split(":")[0] for s in string_list}))
+        bus_df_mutation.drop(columns=["transcripts_vcrs"], inplace=True)
+        bus_df["genes_vcrs"] = bus_df["transcripts_vcrs"].progress_apply(lambda x: map_transcripts_to_genes(x, t2g_dict))
+
+    #* take the set of vcrs genes in a new column; same with normal genome alignment genes
+    bus_df["genes_vcrs_set"] = bus_df["genes_vcrs"].apply(lambda x: set(x))
+    bus_df["genes_standard_set"] = bus_df["genes_standard"].apply(lambda x: set(x))
+
+    #* take the intersection of the VCRSs' gene sets and normal genome alignment gene sets in a new column (these are the genes where the VCRS and normal genome are in agreement)
+    bus_df["genes_intersection"] = bus_df.apply(lambda x: x["genes_vcrs_set"].intersection(x["genes_standard_set"]), axis=1)
+    bus_df.drop(columns=["genes_vcrs_set", "genes_standard_set"], inplace=True)
+
+    #* loop through bus df (as zipped iterators)
+    row_indices = []
+    col_indices = []
+    data_values = []
+
+    for vcrs_names_list, genes_vcrs_list, genes_intersection_list, barcode in zip(bus_df["vcrs_names"], bus_df["genes_vcrs"], bus_df["genes_intersection"], bus_df["barcode"]):
+        #* look at all VCRSs to which the read mapped, and keep only VCRSs whose corresponding gene is in the gene_intersection column above
+        vcrs_names_list_final = []
+        for vcrs_name, gene_vcrs in zip(vcrs_names_list, genes_vcrs_list):
+            if gene_vcrs == "dlist":
+                continue
+            if gene_vcrs in genes_intersection_list or (count_reads_that_dont_pseudoalign_to_reference_genome and len(genes_intersection_list) == 0):
+                vcrs_names_list_final.append(vcrs_name)
+        if len(vcrs_names_list_final) == 0:
+            continue
+        if mm:
+            counts_final = 1 / len(vcrs_names_list_final)  #? or maybe just 1
+            if counts_final == 0:
+                continue
+            
+            row_idx = np.where(adata.obs.index == barcode)[0][0]
+
+            for vcrs_name_final in vcrs_names_list_final:
+                col_idx = np.where(adata.var.index == vcrs_name_final)[0][0]
+                
+                row_indices.append(row_idx)
+                col_indices.append(col_idx)
+                data_values.append(counts_final)
+        else:
+            counts_final = 1 if len(vcrs_names_list_final) == 1 else 0
+            if counts_final == 0:
+                continue
+
+            vcrs_name_final = vcrs_names_list_final[0]
+
+            row_idx = np.where(adata.obs.index == barcode)[0][0]
+            col_idx = np.where(adata.var.index == vcrs_name_final)[0][0]
+
+            row_indices.append(row_idx)
+            col_indices.append(col_idx)
+            data_values.append(counts_final)
+
     #* copy adata.var and adata.obs and adata.uns as-is, all in the same order; initialize a sparse matrix (to remake adata from scratch)
+    # Construct a sparse matrix with the updates
+    update_matrix = csr_matrix((data_values, (row_indices, col_indices)), shape=adata.shape)
+
     adata_new = ad.AnnData(
-        X=csr_matrix((adata.shape[0], adata.shape[1])),  # Sparse zero matrix
+        X=adata.X.copy() + update_matrix,  # Sparse zero matrix
         obs=adata.obs.copy(),
         var=adata.var.copy(),
         uns=adata.uns.copy()
     )
 
-    #* merge normal genome read alignments (gene_names from its bus df) into VCRS's bus df by barcode + read_index
+    #* save adata
+    adata_new.write_h5ad(adata_output_path, compression="gzip")
+
+    return adata_new
+
+
+    
 
 
 

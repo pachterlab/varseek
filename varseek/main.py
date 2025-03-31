@@ -1853,8 +1853,15 @@ def main():  # noqa: C901
     #     dest="qc_against_gene_matrix",
     #     action="store_false",
     #     default=argparse.SUPPRESS,  # Remove from args if not provided
-    #     help=extract_help_from_doc(clean, "disable_qc_against_gene_matrix", disable=True),
+    #     help=extract_help_from_doc(clean, "qc_against_gene_matrix", disable=True),
     # )
+    parser_clean.add_argument(
+        "--disable_count_reads_that_dont_pseudoalign_to_reference_genome",
+        dest="count_reads_that_dont_pseudoalign_to_reference_genome",
+        action="store_false",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "count_reads_that_dont_pseudoalign_to_reference_genome", disable=True),
+    )
     parser_clean.add_argument(
         "--account_for_strand_bias",
         action="store_true",
@@ -1874,12 +1881,6 @@ def main():  # noqa: C901
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(clean, "read_length"),
-    )
-    parser_clean.add_argument(
-        "--gtf",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "gtf"),
     )
     parser_clean.add_argument(
         "--filter_cells_by_min_counts",
@@ -2013,6 +2014,12 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "sort_fastqs", disable=True),
     )
     parser_clean.add_argument(
+        "--adata_reference_genome",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "adata_reference_genome"),
+    )
+    parser_clean.add_argument(
         "--fastqs",
         nargs="+",
         required=False,
@@ -2043,6 +2050,12 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "vcrs_fasta"),
     )
     parser_clean.add_argument(
+        "--gtf",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "gtf"),
+    )
+    parser_clean.add_argument(
         "--dlist_fasta",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
@@ -2055,12 +2068,6 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "variants_updated_csv"),
     )
     parser_clean.add_argument(
-        "--adata_reference_genome",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "adata_reference_genome"),
-    )
-    parser_clean.add_argument(
         "--kb_count_vcrs_dir",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
@@ -2071,6 +2078,30 @@ def main():  # noqa: C901
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(clean, "kb_count_reference_genome_dir"),
+    )
+    parser_clean.add_argument(
+        "--reference_genome_t2g",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "reference_genome_t2g"),
+    )
+    parser_clean.add_argument(
+        "--vcf_data_csv",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "vcf_data_csv"),
+    )
+    parser_clean.add_argument(
+        "--variants",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "variants"),
+    )
+    parser_clean.add_argument(
+        "--sequences",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "sequences"),
     )
     parser_clean.add_argument(
         "--variants_updated_csv_columns_to_merge",
@@ -2090,18 +2121,6 @@ def main():  # noqa: C901
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(clean, "gene_id_column"),
-    )
-    parser_clean.add_argument(
-        "--vcf_data_csv",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "vcf_data_csv"),
-    )
-    parser_clean.add_argument(
-        "--variants",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "variants"),
     )
     parser_clean.add_argument(
         "--out",
