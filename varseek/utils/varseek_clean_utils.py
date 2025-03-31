@@ -184,7 +184,9 @@ def make_bus_df(kb_count_out, fastq_file_list, technology=None, t2g_file=None, m
     #* t2g
     if t2g_file is not None:
         print("loading in t2g df")
-        t2g_df = pd.read_csv(t2g_file, sep="\t", header=None, names=["transcript_id", "gene_name"])
+        t2g_df = pd.read_csv(t2g_file, sep="\t", header=None)
+        t2g_df.rename(columns={0: "transcript_id", 1: "gene_name"}, inplace=True)
+        t2g_df = t2g_df[["transcript_id", "gene_name"]].copy()  # keep only first 2 columns
         t2g_dict = dict(zip(t2g_df["transcript_id"], t2g_df["gene_name"]))
         t2g_dict["dlist"] = "dlist"
 
@@ -741,9 +743,7 @@ def make_bus_df_original(kallisto_out, fastq_file_list, t2g_file, mm=False, unio
     ec_df["transcript_names"] = ec_df["transcript_ids_list"].apply(lambda ids: [transcripts[i] for i in ids])
 
     print("loading in t2g df")
-    t2g_df = pd.read_csv(t2g_file, sep="\t", header=None)
-    t2g_df.rename(columns={0: "transcript_id", 1: "gene_name"}, inplace=True)
-    t2g_df = t2g_df[["transcript_id", "gene_name"]].copy()  # keep only first 2 columns
+    t2g_df = pd.read_csv(t2g_file, sep="\t", header=None, names=["transcript_id", "gene_name"])
     t2g_dict = dict(zip(t2g_df["transcript_id"], t2g_df["gene_name"]))
 
     # Get bus output (converted to txt)
