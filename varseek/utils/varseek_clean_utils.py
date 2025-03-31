@@ -133,7 +133,7 @@ def find_hamming_1_match(barcode, whitelist):
         barcode_list[i] = original_base  # Restore original base
     return None  # No match found
 
-def make_bus_df(kb_count_out, fastq_file_list, t2g_file=None, mm=False, technology="bulk", parity="single", bustools="bustools", check_only=True, chunksize=None, bad_to_good_barcode_dict=None, correct_barcodes_of_hamming_distance_one=False, save_type="parquet"):  # make sure this is in the same order as passed into kb count - [sample1, sample2, etc] OR [sample1_pair1, sample1_pair2, sample2_pair1, sample2_pair2, etc]
+def make_bus_df(kb_count_out, fastq_file_list, technology=None, t2g_file=None, mm=False, parity="single", bustools="bustools", check_only=True, chunksize=None, bad_to_good_barcode_dict=None, correct_barcodes_of_hamming_distance_one=False, save_type="parquet"):  # make sure this is in the same order as passed into kb count - [sample1, sample2, etc] OR [sample1_pair1, sample1_pair2, sample2_pair1, sample2_pair2, etc]
     with open(f"{kb_count_out}/kb_info.json", 'r') as f:
         kb_info_data = json.load(f)
     if "--num" not in kb_info_data.get("call", ""):
@@ -142,6 +142,14 @@ def make_bus_df(kb_count_out, fastq_file_list, t2g_file=None, mm=False, technolo
         vcrs_parity = "paired"  # same as parity_kb_count in vk count/clean
     else:
         vcrs_parity = "single"
+    if technology is None:
+        match = re.search(r"-x (\S+)", kb_info_data["call"])
+        technology = match.group(1) if match else None
+        if technology is None:
+            raise ValueError("Please provide technology to continue")
+        else:
+            print("Using technology from kb_info.json:", technology)
+
     dlist_none_pattern = r"dlist\s*(?:=|\s+)?(?:'None'|None|\"None\")"
     if "dlist" not in kb_info_data.get("call", "") or re.search(dlist_none_pattern, kb_info_data.get("call", "")):
         used_dlist = False
@@ -265,7 +273,7 @@ def make_bus_df(kb_count_out, fastq_file_list, t2g_file=None, mm=False, technolo
 
         if parity == "paired" and vcrs_parity == "single":
             if not bad_to_good_barcode_dict:
-                bad_to_good_barcode_dict = make_good_barcodes_and_file_index_tuples(barcodes, include_file_index=False)
+                bad_to_good_barcode_dict = make_good_barcodes_and_file_index_tuples(barcodes, include_file_index=False)  # TODO: for the non-bulk technologies with transcripts in >1 file (ie SMARTSEQ2, SMARTSEQ3, STORMSEQ), write a custom technology to be able to do something analogous to running in single-end mode and then later combining results
             
             bus_df['corrected_barcode'] = bus_df['barcode'].map(bad_to_good_barcode_dict).apply(pd.Series)
             bus_df.drop(columns=["barcode"], inplace=True)
@@ -333,7 +341,82 @@ def make_bus_df(kb_count_out, fastq_file_list, t2g_file=None, mm=False, technolo
     return bus_df
         
 
+def adjust_variant_adata_by_normal_gene_matrix(adata, kb_count_vcrs_dir, kb_count_reference_genome_dir, technology, fastq_file_list=None, adata_output_path=None, vcrs_t2g=None, t2g_standard=None, mm=False, parity="single", bustools="bustools", check_only=False, save_type="parquet"):
+    if not adata:
+        adata = f"{kb_count_vcrs_dir}/counts_unfiltered/adata.h5ad"
+    if isinstance(adata, str):
+        adata = ad.read_h5ad(adata)
 
+    if not adata_output_path:
+        adata_output_path = f"{kb_count_vcrs_dir}/counts_unfiltered/adata_adjusted_with_reference_genome_alignment.h5ad"
+
+    fastq_file_list = load_in_fastqs(fastq_file_list)
+    fastq_file_list = sort_fastq_files_for_kb_count(fastq_file_list, technology=technology, check_only=check_only)
+
+    #* create a dataframe of the BUS file for VCRSs with useful added information
+    bus_df_mutation_path = f"{kb_count_vcrs_dir}/bus_df.{save_type}"
+    if not os.path.exists(bus_df_mutation_path):
+        bus_df_mutation = make_bus_df(
+            kb_count_out=kb_count_vcrs_dir,
+            fastq_file_list=fastq_file_list,
+            technology=technology,
+            t2g_file=vcrs_t2g,
+            mm=mm,
+            parity=parity,
+            bustools=bustools,
+            check_only=False,
+            chunksize=1,
+            correct_barcodes_of_hamming_distance_one=True,
+            save_type=save_type
+        )
+        bus_df_mutation = bus_df_mutation[["barcode", "UMI", "read_index", "gene_names"]].copy()
+    else:
+        if save_type == "parquet":
+            bus_df_mutation = pd.read_parquet(bus_df_mutation_path, columns=["barcode", "UMI", "read_index", "gene_names"])
+        elif save_type == "csv":
+            bus_df_mutation = pd.read_csv(bus_df_mutation_path, usecols=["barcode", "UMI", "read_index", "gene_names"])
+        else:
+            raise ValueError(f"Unsupported save type: {save_type}")
+
+    bus_df_mutation.rename(columns={"gene_names": "vcrs_names"}, inplace=True)
+    bus_df_mutation["transcripts_vcrs"] = bus_df_mutation["vcrs_names"].apply(lambda string_list: tuple({s.split(":")[0] for s in string_list}))
+    bus_df_mutation["genes_vcrs"] = bus_df_mutation["vcrs_names"].apply(lambda string_list: tuple({s.split(":")[0] for s in string_list}))  #!!!!!
+
+    #* create a dataframe of the BUS file for normal reference genome
+    bus_df_standard_path = f"{kb_count_reference_genome_dir}/bus_df.csv"
+    if not os.path.exists(bus_df_standard_path):
+        bus_df_standard = make_bus_df(
+            kb_count_out=kb_count_reference_genome_dir,
+            fastq_file_list=fastq_file_list,
+            technology=technology,
+            t2g_file=t2g_standard,
+            mm=False,  # doesn't matter if mm True or False - mm'ed reads will appear in the BUS file regardless; mm only affects count matrix, but I don't care about count matrix
+            parity=parity,
+            bustools=bustools,
+            check_only=False,
+            chunksize=1,
+            correct_barcodes_of_hamming_distance_one=True,
+        )
+        bus_df_standard = bus_df_standard[["barcode", "UMI", "read_index", "gene_names"]].copy()
+    else:
+        if save_type == "parquet":
+            bus_df_standard = pd.read_parquet(bus_df_standard_path, columns=["barcode", "UMI", "read_index", "gene_names"])
+        elif save_type == "csv":
+            bus_df_standard = pd.read_csv(bus_df_standard_path, usecols=["barcode", "UMI", "read_index", "gene_names"])
+        else:
+            raise ValueError(f"Unsupported save type: {save_type}")
+        
+    bus_df_mutation.rename(columns={"gene_names": "genes_standard"}, inplace=True)
+
+    #* copy adata.var and adata.obs and adata.uns as-is, all in the same order; initialize a sparse matrix (to remake adata from scratch)
+    adata_new = ad.AnnData(
+        X=csr_matrix((adata.shape[0], adata.shape[1])),  # Sparse zero matrix
+        obs=adata.obs.copy(),
+        var=adata.var.copy(),
+        uns=adata.uns.copy()
+    )
+
+    #* merge normal genome read alignments (gene_names from its bus df) into VCRS's bus df by barcode + read_index
 
 
 
@@ -658,7 +741,9 @@ def make_bus_df_original(kallisto_out, fastq_file_list, t2g_file, mm=False, unio
     ec_df["transcript_names"] = ec_df["transcript_ids_list"].apply(lambda ids: [transcripts[i] for i in ids])
 
     print("loading in t2g df")
-    t2g_df = pd.read_csv(t2g_file, sep="\t", header=None, names=["transcript_id", "gene_name"])
+    t2g_df = pd.read_csv(t2g_file, sep="\t", header=None)
+    t2g_df.rename(columns={0: "transcript_id", 1: "gene_name"}, inplace=True)
+    t2g_df = t2g_df[["transcript_id", "gene_name"]].copy()  # keep only first 2 columns
     t2g_dict = dict(zip(t2g_df["transcript_id"], t2g_df["gene_name"]))
 
     # Get bus output (converted to txt)
@@ -830,7 +915,7 @@ def match_paired_ends_after_single_end_run(bus_df_path, gene_name_type="vcrs_id"
 
 
 # TODO: unsure if this works for sc
-def adjust_variant_adata_by_normal_gene_matrix(adata, kb_count_vcrs_dir, kb_count_reference_genome_dir, id_to_header_csv=None, adata_output_path=None, vcrs_t2g=None, t2g_standard=None, fastq_file_list=None, mm=False, technology="bulk", parity="single", bustools="bustools", ignore_barcodes=False, check_only=False, chunksize=None):
+def adjust_variant_adata_by_normal_gene_matrix_original(adata, kb_count_vcrs_dir, kb_count_reference_genome_dir, id_to_header_csv=None, adata_output_path=None, vcrs_t2g=None, t2g_standard=None, fastq_file_list=None, mm=False, technology="bulk", parity="single", bustools="bustools", ignore_barcodes=False, check_only=False, chunksize=None):
     if not adata:
         adata = f"{kb_count_vcrs_dir}/counts_unfiltered/adata.h5ad"
     if isinstance(adata, str):

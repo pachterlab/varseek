@@ -39,13 +39,17 @@ def generate_unique_ids(num_ids, start=1, total_rows=None):
     generated_ids = [f"vcrs_{i:0{num_digits}}" for i in range(start, start + num_ids)]
     return list(generated_ids)
 
-def translate_sequence(sequence, start, end):
+def translate_sequence(sequence, start=0, end=None):
+    if end is None:  # If end is not provided, set it to the length of the sequence
+        end = len(sequence)
+    
     amino_acid_sequence = ""
     for i in range(start, end, 3):
         codon = sequence[i : (i + 3)].upper()
-        amino_acid = codon_to_amino_acid.get(codon, "X")  # Use 'X' for unknown or incomplete codons
+        amino_acid = codon_to_amino_acid.get(codon, "X")  # Use 'X' for unknown codons
         amino_acid_sequence += amino_acid
 
+    amino_acid_sequence = amino_acid_sequence.strip("X")  # Remove leading and trailing 'X's
     return amino_acid_sequence
 
 

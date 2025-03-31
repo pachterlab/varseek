@@ -812,6 +812,7 @@ def build(
         mutations = temp
 
     elif isinstance(mutations, pd.DataFrame):
+        mutations = mutations.copy()
         for col in mutations.columns:
             if col not in columns_to_keep:
                 columns_to_keep.append(col)  # append "mutation_aa", "gene_name", "mutation_id"
@@ -1291,63 +1292,35 @@ def build(
     if translate and save_variants_updated_csv and store_full_sequences:
         columns_to_keep.extend(["wt_sequence_aa_full", "vcrs_sequence_aa_full"])
 
-        if not mutations_path:
-            if not isinstance(translate_start, int) and not isinstance(translate_end, int):
-                raise ValueError("translate_start and translate_end must be integers when translating sequences (or default None).")
-            if translate_start is None:
-                translate_start = 0
-            if translate_end is None:
-                translate_end = mutations["sequence_length"][0]
+        if not translate_start:
+            translate_start = "translate_start"
+        if not translate_end:
+            translate_end = "translate_end"
 
-            # combined_df['ORF'] = combined_df[translate_start] % 3
+        if translate_start not in mutations.columns:
+            mutations["translate_start"] = 0
+        if translate_end not in mutations.columns:
+            mutations["translate_end"] = None
 
-            if verbose:
-                tqdm.pandas(desc="Translating WT amino acid sequences")
-                mutations["wt_sequence_aa_full"] = mutations["wt_sequence_full"].progress_apply(lambda x: translate_sequence(x, start=translate_start, end=translate_end))
-            else:
-                mutations["wt_sequence_aa_full"] = mutations["wt_sequence_full"].apply(lambda x: translate_sequence(x, start=translate_start, end=translate_end))
+        if verbose:
+            tqdm.pandas(desc="Translating WT amino acid sequences")
 
-            if verbose:
-                tqdm.pandas(desc="Translating mutant amino acid sequences")
+        mutations["wt_sequence_aa_full"] = mutations.apply(
+            lambda row: translate_sequence(row["wt_sequence_full"], row["translate_start"], row["translate_end"]),
+            axis=1,
+        )
 
-                mutations["vcrs_sequence_aa_full"] = mutations["vcrs_sequence_full"].progress_apply(lambda x: translate_sequence(x, start=translate_start, end=translate_end))
+        if verbose:
+            tqdm.pandas(desc="Translating mutant amino acid sequences")
 
-            else:
-                mutations["vcrs_sequence_aa_full"] = mutations["vcrs_sequence_full"].apply(lambda x: translate_sequence(x, start=translate_start, end=translate_end))
-
-            logger.info(f"Translated variant sequences: {mutations['wt_sequence_aa_full']}")
-        else:
-            if not translate_start:
-                translate_start = "translate_start"
-
-            if not translate_end:
-                translate_end = "translate_end"
-
-            if translate_start not in mutations.columns:
-                mutations["translate_start"] = 0
-
-            if translate_end not in mutations.columns:
-                mutations["translate_end"] = mutations["sequence_length"]
-
-            if verbose:
-                tqdm.pandas(desc="Translating WT amino acid sequences")
-
-            mutations["wt_sequence_aa_full"] = mut_apply(
-                lambda row: translate_sequence(row["wt_sequence_full"], row[translate_start], row[translate_end]),
-                axis=1,
-            )
-
-            if verbose:
-                tqdm.pandas(desc="Translating mutant amino acid sequences")
-
-            mutations["vcrs_sequence_aa_full"] = mut_apply(
-                lambda row: translate_sequence(
-                    row["vcrs_sequence_full"],
-                    row[translate_start],
-                    row[translate_end],
-                ),
-                axis=1,
-            )
+        mutations["vcrs_sequence_aa_full"] = mutations.apply(
+            lambda row: translate_sequence(
+                row["vcrs_sequence_full"],
+                row[translate_start],
+                row[translate_end],
+            ),
+            axis=1,
+        )
 
     mutations = mutations[columns_to_keep]
 

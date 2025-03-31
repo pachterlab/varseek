@@ -421,6 +421,8 @@ def get_ensembl_gene_id(transcript_id: str, verbose: bool = False):
 def get_ensembl_gene_id_bulk(transcript_ids: list[str]) -> dict[str, str]:
     if not transcript_ids:
         return {}
+    
+    transcript_ids = list(set(transcript_ids))  # Remove duplicates
 
     try:
         url = "https://rest.ensembl.org/lookup/id/"

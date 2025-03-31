@@ -793,6 +793,12 @@ def clean(
     adata.var["vcrs_count"] = adata.X.sum(axis=0).A1 if hasattr(adata.X, "A1") else np.asarray(adata.X.sum(axis=0)).flatten()
     adata.var["vcrs_count"] = adata.var["vcrs_count"].fillna(0).astype("Int32")
 
+    if gene_id_column in adata.var:
+        filtered_var = adata.var[adata.var["vcrs_count"] > 0]
+        gene_counts = filtered_var[gene_id_column].value_counts()
+        adata.var["gene_count"] = adata.var[gene_id_column].map(gene_counts).fillna(0).astype(int)
+        del filtered_var
+
     if sp.issparse(adata.X):
         # Sparse matrix handling
         adata.var["number_obs"] = np.array((adata.X != 0).sum(axis=0)).flatten()

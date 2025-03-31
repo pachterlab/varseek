@@ -1843,12 +1843,18 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "apply_dlist_correction"),
     )
     parser_clean.add_argument(
-        "--disable_qc_against_gene_matrix",
-        dest="qc_against_gene_matrix",
-        action="store_false",
+        "--qc_against_gene_matrix",
+        action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "disable_qc_against_gene_matrix", disable=True),
+        help=extract_help_from_doc(clean, "qc_against_gene_matrix"),
     )
+    # parser_clean.add_argument(
+    #     "--disable_qc_against_gene_matrix",
+    #     dest="qc_against_gene_matrix",
+    #     action="store_false",
+    #     default=argparse.SUPPRESS,  # Remove from args if not provided
+    #     help=extract_help_from_doc(clean, "disable_qc_against_gene_matrix", disable=True),
+    # )
     parser_clean.add_argument(
         "--account_for_strand_bias",
         action="store_true",
