@@ -284,8 +284,8 @@ def test_adjust_variant_adata_by_normal_gene_matrix_bulk_paired_but_run_as_singl
         "AAAAAAAAAAAAAAAA": {"ENST1:mut": 2, "ENST2:mut": 0, "ENST3:mut": 0, "ENST4:mut": 0, "ENST5:mut": 0, "ENST6:mut": 0, "ENST7:mut": 1, "ENST8:mut": 0, "ENST9:mut": 0},
     }
     if mm:
-        count_matrix_data_gt["AAAAAAAAAAAAAAAA"]["ENST5:mut"] += (1/2)
-        count_matrix_data_gt["AAAAAAAAAAAAAAAA"]["ENST6:mut"] += (1/2)
+        count_matrix_data_gt["AAAAAAAAAAAAAAAA"]["ENST5:mut"] += 1
+        count_matrix_data_gt["AAAAAAAAAAAAAAAA"]["ENST6:mut"] += 1
     if count_reads_that_dont_pseudoalign_to_reference_genome:
         count_matrix_data_gt["AAAAAAAAAAAAAAAA"]["ENST9:mut"] += 1
 

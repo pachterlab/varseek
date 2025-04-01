@@ -505,12 +505,11 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
                 continue
             if gene_vcrs in genes_intersection_set or (count_reads_that_dont_pseudoalign_to_reference_genome and not pseudoaligns_to_reference_genome):
                 vcrs_names_list_final.append(vcrs_name)
-        if len(vcrs_names_list_final) == 0:
+        length_vcrs_names_list_final = len(vcrs_names_list_final)
+        if length_vcrs_names_list_final == 0 or (not mm and length_vcrs_names_list_final > 1):
             continue
         if mm:
-            counts_final = 1 / len(vcrs_names_list_final)  #? or maybe just 1
-            if counts_final == 0:
-                continue
+            counts_final = 1  # I use 1 rather than 1 / len(vcrs_names_list_final) because it is perfectly valid for a single read to map to 2 variants
             
             row_idx = np.where(adata.obs.index == barcode)[0][0]
 
@@ -520,10 +519,8 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
                 row_indices.append(row_idx)
                 col_indices.append(col_idx)
                 data_values.append(counts_final)
-        else:
-            counts_final = 1 if len(vcrs_names_list_final) == 1 else 0
-            if counts_final == 0:
-                continue
+        else:            
+            counts_final = 1
 
             vcrs_name_final = vcrs_names_list_final[0]
 
