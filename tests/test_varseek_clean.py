@@ -12,7 +12,8 @@ from pathlib import Path
 from varseek.utils import (
     cleaned_adata_to_vcf,
     vcf_to_dataframe,
-    remove_variants_from_adata_for_stranded_technologies
+    remove_variants_from_adata_for_stranded_technologies,
+    adjust_variant_adata_by_normal_gene_matrix
 )
 
 from .conftest import (
@@ -211,18 +212,6 @@ def test_strand_bias_filtering_3p(adata_for_strand_bias_testing, transcript_id_d
     adata_gt = ad.AnnData(X=adata_x_gt, var=adata_var_gt, obs=adata_obs_gt)
 
     compare_two_anndata_objects(adata, adata_gt)
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
