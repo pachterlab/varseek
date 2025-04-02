@@ -73,8 +73,6 @@ def merge_synthetic_read_info_into_variants_metadata_df(mutation_metadata_df, sa
                 "noisy_read_indices_wt_new",
             ]
         )
-    else:
-        mutation_metadata_df_new = mutation_metadata_df
 
     if sample_type != "w":
         mutation_metadata_df_new["included_in_synthetic_reads_mutant"] = mutation_metadata_df_new["included_in_synthetic_reads_mutant"] | mutation_metadata_df_new["included_in_synthetic_reads_mutant_new"]

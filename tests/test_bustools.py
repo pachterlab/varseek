@@ -100,7 +100,7 @@ def test_bustools_df_bulk_parity_single(temp_fastq_file, temp_fasta_file, temp_i
         bustools_binary_path_command = "kb info | grep 'bustools:' | awk '{print $3}' | sed 's/[()]//g'"
         bustools = subprocess.run(bustools_binary_path_command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, text=True, check=True).stdout.strip()
 
-    bus_df = make_bus_df(kb_count_out = temp_kb_count_out_folder, fastq_file_list = temp_fastq_file, t2g_file = temp_t2g_file, mm = False, union = False, technology = "bulk", bustools = bustools, check_only=True)
+    bus_df = make_bus_df(kb_count_out = temp_kb_count_out_folder, fastq_file_list = temp_fastq_file, t2g_file = temp_t2g_file, mm = False, union = False, technology = "bulk", bustools = bustools, fastq_sorting_check_only=True)
     read_to_ref_dict = dict(zip(bus_df['fastq_header'], bus_df['gene_names']))
 
     assert read_to_ref_dict == {'seq1': ['vcrs1', 'vcrs6'], 'seq2': ['vcrs2'], 'seq3': ['vcrs1', 'vcrs6'], 'seq5': ['vcrs2', 'vcrs4', 'vcrs5']}
@@ -124,7 +124,7 @@ def test_bustools_df_bulk_parity_paired(temp_fastq_file, temp_fasta_file, temp_i
         bustools_binary_path_command = "kb info | grep 'bustools:' | awk '{print $3}' | sed 's/[()]//g'"
         bustools = subprocess.run(bustools_binary_path_command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, text=True, check=True).stdout.strip()
 
-    bus_df = make_bus_df(kb_count_out = temp_kb_count_out_folder, fastq_file_list = temp_fastq_file, t2g_file = temp_t2g_file, mm = False, union = False, technology = "bulk", bustools = bustools, check_only=True)
+    bus_df = make_bus_df(kb_count_out = temp_kb_count_out_folder, fastq_file_list = temp_fastq_file, t2g_file = temp_t2g_file, mm = False, union = False, technology = "bulk", bustools = bustools, fastq_sorting_check_only=True)
     read_to_ref_dict = dict(zip(bus_df['fastq_header'], bus_df['gene_names']))
 
     assert read_to_ref_dict == {'seq1': ['vcrs1', 'vcrs6'], 'seq2': ['vcrs2'], 'seq3': ['vcrs1', 'vcrs6'], 'seq5': ['vcrs2', 'vcrs4', 'vcrs5']}

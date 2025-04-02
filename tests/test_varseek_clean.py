@@ -330,7 +330,7 @@ def test_bustools_df_bulk_parity_single(temp_fastq_file, temp_fasta_file, temp_i
         bustools_binary_path_command = "kb info | grep 'bustools:' | awk '{print $3}' | sed 's/[()]//g'"
         bustools = subprocess.run(bustools_binary_path_command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, text=True, check=True).stdout.strip()
 
-    bus_df = make_bus_df(kb_count_out = temp_kb_count_out_folder, fastq_file_list = temp_fastq_file, t2g_file = temp_t2g_file, mm = False, technology = "bulk", bustools = bustools, check_only=True)
+    bus_df = make_bus_df(kb_count_out = temp_kb_count_out_folder, fastq_file_list = temp_fastq_file, t2g_file = temp_t2g_file, mm = False, technology = "bulk", bustools = bustools, fastq_sorting_check_only=True)
     read_to_ref_dict = dict(zip(bus_df['fastq_header'], bus_df['gene_names']))
 
     assert read_to_ref_dict == {'seq1_1': ['vcrs1', 'vcrs6'], 'seq2_1': ['vcrs2'], 'seq3_1': ['vcrs1', 'vcrs6'], 'seq5_1': ['vcrs2', 'vcrs4', 'vcrs5']}
@@ -354,7 +354,7 @@ def test_bustools_df_bulk_parity_paired(temp_fastq_file, temp_fastq_file_pair, t
         bustools_binary_path_command = "kb info | grep 'bustools:' | awk '{print $3}' | sed 's/[()]//g'"
         bustools = subprocess.run(bustools_binary_path_command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, text=True, check=True).stdout.strip()
 
-    bus_df = make_bus_df(kb_count_out = temp_kb_count_out_folder, fastq_file_list = [temp_fastq_file, temp_fastq_file_pair], t2g_file = temp_t2g_file, mm = False, technology = "bulk", bustools = bustools, check_only=True)
+    bus_df = make_bus_df(kb_count_out = temp_kb_count_out_folder, fastq_file_list = [temp_fastq_file, temp_fastq_file_pair], t2g_file = temp_t2g_file, mm = False, technology = "bulk", bustools = bustools, fastq_sorting_check_only=True)
     read_to_ref_dict = dict(zip(bus_df['fastq_header'], bus_df['gene_names']))
 
     assert read_to_ref_dict == {'seq1_1': ['vcrs1'], 'seq2_1': ['vcrs2'], 'seq5_1': ['vcrs2', 'vcrs4', 'vcrs5']}
@@ -515,7 +515,7 @@ def test_bustools_df_10xv3(temp_fastq_R1_complex, temp_fastq_R2_complex, temp_fa
         bustools_binary_path_command = "kb info | grep 'bustools:' | awk '{print $3}' | sed 's/[()]//g'"
         bustools = subprocess.run(bustools_binary_path_command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, text=True, check=True).stdout.strip()
 
-    bus_df = make_bus_df(kb_count_out = temp_kb_count_out_folder, fastq_file_list = [temp_fastq_R1_complex, temp_fastq_R2_complex], t2g_file = temp_t2g_file, mm = mm, technology = "10XV3", bustools = bustools, check_only=True)
+    bus_df = make_bus_df(kb_count_out = temp_kb_count_out_folder, fastq_file_list = [temp_fastq_R1_complex, temp_fastq_R2_complex], t2g_file = temp_t2g_file, mm = mm, technology = "10XV3", bustools = bustools, fastq_sorting_check_only=True)
     read_to_ref_dict = dict(zip(bus_df['fastq_header'], bus_df['gene_names']))
 
     adata_path = f"{temp_kb_count_out_folder}/counts_unfiltered/adata.h5ad"
@@ -596,7 +596,7 @@ def test_bustools_df_10xv3_MM(temp_fastq_R1_complex, temp_fastq_R2_complex, temp
         bustools_binary_path_command = "kb info | grep 'bustools:' | awk '{print $3}' | sed 's/[()]//g'"
         bustools = subprocess.run(bustools_binary_path_command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, text=True, check=True).stdout.strip()
 
-    bus_df = make_bus_df(kb_count_out = temp_kb_count_out_folder, fastq_file_list = [temp_fastq_R1_complex, temp_fastq_R2_complex], t2g_file = temp_t2g_file, mm = mm, technology = "10XV3", bustools = bustools, check_only=True)
+    bus_df = make_bus_df(kb_count_out = temp_kb_count_out_folder, fastq_file_list = [temp_fastq_R1_complex, temp_fastq_R2_complex], t2g_file = temp_t2g_file, mm = mm, technology = "10XV3", bustools = bustools, fastq_sorting_check_only=True)
     read_to_ref_dict = dict(zip(bus_df['fastq_header'], bus_df['gene_names']))
 
     adata_path = f"{temp_kb_count_out_folder}/counts_unfiltered/adata.h5ad"
@@ -676,7 +676,7 @@ def test_bustools_df_10xv3_MM_union(temp_fastq_R1_complex, temp_fastq_R2_complex
         bustools_binary_path_command = "kb info | grep 'bustools:' | awk '{print $3}' | sed 's/[()]//g'"
         bustools = subprocess.run(bustools_binary_path_command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, text=True, check=True).stdout.strip()
 
-    bus_df = make_bus_df(kb_count_out = temp_kb_count_out_folder, fastq_file_list = [temp_fastq_R1_complex, temp_fastq_R2_complex], t2g_file = temp_t2g_file, mm = mm, technology = "10XV3", bustools = bustools, check_only=True)
+    bus_df = make_bus_df(kb_count_out = temp_kb_count_out_folder, fastq_file_list = [temp_fastq_R1_complex, temp_fastq_R2_complex], t2g_file = temp_t2g_file, mm = mm, technology = "10XV3", bustools = bustools, fastq_sorting_check_only=True)
     read_to_ref_dict = dict(zip(bus_df['fastq_header'], bus_df['gene_names']))
 
     adata_path = f"{temp_kb_count_out_folder}/counts_unfiltered/adata.h5ad"

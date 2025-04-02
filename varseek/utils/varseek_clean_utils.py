@@ -134,7 +134,7 @@ def find_hamming_1_match(barcode, whitelist):
         barcode_list[i] = original_base  # Restore original base
     return None  # No match found
 
-def make_bus_df(kb_count_out, fastq_file_list, technology=None, t2g_file=None, mm=False, parity="single", bustools="bustools", check_only=True, chunksize=None, bad_to_good_barcode_dict=None, correct_barcodes_of_hamming_distance_one=False, save_type="parquet"):  # make sure this is in the same order as passed into kb count - [sample1, sample2, etc] OR [sample1_pair1, sample1_pair2, sample2_pair1, sample2_pair2, etc]
+def make_bus_df(kb_count_out, fastq_file_list, technology=None, t2g_file=None, mm=False, parity="single", bustools="bustools", fastq_sorting_check_only=True, chunksize=None, bad_to_good_barcode_dict=None, correct_barcodes_of_hamming_distance_one=False, save_type="parquet"):  # make sure this is in the same order as passed into kb count - [sample1, sample2, etc] OR [sample1_pair1, sample1_pair2, sample2_pair1, sample2_pair2, etc]
     with open(f"{kb_count_out}/kb_info.json", 'r') as f:
         kb_info_data = json.load(f)
     if "--num" not in kb_info_data.get("call", ""):
@@ -158,7 +158,7 @@ def make_bus_df(kb_count_out, fastq_file_list, technology=None, t2g_file=None, m
         used_dlist = True
         
     fastq_file_list = load_in_fastqs(fastq_file_list)
-    fastq_file_list = sort_fastq_files_for_kb_count(fastq_file_list, technology=technology, check_only=check_only)
+    fastq_file_list = sort_fastq_files_for_kb_count(fastq_file_list, technology=technology, check_only=fastq_sorting_check_only)
 
     list_or_tuple = list if save_type == "parquet" else tuple
     
@@ -345,11 +345,12 @@ def make_bus_df(kb_count_out, fastq_file_list, technology=None, t2g_file=None, m
     return bus_df
         
 
-def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_reference_genome_dir, technology, t2g_standard, adata=None, fastq_file_list=None, adata_output_path=None, mm=False, parity="single", bustools="bustools", check_only=False, save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=True, drop_reads_where_the_pairs_mapped_to_different_genes=False):
+def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_reference_genome_dir, technology, t2g_standard, adata=None, fastq_file_list=None, adata_output_path=None, mm=False, parity="single", bustools="bustools", fastq_sorting_check_only=False, save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=True, drop_reads_where_the_pairs_mapped_to_different_genes=False, avoid_paired_double_counting=False):
     if not adata:
         adata = f"{kb_count_vcrs_dir}/counts_unfiltered/adata.h5ad"
     if isinstance(adata, str):
         adata = ad.read_h5ad(adata)
+    adata = adata.copy()  # make a copy to avoid modifying the original adata
 
     if not adata_output_path:
         adata_output_path = f"{kb_count_vcrs_dir}/counts_unfiltered/adata_adjusted_with_reference_genome_alignment.h5ad"
@@ -357,7 +358,7 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
         os.makedirs(os.path.dirname(adata_output_path), exist_ok=True)
 
     fastq_file_list = load_in_fastqs(fastq_file_list)
-    fastq_file_list = sort_fastq_files_for_kb_count(fastq_file_list, technology=technology, check_only=check_only)
+    fastq_file_list = sort_fastq_files_for_kb_count(fastq_file_list, technology=technology, check_only=fastq_sorting_check_only)
 
     #* create a dataframe of the BUS file for VCRSs with useful added information
     bus_df_mutation_path = f"{kb_count_vcrs_dir}/bus_df.{save_type}"
@@ -370,7 +371,7 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
             mm=mm,
             parity=parity,
             bustools=bustools,
-            check_only=False,
+            fastq_sorting_check_only=True,
             chunksize=None,
             correct_barcodes_of_hamming_distance_one=True,
             save_type=save_type
@@ -385,7 +386,7 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
             raise ValueError(f"Unsupported save type: {save_type}")
 
     bus_df_mutation.rename(columns={"gene_names": "vcrs_names"}, inplace=True)
-    bus_df_mutation["transcripts_vcrs"] = bus_df_mutation["vcrs_names"].apply(lambda string_list: list({s.split(":")[0] for s in string_list}))
+    bus_df_mutation["transcripts_vcrs"] = bus_df_mutation["vcrs_names"].apply(lambda string_list: [s.split(":")[0] for s in string_list])
 
     #* map transcripts of VCRS's to their respective genes using t2g_standard
     t2g_df = pd.read_csv(t2g_standard, sep="\t", header=None)
@@ -410,7 +411,7 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
             mm=False,  # doesn't matter if mm True or False - mm'ed reads will appear in the BUS file regardless; mm only affects count matrix, but I don't care about count matrix
             parity=parity,
             bustools=bustools,
-            check_only=False,
+            fastq_sorting_check_only=True,
             chunksize=None,
             correct_barcodes_of_hamming_distance_one=True,
         )
@@ -427,6 +428,7 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
 
     #* merge normal genome read alignments (gene_names from its bus df) into VCRS's bus df by barcode + read_index
     bus_df = bus_df_mutation.merge(bus_df_standard, on=["barcode", "read_index"], how="left")  # will have columns barcode, UMI, read_index, vcrs_names, genes_vcrs, genes_standard
+    del bus_df_mutation, bus_df_standard
     mask = bus_df['genes_standard'].isna()
     bus_df['pseudoaligns_to_reference_genome'] = ~mask    # will have columns barcode, UMI, read_index, vcrs_names, genes_vcrs, genes_standard, pseudoaligns_to_reference_genome
     bus_df.loc[mask, 'genes_standard'] = pd.Series([[] for _ in range(mask.sum())], index=bus_df[mask].index)  # replace NaNs in genes_standard with empty lists
@@ -445,28 +447,65 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
     else:
         vcrs_parity = "single"
 
-    if parity == "paired" and vcrs_parity == "single":
+    with open(f"{kb_count_reference_genome_dir}/kb_info.json", 'r') as f:
+        kb_info_data = json.load(f)
+    if "--parity paired" in kb_info_data.get("call", ""):
+        normal_parity = "paired"
+    else:
+        normal_parity = "single"
+
+    # override adata
+    if parity == "paired" and vcrs_parity == "single" and not adata.uns.get("corrected_barcodes", None):  # eg convert ["AAA", "AAC", "AAG", "AAT"] to ["AAA", "AAC"]
+        new_index = adata.obs.index[:len(adata.obs.index) // 2]
+        new_obs = pd.DataFrame(index=new_index)
+        adata = ad.AnnData(
+            X=csr_matrix((len(new_obs), adata.shape[1])),
+            obs=new_obs,
+            var=adata.var.copy(),
+            uns=adata.uns.copy()
+        )
+
+    if not (parity == "paired" and vcrs_parity == "single"):
+        avoid_paired_double_counting = False
+
+    if parity == "paired" and (normal_parity == "single" or (vcrs_parity == "single" and avoid_paired_double_counting)):
         # (1) make a df copy
-        bus_df_copy = bus_df[["barcode", "read_index", "vcrs_names", "genes_vcrs", "genes_standard"]].copy()
+        bus_df_copy = bus_df[["barcode", "read_index", "genes_standard"]].copy()
         bus_df_copy["original_sets_populated"] = bus_df_copy["genes_standard"].apply(lambda x: len(x) > 0)
 
         # (2) groupby same barcode + read_index; (3) take union of mapped VCRSs, and the union of mapped genes
-        bus_df_copy = bus_df_copy.groupby(["barcode", "read_index"]).agg({
-            "genes_standard": lambda x: sorted(set.union(*map(set, x))),
-            "vcrs_names": lambda x: sorted(set.union(*map(set, x))),
-            "genes_vcrs": lambda x: sorted(set.union(*map(set, x))),
-            "original_sets_populated": "all"  # Logical AND
-        }).reset_index()
+        agg_dict = {}
+        if vcrs_parity == "single" and avoid_paired_double_counting:
+            agg_dict["vcrs_names"] = lambda x: sorted(set.intersection(*map(set, x))),  # take the intersection of vcrs_names to determine which would be double-counted (should be few or none)
+        if normal_parity == "single":
+            agg_dict["genes_standard"] = lambda x: sorted(set.union(*map(set, x)))
+            agg_dict["original_sets_populated"] = "all"  # Logical AND
+
+        bus_df_copy = bus_df_copy.groupby(["barcode", "read_index"]).agg(agg_dict).reset_index()
+
+        double_counting_dict = {}
+        if vcrs_parity == "single" and avoid_paired_double_counting:
+            bus_df_copy2 = bus_df_copy.loc[bus_df_copy["vcrs_names"].apply(lambda x: len(x) > 0)]  # keep only the ones that would be double-counted
+            if not bus_df_copy2.empty:
+                double_counting_dict = {
+                    (row["barcode"], row["read_index"]): {name: False for name in row["vcrs_names"]}
+                    for _, row in bus_df_copy2.iterrows()
+                }  # this dict has the read identifier as the key (read index and barcode), and the value is a dict, where the key of the inner dict is the VCRS(s) that would be double-counted as a result of the parity paired and vcrs_parity single thing, and the value is whether or not this has been added to the count matrix by one of these pairs yet (default False, and will update to True as I go through count matrix) - eg {("AAACCTGAGTACGCCC", 42): {"VCR1": False, "VCR2": False}, ("AAACCTGAGGTGTTAG", 17): {"VCR3": False}, ...}
+            else:
+                avoid_paired_double_counting = False
+            del bus_df_copy2
+            bus_df_copy.drop(columns=["vcrs_names"], inplace=True)
 
         # (3.5) if drop_reads_where_the_pairs_mapped_to_different_genes=True, drop rows where both original sets were non-empty but the intersection is empty (i.e., each pair mapped to a different gene)
-        if drop_reads_where_the_pairs_mapped_to_different_genes:  # this is the normal behavior for kb count with --parity paired - but because I have more information (I have pair1 genome, pair2 genome, pair1 VCRS, and pair2 VCRS, I opt to keep this default off)
-            bus_df_copy = bus_df_copy[bus_df_copy["original_sets_populated"] == False]  # drop rows where both original sets were non-empty but the intersection is empty
-        bus_df_copy.drop(columns=["original_sets_populated"], inplace=True)  # drop original_sets_populated column
+        if normal_parity == "single":
+            if drop_reads_where_the_pairs_mapped_to_different_genes:  # this is the normal behavior for kb count with --parity paired - but because I have more information (I have pair1 genome, pair2 genome, pair1 VCRS, and pair2 VCRS, I opt to keep this default off)
+                bus_df_copy = bus_df_copy[bus_df_copy["original_sets_populated"] == False]  # drop rows where both original sets were non-empty but the intersection is empty
+            bus_df_copy.drop(columns=["original_sets_populated"], inplace=True)  # drop original_sets_populated column
 
-        # (4) assign these exclusively to the first read of the pair, and give the 2nd read of the pair nothing
-        bus_df = bus_df[["barcode", "UMI", "read_index"]].copy()
-        bus_df = bus_df.drop_duplicates(subset=["barcode", "read_index"], keep="first")
-        bus_df = bus_df.merge(bus_df_copy, on=["barcode", "read_index"], how="inner")  # inner join instead of left because I dropped rows above where the original sets were non-empty but the intersection is empty
+            # (4) assign these exclusively to the first read of the pair, and give the 2nd read of the pair nothing
+            bus_df = bus_df[["barcode", "UMI", "read_index", "vcrs_names", "genes_vcrs", "pseudoaligns_to_reference_genome"]].copy()
+            bus_df = bus_df.merge(bus_df_copy, on=["barcode", "read_index"], how="inner")  # inner join instead of left because I dropped rows above where the original sets were non-empty but the intersection is empty
+        del bus_df_copy
 
     #* groupby barcode + UMI, taking the list of read_index, the mode of vcrs_names, and the union of genes_standard
     if technology.upper() != "BULK":
@@ -497,7 +536,7 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
     col_indices = []
     data_values = []
 
-    for vcrs_names_list, genes_vcrs_list, genes_intersection_set, barcode, pseudoaligns_to_reference_genome in zip(bus_df["vcrs_names"], bus_df["genes_vcrs"], bus_df["genes_intersection"], bus_df["barcode"], bus_df["pseudoaligns_to_reference_genome"]):
+    for vcrs_names_list, genes_vcrs_list, genes_intersection_set, barcode, pseudoaligns_to_reference_genome, read_index in zip(bus_df["vcrs_names"], bus_df["genes_vcrs"], bus_df["genes_intersection"], bus_df["barcode"], bus_df["pseudoaligns_to_reference_genome"], bus_df["read_index"]):
         #* look at all VCRSs to which the read mapped, and keep only VCRSs whose corresponding gene is in the gene_intersection column above
         vcrs_names_list_final = []
         for vcrs_name, gene_vcrs in zip(vcrs_names_list, genes_vcrs_list):
@@ -508,25 +547,19 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
         length_vcrs_names_list_final = len(vcrs_names_list_final)
         if length_vcrs_names_list_final == 0 or (not mm and length_vcrs_names_list_final > 1):
             continue
-        if mm:
-            counts_final = 1  # I use 1 rather than 1 / len(vcrs_names_list_final) because it is perfectly valid for a single read to map to 2 variants
+        # counts_final = 1 if not mm else 1 / length_vcrs_names_list_final
+        counts_final = 1  # I use 1 rather than 1 / len(vcrs_names_list_final) because it is perfectly valid for a single read to map to 2 variants            
+        row_idx = np.where(adata.obs.index == barcode)[0][0]
+
+        for vcrs_name_final in vcrs_names_list_final:
+            if avoid_paired_double_counting:
+                if double_counting_dict.get((barcode, read_index), {}).get(vcrs_name_final, None):  # a 3-state system - True means it has already been counted, False means it has not already been counted, and None means it is not in the dict at all
+                    continue  # if it has already been counted, then skip this iteration
+                elif double_counting_dict.get((barcode, read_index), {}).get(vcrs_name_final, None) is False:
+                    double_counting_dict[(barcode, read_index)][vcrs_name_final] = True  # if it has not been counted yet, then set to True (so it won't be counted in the future) but continue through the iteration
             
-            row_idx = np.where(adata.obs.index == barcode)[0][0]
-
-            for vcrs_name_final in vcrs_names_list_final:
-                col_idx = np.where(adata.var.index == vcrs_name_final)[0][0]
-                
-                row_indices.append(row_idx)
-                col_indices.append(col_idx)
-                data_values.append(counts_final)
-        else:            
-            counts_final = 1
-
-            vcrs_name_final = vcrs_names_list_final[0]
-
-            row_idx = np.where(adata.obs.index == barcode)[0][0]
             col_idx = np.where(adata.var.index == vcrs_name_final)[0][0]
-
+            
             row_indices.append(row_idx)
             col_indices.append(col_idx)
             data_values.append(counts_final)
