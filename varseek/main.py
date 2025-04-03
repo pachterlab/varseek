@@ -1981,16 +1981,11 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "k"),
     )
     parser_clean.add_argument(
-        "--mm",
-        action="store_true",
+        "--disable_mm",
+        dest="mm",
+        action="store_false",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "mm"),
-    )
-    parser_clean.add_argument(
-        "--union",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "union"),
+        help=extract_help_from_doc(clean, "mm", disable=True),
     )
     parser_clean.add_argument(
         "--parity",
@@ -2590,16 +2585,18 @@ def main():  # noqa: C901
         help=extract_help_from_doc(count, "strand"),
     )
     parser_count.add_argument(
-        "--mm",
-        action="store_true",
+        "--disable_mm",
+        dest="mm",
+        action="store_false",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(count, "mm"),
+        help=extract_help_from_doc(count, "mm", disable=True),
     )
     parser_count.add_argument(
-        "--union",
-        action="store_true",
+        "--disable_union",
+        dest="union",
+        action="store_false",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(count, "union"),
+        help=extract_help_from_doc(count, "union", disable=True),
     )
     parser_count.add_argument(
         "--parity",

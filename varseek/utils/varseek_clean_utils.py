@@ -536,6 +536,7 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
     col_indices = []
     data_values = []
 
+    vcrs_mismatch_to_gene_count = 0
     for vcrs_names_list, genes_vcrs_list, genes_intersection_set, barcode, pseudoaligns_to_reference_genome, read_index in zip(bus_df["vcrs_names"], bus_df["genes_vcrs"], bus_df["genes_intersection"], bus_df["barcode"], bus_df["pseudoaligns_to_reference_genome"], bus_df["read_index"]):
         #* look at all VCRSs to which the read mapped, and keep only VCRSs whose corresponding gene is in the gene_intersection column above
         vcrs_names_list_final = []
@@ -544,6 +545,8 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
                 continue
             if gene_vcrs in genes_intersection_set or (count_reads_that_dont_pseudoalign_to_reference_genome and not pseudoaligns_to_reference_genome):
                 vcrs_names_list_final.append(vcrs_name)
+            else:
+                vcrs_mismatch_to_gene_count += 1
         length_vcrs_names_list_final = len(vcrs_names_list_final)
         if length_vcrs_names_list_final == 0 or (not mm and length_vcrs_names_list_final > 1):
             continue
@@ -563,6 +566,8 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
             row_indices.append(row_idx)
             col_indices.append(col_idx)
             data_values.append(counts_final)
+
+    print(f"Number of reads that pseudoaligned to a VCRS but had the incorrect reference genome match: {vcrs_mismatch_to_gene_count} / {len(bus_df)}")
 
     #* copy adata.var and adata.obs and adata.uns as-is, all in the same order; initialize a sparse matrix (to remake adata from scratch)
     # Construct a sparse matrix with the updates
@@ -1665,6 +1670,7 @@ def remove_variants_from_adata_for_stranded_technologies(adata, strand_bias_end,
     
     if variant_source not in {None, "transcriptome", "genome"}:
         raise ValueError("variant_source must be either None, 'transcriptome', or 'genome'")
+
     
     #* Load in gtf df if needed
     if variant_source == "genome" or strand_bias_end == "3p":
