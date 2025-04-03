@@ -1606,25 +1606,77 @@ def cleaned_adata_to_vcf(variant_data, vcf_data_df, output_vcf = "variants.vcf",
 
 
 
-def assign_transcript_id(row, transcript_df):
+# def assign_transcript_id(row, transcript_df):
+#     seq_id = row["chromosome"]
+#     position = row["variant_start_genome_position"]
+#     source = row["variant_source"]
+
+#     if source == "genome":
+#         # Query transcript_df for transcript mapping
+#         match = transcript_df[
+#             (transcript_df["chromosome"] == seq_id) & 
+#             (transcript_df["start"] <= int(position)) & 
+#             (transcript_df["end"] >= int(position))
+#         ]
+#         transcript_id = match["transcript_ID"] if not match.empty else "unknown"
+#     else:
+#         transcript_id = seq_id  # If not genome, use seq_ID directly
+
+#     return transcript_id
+
+#     # use it with adata_var_exploded.apply(lambda row: assign_transcript_id(row, transcript_df), axis=1)
+
+def map_genome_to_cds(chrom_pos, transcript_id, gtf_df):
+    cds_df = gtf_df[
+        (gtf_df["feature"] == "CDS") &
+        (gtf_df["transcript_ID"] == transcript_id)
+    ].copy()
+
+    if cds_df.empty:
+        return None  # no CDS mapping found
+
+    strand = cds_df.iloc[0]["strand"]
+    if strand == "+":
+        cds_df = cds_df.sort_values(by="start")
+    else:
+        cds_df = cds_df.sort_values(by="end", ascending=False)
+
+    current_cds_base = 1
+    for _, row in cds_df.iterrows():
+        start, end = row["start"], row["end"]
+
+        if start <= chrom_pos <= end:
+            offset = chrom_pos - start if strand == "+" else end - chrom_pos
+            return current_cds_base + offset
+        else:
+            current_cds_base += (end - start + 1)
+
+    return None  # position not in CDS
+
+def assign_transcript_and_cds(row, transcript_df, gtf_df):
     seq_id = row["chromosome"]
-    position = row["variant_start_genome_position"]
+    position_start = int(row["start_variant_position_genome"])
+    position_end = int(row["end_variant_position_genome"])
     source = row["variant_source"]
 
     if source == "genome":
-        # Query transcript_df for transcript mapping
         match = transcript_df[
             (transcript_df["chromosome"] == seq_id) & 
-            (transcript_df["start"] <= int(position)) & 
-            (transcript_df["end"] >= int(position))
+            (transcript_df["start"] <= position_start) & 
+            (transcript_df["end"] >= position_end)
         ]
-        transcript_id = match["transcript_ID"] if not match.empty else "unknown"
+
+        if match.empty:
+            return pd.Series(["unknown", None, None], index=["transcript_ID", "start_variant_position", "end_variant_position"])
+        
+        transcript_id = match.iloc[0]["transcript_ID"]
     else:
-        transcript_id = seq_id  # If not genome, use seq_ID directly
+        transcript_id = seq_id
 
-    return transcript_id
+    cds_start = map_genome_to_cds(position_start, transcript_id, gtf_df)
+    cds_end = map_genome_to_cds(position_end, transcript_id, gtf_df)
 
-    # use it with adata_var_exploded.apply(lambda row: assign_transcript_id(row, transcript_df), axis=1)
+    return pd.Series([transcript_id, cds_start, cds_end], index=["transcript_ID", "start_variant_position", "end_variant_position"])
 
 
 # def assign_transcript_ids(adata_var_exploded, transcript_df):
@@ -1648,7 +1700,7 @@ def assign_transcript_id(row, transcript_df):
 #     adata_var_exploded = merged_df[adata_var_exploded.columns.tolist() + ["transcript_ID"]]
 
 
-def remove_variants_from_adata_for_stranded_technologies(adata, strand_bias_end, read_length, header_column="vcrs_header", variant_source=None, gtf=None):
+def remove_variants_from_adata_for_stranded_technologies(adata, strand_bias_end, read_length, header_column="vcrs_header", variant_position_annotations=None, variant_source=None, gtf=None, forgiveness=100):
     #* Type-checking
     if isinstance(adata, str):  # adata is anndata object or path to h5ad
         adata = ad.read_h5ad(adata)
@@ -1668,24 +1720,55 @@ def remove_variants_from_adata_for_stranded_technologies(adata, strand_bias_end,
     if header_column not in adata.var.columns:
         raise ValueError(f"header_column {header_column} not found in adata.var columns")
     
+    if variant_position_annotations in {"chromosome", "gene"}:
+        variant_source = "genome"
+    elif variant_position_annotations in {"cdna", "cds"}:
+        variant_source = "transcriptome"
+    elif variant_position_annotations is None:
+        pass
+    else:
+        raise ValueError("variant_position_annotations must be either 'chromosome', 'gene', 'cdna', 'cds', or None.")
     if variant_source not in {None, "transcriptome", "genome"}:
         raise ValueError("variant_source must be either None, 'transcriptome', or 'genome'")
 
     
     #* Load in gtf df if needed
-    if variant_source == "genome" or strand_bias_end == "3p":
+    if not (variant_position_annotations == "cdna" and strand_bias_end == "5p"):
         if gtf is None:
             raise ValueError("gtf must be provided if variant_source is 'genome' or strand_bias_end is '3p'")
         if isinstance(gtf, str):
             gtf_cols = ["chromosome", "source", "feature", "start", "end", "score", "strand", "frame", "attributes"]
             gtf_df = pd.read_csv(gtf, sep="\t", comment="#", names=gtf_cols)
-            transcript_df = gtf_df[gtf_df["feature"] == "transcript"].copy()
-            transcript_df["transcript_ID"] = transcript_df["attributes"].str.extract(r'transcript_id "([^"]+)"')
         elif isinstance(gtf, pd.DataFrame):
             transcript_df = gtf
         else:
             raise ValueError("gtf must be a path to a GTF file or a pandas DataFrame")
+        gtf_df["region_length"] = gtf_df["end"] - gtf_df["start"] + 1  # this corresponds to the unspliced transcript length, NOT the spliced transcript/CDS length (which is what I care about)
+        gtf_df["transcript_ID"] = gtf_df["attributes"].str.extract(r'transcript_id "([^"]+)"')
+        transcript_df = gtf_df[gtf_df["feature"] == "transcript"].copy()
         transcript_df = transcript_df.drop_duplicates(subset="transcript_ID", keep="first")
+        
+        five_prime_lengths = []
+        three_prime_lengths = []
+        transcript_lengths = []
+        for transcript_id in transcript_df["transcript_ID"]:
+            specific_transcript_df = gtf_df.loc[gtf_df["transcript_ID"] == transcript_id].copy()
+            five_sum = specific_transcript_df[(specific_transcript_df["feature"] == "five_prime_utr")]["region_length"].sum()
+            three_sum = specific_transcript_df[(specific_transcript_df["feature"] == "three_prime_utr")]["region_length"].sum()
+            exon_sum = specific_transcript_df[(specific_transcript_df["feature"] == "exon")]["region_length"].sum()
+            transcript_length = five_sum + three_sum + exon_sum
+
+            five_prime_lengths.append(five_sum)
+            three_prime_lengths.append(three_sum)
+            transcript_lengths.append(transcript_length)
+        transcript_df["five_prime_length"] = five_prime_lengths
+        transcript_df["three_prime_length"] = three_prime_lengths
+        transcript_df["transcript_length"] = transcript_lengths
+
+        transcript_df["utr_length_preceding_transcript"] = transcript_df.apply(
+            lambda row: row["three_prime_utr_length"] if row["strand"] == "-" else row["five_prime_utr_length"],
+            axis=1
+        )
 
     #* Explode adata.var
     adata_var = adata.var.copy()
@@ -1704,8 +1787,14 @@ def remove_variants_from_adata_for_stranded_technologies(adata, strand_bias_end,
     unique_variant_sources = adata_var_exploded["variant_source"].unique()
     if len(unique_variant_sources) == 1:
         variant_source = unique_variant_sources[0]
-    if variant_source != "transcriptome" and gtf is None:
-        raise ValueError("gtf must be provided if genome-derived variants are present in adata.var")
+        if variant_source == "genome":
+            variant_position_annotations = "chromosome"  # could be chromosome or gene, but HGVSG (as well as VCF) is chromosome
+        elif variant_source == "transcriptome":
+            variant_position_annotations = "cds"  # could be cds or cdna, but HGVSC is cds
+    if variant_position_annotations != "cdna" and gtf is None:
+        raise ValueError("gtf must be provided if variants annotated from a source other than cDNA (i.e., chromosome position, gene position, or CDS position) are present in adata.var")
+    if variant_position_annotations is None:
+        raise ValueError("variant_position_annotations must be specified, or all annotations must come from the same source (i.e., no mix of g.'s and c.'s).")
 
     #* Find transcript start and end positions
     split_positions = adata_var_exploded["nucleotide_positions"].str.split("_", expand=True)
@@ -1717,28 +1806,43 @@ def remove_variants_from_adata_for_stranded_technologies(adata, strand_bias_end,
 
     adata_var_exploded.loc[adata_var_exploded["end_variant_position"].isna(), "end_variant_position"] = adata_var_exploded["start_variant_position"]
     adata_var_exploded[["start_variant_position", "end_variant_position"]] = adata_var_exploded[["start_variant_position", "end_variant_position"]].astype(int)
-    
+
     #* Assign transcript ID for genome variants
     if variant_source != "transcriptome":
-        adata_var_exploded.rename(columns={"seq_ID": "chromosome", "start_variant_position": "start_variant_position_genome", "end_variant_position": "end_variant_position_genome"}, inplace=True)
-        # assign_transcript_ids(adata_var_exploded, transcript_df)  # faster (works with merge instead of apply) but RAM-intensive (left-merges GTF into adata_var_exploded by chromosome alone)
-        adata_var_exploded["transcript_ID"] = adata_var_exploded.apply(lambda row: assign_transcript_id(row, transcript_df), axis=1)
+        if variant_position_annotations == "chromosome":
+            adata_var_exploded.rename(columns={"seq_ID": "chromosome", "start_variant_position": "start_variant_position_genome", "end_variant_position": "end_variant_position_genome"}, inplace=True)
+            # assign_transcript_ids(adata_var_exploded, transcript_df)  # faster (works with merge instead of apply) but RAM-intensive (left-merges GTF into adata_var_exploded by chromosome alone)
+            adata_var_exploded[["transcript_ID", "start_variant_position", "end_variant_position"]] = (
+                adata_var_exploded.apply(lambda row: assign_transcript_and_cds(row, transcript_df, gtf_df), axis=1)
+            )
+        elif variant_position_annotations == "gene":
+            # TODO: implement this - I need to convert gene positions to CDS positions.
+            raise NotImplementedError("Removing variants based on gene positions is not implemented yet. Please provide chromosome, cDNA, or CDS annotations for strand bias removal.")
+        variant_position_annotations = "cds"  # I have now converted chromosome information to cds information
+        variant_source = "transcriptome"
     else:
         adata_var_exploded.rename(columns={"seq_ID": "transcript_ID"}, inplace=True)
 
-    #* Filter based on strand bias
-    if strand_bias_end == "5p":  #* 5': mutation start is less than or equal to read length
-        adata_var_exploded = adata_var_exploded[adata_var_exploded["start_variant_position"] <= read_length]
-    else:  #* 3': mutation end is greater than or equal to (transcript length - read length)
+    #* merge transcript_df into adata_var_exploded
+    if not (variant_position_annotations == "cdna" and strand_bias_end == "5p"):
         adata_var_exploded = adata_var_exploded.merge(
-            transcript_df[["transcript_ID", "start", "end"]],
+            transcript_df[["transcript_ID", "transcript_length", "five_prime_length", "three_prime_length", "utr_length_preceding_transcript", "strand"]],
             on="transcript_ID",
             how="left"
-        ).rename(columns={"start": "start_transcript_position_genome", "end": "end_transcript_position_genome"}).set_index(adata_var_exploded.index)
+        ).set_index(adata_var_exploded.index)
+    
+    #* change cds --> cDNA by adding the preceding UTR lengths
+    if variant_position_annotations == "cdna":
+        pass  # RNA-seq captures cDNA (including the UTRs), so positions are correct relative to what the sequencer sees
+    elif variant_position_annotations == "cds":  # add the UTR lengths to the start and end positions for genome variants - 5' UTR for + strand, 3' UTR for - strand
+        adata_var_exploded["start_variant_position"] += adata_var_exploded["utr_length_preceding_transcript"]
+        adata_var_exploded["end_variant_position"] += adata_var_exploded["utr_length_preceding_transcript"]
 
-        adata_var_exploded["transcript_length"] = adata_var_exploded["end_transcript_position_genome"] - adata_var_exploded["start_transcript_position_genome"] + 1
-        
-        adata_var_exploded = adata_var_exploded[adata_var_exploded["end_variant_position"] >= (adata_var_exploded["transcript_length"] - read_length)]
+    #* Filter based on strand bias
+    if strand_bias_end == "5p":  #* 5': mutation start is less than or equal to read length
+        adata_var_exploded = adata_var_exploded[adata_var_exploded["start_variant_position"] <= read_length + forgiveness]  # forgiveness allows for small discrepancies in read alignment (eg if the person had a natural deletion, or the reference genome is not 100% accurate)
+    else:  #* 3': mutation end is greater than or equal to (transcript length - read length)        
+        adata_var_exploded = adata_var_exploded[adata_var_exploded["end_variant_position"] >= (adata_var_exploded["transcript_length"] - read_length - forgiveness)]
 
     #* Collapse
     adata_var = adata_var_exploded.groupby(adata_var_exploded.index)["vcrs_header"].apply(lambda x: ";".join(sorted(x))).reset_index()

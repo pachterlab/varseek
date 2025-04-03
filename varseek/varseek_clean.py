@@ -354,6 +354,7 @@ def clean(
     - cosmic_version                        (str): Version of the cosmic tsv file. Only used if creating a VCF file and using a downloaded reference from vk ref and vcf_data_csv does not exist. Default: 101.
     - cosmic_email                          (str): Email address for cosmic. Only used if creating a VCF file and using a downloaded reference from vk ref and vcf_data_csv does not exist. Default: None.
     - cosmic_password                       (str): Password for cosmic. Only used if creating a VCF file and using a downloaded reference from vk ref and vcf_data_csv does not exist. Default: None.
+    - forgiveness                           (int): Number of bases allowed to be off when account_for_strand_bias=True. E.g., if I am using a 5' technology with a read length of 91 and a forgiveness of 100, then I will keep only variants that fall within the last 191 bases of each respective transcript. Default: 100.
     """
     # * 1. logger
     if save_logs and not log_out_dir:
@@ -439,6 +440,7 @@ def clean(
     cosmic_version = kwargs.get("cosmic_version", 101)  #!! must match the downloadable version in vk ref
     cosmic_email = kwargs.get("cosmic_email", None)
     cosmic_password = kwargs.get("cosmic_password", None)
+    forgiveness = kwargs.get("forgiveness", 100)
 
     # * 7.5 make sure ints are ints
     min_counts, threads = int(min_counts), int(threads)
@@ -606,7 +608,7 @@ def clean(
         adata = adjust_variant_adata_by_normal_gene_matrix(adata, kb_count_vcrs_dir=kb_count_vcrs_dir, kb_count_reference_genome_dir=kb_count_reference_genome_dir, fastq_file_list=fastqs, technology=technology, t2g_standard=reference_genome_t2g, adata_output_path=None, mm=mm, parity=parity, bustools=bustools, check_only=(not sort_fastqs), save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=count_reads_that_dont_pseudoalign_to_reference_genome)
 
     if account_for_strand_bias:
-        adata = remove_variants_from_adata_for_stranded_technologies(adata=adata, strand_bias_end=strand_bias_end, read_length=read_length, header_column="vcrs_header", variant_source=None, gtf=gtf)
+        adata = remove_variants_from_adata_for_stranded_technologies(adata=adata, strand_bias_end=strand_bias_end, read_length=read_length, header_column="vcrs_header", variant_source=None, gtf=gtf, forgiveness=forgiveness)
 
     if sum_rows and adata.shape[0] > 1:
         # Sum across barcodes (rows)

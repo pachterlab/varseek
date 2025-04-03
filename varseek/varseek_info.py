@@ -541,6 +541,26 @@ def info(
         else:
             dlist_reference_dir = os.path.join(reference_out_dir, "dlist_reference_dir")
 
+    #* normally, I barrel through the function if I cannot successfully add a column - but in these cases, because they are defaults of vk ref and have rather unintuitive parameters, I return error early on rather than barreling through
+    if any(column in columns_to_include for column in bowtie_columns_dlist) or columns_to_include == "all":
+        if not dlist_reference_genome_fasta and not dlist_reference_cdna_fasta:
+            raise ValueError("For alignment to reference and d-list construction, you must provide specify the arguments dlist_reference_genome_fasta and/or dlist_reference_cdna_fasta.")
+        elif dlist_reference_genome_fasta and not dlist_reference_cdna_fasta:
+            logger.warning("Only dlist_reference_genome_fasta is provided. The d-list will be constructed only for the genome-based alignment. If you want to include cDNA, please provide dlist_reference_cdna_fasta as well.")
+        elif dlist_reference_cdna_fasta and not dlist_reference_genome_fasta:
+            logger.warning("Only dlist_reference_cdna_fasta is provided. The d-list will be constructed only for the cDNA-based alignment. If you want to include genome, please provide dlist_reference_genome_fasta as well.")
+    
+    if any(column in columns_to_include for column in ["pseudoaligned_to_reference", "pseudoaligned_to_reference_despite_not_truly_aligning"]) or columns_to_include == "all":
+        if not dlist_reference_genome_fasta:
+            raise ValueError("For pseudoalignment to reference, you must provide the dlist_reference_genome_fasta argument. Please provide it.")
+        if not os.path.isfile(dlist_reference_genome_fasta):
+            raise FileNotFoundError(f"File not found: {dlist_reference_genome_fasta}")
+        if not dlist_reference_gtf:
+            raise ValueError("For pseudoalignment to reference, you must provide the dlist_reference_gtf argument. Please provide it.")
+        if not os.path.isfile(dlist_reference_gtf):
+            raise FileNotFoundError(f"File not found: {dlist_reference_gtf}")
+        
+
     columns_to_explode = ["header", "order"]
     columns_NOT_to_explode = ["vcrs_id", "vcrs_header", "vcrs_sequence", "vcrs_sequence_rc"]
     columns_not_successfully_added = []
@@ -831,6 +851,7 @@ def info(
     if columns_to_include == "all" or any(column in columns_to_include for column in bowtie_columns_dlist):
         if not is_program_installed(bowtie2):
             logger.error(f"bowtie2 must be installed to run for the following columns: {bowtie_columns_dlist}. Please install bowtie2 or omit these columns")
+
         try:
             logger.info("Aligning to normal genome and building dlist")
             mutation_metadata_df, sequence_names_set_union_genome_and_cdna = align_to_normal_genome_and_build_dlist(
