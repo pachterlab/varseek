@@ -247,6 +247,7 @@ def clean(
     vcf_data_csv=None,
     variants=None,
     sequences=None,
+    variant_source=None,
     variants_usecols=None,
     seq_id_column="seq_ID",
     var_column="mutation",
@@ -317,6 +318,7 @@ def clean(
     - vcf_data_csv                          (str): Path to the VCF data csv file. It needs columns ID (corresponding to vcrs_header from adata.var), CHROM, POS, REF, ALT. If using downloaded reference files from vk ref, then simply provide the `variants` and `sequences` arguments entered at vk ref for this file to be created internally. Default: None.
     - variants                              (str): The variants parameter from vk ref/build. Merged into adata.var with columns variants_usecols. Only strictly needed if using downloaded reference files from vk ref and wanting to save an output VCF file. Default: None.
     - sequences                             (str): The sequences parameter from vk ref/build. Only needed if using downloaded reference files from vk ref and wanting to save an output VCF file. Default: None.
+    - variant_source                         (str): The source of the variants. If not provided, it will be inferred from the `variants` parameter. Can be "genome" or "transcriptome". Default: None
 
     # Optional column names in variants
     - variants_usecols (str or list): Columns in the variants to merge with the adata var. Default: None (use all columns).
@@ -566,8 +568,6 @@ def clean(
         variant_source = None
 
     adata_var_exploded = add_information_from_variant_header_to_adata_var_exploded(adata_var_exploded, seq_id_column=seq_id_column, var_column=var_column, variant_source=variant_source, t2g_file=reference_genome_t2g)
-    
-    ...  #* set some other columns
 
     #* collapse and re-merge the adata.var df
     grouped_var = (
@@ -582,6 +582,7 @@ def clean(
     adata.var = adata.var.merge(grouped_var, on='vcrs_id', how='left', suffixes=('', '_merged'))
     adata.var.drop(columns=["vcrs_header_individual"], inplace=True, errors='ignore')
     adata.var.rename(columns={"vcrs_header_list_copy": "vcrs_header_list"}, inplace=True)
+    del adata_var_exploded, grouped_var
     
     #* fixed the parity stuff
     if parity == "paired" and parity_kb_count == "single" and adata.uns.get("corrected_barcodes") is None:  # the last part is to ensure I didn't make the correction already

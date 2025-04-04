@@ -2067,6 +2067,12 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "sequences"),
     )
     parser_clean.add_argument(
+        "--variant_source",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "variant_source"),
+    )
+    parser_clean.add_argument(
         "--variants_usecols",
         nargs="*",
         type=str,
