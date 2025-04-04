@@ -608,24 +608,19 @@ def merge_bus_df_and_adata_var(bus_df, adata_var, vcrs_column_bus="vcrs_names", 
         if "vcrs_header" not in merged.columns:  # means that we did not use a var_id_column, and thus "vcrs_names" represents our (HGVS-like) headers
             merged["vcrs_header"] = merged[vcrs_column_bus]
         merged['vcrs_header_individual'] = merged['vcrs_header'].str.split(';')  # don't let the naming be confusing - it will only be original AFTER exploding; before, it will be a list
-        merged['vcrs_header_list_copy'] = merged['vcrs_header_individual'].copy()
-        merged_columns_original = merged.columns.tolist()
-        merged_exploded = merged.copy().explode('vcrs_header_individual', ignore_index=True)
+        merged_exploded = merged[["vcrs_header", "vcrs_header_individual"]].copy().explode('vcrs_header_individual', ignore_index=True).drop_duplicates()
         include_position_information = False if variant_source == "transcriptome" else True
         add_information_from_variant_header_to_adata_var_exploded(merged_exploded, seq_id_column=seq_id_column, var_column=var_column, variant_source=variant_source, t2g_file=reference_genome_t2g, include_position_information=include_position_information, gtf=gtf)
-        merged_exploded.drop(columns=[seq_id_column, var_column, "nucleotide_positions", "actual_variant", "start_variant_position", "end_variant_position"], inplace=True, errors='ignore')
         grouped_merged = (
-            merged_exploded.groupby("vcrs_header", as_index=False)
+            merged_exploded[["vcrs_header", gene_id_column]].groupby("vcrs_header", as_index=False)
             .agg(
                 {
-                    **{col: list for col in merged_exploded.columns if col not in merged_columns_original + ["vcrs_header"]},  # merge variants columns into lists
-                    **{col: "first" for col in merged_exploded.columns if col in merged_columns_original},  # keep adata.var columns as-is
+                    gene_id_column: list,
                 })
             .reset_index(drop=True)
         )
         merged = merged.merge(grouped_merged[["vcrs_header", gene_id_column]], on='vcrs_header', how='left', suffixes=('', '_merged'))
         merged.drop(columns=["vcrs_header_individual"], inplace=True, errors='ignore')
-        merged.rename(columns={"vcrs_header_list_copy": "vcrs_header_list"}, inplace=True)
         del merged_exploded, grouped_merged
 
     # Step 4: Group back by original row index
@@ -642,7 +637,7 @@ def merge_bus_df_and_adata_var(bus_df, adata_var, vcrs_column_bus="vcrs_names", 
     if gene_id_column in bus_df.columns:  # this must be true now
         bus_df.rename(columns={gene_id_column: "genes_vcrs"}, inplace=True)
     if "vcrs_header" in bus_df.columns:
-        bus_df.drop(columns=["vcrs_names"], inplace=True, errors='ignore')  # drop the vcrs_names column (it is a non-HGVS ID that I want to get rid of)
+        bus_df.drop(columns=["vcrs_names"], inplace=True, errors='ignore')  # drop the vcrs_names column (it might be a non-HGVS ID that I want to get rid of)
         bus_df.rename(columns={"vcrs_header": "vcrs_names"}, inplace=True)  # make sure vcrs_names is in HGVS format
 
     return bus_df
