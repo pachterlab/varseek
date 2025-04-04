@@ -779,7 +779,9 @@ def build(
         mutations = vcf_to_dataframe(mutations, additional_columns=save_variants_updated_csv, explode_alt=True, filter_empty_alt=True, verbose=verbose)  # only load in additional columns if I plan to later save this updated csv
         mutations.rename(columns={"CHROM": seq_id_column}, inplace=True)
         if var_id_column:
-            mutations.rename(columns={"ID": var_id_column}, inplace=True)
+            # mutations.rename(columns={"ID": var_id_column}, inplace=True)  # ID is not always guaranteed to be present - thus, this would complicate things for vk clean
+            logger.warning("var_id_column not supported with varseek build for VCF input. Using default var_id_column as <seq_id_column>:<var_column> for each row.")
+            var_id_column = None
         add_variant_type_column_to_vcf_derived_df(mutations)
         add_variant_column_to_vcf_derived_df(mutations, var_column=var_column)
 
@@ -910,6 +912,7 @@ def build(
 
     if var_id_column is not None:
         mutations["header"] = mutations[var_id_column]
+        mutations["hgvs"] = mutations[seq_id_column].astype(str) + ":" + mutations[var_column]
         logger.info("Using var_id_column '%s' as the variant header column.", var_id_column)
     else:
         mutations["header"] = mutations[seq_id_column].astype(str) + ":" + mutations[var_column]

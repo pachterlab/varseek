@@ -1945,20 +1945,6 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "vcrs_id_set_to_exclude"),
     )
     parser_clean.add_argument(
-        "--transcript_set_to_exclusively_keep",
-        nargs="+",
-        type=str,
-        required=False,
-        help=extract_help_from_doc(clean, "transcript_set_to_exclusively_keep"),
-    )
-    parser_clean.add_argument(
-        "--transcript_set_to_exclude",
-        nargs="+",
-        type=str,
-        required=False,
-        help=extract_help_from_doc(clean, "transcript_set_to_exclude"),
-    )
-    parser_clean.add_argument(
         "--gene_set_to_exclusively_keep",
         nargs="+",
         type=str,
@@ -2104,12 +2090,6 @@ def main():  # noqa: C901
         type=str,
         required=False,
         help=extract_help_from_doc(clean, "variants_updated_csv_columns_to_merge"),
-    )
-    parser_clean.add_argument(
-        "--seq_id_column",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "seq_id_column"),
     )
     parser_clean.add_argument(
         "--gene_id_column",

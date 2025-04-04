@@ -349,6 +349,9 @@ def ref(
         logger.info("Using COSMIC password from COSMIC_PASSWORD environment variable")
         cosmic_password = os.getenv("COSMIC_PASSWORD")
 
+    if isinstance(variants, str) and ".vcf" in variants.lower():
+        var_id_column = None
+
     if kwargs.get("columns_to_include") is not None:
         logger.info("columns_to_include is not None, so minimum_info_columns will be set to False")
         minimum_info_columns = False

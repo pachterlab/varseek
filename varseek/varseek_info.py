@@ -375,8 +375,6 @@ def info(
     - reference_genome_fasta             (str) Path to the reference genome fasta file. Only utilized for the column 'cdna_and_genome_same'. Default: "genome".
     - variants                           (str) Path to the variants csv file. Only utilized for the column 'cdna_and_genome_same', and when `var_id_column` provided. Corresponds to `variants` in the varseek build function. Default: None.
     - sequences                          (str) Path to the sequences fasta file. Only utilized for the column 'cdna_and_genome_same'. Corresponds to `sequences` in the varseek build function. Default: None.
-    - seq_id_column                      (str) Corresponds to `seq_id_column` in the varseek build function. Only utilized when `var_id_column` provided. Default: None.
-    - var_column                         (str) Corresponds to `var_column` in the varseek build function. Only utilized when `var_id_column` provided. Default: None.
     - kallisto                           (str) Path to the directory containing the kallisto executable. Only utilized for the columns `pseudoaligned_to_reference`, `pseudoaligned_to_reference_despite_not_truly_aligning`. Default: None.
     - bustools                           (str) Path to the directory containing the bustools executable. Only utilized for the columns `pseudoaligned_to_reference`, `pseudoaligned_to_reference_despite_not_truly_aligning`. Default: None.
     - pseudoalignment_workflow           (str) Pseudoalignment workflow to use. Only utilized for the columns `pseudoaligned_to_reference`, `pseudoaligned_to_reference_despite_not_truly_aligning`. Options: {"standard", "nac"}. Default: "nac".
@@ -502,7 +500,6 @@ def info(
     reference_genome_fasta = kwargs.get("reference_genome_fasta", "genome")
     variants = kwargs.get("variants", None)
     sequences = kwargs.get("sequences", None)
-    # seq_id_column and var_column defined later
     kallisto = kwargs.get("kallisto", None)
     bustools = kwargs.get("bustools", None)
     pseudoalignment_workflow = kwargs.get("pseudoalignment_workflow", "nac")
@@ -650,30 +647,7 @@ def info(
 
     if var_id_column is not None:
         mutation_metadata_df_exploded.rename(columns={"header": var_id_column}, inplace=True)
-        seq_id_column = kwargs.get("seq_id_column", None)
-        var_column = kwargs.get("var_column", None)
-
-        if not seq_id_column:
-            if seq_id_cdna_column and not seq_id_genome_column:
-                seq_id_column = seq_id_cdna_column
-            elif seq_id_genome_column and not seq_id_cdna_column:
-                seq_id_column = seq_id_genome_column
-        if not var_column:
-            if var_cdna_column and not var_genome_column:
-                var_column = var_cdna_column
-            elif var_genome_column and not var_cdna_column:
-                var_column = var_genome_column
-
-        if not seq_id_column and not var_column:
-            raise ValueError("seq_id_column and var_column must be provided if var_id_column is provided.")
-        if seq_id_column not in mutation_metadata_df_exploded.columns or var_column not in mutation_metadata_df_exploded.columns:
-            if not variants:  # TODO: this will not work if variants is not a csv (eg parquet, vcf)
-                raise ValueError("variants or variants_updated_csv must be provided when var_id_column is used.")
-            variants_df = pd.read_csv(variants, usecols=[seq_id_column, var_column, var_id_column])
-            if seq_id_column not in variants_df.columns or var_column not in variants_df.columns:
-                raise ValueError(f"seq_id_column and var_column must be provided in the variants csv file. Found columns: {variants_df.columns.tolist()}")
-            mutation_metadata_df_exploded = mutation_metadata_df_exploded.merge(variants_df, on=var_id_column, how="left")
-        mutation_metadata_df_exploded["header"] = mutation_metadata_df_exploded[seq_id_column] + ":" + mutation_metadata_df_exploded[var_column]
+        mutation_metadata_df_exploded["header"] = mutation_metadata_df_exploded["hgvs"]
 
     first_few_headers_follow_HGVS_pattern = mutation_metadata_df_exploded["header"].head(100).str.match(HGVS_pattern, na=False)
     if not first_few_headers_follow_HGVS_pattern.all():

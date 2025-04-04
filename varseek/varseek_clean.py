@@ -8,6 +8,7 @@ import subprocess
 import pyfastx
 import time
 from pathlib import Path
+import re
 
 import anndata
 import anndata as ad
@@ -36,10 +37,12 @@ from varseek.utils import (
     write_to_vcf,
     cleaned_adata_to_vcf,
     set_varseek_logging_level_and_filehandler,
-    remove_variants_from_adata_for_stranded_technologies
+    remove_variants_from_adata_for_stranded_technologies,
+    merge_variants_with_adata,
+    identify_variant_source
 )
 
-from .constants import non_single_cell_technologies, technology_valid_values, technology_to_strand_bias_mapping, technology_to_file_index_with_transcripts_mapping
+from .constants import non_single_cell_technologies, technology_valid_values, technology_to_strand_bias_mapping, technology_to_file_index_with_transcripts_mapping, HGVS_pattern_general, mutation_pattern
 
 logger = logging.getLogger(__name__)
 logger = set_up_logger(logger, logging_level="INFO", save_logs=False, log_dir=None)
@@ -127,7 +130,7 @@ def validate_input_clean(params_dict):
         raise ValueError(f"multiplexed must be a boolean or None. Got {params_dict.get('multiplexed')} of type {type(params_dict.get('multiplexed'))}.")
 
     # sets
-    for param_name in ["vcrs_id_set_to_exclusively_keep", "vcrs_id_set_to_exclude", "transcript_set_to_exclusively_keep", "transcript_set_to_exclude", "gene_set_to_exclusively_keep", "gene_set_to_exclude"]:
+    for param_name in ["vcrs_id_set_to_exclusively_keep", "vcrs_id_set_to_exclude", "gene_set_to_exclusively_keep", "gene_set_to_exclude"]:
         param_value = params_dict.get(param_name, None)
         if param_value is not None and not isinstance(param_value, (set, list, tuple) and not (isinstance(param_value, str) and param_value.endswith(".txt") and os.path.isfile(param_value))):  # checks if it is (1) None, (2) a set/list/tuple, or (3) a string path to a txt file that exists
             raise ValueError(f"{param_name} must be a set. Got {param_name} of type {type(param_value)}.")
@@ -224,8 +227,6 @@ def clean(
     sum_rows=False,
     vcrs_id_set_to_exclusively_keep=None,
     vcrs_id_set_to_exclude=None,
-    transcript_set_to_exclusively_keep=None,
-    transcript_set_to_exclude=None,
     gene_set_to_exclusively_keep=None,
     gene_set_to_exclude=None,
     k=None,
@@ -249,7 +250,6 @@ def clean(
     variants=None,
     sequences=None,
     variants_updated_csv_columns_to_merge=None,
-    seq_id_column="seq_ID",
     gene_id_column="gene_id",
     out=".",  # output paths
     adata_vcrs_clean_out=None,
@@ -295,8 +295,6 @@ def clean(
     - sum_rows                              (bool): Whether to sum across barcodes (rows) in the VCRS count matrix. Default: False.
     - vcrs_id_set_to_exclusively_keep       (str or Set(str) or None): If a set, will keep only the VCRSs in this set. If a list/tuple, will convert to a set and then keep only the VCRSs in this set. If a string, will load the text file and keep only the VCRSs in this set. Default: None.
     - vcrs_id_set_to_exclude                (str or Set(str) or None): If a set, will exclude the VCRSs in this set. If a list/tuple, will convert to a set and then exclude the VCRSs in this set. If a string, will load the text file and exclude the VCRSs in this set. Default: None.
-    - transcript_set_to_exclusively_keep    (str or Set(str) or None): If a set, will keep only the transcripts in this set. If a list/tuple, will convert to a set and then keep only the transcripts in this set. If a string, will load the text file and keep only the transcripts in this set. Default: None.
-    - transcript_set_to_exclude             (str or Set(str) or None): If a set, will exclude the transcripts in this set. If a list/tuple, will convert to a set and then exclude the transcripts in this set. If a string, will load the text file and exclude the transcripts in this set. Default: None.
     - gene_set_to_exclusively_keep          (str or Set(str) or None): If a set, will keep only the genes in this set. If a list/tuple, will convert to a set and then keep only the genes in this set. If a string, will load the text file and keep only the genes in this set. Default: None.
     - gene_set_to_exclude                   (str or Set(str) or None): If a set, will exclude the genes in this set. If a list/tuple, will convert to a set and then exclude the genes in this set. If a string, will load the text file and exclude the genes in this set. Default: None.
     - k                                     (int): K-mer length used for the k-mer index. Used only when apply_dlist_correction=True. Default: None.
@@ -324,7 +322,6 @@ def clean(
 
     # Optional column names variants_updated_csv
     - variants_updated_csv_columns_to_merge (str or set): Columns in the variants_updated_csv to merge with the adata var. Default: None.
-    - seq_id_column                         (str): Column name in the adata var that contains the transcript ID. Default: "seq_ID".
     - gene_id_column                        (str): Column name in the adata var that contains the gene ID. Default: "gene_id".
 
     # Output paths:
@@ -502,8 +499,6 @@ def clean(
 
     vcrs_id_set_to_exclusively_keep = prepare_set(vcrs_id_set_to_exclusively_keep)
     vcrs_id_set_to_exclude = prepare_set(vcrs_id_set_to_exclude)
-    transcript_set_to_exclusively_keep = prepare_set(transcript_set_to_exclusively_keep)
-    transcript_set_to_exclude = prepare_set(transcript_set_to_exclude)
     gene_set_to_exclusively_keep = prepare_set(gene_set_to_exclusively_keep)
     gene_set_to_exclude = prepare_set(gene_set_to_exclude)
 
@@ -514,13 +509,14 @@ def clean(
 
     adata.var = adata.var.rename_axis("VCRS")  # rename index
 
+    #$ As far as naming convention goes: (1) vcrs_header is the HGVS format name, (2) vcrs_id is the name in the actual index file (and thus in the BUS file and custom t2g etc), (3) vcrs_id_from_vk_ref is the ID if I used my custom ID_to_header_csv
     if adata.var.index[0].startswith("vcrs_"):
-        adata.var["vcrs_id"] = adata.var.index
+        adata.var["vcrs_id_from_vk_ref"] = adata.var.index
         if id_to_header_csv and isinstance(id_to_header_csv, str) and os.path.exists(id_to_header_csv):
             id_to_header_df = pd.read_csv(id_to_header_csv, index_col=0)
-            adata.var = adata.var.merge(id_to_header_df, on="vcrs_id", how="left")  # will add vcrs_header
+            adata.var = adata.var.merge(id_to_header_df, left_on="vcrs_id_from_vk_ref", right_on="vcrs_id", how="left")  # will add vcrs_header
         else:
-            adata.var["vcrs_header"] = adata.var["vcrs_id"]
+            adata.var["vcrs_header"] = adata.var.index
     else:
         adata.var["vcrs_header"] = adata.var.index
 
@@ -528,6 +524,68 @@ def clean(
     adata.var.index = adata.var["vcrs_header"]  # set the index to the vcrs_header
     original_var_names = adata.var_names.copy()
 
+    seq_id_column = "seq_ID"  #!!!!!
+    var_column = "variant"  #!!!!!
+    var_id_column = None  #!!!!!
+
+    #* explode the adata.var df and do some work
+    adata.var['vcrs_header_individual'] = adata.var['vcrs_header'].str.split(';')  # don't let the naming be confusing - it will only be original AFTER exploding; before, it will be a list
+    adata.var['vcrs_header_list_copy'] = adata.var['vcrs_header_individual'].copy()
+    adata_var_original_columns = adata.var.columns.tolist()
+
+    adata_var_exploded = adata.var.copy().explode('vcrs_header_individual', ignore_index=True)
+    first_vcrs_header = adata_var_exploded["vcrs_header_individual"].iloc[0]
+    
+    if not re.fullmatch(HGVS_pattern_general, first_vcrs_header):  #* if the user used var_id_column in vk ref, then ensure that my vcrs_header column is in chained HGVS format
+        adata_var_exploded.rename(columns={"vcrs_header": "vcrs_id", "vcrs_header_individual": "vcrs_id_individual"}, inplace=True)
+        adata_var_exploded = merge_variants_with_adata(variants, adata_var_exploded, seq_id_column, var_column, var_id_column)
+        first_vcrs_header = adata_var_exploded["vcrs_header_individual"].iloc[0][0]
+    else:
+        adata_var_exploded["vcrs_id"] = adata_var_exploded["vcrs_header"]
+
+    # TODO: I am assuming that the first vcrs_header_individual is representative of the variant source - but in cases where I combine genome and transcriptome, I should keep variant_source = None, do the identify_variant_source check below, and then evaluate my strand bias function and normal genome function to ensure they work correctly
+    if ":c." in first_vcrs_header:
+        variant_source = "transcriptome"
+    elif ":g." in first_vcrs_header:
+        variant_source = "genome"
+    else:
+        variant_source = None
+    
+    if seq_id_column not in adata.var.columns or var_column not in adata.var.columns:
+        adata_var_exploded[[seq_id_column, var_column]] = adata_var_exploded["vcrs_header_individual"].str.split(":", expand=True)
+
+    if "nucleotide_positions" not in adata_var_exploded.columns and not "actual_variant" in adata_var_exploded.columns:
+        adata_var_exploded[["nucleotide_positions", "actual_variant"]] = adata_var_exploded["variant"].str.extract(mutation_pattern)
+
+    split_positions = adata_var_exploded["nucleotide_positions"].str.split("_", expand=True)
+    if "start_variant_position" not in adata_var_exploded.columns:
+        adata_var_exploded["start_variant_position"] = split_positions[0]
+    
+    if not variant_source:  # detect automatically per-variant
+        identify_variant_source(adata_var_exploded, variant_column=var_column, variant_source_column="variant_source", choices = ("transcriptome", "genome"))
+    
+    if variant_source == "transcriptome":
+        adata_var_exploded["transcript_id"] = adata_var_exploded[seq_id_column].copy()
+    elif variant_source == "genome":
+        adata_var_exploded["chromosome"] = adata_var_exploded[seq_id_column].copy()
+    
+    ...  #* set some other columns
+
+    #* collapse and re-merge the adata.var df
+    grouped_var = (
+            adata_var_exploded.groupby("vcrs_header", as_index=False)
+            .agg(
+                {
+                    **{col: list for col in adata_var_exploded.columns if col not in adata_var_original_columns + ["vcrs_header"]},  # merge variants columns into lists
+                    **{col: "first" for col in adata_var_exploded.columns if col in adata_var_original_columns},  # keep adata.var columns as-is
+                })
+            .reset_index(drop=True)
+        )
+    adata.var = adata.var.merge(grouped_var, on='vcrs_id', how='left', suffixes=('', '_merged'))
+    adata.var.drop(columns=["vcrs_header_individual"], inplace=True, errors='ignore')
+    adata.var.rename(columns={"vcrs_header_list_copy": "vcrs_header_list"}, inplace=True)
+    
+    #* fixed the parity stuff
     if parity == "paired" and parity_kb_count == "single" and adata.uns.get("corrected_barcodes") is None:  # the last part is to ensure I didn't make the correction already
         barcodes_file = os.path.join(kb_count_vcrs_dir, "matrix.sample.barcodes")
         bad_to_good_barcode_dict = make_good_barcodes_and_file_index_tuples(barcodes_file)
@@ -546,7 +604,7 @@ def clean(
         adata.uns["corrected_barcodes"] = True
 
     variants_updated_csv_columns_to_merge = kwargs.get("variants_updated_csv_columns_to_merge", None)
-    for id_column, corresponding_argument in [(seq_id_column, transcript_set_to_exclusively_keep), (seq_id_column, transcript_set_to_exclude), (gene_id_column, gene_set_to_exclusively_keep), (gene_id_column, gene_set_to_exclude)]:
+    for id_column, corresponding_argument in [(gene_id_column, gene_set_to_exclusively_keep), (gene_id_column, gene_set_to_exclude)]:
         if corresponding_argument is not None:
             if variants_updated_csv_columns_to_merge is None:
                 variants_updated_csv_columns_to_merge = {id_column}
@@ -605,10 +663,10 @@ def clean(
         )
 
     if qc_against_gene_matrix:
-        adata = adjust_variant_adata_by_normal_gene_matrix(adata, kb_count_vcrs_dir=kb_count_vcrs_dir, kb_count_reference_genome_dir=kb_count_reference_genome_dir, fastq_file_list=fastqs, technology=technology, t2g_standard=reference_genome_t2g, adata_output_path=None, mm=mm, parity=parity, bustools=bustools, check_only=(not sort_fastqs), save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=count_reads_that_dont_pseudoalign_to_reference_genome)
+        adata = adjust_variant_adata_by_normal_gene_matrix(adata, kb_count_vcrs_dir=kb_count_vcrs_dir, kb_count_reference_genome_dir=kb_count_reference_genome_dir, fastq_file_list=fastqs, technology=technology, t2g_standard=reference_genome_t2g, adata_output_path=None, mm=mm, parity=parity, bustools=bustools, check_only=(not sort_fastqs), save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=count_reads_that_dont_pseudoalign_to_reference_genome, variant_source=variant_source)
 
     if account_for_strand_bias:
-        adata = remove_variants_from_adata_for_stranded_technologies(adata=adata, strand_bias_end=strand_bias_end, read_length=read_length, header_column="vcrs_header", variant_source=None, gtf=gtf, forgiveness=forgiveness)
+        adata = remove_variants_from_adata_for_stranded_technologies(adata=adata, strand_bias_end=strand_bias_end, read_length=read_length, header_column="vcrs_header", variant_source=variant_source, gtf=gtf, forgiveness=forgiveness)
 
     if sum_rows and adata.shape[0] > 1:
         # Sum across barcodes (rows)
@@ -760,22 +818,6 @@ def clean(
             values_of_interest=vcrs_id_set_to_exclude,
             operation="exclude",
             var_column_name="vcrs_header",
-        )
-
-    if transcript_set_to_exclusively_keep:
-        adata = remove_adata_columns(
-            adata,
-            values_of_interest=transcript_set_to_exclusively_keep,
-            operation="keep",
-            var_column_name=seq_id_column,
-        )
-
-    if transcript_set_to_exclude:
-        adata = remove_adata_columns(
-            adata,
-            values_of_interest=transcript_set_to_exclude,
-            operation="exclude",
-            var_column_name=seq_id_column,
         )
 
     if gene_set_to_exclusively_keep:

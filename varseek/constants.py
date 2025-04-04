@@ -288,6 +288,9 @@ seqID_pattern = r"(ENST\d+|(?:[1-9]|1[0-9]|2[0-3]|X|Y|MT)\d+)"
 mutation_pattern = r"(?:c|g)\.([0-9_\-\+\*\(\)\?]+)([a-zA-Z>]+)"  # more complex: r'c\.([0-9_\-\+\*\(\)\?]+)([a-zA-Z>\(\)0-9]+)'
 HGVS_pattern = rf"^{seqID_pattern}:{mutation_pattern}$"
 
+seqID_pattern_general = r"[A-Za-z0-9_-]+"
+HGVS_pattern_general = rf"^{seqID_pattern_general}:{mutation_pattern}$"
+
 varseek_ref_only_allowable_kb_ref_arguments = {"zero_arguments": {"--keep-tmp", "--verbose", "--aa"}, "one_argument": {"--tmp", "--kallisto", "--bustools"}, "multiple_arguments": set()}  # don't include d-list, t, i, k, workflow, overwrite here because I do it myself later
 
 varseek_count_only_allowable_kb_count_arguments = {
