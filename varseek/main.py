@@ -2025,28 +2025,10 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "vcrs_t2g"),
     )
     parser_clean.add_argument(
-        "--vcrs_fasta",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "vcrs_fasta"),
-    )
-    parser_clean.add_argument(
         "--gtf",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(clean, "gtf"),
-    )
-    parser_clean.add_argument(
-        "--dlist_fasta",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "dlist_fasta"),
-    )
-    parser_clean.add_argument(
-        "--variants_updated_csv",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "variants_updated_csv"),
     )
     parser_clean.add_argument(
         "--kb_count_vcrs_dir",
@@ -2085,11 +2067,29 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "sequences"),
     )
     parser_clean.add_argument(
-        "--variants_updated_csv_columns_to_merge",
+        "--variants_usecols",
         nargs="*",
         type=str,
         required=False,
-        help=extract_help_from_doc(clean, "variants_updated_csv_columns_to_merge"),
+        help=extract_help_from_doc(clean, "variants_usecols"),
+    )
+    parser_clean.add_argument(
+        "--seq_id_column",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "seq_id_column"),
+    )
+    parser_clean.add_argument(
+        "--var_column",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "var_column"),
+    )
+    parser_clean.add_argument(
+        "--var_id_column",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "var_id_column"),
     )
     parser_clean.add_argument(
         "--gene_id_column",
@@ -2179,10 +2179,28 @@ def main():  # noqa: C901
     )
     # kwargs
     parser_clean.add_argument(
+        "--vcrs_fasta",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "vcrs_fasta"),
+    )
+    parser_clean.add_argument(
         "--id_to_header_csv",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(clean, "id_to_header_csv"),
+    )
+    parser_clean.add_argument(
+        "--variants_updated_csv",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "variants_updated_csv"),
+    )
+    parser_clean.add_argument(
+        "--dlist_fasta",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "dlist_fasta"),
     )
     parser_clean.add_argument(
         "--kallisto",

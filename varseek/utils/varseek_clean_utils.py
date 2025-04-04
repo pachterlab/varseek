@@ -99,7 +99,7 @@ def intersect_lists(series):
 
 
 def map_transcripts_to_genes(transcript_list, mapping_dict):
-    return [mapping_dict.get(transcript, transcript) for transcript in transcript_list]
+    return [mapping_dict.get(transcript, transcript) for transcript in transcript_list]  # if it cannot find a transcript in the mapping_dict, it will return the transcript itself (this works if I give a non-transcript too, like a chromosome name)
 
 
 def make_good_barcodes_and_file_index_tuples(barcodes, include_file_index=False):
@@ -186,12 +186,7 @@ def make_bus_df(kb_count_out, fastq_file_list, technology=None, t2g_file=None, m
     #* t2g
     if t2g_file is not None:
         print("loading in t2g df")
-        t2g_df = pd.read_csv(t2g_file, sep="\t", header=None)
-        t2g_df.rename(columns={0: "transcript_id", 1: "gene_name"}, inplace=True)
-        t2g_df = t2g_df[["transcript_id", "gene_name"]].copy()  # keep only first 2 columns
-        t2g_dict = dict(zip(t2g_df["transcript_id"], t2g_df["gene_name"]))
-        t2g_dict["dlist"] = "dlist"
-        del t2g_df
+        t2g_dict = make_t2g_dict(t2g_file)
 
     number_of_files = technology_to_number_of_files_mapping[technology.upper()]
     if isinstance(number_of_files, dict):
@@ -346,7 +341,7 @@ def make_bus_df(kb_count_out, fastq_file_list, technology=None, t2g_file=None, m
     return bus_df
         
 
-def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_reference_genome_dir, technology, t2g_standard, adata=None, fastq_file_list=None, adata_output_path=None, mm=False, parity="single", bustools="bustools", fastq_sorting_check_only=False, save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=True, drop_reads_where_the_pairs_mapped_to_different_genes=False, avoid_paired_double_counting=False, seq_id_column="seq_ID", gene_id_column="gene_id", variant_source=None):
+def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_reference_genome_dir, technology, t2g_standard, adata=None, fastq_file_list=None, adata_output_path=None, mm=False, parity="single", bustools="bustools", fastq_sorting_check_only=False, save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=True, drop_reads_where_the_pairs_mapped_to_different_genes=False, avoid_paired_double_counting=False, seq_id_column="seq_ID", gene_id_column="gene_id", variant_source=None, gtf=None):
     if not adata:
         adata = f"{kb_count_vcrs_dir}/counts_unfiltered/adata.h5ad"
     if isinstance(adata, str):
@@ -388,7 +383,7 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
 
     bus_df_mutation.rename(columns={"gene_names": "vcrs_names"}, inplace=True)
 
-    #* merge adata.var into bus_df_mutation if helpful
+    #* merge adata.var into bus_df_mutation if helpful (i.e., if I had a var_id_column that I must map to HGVS format and/or I previously determined gene_id)
     columns_to_merge = {"vcrs_id"}
     first_vcrs_name = bus_df_mutation.loc[0, "vcrs_names"][0]
     if not re.fullmatch(HGVS_pattern_general, first_vcrs_name):  #* if the user used var_id_column in vk ref, then ensure that my vcrs_header column is in chained HGVS format
@@ -397,77 +392,45 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
         columns_to_merge.add(gene_id_column)
     if len(columns_to_merge) > 1:
         bus_df_mutation = bus_df_mutation.merge(adata.var[list(columns_to_merge)], left_on="vcrs_names", right_on="vcrs_id", how="left", suffixes=("", "_var"))
+        if gene_id_column in columns_to_merge:
+            bus_df_mutation.rename(columns={gene_id_column: "genes_vcrs"}, inplace=True)
         if "vcrs_header" in columns_to_merge:
             bus_df_mutation.drop(columns=["vcrs_names"], inplace=True, errors='ignore')  # drop the vcrs_names column (it is a non-HGVS ID that I want to get rid of)
-            bus_df_mutation.rename(columns={gene_id_column: "genes_vcrs", "vcrs_header": "vcrs_names"}, inplace=True)  # make sure vcrs_names is in HGVS format
+            bus_df_mutation.rename(columns={"vcrs_header": "vcrs_names"}, inplace=True)  # make sure vcrs_names is in HGVS format
             first_vcrs_name = bus_df_mutation.loc[0, "vcrs_names"][0]
-    if gene_id_column not in bus_df_mutation.columns:
-        if ":c." in first_vcrs_name:
-            variant_source = "transcriptome"
-            #!!!! go on to do it the transcriptome way
-        elif ":g." in first_vcrs_name:
-            variant_source = "genome"
-            #!!!! go on to do it the genome way way
-        else:
-            raise ValueError("Unable to determine variant source from VCRS names. Please ensure they are in HGVS format (e.g., :c. or :g.) or provide a valid variant_source.")            
-
-    # get transcript names from VCRS - either assume transcript name is in adata.var or assume vcrs_names are in HGVSC format
-    if seq_id_column in adata.var.columns:
-        bus_df_mutation = bus_df_mutation.merge(adata.var[[seq_id_column, "vcrs_header"]], left_on="vcrs_names", right_on="vcrs_header", how="left", suffixes=("", "_var"))
-        bus_df_mutation.rename(columns={seq_id_column: "transcripts_vcrs"}, inplace=True)
-    else:
-        bus_df_mutation["transcripts_vcrs"] = bus_df_mutation["vcrs_names"].apply(lambda string_list: [s.split(":")[0] for s in string_list])
     
-    # # more technically correct, but unnecessarily long if not combining transcriptome and genome data
-    # bus_df_mutation[["variant_sources", "variant_sources_total"]] = bus_df_mutation["vcrs_names"].apply(get_variant_sources_normal_genome)
-    # unique_variant_sources = bus_df_mutation["variant_sources_total"].unique()
-    # unique_variant_sources = unique_variant_sources[0] if len(unique_variant_sources) == 1 else "multiple"
-    first_item = bus_df_mutation.loc[0, "vcrs_names"][0]  # assumes I have either all genome OR all transcriptome
-    if ":c." in first_item:
-        unique_variant_sources = "transcriptome"
-    elif ":g." in first_item:
-        unique_variant_sources = "genome"
-    else:
-        unique_variant_sources = "multiple"
-    if unique_variant_sources != "genome":
-        #* map transcripts of VCRS's to their respective genes using t2g_standard
-        t2g_df = pd.read_csv(t2g_standard, sep="\t", header=None)
-        t2g_df.rename(columns={0: "transcript_id", 1: "gene_name"}, inplace=True)
-        t2g_df = t2g_df[["transcript_id", "gene_name"]].copy()  # keep only first 2 columns
-        t2g_dict = dict(zip(t2g_df["transcript_id"], t2g_df["gene_name"]))
-        t2g_dict["dlist"] = "dlist"
-        del t2g_df
-
-        print("Apply the mapping function to create gene name columns")
-        bus_df_mutation["genes_vcrs"] = bus_df_mutation["transcripts_vcrs"].progress_apply(lambda x: map_transcripts_to_genes(x, t2g_dict))
-        if unique_variant_sources == "transcriptome":
-            bus_df_mutation.drop(columns=["transcripts_vcrs"], inplace=True)
-    if unique_variant_sources != "transcriptome":
-        bus_df_mutation.rename(columns={"transcripts_vcrs": "chromosomes"}, inplace=True)
-        bus_df_mutation['variants_tmp'] = bus_df_mutation['vcrs_names'].apply(
-            lambda lst: [s.split(":")[1] for s in lst]
-        )
-        bus_df_mutation['nucleotide_positions_tmp'] = bus_df_mutation['variants_tmp'].apply(
-            lambda lst: [re.search(mutation_pattern, s).group(1) if re.search(mutation_pattern, s) else None for s in lst]
-        )
-        bus_df_mutation['start_nucleotide_positions_tmp'] = bus_df_mutation['nucleotide_positions_tmp'].apply(
-            lambda lst: [s.split("_")[0] for s in lst]
-        )
-        gtf = None #!!!!!!
-        if isinstance(gtf, str):
-            gtf_cols = ["chromosome", "source", "feature", "start", "end", "score", "strand", "frame", "attributes"]
-            gtf_df = pd.read_csv(gtf, sep="\t", comment="#", names=gtf_cols)
-        elif isinstance(gtf, pd.DataFrame):
-            gtf_df = gtf.copy()
-        else:
-            raise ValueError("gtf must be a path to a GTF file or a pandas DataFrame")
-        gtf_df["gene_ID"] = gtf_df["attributes"].str.extract(r'gene_id "([^"]+)"')
-        gene_df = gtf_df[gtf_df["feature"] == "gene"].copy()
-        gene_df = gene_df.drop_duplicates(subset="gene_ID", keep="first")
-        bus_df_mutation["genes_vcrs"] = bus_df_mutation.apply(
-            lambda row: assign_gene_ids_row(row, gene_df), axis=1
-        )
-        bus_df_mutation.drop(columns=["transcripts_vcrs", "variants_tmp", "nucleotide_positions_tmp", "start_nucleotide_positions_tmp"], inplace=True)
+    #* add gene ID if not present (for transcriptome, using t2g; for genome, using gtf)
+    if gene_id_column not in bus_df_mutation.columns:
+        if variant_source != "genome":
+            #* map transcripts of VCRS's to their respective genes using t2g_standard
+            bus_df_mutation["transcripts_vcrs"] = bus_df_mutation["vcrs_names"].apply(lambda string_list: [s.split(":")[0] for s in string_list])   #!!! won't work due to semicolon issue
+            print("Apply the mapping function to create gene name columns")
+            t2g_dict = make_t2g_dict(t2g_standard)
+            bus_df_mutation["genes_vcrs"] = bus_df_mutation["transcripts_vcrs"].progress_apply(lambda x: map_transcripts_to_genes(x, t2g_dict))
+        if variant_source != "transcriptome":
+            # TODO: could speed up by exploding, adding the necessary columns similar to how I do in add_information_from_variant_header_to_adata_var_exploded, grouping, and merging
+            bus_df_mutation.rename(columns={"transcripts_vcrs": "chromosomes"}, inplace=True)
+            bus_df_mutation['variants_tmp'] = bus_df_mutation['vcrs_names'].apply(lambda string_list: [s.split(":")[1] for s in string_list])
+            bus_df_mutation['nucleotide_positions_tmp'] = bus_df_mutation['variants_tmp'].apply(
+                lambda lst: [re.search(mutation_pattern, s).group(1) if re.search(mutation_pattern, s) else None for s in lst]
+            )
+            bus_df_mutation['start_nucleotide_positions_tmp'] = bus_df_mutation['nucleotide_positions_tmp'].apply(
+                lambda lst: [s.split("_")[0] for s in lst]
+            )
+            if isinstance(gtf, str):
+                gtf_cols = ["chromosome", "source", "feature", "start", "end", "score", "strand", "frame", "attributes"]
+                gtf_df = pd.read_csv(gtf, sep="\t", comment="#", names=gtf_cols)
+            elif isinstance(gtf, pd.DataFrame):
+                gtf_df = gtf.copy()
+            else:
+                raise ValueError("gtf must be a path to a GTF file or a pandas DataFrame")
+            gtf_df["gene_ID"] = gtf_df["attributes"].str.extract(r'gene_id "([^"]+)"')
+            gene_df = gtf_df[gtf_df["feature"] == "gene"].copy()
+            gene_df = gene_df.drop_duplicates(subset="gene_ID", keep="first")
+            bus_df_mutation["genes_vcrs"] = bus_df_mutation.apply(
+                lambda row: assign_gene_ids_row(row, gene_df), axis=1
+            )
+        bus_df_mutation.drop(columns=["transcripts_vcrs", "chromosomes", "variants_tmp", "nucleotide_positions_tmp", "start_nucleotide_positions_tmp"], inplace=True, errors='ignore')
 
     #* create a dataframe of the BUS file for normal reference genome
     bus_df_standard_path = f"{kb_count_reference_genome_dir}/bus_df.csv"
@@ -1895,21 +1858,13 @@ def remove_variants_from_adata_for_stranded_technologies(adata, strand_bias_end,
     adata_var = adata.var.copy()
     adata_var_exploded = adata_var.assign(vcrs_header=adata_var["vcrs_header"].str.split(";")).explode("vcrs_header")
 
-    #* Split variant column into seq_ID and variant
-    if seq_id_column not in adata_var_exploded.columns or var_column not in adata_var_exploded.columns:
-        adata_var_exploded[[seq_id_column, var_column]] = adata_var_exploded[header_column].str.split(":", expand=True)
-
-    #* Split variant into nucleotide positions and actual variant
-    if "nucleotide_positions" not in adata_var_exploded.columns or not "actual_variant" in adata_var_exploded.columns:
-        adata_var_exploded[["nucleotide_positions", "actual_variant"]] = adata_var_exploded[var_column].str.extract(mutation_pattern)
+    #* Add column information - seq_id, variant, nucleotide positions, etc
+    adata_var_exploded = add_information_from_variant_header_to_adata_var_exploded(adata_var_exploded, seq_id_column=seq_id_column, var_column=var_column, variant_source=variant_source, include_gene_information=False)
+    unique_vcrs_sources = adata_var_exploded["variant_source"].unique()
+    variant_source = "combined" if len(unique_vcrs_sources) > 1 else unique_vcrs_sources[0]
 
     #* Classify variant source
-    if not variant_source:  # detect automatically per-variant
-        identify_variant_source(adata_var_exploded, variant_column=var_column, variant_source_column="variant_source", choices = ("transcriptome", "genome"))
-    
-    unique_variant_sources = adata_var_exploded["variant_source"].unique()
-    if len(unique_variant_sources) == 1:
-        variant_source = unique_variant_sources[0]
+    if not variant_position_annotations:
         if variant_source == "genome":
             logger.warning("variant_position_annotations not specified for adjusting by strand bias function, so assuming chromosome position annotations.")
             variant_position_annotations = "chromosome"  # could be chromosome or gene, but HGVSG (as well as VCF) is chromosome
@@ -1918,27 +1873,17 @@ def remove_variants_from_adata_for_stranded_technologies(adata, strand_bias_end,
             variant_position_annotations = "cds"  # could be cds or cdna, but HGVSC is cds
     if variant_position_annotations != "cdna" and gtf is None:
         raise ValueError("gtf must be provided if variants annotated from a source other than cDNA (i.e., chromosome position, gene position, or CDS position) are present in adata.var")
-    if variant_position_annotations is None:
+    if variant_position_annotations is None:  # only if variant_source is combined
         raise ValueError("variant_position_annotations must be specified, or all annotations must come from the same source (i.e., no mix of g.'s and c.'s).")
-
-    #* Find transcript start and end positions
-    split_positions = adata_var_exploded["nucleotide_positions"].str.split("_", expand=True)
-    if "start_variant_position" not in adata_var_exploded.columns:
-        adata_var_exploded["start_variant_position"] = split_positions[0]
-    
-    if split_positions.shape[1] > 1:
-        adata_var_exploded["end_variant_position"] = split_positions[1].fillna(split_positions[0])
-    else:
-        adata_var_exploded["end_variant_position"] = adata_var_exploded["start_variant_position"]
-
-    adata_var_exploded.loc[adata_var_exploded["end_variant_position"].isna(), "end_variant_position"] = adata_var_exploded["start_variant_position"]
-    adata_var_exploded[["start_variant_position", "end_variant_position"]] = adata_var_exploded[["start_variant_position", "end_variant_position"]].astype(int)
 
     #* Assign transcript ID for genome variants
     if variant_source != "transcriptome":
         if variant_position_annotations == "chromosome":
             adata_var_exploded.rename(columns={"seq_ID": "chromosome", "start_variant_position": "start_variant_position_genome", "end_variant_position": "end_variant_position_genome"}, inplace=True)
             # assign_transcript_ids(adata_var_exploded, transcript_df)  # faster (works with merge instead of apply) but RAM-intensive (left-merges GTF into adata_var_exploded by chromosome alone)
+            # TODO: note that this assigns a chromosome position to the first transcript ID that meets criteria (within the range of chromosome and mutation position), but perhaps I want to consider all transcript IDs in the future and use the most conservative of them
+            forgiveness += 50  # a hot fix, to be removed when I address the TODO above
+            logger.warning("Doing strand bias correction for chromosome position variants. This may not be accurate if the chromosome position overlaps multiple transcripts.")
             adata_var_exploded[["transcript_ID", "start_variant_position", "end_variant_position"]] = (
                 adata_var_exploded.apply(lambda row: assign_transcript_and_cds(row, transcript_df, gtf_df), axis=1)
             )
@@ -2053,28 +1998,111 @@ def kb_extract_all_alternative(fastq_file_list, t2g_file, technology, index_file
                         
 
 
-def merge_variants_with_adata(variants, adata_var_exploded, seq_id_column, var_column, var_id_column):
-    if isinstance(variants, pd.DataFrame):
+def remove_columns_from_usecols_that_are_not_in_df(df, col_list):
+    if isinstance(df, pd.DataFrame):
         pass
+    elif isinstance(df, str) and os.path.exists(df):  # just read in columns
+        if df.endswith(".csv"):
+            df = pd.read_csv(df, nrows=0)
+        elif df.endswith(".tsv"):
+            df = pd.read_csv(df, sep="\t", nrows=0)
+    
+    if col_list is None:
+        return None
+    
+    if isinstance(col_list, str):
+        col_list = [col_list]
+    
+    if not isinstance(col_list, list):
+        raise ValueError("The usecols parameter must be a string or a list of strings.")
+    
+    col_list_final = col_list
+    for col in col_list:
+        if col not in df.columns:
+            logger.warning(f"Column '{col}' specified in usecols is not in the DataFrame. It will be removed from the usecols list.")
+            col_list_final.remove(col)
+    
+    return col_list_final
+        
+
+def merge_variants_with_adata(variants, adata_var_exploded, seq_id_column, var_column, var_id_column=None, variants_usecols=None):
+    # ensure I use the correct columns (default all)
+    if var_id_column is None:
+        var_id_column = "vcrs_header"
+    if isinstance(variants_usecols, list) and var_id_column not in variants_usecols:
+        variants_usecols.append(var_id_column)
+
+    variants_usecols = remove_columns_from_usecols_that_are_not_in_df(variants, variants_usecols)
+    
+    # load in variants, or filter by correct columns
+    if isinstance(variants, pd.DataFrame):
+        if isinstance(variants_usecols, list):
+            variants = variants[variants_usecols].copy()
     elif isinstance(variants, str) and os.path.exists(variants):
         if variants.endswith(".csv"):
-            variants = pd.read_csv(variants)
+            variants = pd.read_csv(variants, usecols=variants_usecols)
         elif variants.endswith(".tsv"):
-            variants = pd.read_csv(variants, sep="\t")
+            variants = pd.read_csv(variants, sep="\t", usecols=variants_usecols)
         elif variants.endswith(".vcf"):
             raise ValueError("vcrs headers must be in HGVS format when variants is a VCF file.")
         else:
             raise ValueError("variants must be a DataFrame, a CSV/TSV, or a VCF.")
     else:
         raise ValueError("The variants parameter must be a DataFrame, a CSV/TSV file, or a VCF file. Please provide a valid input.")
-    variants['vcrs_header'] = variants[seq_id_column].astype(str) + ":" + variants[var_column].astype(str)
+    if 'vcrs_header' not in variants.columns:
+        variants['vcrs_header'] = variants[seq_id_column].astype(str) + ":" + variants[var_column].astype(str)
     merged_var = adata_var_exploded.merge(
             variants,
             left_on='vcrs_id_individual',
             right_on=var_id_column,
             how='left',
-            suffixes=('', '_variant')
+            suffixes=('', '_variant'),
         )
-    merged_var['vcrs_header_individual'] = merged_var['vcrs_header'].str.split(';')  # don't let the naming be confusing - it will only be original AFTER exploding; before, it will be a list
+    merged_var['vcrs_header_individual'] = merged_var['vcrs_header'].str.split(';')  # restored because I may later use
     merged_var['vcrs_header_list_copy'] = merged_var['vcrs_header_individual'].copy()
     return merged_var
+
+def make_t2g_dict(t2g_file):
+    if t2g_file is None or not os.path.isfile(t2g_file):
+        raise ValueError(f"The specified t2g file '{t2g_file}' does not exist.")
+    t2g_df = pd.read_csv(t2g_file, sep="\t", header=None)
+    t2g_df.rename(columns={0: "transcript_id", 1: "gene_name"}, inplace=True)
+    t2g_df = t2g_df[["transcript_id", "gene_name"]].copy()  # keep only first 2 columns
+    t2g_dict = dict(zip(t2g_df["transcript_id"], t2g_df["gene_name"]))
+    t2g_dict["dlist"] = "dlist"
+    return t2g_dict
+
+def add_information_from_variant_header_to_adata_var_exploded(adata_var_exploded, seq_id_column="seq_ID", var_column="mutation", gene_id_column="gene_id", variant_source=None, include_gene_information=True, t2g_file=None):
+    if seq_id_column not in adata_var_exploded.columns or var_column not in adata_var_exploded.columns:
+        adata_var_exploded[[seq_id_column, var_column]] = adata_var_exploded["vcrs_header_individual"].str.split(":", expand=True)
+
+    if "nucleotide_positions" not in adata_var_exploded.columns and not "actual_variant" in adata_var_exploded.columns:
+        adata_var_exploded[["nucleotide_positions", "actual_variant"]] = adata_var_exploded["variant"].str.extract(mutation_pattern)
+
+    if "start_variant_position" not in adata_var_exploded.columns or "end_variant_position" not in adata_var_exploded.columns:
+        split_positions = adata_var_exploded["nucleotide_positions"].str.split("_", expand=True)
+        adata_var_exploded["start_variant_position"] = split_positions[0]
+        if split_positions.shape[1] > 1:
+            adata_var_exploded["end_variant_position"] = split_positions[1].fillna(split_positions[0])
+        else:
+            adata_var_exploded["end_variant_position"] = adata_var_exploded["start_variant_position"]
+        adata_var_exploded.loc[adata_var_exploded["end_variant_position"].isna(), "end_variant_position"] = adata_var_exploded["start_variant_position"]
+        adata_var_exploded[["start_variant_position", "end_variant_position"]] = adata_var_exploded[["start_variant_position", "end_variant_position"]].astype(int)
+    
+    if not variant_source:  # detect automatically per-variant
+        identify_variant_source(adata_var_exploded, variant_column=var_column, variant_source_column="variant_source", choices = ("transcriptome", "genome"))
+        unique_vcrs_sources = adata_var_exploded["variant_source"].unique()
+        variant_source = "combined" if len(unique_vcrs_sources) > 1 else unique_vcrs_sources[0]
+    
+    if include_gene_information and gene_id_column not in adata_var_exploded.columns:
+        if variant_source != "genome":
+            if t2g_file and os.path.isfile(t2g_file):  # the normal reference genome t2g
+                t2g_dict = make_t2g_dict(t2g_file)
+                adata_var_exploded[gene_id_column] = (adata_var_exploded[seq_id_column].map(t2g_dict).fillna(adata_var_exploded[seq_id_column]))
+                    
+            else:
+                pass  # gtf way
+        if variant_source != "transcriptome":
+            pass  # gtf way - see normal genome function
+
+    return adata_var_exploded
