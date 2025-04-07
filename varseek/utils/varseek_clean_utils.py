@@ -341,7 +341,7 @@ def make_bus_df(kb_count_out, fastq_file_list, technology=None, t2g_file=None, m
         print("Returning the last chunk of bus_df")
     return bus_df
         
-
+# @profile
 def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_reference_genome_dir, technology, t2g_standard, adata=None, fastq_file_list=None, adata_output_path=None, mm=False, parity="single", bustools="bustools", fastq_sorting_check_only=False, save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=True, drop_reads_where_the_pairs_mapped_to_different_genes=False, avoid_paired_double_counting=False, seq_id_column="seq_ID", gene_id_column="gene_id", variant_source=None, gtf=None):
     if not adata:
         adata = f"{kb_count_vcrs_dir}/counts_unfiltered/adata.h5ad"
@@ -360,6 +360,7 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
     #* create a dataframe of the BUS file for VCRSs with useful added information
     bus_df_mutation_path = f"{kb_count_vcrs_dir}/bus_df.{save_type}"
     if not os.path.exists(bus_df_mutation_path):
+        logger.info("Making VCRS BUS df")
         bus_df_mutation = make_bus_df(
             kb_count_out=kb_count_vcrs_dir,
             fastq_file_list=fastq_file_list,
@@ -375,6 +376,7 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
         )
         bus_df_mutation = bus_df_mutation[["barcode", "UMI", "read_index", "gene_names"]].copy()
     else:
+        logger.info("Loading in VCRS BUS df from existing file")
         if save_type == "parquet":
             bus_df_mutation = pd.read_parquet(bus_df_mutation_path, columns=["barcode", "UMI", "read_index", "gene_names"])
         elif save_type == "csv":
@@ -394,12 +396,14 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
     if len(columns_to_merge) <= 1:
         columns_to_merge = []
     if len(columns_to_merge) > 1 or gene_id_column not in bus_df_mutation.columns:
+        logger.info("Merging adata.var into VCRS BUS df")
         bus_df_mutation = merge_bus_df_and_adata_var(bus_df=bus_df_mutation, adata_var=adata.var, vcrs_column_bus="vcrs_names", vcrs_column_adata="vcrs_id", gene_id_column=gene_id_column, variant_source=variant_source, seq_id_column=seq_id_column, reference_genome_t2g=t2g_standard, gtf=gtf, columns_to_merge=columns_to_merge)
         first_vcrs_name = bus_df_mutation.loc[0, "vcrs_names"][0]
 
     #* create a dataframe of the BUS file for normal reference genome
     bus_df_standard_path = f"{kb_count_reference_genome_dir}/bus_df.csv"
     if not os.path.exists(bus_df_standard_path):
+        logger.info("Making standard reference genome BUS df")
         bus_df_standard = make_bus_df(
             kb_count_out=kb_count_reference_genome_dir,
             fastq_file_list=fastq_file_list,
@@ -414,6 +418,7 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
         )
         bus_df_standard = bus_df_standard[["barcode", "read_index", "gene_names"]].copy()
     else:
+        logger.info("Loading in standard reference genome BUS df from existing file")
         if save_type == "parquet":
             bus_df_standard = pd.read_parquet(bus_df_standard_path, columns=["barcode", "read_index", "gene_names"])
         elif save_type == "csv":
@@ -424,6 +429,7 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
     bus_df_standard.rename(columns={"gene_names": "genes_standard"}, inplace=True)
 
     #* merge normal genome read alignments (gene_names from its bus df) into VCRS's bus df by barcode + read_index
+    logger.info("Merging VCRS BUS df with standard reference genome BUS df")
     bus_df = bus_df_mutation.merge(bus_df_standard, on=["barcode", "read_index"], how="left")  # will have columns barcode, UMI, read_index, vcrs_names, genes_vcrs, genes_standard
     del bus_df_mutation, bus_df_standard
     mask = bus_df['genes_standard'].isna()
@@ -431,6 +437,7 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
     bus_df.loc[mask, 'genes_standard'] = pd.Series([[] for _ in range(mask.sum())], index=bus_df[mask].index)  # replace NaNs in genes_standard with empty lists
 
     #* remove barcode padding
+    logger.info("Removing barcode padding")
     bus_df.rename(columns={"barcode": "barcode_with_padding"}, inplace=True)
     true_barcode_length = len(adata.obs.index[0])  # in contrast to the length of 32 in BUS file
     bus_df["barcode"] = bus_df["barcode_with_padding"].str[-true_barcode_length:]  # removes padding - keeps only the last true_barcode_length characters
@@ -466,6 +473,7 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
         avoid_paired_double_counting = False
 
     if parity == "paired" and (normal_parity == "single" or (vcrs_parity == "single" and avoid_paired_double_counting)):
+        logger.info("Adjusting adata to adjust for paired-end technology run in single-end mode")
         # (1) make a df copy
         bus_df_copy = bus_df[["barcode", "read_index", "genes_standard"]].copy()
         bus_df_copy["original_sets_populated"] = bus_df_copy["genes_standard"].apply(lambda x: len(x) > 0)
@@ -506,6 +514,7 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
 
     #* groupby barcode + UMI, taking the list of read_index, the mode of vcrs_names, and the union of genes_standard
     if technology.upper() not in {"BULK", "SMARTSEQ2"}:  # all technologies that have UMIs
+        logger.info("Grouping by barcode and UMI to aggregate read indices, VCRS names, and genes")
         bus_df.drop(columns=["genes_vcrs"], inplace=True)  # drop genes_vcrs column, because I will need to remake later
 
         # groupby barcode + UMI, taking the list of read_index, the mode of vcrs_names (and the correspond genes_vcrs), and the union of genes_standard
@@ -517,6 +526,7 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
         # }).reset_index()
 
     #* take the set of normal reference genome alignment genes in a new column
+    logger.info("Taking the set of normal reference genome alignment genes")
     bus_df["genes_standard_set"] = bus_df["genes_standard"].apply(lambda x: set(x))
 
     #* loop through bus df (as zipped iterators)
@@ -525,7 +535,8 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
     data_values = []
 
     vcrs_mismatch_to_gene_count = 0
-    for vcrs_names_list, genes_vcrs_outer_list, genes_standard_set, barcode, pseudoaligns_to_reference_genome, read_index in zip(bus_df["vcrs_names"], bus_df["genes_vcrs"], bus_df["genes_standard_set"], bus_df["barcode"], bus_df["pseudoaligns_to_reference_genome"], bus_df["read_index"]):
+    logger.info("Looping through bus_df to adjust adata")
+    for vcrs_names_list, genes_vcrs_outer_list, genes_standard_set, barcode, pseudoaligns_to_reference_genome, read_index in tqdm(zip(bus_df["vcrs_names"], bus_df["genes_vcrs"], bus_df["genes_standard_set"], bus_df["barcode"], bus_df["pseudoaligns_to_reference_genome"], bus_df["read_index"]), total=len(bus_df), desc="Adjusting adata by looping through bus_df"):
         #* look at all VCRSs to which the read mapped, and keep only VCRSs whose corresponding gene is in the gene_intersection column above
         vcrs_names_list_final = []
         for vcrs_name, gene_vcrs_inner_list in zip(vcrs_names_list, genes_vcrs_outer_list):
@@ -559,7 +570,12 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
 
     print(f"Number of reads that pseudoaligned to a VCRS but had the incorrect reference genome match: {vcrs_mismatch_to_gene_count} / {len(bus_df)}")
 
+    if len(data_values) == 0:
+        logger.warning("No valid updates found in the bus_df. Returning the original AnnData object.")
+        return adata
+
     #* copy adata.var and adata.obs and adata.uns as-is, all in the same order; initialize a sparse matrix (to remake adata from scratch)
+    logger.info("Constructing the new AnnData object with updated counts")
     # Construct a sparse matrix with the updates
     data_values = np.array(data_values, dtype=np.float64)
     update_matrix = csr_matrix((data_values, (row_indices, col_indices)), shape=adata.shape)
@@ -572,6 +588,7 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
     )
 
     #* save adata
+    logger.info(f"Saving adjusted AnnData object to {adata_output_path}")
     adata_new.write_h5ad(adata_output_path, compression="gzip")
 
     return adata_new
@@ -582,6 +599,7 @@ def merge_bus_df_and_adata_var(bus_df, adata_var, vcrs_column_bus="vcrs_names", 
     bus_df_columns_original.remove(vcrs_column_bus)
 
     # Step 1: Explode by vcrs_names - eg [VCRS1;VCRS2, VCRS3] (1 row) --> VCRS1;VCRS2, VCRS3 (2 rows)
+    logger.info("Exploding bus_df by vcrs_names")
     exploded = bus_df.explode(vcrs_column_bus, ignore_index=True)
 
     # Step 2: Add original row index for regrouping
@@ -591,6 +609,7 @@ def merge_bus_df_and_adata_var(bus_df, adata_var, vcrs_column_bus="vcrs_names", 
 
     # Step 3: Merge with adata_var
     if columns_to_merge is not None and len(columns_to_merge) > 0:
+        logger.info("Merging exploded bus_df with adata.var")
         if columns_to_merge == "all":
             columns_to_merge = adata_var.columns.tolist()
         adata_var_subset = adata_var.loc[:, list(columns_to_merge)].copy()  # only keep the necessary columns to merge
@@ -605,12 +624,15 @@ def merge_bus_df_and_adata_var(bus_df, adata_var, vcrs_column_bus="vcrs_names", 
 
     #* Step 3.5 Explode and collapse by semicolon - eg VCRS1;VCRS2, VCRS3 (2 rows) --> VCRS1, VCRS2, VCRS3 (3 rows)
     if gene_id_column not in merged.columns:  # I won't enter this condition if vk clean set me up properly  #!!! untested
+        logger.info("Exploding merged bus_df by vcrs_names to add gene_id_column")
         if "vcrs_header" not in merged.columns:  # means that we did not use a var_id_column, and thus "vcrs_names" represents our (HGVS-like) headers
             merged["vcrs_header"] = merged[vcrs_column_bus]
         merged['vcrs_header_individual'] = merged['vcrs_header'].str.split(';')  # don't let the naming be confusing - it will only be original AFTER exploding; before, it will be a list
         merged_exploded = merged[["vcrs_header", "vcrs_header_individual"]].copy().explode('vcrs_header_individual', ignore_index=True).drop_duplicates()
         include_position_information = False if variant_source == "transcriptome" else True
+        logger.info("Adding information from variant header to adata.var")
         add_information_from_variant_header_to_adata_var_exploded(merged_exploded, seq_id_column=seq_id_column, var_column=var_column, variant_source=variant_source, t2g_file=reference_genome_t2g, include_position_information=include_position_information, gtf=gtf)
+        logger.info("Merging exploded bus_df with adata.var again to add gene_id_column")
         grouped_merged = (
             merged_exploded[["vcrs_header", gene_id_column]].groupby("vcrs_header", as_index=False)
             .agg(
@@ -624,6 +646,7 @@ def merge_bus_df_and_adata_var(bus_df, adata_var, vcrs_column_bus="vcrs_names", 
         del merged_exploded, grouped_merged
 
     # Step 4: Group back by original row index
+    logger.info("Grouping back by original row index to aggregate the data")
     bus_df = (merged
             .groupby('original_index')
             .agg({

@@ -138,15 +138,11 @@ def validate_input_clean(params_dict):
 
     # k
     k = params_dict.get("k", None)
-    if not isinstance(k, (int, str)) or int(k) < 1:
-        raise ValueError(f"k must be a positive integer. Got {k} of type {type(k)}.")
-    if int(k) % 2 == 0 or int(k) > 63:
-        logger.warning("If running a workflow with vk ref or kb ref, k should be an odd number between 1 and 63. Got k=%s.", k)
-
-    # fastqs
-    fastqs = params_dict["fastqs"]  # tuple
-    if len(fastqs) == 0:
-        raise ValueError("No fastq files provided")
+    if k:
+        if not isinstance(k, (int, str)) or int(k) < 1:
+            raise ValueError(f"k must be a positive integer. Got {k} of type {type(k)}.")
+        if int(k) % 2 == 0 or int(k) > 63:
+            logger.warning("If running a workflow with vk ref or kb ref, k should be an odd number between 1 and 63. Got k=%s.", k)
 
     parity_valid_values = {"single", "paired"}
     if params_dict["parity"] not in parity_valid_values:
@@ -160,11 +156,12 @@ def validate_input_clean(params_dict):
         raise ValueError("strand_bias_end must be provided if account_for_strand_bias=True.")
 
     # $ type checking of the directory and text file performed earlier by load_in_fastqs
-
-    for fastq in fastqs:
-        check_file_path_is_string_with_valid_extension(fastq, variable_name=fastq, file_type="fastq")  # ensure that all fastq files have valid extension
-        if not os.path.isfile(fastq):  # ensure that all fastq files exist
-            raise ValueError(f"File {fastq} does not exist")
+    fastqs = params_dict["fastqs"]  # tuple
+    if fastqs:
+        for fastq in fastqs:
+            check_file_path_is_string_with_valid_extension(fastq, variable_name=fastq, file_type="fastq")  # ensure that all fastq files have valid extension
+            if not os.path.isfile(fastq):  # ensure that all fastq files exist
+                raise ValueError(f"File {fastq} does not exist")
 
     # file paths
     for param_name, file_type in {
@@ -367,7 +364,8 @@ def clean(
 
     # * 1.5 load in fastqs
     fastqs_original = fastqs
-    fastqs = load_in_fastqs(fastqs)  # this will make it in params_dict
+    if fastqs:
+        fastqs = load_in_fastqs(fastqs)  # this will make it in params_dict
 
     # * 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
@@ -449,9 +447,18 @@ def clean(
     forgiveness = kwargs.get("forgiveness", 100)
 
     # * 7.5 make sure ints are ints
+    if min_counts is None:
+        min_counts = 0
     min_counts, threads = int(min_counts), int(threads)
 
     # * 8. Start the actual function
+    if fastqs:
+        try:
+            fastqs = sort_fastq_files_for_kb_count(fastqs, technology=technology, multiplexed=kwargs.get("multiplexed"), check_only=(not sort_fastqs))
+        except ValueError as e:
+            if sort_fastqs:
+                logger.warning(f"Automatic FASTQ argument order sorting for kb count could not recognize FASTQ file name format. Skipping argument order sorting.")
+
     if remove_doublets and not doublet_detection:
         logger.warning("remove_doublets is True, but doublet_detection is False. Setting doublet_detection to True.")
         doublet_detection = True
@@ -534,11 +541,13 @@ def clean(
     original_var_names = adata.var_names.copy()
 
     #* work with column names
-    if isinstance(variants_usecols, str):
-        variants_usecols = [variants_usecols]
-    for column_to_add in [gene_id_column, seq_id_column, var_column, var_id_column]:
-        if isinstance(column_to_add, str) and isinstance(variants_usecols, list) and column_to_add not in variants_usecols:
-            variants_usecols.append(column_to_add)
+    if variants_usecols:
+        if isinstance(variants_usecols, str):
+            variants_usecols = [variants_usecols]
+        # ensure these important columns are present
+        for column_to_add in [gene_id_column, seq_id_column, var_column, var_id_column]:
+            if isinstance(column_to_add, str) and isinstance(variants_usecols, list) and column_to_add not in variants_usecols:
+                variants_usecols.append(column_to_add)
 
     #* explode the adata.var df and do some work
     adata.var['vcrs_header_individual'] = adata.var['vcrs_header'].str.split(';')  # don't let the naming be confusing - it will only be original AFTER exploding; before, it will be a list
@@ -553,7 +562,7 @@ def clean(
             raise ValueError(f"The first vcrs_header '{first_vcrs_header}' does not match the expected HGVS format. Please provide variants as an input.")
     
     if variants is not None:
-        adata_var_exploded = merge_variants_with_adata(variants, adata_var_exploded, seq_id_column, var_column, var_id_column)
+        adata_var_exploded = merge_variants_with_adata(variants, adata_var_exploded, seq_id_column, var_column, var_id_column, variants_usecols=variants_usecols)
         first_vcrs_header = adata_var_exploded["vcrs_header_individual"].iloc[0][0]
     else:
         adata_var_exploded["vcrs_id"] = adata_var_exploded["vcrs_header"]
