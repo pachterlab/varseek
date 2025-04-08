@@ -200,6 +200,7 @@ def validate_input_clean(params_dict):
 
 needs_for_normal_genome_matrix = ["filter_cells_by_min_counts", "filter_cells_by_min_genes", "filter_genes_by_min_cells", "filter_cells_by_max_mt_content", "doublet_detection", "cpm_normalization"]
 
+# @profile
 @report_time_elapsed
 def clean(
     adata_vcrs,  # required inputs
@@ -533,6 +534,7 @@ def clean(
         if id_to_header_csv and isinstance(id_to_header_csv, str) and os.path.exists(id_to_header_csv):
             id_to_header_df = pd.read_csv(id_to_header_csv, index_col=0)
             adata.var = adata.var.merge(id_to_header_df, left_on="vcrs_id_from_vk_ref", right_on="vcrs_id", how="left")  # will add vcrs_header
+            adata.var.set_index("vcrs_header", inplace=True)
         else:
             adata.var["vcrs_header"] = adata.var.index
     else:
@@ -869,8 +871,9 @@ def clean(
 
     if gene_id_column in adata.var:
         filtered_var = adata.var[adata.var["vcrs_count"] > 0]
-        gene_counts = filtered_var[gene_id_column].value_counts()
-        adata.var["gene_count"] = adata.var[gene_id_column].map(gene_counts).fillna(0).astype(int)
+        gene_counts = filtered_var[gene_id_column].explode().value_counts()
+        gene_counts_dict = gene_counts.to_dict()
+        adata.var["gene_count"] = adata.var[gene_id_column].apply(lambda gene_list: [gene_counts_dict.get(g, 0) for g in gene_list])
         del filtered_var
 
     if sp.issparse(adata.X):
@@ -891,6 +894,12 @@ def clean(
                 raise ValueError("vcf_data_csv must be provided if variants is supported. Supported databases can be viewed with `vk ref --list_prebuilt_indices`.")
         cleaned_adata_to_vcf(adata.var, vcf_data_df=vcf_data_csv, output_vcf=vcf_out, save_vcf_samples=save_vcf_samples, adata=adata)
 
+    #* adata can't save lists in var columns, so we need to convert them to semicolon-separated strings - later get back with something like adata.var[col] = adata.var[col].apply(lambda x: x.split(";") if isinstance(x, str) else x)
+    for adata_object in [adata, adata_reference_genome]:
+        if isinstance(adata_object, anndata.AnnData):
+            for col in adata_object.var.columns:
+                adata_object.var[col] = adata_object.var[col].apply(lambda x: ";".join(map(str, x)) if isinstance(x, list) else x)
+    
     if isinstance(adata_reference_genome, anndata.AnnData):
         adata_reference_genome.write(adata_reference_genome_clean_out)
 

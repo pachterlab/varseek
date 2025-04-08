@@ -359,7 +359,7 @@ def make_bus_df(kb_count_out, fastq_file_list, technology=None, t2g_file=None, m
     return bus_df
         
 # @profile
-def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_reference_genome_dir, technology, t2g_standard, adata=None, fastq_file_list=None, adata_output_path=None, mm=False, parity="single", bustools="bustools", fastq_sorting_check_only=False, save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=True, drop_reads_where_the_pairs_mapped_to_different_genes=False, avoid_paired_double_counting=False, seq_id_column="seq_ID", gene_id_column="gene_id", variant_source=None, gtf=None):
+def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_reference_genome_dir, technology, t2g_standard, adata=None, fastq_file_list=None, adata_output_path=None, mm=False, parity="single", bustools="bustools", fastq_sorting_check_only=False, save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=True, drop_reads_where_the_pairs_mapped_to_different_genes=False, avoid_paired_double_counting=False, add_fastq_headers=False, seq_id_column="seq_ID", gene_id_column="gene_id", variant_source=None, gtf=None):
     if not adata:
         adata = f"{kb_count_vcrs_dir}/counts_unfiltered/adata.h5ad"
     if isinstance(adata, str):
@@ -390,7 +390,7 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
             chunksize=None,
             correct_barcodes_of_hamming_distance_one=True,
             save_type=save_type,
-            add_fastq_headers=False,
+            add_fastq_headers=add_fastq_headers,
             add_counted_in_count_matrix=False,
             save_transcript_names=False,
             strip_version_number_from_genes=False
@@ -436,7 +436,7 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
             fastq_sorting_check_only=True,
             chunksize=None,
             correct_barcodes_of_hamming_distance_one=True,
-            add_fastq_headers=False,
+            add_fastq_headers=add_fastq_headers,
             add_counted_in_count_matrix=False,
             save_transcript_names=False,
             strip_version_number_from_genes=False
@@ -488,6 +488,9 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
         normal_parity = "paired"
     else:
         normal_parity = "single"
+
+    if technology.upper() not in {"BULK", "SMARTSEQ2"}:
+        parity, vcrs_parity, normal_parity = None, None, None
 
     # override adata
     if parity == "paired" and vcrs_parity == "single" and not adata.uns.get("corrected_barcodes", None):  # eg convert ["AAA", "AAC", "AAG", "AAT"] to ["AAA", "AAC"]
@@ -550,10 +553,10 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
     #* groupby barcode + UMI, taking the list of read_index, the mode of vcrs_names, and the union of genes_standard
     if technology.upper() not in {"BULK", "SMARTSEQ2"}:  # all technologies that have UMIs
         logger.info("Grouping by barcode and UMI to aggregate read indices, VCRS names, and genes")
-        bus_df.drop(columns=["genes_vcrs"], inplace=True)  # drop genes_vcrs column, because I will need to remake later
 
         # groupby barcode + UMI, taking the list of read_index, the mode of vcrs_names (and the correspond genes_vcrs), and the union of genes_standard
-        bus_df = bus_df.groupby(["barcode", "UMI"]).apply(barcode_and_umi_agg).reset_index()
+        bus_df["original_index"] = np.arange(len(bus_df))
+        bus_df = bus_df.groupby(["barcode", "UMI"], sort=False).apply(barcode_and_umi_agg).reset_index().sort_values("original_index").drop(columns="original_index").reset_index(drop=True)
         # bus_df = bus_df.groupby(["barcode", "UMI"]).agg({
         #     "read_index": list,  
         #     "vcrs_names": lambda x: mode(x, keepdims=True)[0][0],  
@@ -729,7 +732,8 @@ def merge_bus_df_and_adata_var(bus_df, adata_var, vcrs_column_bus="vcrs_names", 
     
 def barcode_and_umi_agg(group):
     # Compute the mode for vcrs_names
-    mode_val = mode(group["vcrs_names"], keepdims=True)[0][0]
+    vcrs_as_tuples = group["vcrs_names"].apply(tuple)
+    mode_val = list(vcrs_as_tuples.mode().iloc[0])
     # Find the first occurrence index of the mode in vcrs_names
     idx = group["vcrs_names"].tolist().index(mode_val)
     # Use the index to extract the corresponding genes_vcrs value
@@ -739,12 +743,15 @@ def barcode_and_umi_agg(group):
     read_index_agg = list(group["read_index"])
     # Aggregate genes_standard using union of sets
     genes_standard_agg = sorted(set.union(*map(set, group["genes_standard"])))
+    pseudoaligns_to_reference_genome = len(genes_standard_agg) > 0
     
     return pd.Series({
         "read_index": read_index_agg,
         "vcrs_names": mode_val,
         "genes_standard": genes_standard_agg,
-        "genes_vcrs": genes_vcrs_val
+        "genes_vcrs": genes_vcrs_val,
+        "pseudoaligns_to_reference_genome": pseudoaligns_to_reference_genome,
+        "original_index": list(group["original_index"])
     })
 
 
