@@ -418,49 +418,57 @@ def get_ensembl_gene_id(transcript_id: str, verbose: bool = False):
         return "Unknown"
 
 
-def get_ensembl_gene_id_bulk(transcript_ids: list[str]) -> dict[str, str]:
+def get_ensembl_gene_id_from_transcript_id_bulk(transcript_ids: list[str]) -> dict[str, str]:
     if not transcript_ids:
         return {}
     
     transcript_ids = list(set(transcript_ids))  # Remove duplicates
 
+    transcript_id_to_gene_id_dict = {}
     try:
-        url = "https://rest.ensembl.org/lookup/id/"
-        response = requests.post(
-            url,
-            json={"ids": transcript_ids},
-            headers={"Content-Type": "application/json"},
-            timeout=10,
-        )
+        chunk_size = 999  # limit for ensembl REST API is 1000 IDs per request
+        for i in range(0, len(transcript_ids), chunk_size):
+            transcript_ids_chunk = transcript_ids[i:i + chunk_size]
+            url = "https://rest.ensembl.org/lookup/id/"
+            response = requests.post(
+                url,
+                json={"ids": transcript_ids_chunk},
+                headers={"Content-Type": "application/json"},
+                timeout=10,
+            )
 
-        if not response.ok:
-            response.raise_for_status()
+            if not response.ok:
+                response.raise_for_status()
 
-        data = response.json()
+            data = response.json()
 
-        return {transcript_id: data[transcript_id].get("Parent") for transcript_id in transcript_ids if data[transcript_id]}
+            transcript_id_to_gene_id_dict_chunk = {transcript_id: data[transcript_id].get("Parent") for transcript_id in transcript_ids_chunk if data[transcript_id]}
+
+            transcript_id_to_gene_id_dict.update(transcript_id_to_gene_id_dict_chunk)
+
+        return {transcript_id_to_gene_id_dict}
     except Exception as e:
         print(f"Failed to fetch gene IDs from Ensembl: {e}")
         raise e
 
 
-def get_ensembl_gene_name_bulk(gene_ids: list[str]) -> dict[str, str]:
-    if not gene_ids:
-        return {}
+# def get_ensembl_gene_name_bulk(gene_ids: list[str]) -> dict[str, str]:
+#     if not gene_ids:
+#         return {}
 
-    try:
-        url = "https://rest.ensembl.org/lookup/id/"
-        response = requests.post(url, json={"ids": gene_ids}, headers={"Content-Type": "application/json"}, timeout=10)
+#     try:
+#         url = "https://rest.ensembl.org/lookup/id/"
+#         response = requests.post(url, json={"ids": gene_ids}, headers={"Content-Type": "application/json"}, timeout=10)
 
-        if not response.ok:
-            response.raise_for_status()
+#         if not response.ok:
+#             response.raise_for_status()
 
-        data = response.json()
+#         data = response.json()
 
-        return {gene_id: data[gene_id].get("display_name") for gene_id in gene_ids if data[gene_id]}
-    except Exception as e:
-        print(f"Failed to fetch gene names from Ensembl: {e}")
-        raise e
+#         return {gene_id: data[gene_id].get("display_name") for gene_id in gene_ids if data[gene_id]}
+#     except Exception as e:
+#         print(f"Failed to fetch gene names from Ensembl: {e}")
+#         raise e
 
 
 # def get_valid_ensembl_gene_id_bulk(

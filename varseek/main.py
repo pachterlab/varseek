@@ -2073,6 +2073,12 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "variant_source"),
     )
     parser_clean.add_argument(
+        "--vcrs_metadata_df",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "vcrs_metadata_df"),
+    )
+    parser_clean.add_argument(
         "--variants_usecols",
         nargs="*",
         type=str,
@@ -2227,6 +2233,49 @@ def main():  # noqa: C901
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(clean, "parity_kb_count"),
+    )
+    parser_clean.add_argument(
+        "--cosmic_tsv",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "cosmic_tsv"),
+    )
+    parser_clean.add_argument(
+        "--cosmic_reference_genome_fasta",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "cosmic_reference_genome_fasta"),
+    )
+    parser_clean.add_argument(
+        "--cosmic_version",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "cosmic_version"),
+    )
+    parser_clean.add_argument(
+        "--cosmic_email",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "cosmic_email"),
+    )
+    parser_clean.add_argument(
+        "--cosmic_password",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "cosmic_password"),
+    )
+    parser_clean.add_argument(
+        "--forgiveness",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "forgiveness"),
+    )
+    parser_clean.add_argument(
+        "--disable_add_hgvs_breakdown_to_adata_var",
+        dest="add_hgvs_breakdown_to_adata_var",
+        action="store_false",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "add_hgvs_breakdown_to_adata_var", disable=True),
     )
 
     # NEW PARSER

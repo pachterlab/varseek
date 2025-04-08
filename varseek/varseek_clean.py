@@ -245,6 +245,7 @@ def clean(
     variants=None,
     sequences=None,
     variant_source=None,
+    vcrs_metadata_df=None,
     variants_usecols=None,
     seq_id_column="seq_ID",
     var_column="mutation",
@@ -315,7 +316,8 @@ def clean(
     - vcf_data_csv                          (str): Path to the VCF data csv file. It needs columns ID (corresponding to vcrs_header from adata.var), CHROM, POS, REF, ALT. If using downloaded reference files from vk ref, then simply provide the `variants` and `sequences` arguments entered at vk ref for this file to be created internally. Default: None.
     - variants                              (str): The variants parameter from vk ref/build. Merged into adata.var with columns variants_usecols. Only strictly needed if using downloaded reference files from vk ref and wanting to save an output VCF file. Default: None.
     - sequences                             (str): The sequences parameter from vk ref/build. Only needed if using downloaded reference files from vk ref and wanting to save an output VCF file. Default: None.
-    - variant_source                         (str): The source of the variants. If not provided, it will be inferred from the `variants` parameter. Can be "genome" or "transcriptome". Default: None
+    - variant_source                        (str): The source of the variants. If not provided, it will be inferred from the `variants` parameter. Can be "genome" or "transcriptome". Default: None
+    - vcrs_metadata_df                      (str): Path to the VCRS metadata dataframe. Will be merged into adata.var. If a path is provided and the file does not exist, it will be created. Default: None.
 
     # Optional column names in variants
     - variants_usecols (str or list): Columns in the variants to merge with the adata var. Default: None (use all columns).
@@ -355,6 +357,7 @@ def clean(
     - cosmic_email                          (str): Email address for cosmic. Only used if creating a VCF file and using a downloaded reference from vk ref and vcf_data_csv does not exist. Default: None.
     - cosmic_password                       (str): Password for cosmic. Only used if creating a VCF file and using a downloaded reference from vk ref and vcf_data_csv does not exist. Default: None.
     - forgiveness                           (int): Number of bases allowed to be off when account_for_strand_bias=True. E.g., if I am using a 5' technology with a read length of 91 and a forgiveness of 100, then I will keep only variants that fall within the last 191 bases of each respective transcript. Default: 100.
+    - add_hgvs_breakdown_to_adata_var       (bool): Whether to add the HGVS breakdown of the variants in separate columns of adata.var including nucleotide positions, variant, variant start position, variant end position, and gene name. Default: True.
     """
     # * 1. logger
     if save_logs and not log_out_dir:
@@ -445,6 +448,7 @@ def clean(
     cosmic_email = kwargs.get("cosmic_email", None)
     cosmic_password = kwargs.get("cosmic_password", None)
     forgiveness = kwargs.get("forgiveness", 100)
+    add_hgvs_breakdown_to_adata_var = kwargs.get("add_hgvs_breakdown_to_adata_var", True)
 
     # * 7.5 make sure ints are ints
     if min_counts is None:
@@ -523,8 +527,6 @@ def clean(
     if isinstance(adata, str) and os.path.exists(adata) and adata.endswith(".h5ad"):
         adata = ad.read_h5ad(adata)
 
-    adata.var = adata.var.rename_axis("VCRS")  # rename index
-
     #$ As far as naming convention goes: (1) vcrs_header is the HGVS format name, (2) vcrs_id is the name in the actual index file (and thus in the BUS file and custom t2g etc), (3) vcrs_id_from_vk_ref is the ID if I used my custom ID_to_header_csv
     if adata.var.index[0].startswith("vcrs_"):
         adata.var["vcrs_id_from_vk_ref"] = adata.var.index
@@ -537,61 +539,101 @@ def clean(
         adata.var["vcrs_header"] = adata.var.index
 
     adata.var.index.name = "variant"
-    adata.var.index = adata.var["vcrs_header"]  # set the index to the vcrs_header
     original_var_names = adata.var_names.copy()
 
-    #* work with column names
-    if variants_usecols:
-        if isinstance(variants_usecols, str):
-            variants_usecols = [variants_usecols]
-        # ensure these important columns are present
-        for column_to_add in [gene_id_column, seq_id_column, var_column, var_id_column]:
-            if isinstance(column_to_add, str) and isinstance(variants_usecols, list) and column_to_add not in variants_usecols:
-                variants_usecols.append(column_to_add)
-
-    #* explode the adata.var df and do some work
-    adata.var['vcrs_header_individual'] = adata.var['vcrs_header'].str.split(';')  # don't let the naming be confusing - it will only be original AFTER exploding; before, it will be a list
-    adata.var['vcrs_header_list_copy'] = adata.var['vcrs_header_individual'].copy()
-    adata_var_original_columns = adata.var.columns.tolist()
-
-    adata_var_exploded = adata.var.copy().explode('vcrs_header_individual', ignore_index=True)
-    first_vcrs_header = adata_var_exploded["vcrs_header_individual"].iloc[0]
+    first_vcrs_header = adata.var["vcrs_header"].iloc[0].split(';')[0]
     if not re.fullmatch(HGVS_pattern_general, first_vcrs_header):
-        adata_var_exploded.rename(columns={"vcrs_header": "vcrs_id", "vcrs_header_individual": "vcrs_id_individual"}, inplace=True)
-        if variants is None:
-            raise ValueError(f"The first vcrs_header '{first_vcrs_header}' does not match the expected HGVS format. Please provide variants as an input.")
-    
-    if variants is not None:
-        adata_var_exploded = merge_variants_with_adata(variants, adata_var_exploded, seq_id_column, var_column, var_id_column, variants_usecols=variants_usecols)
-        first_vcrs_header = adata_var_exploded["vcrs_header_individual"].iloc[0][0]
+        adata.var.rename(columns={"vcrs_header": "vcrs_id"}, inplace=True)
     else:
-        adata_var_exploded["vcrs_id"] = adata_var_exploded["vcrs_header"]
-        adata_var_exploded["vcrs_id_individual"] = adata_var_exploded["vcrs_header_individual"]
+        adata.var["vcrs_id"] = adata.var["vcrs_header"]
 
-    # TODO: tldr: ALL I NEED TO DO TO FIX THIS IS JUST SET variant_source = None AND ERASE THIS CHECK (I set up everything else below to work - the checks will take extra time, which is why I don't do it now, but it will be easy later) - I am assuming that the first vcrs_header_individual is representative of the variant source - but in cases where I combine genome and transcriptome, I should keep variant_source = None, do the identify_variant_source check below, and then evaluate my strand bias function and normal genome function to ensure they work correctly
-    if ":c." in first_vcrs_header:
-        variant_source = "transcriptome"
-    elif ":g." in first_vcrs_header:
-        variant_source = "genome"
-    else:
-        variant_source = None
+    if add_hgvs_breakdown_to_adata_var or variants is not None:
+        #* work with column names
+        if variants_usecols is not None:
+            if not variants_usecols:  # eg False, [], set(), tuple()
+                variants_usecols = []
+            if isinstance(variants_usecols, str):
+                variants_usecols = [variants_usecols]
+            # ensure these important columns are present
+            for column_to_add in [gene_id_column, seq_id_column, var_column, var_id_column]:
+                if isinstance(column_to_add, str) and isinstance(variants_usecols, list) and column_to_add not in variants_usecols:
+                    variants_usecols.append(column_to_add)
 
-    adata_var_exploded = add_information_from_variant_header_to_adata_var_exploded(adata_var_exploded, seq_id_column=seq_id_column, var_column=var_column, variant_source=variant_source, t2g_file=reference_genome_t2g)
+        #* explode the adata.var df and do some work
+        adata_var_original_columns = adata.var.columns.tolist()
+        
+        adata.var['vcrs_header_individual'] = adata.var['vcrs_header'].str.split(';')  # don't let the naming be confusing - it will only be original AFTER exploding; before, it will be a list
+        if not re.fullmatch(HGVS_pattern_general, first_vcrs_header):
+            adata.var.rename(columns={"vcrs_header_individual": "vcrs_id_individual"}, inplace=True)
+            if variants is None:
+                raise ValueError(f"The first vcrs_header '{first_vcrs_header}' does not match the expected HGVS format. Please provide variants as an input.")
+        else:
+            adata.var["vcrs_id"] = adata.var["vcrs_header"]
+            adata.var["vcrs_id_individual"] = adata.var["vcrs_header_individual"]
+        adata_var_exploded = adata.var.copy().explode('vcrs_id_individual', ignore_index=True)
+        
+        if variants is not None:
+            adata_var_exploded = merge_variants_with_adata(variants, adata_var_exploded, seq_id_column, var_column, var_id_column, variants_usecols=variants_usecols)
+            first_vcrs_header = adata.var["vcrs_header"].iloc[0].split(';')[0]
 
-    #* collapse and re-merge the adata.var df
-    grouped_var = (
-            adata_var_exploded.groupby("vcrs_header", as_index=False)
-            .agg(
-                {
-                    **{col: list for col in adata_var_exploded.columns if col not in adata_var_original_columns + ["vcrs_header"]},  # merge variants columns into lists
-                    **{col: "first" for col in adata_var_exploded.columns if col in adata_var_original_columns},  # keep adata.var columns as-is
-                })
-            .reset_index(drop=True)
-        )
-    adata.var = adata.var.merge(grouped_var, on='vcrs_id', how='left', suffixes=('', '_merged'))
-    adata.var.drop(columns=["vcrs_header_individual"], inplace=True, errors='ignore')
-    adata.var.rename(columns={"vcrs_header_list_copy": "vcrs_header_list"}, inplace=True)
-    del adata_var_exploded, grouped_var
+        # TODO: tldr: ALL I NEED TO DO TO FIX THIS IS JUST SET variant_source = None AND ERASE THIS CHECK (I set up everything else below to work - the checks will take extra time, which is why I don't do it now, but it will be easy later) - I am assuming that the first vcrs_header_individual is representative of the variant source - but in cases where I combine genome and transcriptome, I should keep variant_source = None, do the identify_variant_source check below, and then evaluate my strand bias function and normal genome function to ensure they work correctly
+        if ":c." in first_vcrs_header:
+            variant_source = "transcriptome"
+        elif ":g." in first_vcrs_header:
+            variant_source = "genome"
+        else:
+            variant_source = None
+
+        if add_hgvs_breakdown_to_adata_var:
+            adata_var_exploded = add_information_from_variant_header_to_adata_var_exploded(adata_var_exploded, seq_id_column=seq_id_column, var_column=var_column, gene_id_column=gene_id_column, variant_source=variant_source, t2g_file=reference_genome_t2g)
+
+        #* for unmerged instances of vcrs_header (which should be most of them), merge these into adata.var directly
+        exclude_cols = {"vcrs_id_individual", "vcrs_header_individual"}
+        columns_to_list = [col for col in adata_var_exploded.columns if (col not in adata_var_original_columns + ["vcrs_header", "vcrs_id"]) and col not in exclude_cols]
+        columns_to_first = [col for col in adata_var_exploded.columns if (col in adata_var_original_columns + ["vcrs_header", "vcrs_id"]) and col not in exclude_cols]
+
+        nonmerged_headers_mask = adata_var_exploded["vcrs_id"] == adata_var_exploded["vcrs_id_individual"]
+        cols_to_use = [col for col in adata_var_exploded.columns if col not in exclude_cols]
+
+        adata.var = adata.var.merge(adata_var_exploded.loc[nonmerged_headers_mask, cols_to_use], on='vcrs_id', how='left', suffixes=('', '_merged_tmp'))
+        for col in adata.var.columns:
+            if col in columns_to_list:
+                mask = adata.var[col].notna()
+                adata.var.loc[mask, col] = adata.var.loc[mask, col].map(lambda x: [x] if not isinstance(x, list) else x)
+
+        #* collapse and re-merge the adata.var df
+        grouped_var = (
+                adata_var_exploded.loc[~nonmerged_headers_mask, cols_to_use].groupby("vcrs_id", as_index=False)
+                .agg(
+                    {
+                        **{col: list for col in columns_to_list},  # merge variants columns into lists
+                        **{col: "first" for col in columns_to_first},  # keep adata.var columns as-is
+                    })
+                .reset_index(drop=True)
+            )
+        adata.var = adata.var.merge(grouped_var, on='vcrs_id', how='left', suffixes=('', '_merged_tmp'))
+        for col in adata.var.columns:
+            if col in adata.var.columns and f"{col}_merged_tmp" in adata.var.columns and col != "vcrs_header":
+                adata.var[col] = adata.var[col].combine_first(adata.var[f"{col}_merged_tmp"])  # fill na of that column with the merged values
+                adata.var.drop(columns=[f"{col}_merged_tmp"], inplace=True)  # remove the merged column
+        adata.var.drop(columns=[col for col in adata.var.columns if col.endswith('_merged_tmp')], inplace=True)  # ensure these columns are dropped
+        del adata_var_exploded, grouped_var
+    adata.var.drop(columns=["vcrs_header_individual", "vcrs_id_individual"], inplace=True, errors='ignore')
+
+    if vcrs_metadata_df is not None:
+        if isinstance(vcrs_metadata_df, pd.DataFrame) or isinstance(vcrs_metadata_df, (str, Path) and os.path.exists(vcrs_metadata_df)):
+            if isinstance(vcrs_metadata_df, (str, Path)) and str(vcrs_metadata_df).endswith(".csv"):
+                vcrs_metadata_df = pd.read_csv(vcrs_metadata_df, index_col=0)
+            elif isinstance(vcrs_metadata_df, (str, Path)) and str(vcrs_metadata_df).endswith(".h5ad"):
+                adata_tmp = ad.read_h5ad(vcrs_metadata_df, backed='r')
+                vcrs_metadata_df = adata_tmp.var.to_dataframe()
+            logger.info(f"vcrs_metadata_df file path {vcrs_metadata_df} exists. Merging with adata.var.")
+            adata.var = adata.var.merge(vcrs_metadata_df, _on="vcrs_id", how="left")
+        elif isinstance(vcrs_metadata_df, (str, Path) and not os.path.exists(vcrs_metadata_df)):
+            logger.info(f"vcrs_metadata_df file path {vcrs_metadata_df} does not exist. Skipping merging with adata.var, and saving the current vcrs_metadata_df to csv (good if running this function in a loop, where it will be created upon the first iteration and then loaded in upon subsequent iterations).")
+            adata.var.to_csv(vcrs_metadata_df, index=False)
+        else:
+            raise ValueError(f"vcrs_metadata_df must be a pandas DataFrame or a file path to a csv or h5ad file. Got {type(vcrs_metadata_df)} instead.")
     
     #* fixed the parity stuff
     if parity == "paired" and parity_kb_count == "single" and adata.uns.get("corrected_barcodes") is None:  # the last part is to ensure I didn't make the correction already
@@ -680,10 +722,8 @@ def clean(
     if use_binary_matrix:
         adata.X = (adata.X > 0).astype(int)
 
-    # ensures adata_reference_genome rows/obs match order of adata
-    adata_reference_genome = adata_reference_genome[adata.obs_names].copy()
-
     if isinstance(adata_reference_genome, anndata.AnnData):
+        adata_reference_genome = adata_reference_genome[adata.obs_names].copy()  # ensures adata_reference_genome rows/obs match order of adata
         if technology not in non_single_cell_technologies:  # pardon the double negative - this is just a way to say "if technology is single cell"
             for condition in scanpy_conditions:
                 if params_dict.get(condition):
