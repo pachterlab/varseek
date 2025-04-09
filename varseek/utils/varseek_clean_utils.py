@@ -572,9 +572,12 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
     col_indices = []
     data_values = []
 
-    vcrs_mismatch_to_gene_count = 0
-    read_counted_from_multimap_resolution = 0
-    multimapped_refs_removed = 0
+    number_of_counts_added = 0
+    number_of_counts_removed = 0
+    number_of_reads_changed = 0
+    mm_original = True if "--mm" in kb_info_data.get("call", "") else False
+    logging_level = logger.getEffectiveLevel()
+
     logger.info("Looping through bus_df to adjust adata")  #? consider just updating adata instead of making from scratch - would compare final_counts to original counts (1 / vcrs_names_list)
     for vcrs_names_list, genes_vcrs_outer_list, genes_standard_set, barcode, pseudoaligns_to_reference_genome, read_index in tqdm(zip(bus_df["vcrs_names"], bus_df["genes_vcrs"], bus_df["genes_standard_set"], bus_df["barcode"], bus_df["pseudoaligns_to_reference_genome"], bus_df["read_index"]), total=len(bus_df), desc="Adjusting adata by looping through bus_df"):
         #* look at all VCRSs to which the read mapped, and keep only VCRSs whose corresponding gene is in the gene_intersection column above
@@ -586,17 +589,10 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
             
             if gene_vcrs_inner_set & genes_standard_set or (count_reads_that_dont_pseudoalign_to_reference_genome and not pseudoaligns_to_reference_genome):  # (1) non-empty intersection between gene corresponding to VCRS and reference genome gene OR (2) if the read does not pseudoalign to the reference genome, count it anyway if the flag is True
                 vcrs_names_list_final.append(vcrs_name)
-                # # uncomment for more logging at the cost of (very slightly) slower performance
-                # if not mm:
-                #     if len(gene_vcrs_inner_set & genes_standard_set) == 1 and len(gene_vcrs_inner_set) > 1:
-                #         read_counted_from_multimap_resolution += 1
-                # else:
-                #     len_union = len(gene_vcrs_inner_set & genes_standard_set)
-                #     len_vcrs = len(vcrs_names_list_final)
-                #     if len_union != len_vcrs:
-                #         multimapped_refs_removed += (len_vcrs - len_union)
-            else:
-                vcrs_mismatch_to_gene_count += 1
+        
+        if logging_level > 20:  # since I only want to log this if the logging level is higher than INFO
+            number_of_counts_added, number_of_counts_removed, number_of_reads_changed = normal_genome_validation_tallying(vcrs_names_list_final=vcrs_names_list_final, vcrs_names_list=vcrs_names_list, number_of_counts_added=number_of_counts_added, number_of_counts_removed=number_of_counts_removed, number_of_reads_changed=number_of_reads_changed, mm=mm, mm_original=mm_original)
+            
         length_vcrs_names_list_final = len(vcrs_names_list_final)
         if length_vcrs_names_list_final == 0 or (not mm and length_vcrs_names_list_final > 1):
             continue
@@ -617,9 +613,9 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
             col_indices.append(col_idx)
             data_values.append(counts_final)
 
-    logger.info(f"Number of reads that pseudoaligned to a VCRS but had the incorrect reference genome match: {vcrs_mismatch_to_gene_count} / {len(bus_df)}")
-    # logger.info(f"Number of reads that uniquely mapped to a VCRS due to reference genome mismatching resolution: {read_counted_from_multimap_resolution} / {len(bus_df)}")
-    # logger.info(f"Number of multimapped reference items decremented: {multimapped_refs_removed}")
+    logger.info(f"Number of counts added: {number_of_counts_added}")
+    logger.info(f"Number of counts removed: {number_of_counts_removed}")
+    logger.info(f"Number of reads that with changed count behavior: {number_of_reads_changed} / {len(bus_df)}")
 
     if len(data_values) == 0:
         logger.warning("No valid updates found in the bus_df. Returning the original AnnData object.")
@@ -733,11 +729,9 @@ def merge_bus_df_and_adata_var(bus_df, adata_var, vcrs_column_bus="vcrs_names", 
 def barcode_and_umi_agg(group):
     # Compute the mode for vcrs_names
     vcrs_as_tuples = group["vcrs_names"].apply(tuple)
-    mode_val = list(vcrs_as_tuples.mode().iloc[0])
-    # Find the first occurrence index of the mode in vcrs_names
+    mode_val = list(vcrs_as_tuples.mode().iloc[0])  # Find the first occurrence index of the mode in vcrs_names
     idx = group["vcrs_names"].tolist().index(mode_val)
-    # Use the index to extract the corresponding genes_vcrs value
-    genes_vcrs_val = group["genes_vcrs"].iloc[idx]
+    genes_vcrs_val = group["genes_vcrs"].iloc[idx]  # Use the index to extract the corresponding genes_vcrs value  #? I considered making a little more complex if there is a tie for modes, in that I would take the union of all VCRSs and their corresponding genes, but this gets a little complicated to implement and is likely not valuable (most of the time there will be a clear mode)
     
     # Aggregate read_index into a list
     read_index_agg = list(group["read_index"])
@@ -755,8 +749,40 @@ def barcode_and_umi_agg(group):
     })
 
 
+def normal_genome_validation_tallying(vcrs_names_list_final, vcrs_names_list, number_of_counts_added=0, number_of_counts_removed=0, number_of_reads_changed=0, mm=False, mm_original=False):
+    len_vcrs_names_list_final = len(vcrs_names_list_final)
+    len_vcrs_names_list = len(vcrs_names_list)
 
-
+    if mm and len_vcrs_names_list_final > 1 and (len_vcrs_names_list_final < len_vcrs_names_list):
+        if not mm_original:
+            number_of_counts_added += len_vcrs_names_list_final  # it was NOT counted originally (due to mapping to >1 VCRS and lack of mm_original) but is counted now (due to mm)
+        else:
+            number_of_counts_removed += len_vcrs_names_list - len_vcrs_names_list_final  # it was counted originally (due to mm_original) and is counted now (due to mm), but to a lesser extent
+        number_of_reads_changed += 1
+    
+    elif len_vcrs_names_list_final == 1 and (len_vcrs_names_list_final < len_vcrs_names_list):
+        if not mm_original:
+            number_of_counts_added += 1  # it was NOT counted originally (due to mapping to >1 VCRS and lack of mm_original) but is counted now (with or without mm, due to length 1)
+        else:
+            number_of_counts_removed += len_vcrs_names_list - len_vcrs_names_list_final  # it was counted originally (due to mm_original) and is counted now (with or without mm, due to length 1), but to a lesser extent
+        number_of_reads_changed += 1
+    
+    elif len_vcrs_names_list_final == 0:  
+        if not mm_original:
+            if len_vcrs_names_list == 1:  # when mm_original False, only originally counted when length 1
+                number_of_counts_removed += 1  # it was counted (due to length 1) originally but is NOT counted now (due to length 0)    # the read was only originally counted if it mapped to exactly 1 VCRS
+                number_of_reads_changed += 1
+        else:
+            number_of_counts_removed += len_vcrs_names_list  # it was counted originally (due to mm_original) but is NOT counted now (due to length 0)    # all of these reads were originally counted but now are not
+            number_of_reads_changed += 1
+    
+    elif mm and not mm_original:
+        number_of_counts_added += len_vcrs_names_list_final  # no difference in initial and final VCRSs, but simply a difference in multimapping behavior
+    
+    elif mm_original and not mm:
+        number_of_counts_removed += len_vcrs_names_list - len_vcrs_names_list_final  # no difference in initial and final VCRSs, but simply a difference in multimapping behavior
+    
+    return number_of_counts_added, number_of_counts_removed, number_of_reads_changed
 
 
 

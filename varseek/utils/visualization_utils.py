@@ -106,6 +106,8 @@ def plot_histogram_notebook_1(df_overlap, column, x_label="x-axis", title="Histo
         plt.savefig(output_plot_file, format="png", dpi=DPI, bbox_inches="tight")
         if SAVE_PDF_GLOBAL:
             plt.savefig(output_plot_file.replace(".png", ".pdf"), format="pdf", dpi=DPI)
+    else:
+        show=True
 
     if show:
         plt.show()
@@ -130,6 +132,8 @@ def plot_histogram_of_nearby_mutations_7_5(mutation_metadata_df, column, bins, o
         plt.savefig(output_file, format="png", dpi=DPI)
         if SAVE_PDF_GLOBAL:
             plt.savefig(output_file.replace(".png", ".pdf"), format="pdf", dpi=DPI)
+    else:
+        show=True
 
     if show:
         plt.show()
@@ -593,6 +597,8 @@ def plot_basic_bar_plot_from_dict(my_dict, y_axis, log_scale=False, output_file=
         plt.savefig(output_file, format="png", dpi=DPI)
         if SAVE_PDF_GLOBAL:
             plt.savefig(output_file.replace(".png", ".pdf"), format="pdf", dpi=DPI)
+    else:
+        show=True
 
     if show:
         plt.show()
@@ -625,6 +631,8 @@ def plot_descending_bar_plot(gene_counts, x_label, y_label, tick_interval=None, 
         plt.savefig(output_file, format="png", dpi=DPI)
         if SAVE_PDF_GLOBAL:
             plt.savefig(output_file.replace(".png", ".pdf"), format="pdf", dpi=DPI)
+    else:
+        show=True
 
     if show:
         plt.show()
@@ -677,6 +685,9 @@ def draw_confusion_matrix(metric_dictionary_reads, title="Confusion Matrix", tit
     plt.tight_layout()
     if output_file:
         plt.savefig(output_file, bbox_inches="tight", pad_inches=0.5)
+    else:
+        show=True
+
     if show:
         plt.show()
     plt.close()
@@ -773,9 +784,13 @@ def plot_kat_histogram(kat_hist, out_path=None, show=False):
     plt.close()
 
 
-def plot_items_descending_order(df, x_column, y_column, item_range=(0, 10), xlabel="x-axis", title="Title", save_path=None, figsize=(15, 7), show=False):
+def plot_items_descending_order(df, x_column, y_column, item_range=(0, float("inf")), xlabel="x-axis", title="Title", show_names=None, save_path=None, figsize=(15, 7), show=False):
     # Plot the line plot
     plt.figure(figsize=figsize)
+
+    df = df.copy()
+    df = df[df[y_column] > 0]  # remove values from df where y_column is 0
+    df = df.sort_values(by=y_column, ascending=False)
 
     first_item = item_range[0]
     last_item = item_range[1]
@@ -785,11 +800,13 @@ def plot_items_descending_order(df, x_column, y_column, item_range=(0, 10), xlab
 
     last_item = min(last_item, len(df))
 
-    if first_item + last_item > 100:
-        x_axis_type = range(first_item + 1, last_item + 1)
-
-    else:
+    if show_names is None:  # default - show names if within 100 items
+        show_names = (first_item + last_item <= 100)
+    
+    if show_names:
         x_axis_type = list(df[x_column])[first_item:last_item]
+    else:
+        x_axis_type = range(first_item + 1, last_item + 1)
 
     plt.plot(x_axis_type, df.iloc[first_item:last_item][y_column], marker="o")
     plt.xticks(rotation=90)
@@ -805,8 +822,34 @@ def plot_items_descending_order(df, x_column, y_column, item_range=(0, 10), xlab
         plt.savefig(save_path, dpi=DPI)
         if SAVE_PDF_GLOBAL:
             plt.savefig(save_path.replace(".png", ".pdf"), format="pdf", dpi=DPI)
+    else:
+        show=True
 
     # Show the plot
+    if show:
+        plt.show()
+    plt.close()
+
+def plot_histogram_with_zero_value(df, col, log_x=True, log_y=True, save_path=None, show=False):
+    bins = np.logspace(0, np.log10(df[col].max() + 1), num=100)
+    bins = np.insert(bins, 0, 0)  # Insert 0 at the beginning
+    plt.hist(df[col], bins=bins, edgecolor='black')
+    plt.xlabel(col)
+    plt.ylabel("Frequency")
+    plt.title(f"Histogram of {col}")
+    if log_x:
+        plt.xscale('log')
+    if log_y:
+        plt.yscale('log')
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=DPI)
+        if SAVE_PDF_GLOBAL:
+            plt.savefig(save_path.replace(".png", ".pdf"), format="pdf", dpi=DPI)
+    else:
+        show=True
+
     if show:
         plt.show()
     plt.close()
@@ -826,6 +869,9 @@ def plot_knee_plot(umi_counts_sorted, knee_locator, min_counts_assessed_by_knee_
     plt.legend()
     if output_file:
         plt.savefig(output_file)
+    else:
+        show=True
+
     if show:
         plt.show()
     plt.close()

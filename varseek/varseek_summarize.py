@@ -3,6 +3,7 @@
 import logging
 import os
 import time
+import numpy as np
 from pathlib import Path
 
 import anndata
@@ -18,7 +19,9 @@ from varseek.utils import (
     save_params_to_config_file,
     save_run_info,
     set_up_logger,
-    set_varseek_logging_level_and_filehandler
+    set_varseek_logging_level_and_filehandler,
+    plot_items_descending_order,
+    plot_histogram_with_zero_value
 )
 
 from .constants import technology_valid_values
@@ -174,6 +177,15 @@ def summarize(
         for variant in vcrs_count_descending_greater_than_zero.index:
             total_counts = adata.var.loc[variant, "vcrs_count"]
             f.write(f"{variant}\t{total_counts}\n")
+
+    if "vcrs_count" not in adata.var.columns:
+        adata.var["vcrs_count"] = adata.X.sum(axis=0).A1 if hasattr(adata.X, "A1") else np.asarray(adata.X.sum(axis=0)).flatten()
+        adata.var["vcrs_count"] = adata.var["vcrs_count"].fillna(0).astype("Int32")
+    
+    x_column = "vcrs_header_with_gene_name" if "vcrs_header_with_gene_name" in adata.var.columns else "vcrs_id"
+    plot_items_descending_order(adata.var, x_column = x_column, y_column = 'vcrs_count', item_range = (0,top_values), show_names=True, xlabel = "Variant", title = f"Top {top_values} Variants by Count", figsize = (15, 7), show=False, output_path=os.path.join(plots_folder, f"top_{top_values}_variants_descending_plot.png"))
+    plot_items_descending_order(adata.var, x_column = x_column, y_column = 'vcrs_count', show_names=False, xlabel = "Variant Index", title = "Top Variants by Count", figsize = (15, 7), show=False, output_path=os.path.join(plots_folder, "variants_descending_plot.png"))
+    plot_histogram_with_zero_value(adata.var, col="vcrs_count", save_path=os.path.join(plots_folder, "variants_histogram.png"))
 
     # 2. Variants Present Across the Most Samples
     logger.info("2. Variants Present Across the Most Samples")

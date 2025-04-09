@@ -207,6 +207,14 @@ def iterate_through_vcf_in_chunks(variants, params_dict, chunksize):
 
         if isinstance(tmp_file, str) and os.path.exists(tmp_file):
             os.remove(tmp_file)
+        
+        if params_dict.get("merge_identical", True):
+            out, vcrs_fasta_out, vcrs_t2g_out, id_to_header_csv_out = params_dict["out"], params_dict.get("vcrs_fasta_out", None), params_dict.get("vcrs_t2g_out", None), params_dict.get("id_to_header_csv_out", None)
+            vcrs_fasta_out = os.path.join(out, "vcrs.fa") if not vcrs_fasta_out else vcrs_fasta_out  # copy-paste from below
+            id_to_header_csv_out = os.path.join(out, "id_to_header_mapping.csv") if not id_to_header_csv_out else id_to_header_csv_out  # copy-paste from below
+            vcrs_t2g_out = os.path.join(out, "vcrs_t2g.txt") if not vcrs_t2g_out else vcrs_t2g_out  # copy-paste from below
+            merge_fasta_file_headers(vcrs_fasta_out, use_IDs=params_dict.get("use_IDs", True), id_to_header_csv_out=id_to_header_csv_out)
+            create_identity_t2g(vcrs_fasta_out, vcrs_t2g_out, mode="w")
         return
 
 
@@ -332,7 +340,7 @@ def validate_input_build(params_dict):
             raise ValueError(f"{param_name} must be an int, a string, or None. Got param_name of type {type(param_value)}.")
 
 
-accepted_build_file_types = (".csv", ".tsv", ".vcf")
+accepted_build_file_types = (".csv", ".tsv", ".vcf", ".parquet")
 
 @report_time_elapsed
 def build(
@@ -763,14 +771,14 @@ def build(
                 json.dump(column_name_dict, f, indent=4)
 
     # Read in 'mutations' if passed as filepath to comma-separated csv
-    if isinstance(mutations, str) and mutations.endswith(".csv"):
-        mutations = pd.read_csv(mutations)
-        for col in mutations.columns:
-            if col not in columns_to_keep:
-                columns_to_keep.append(col)  # append "mutation_aa", "gene_name", "mutation_id"
-
-    elif isinstance(mutations, str) and mutations.endswith(".tsv"):
-        mutations = pd.read_csv(mutations, sep="\t")
+    if isinstance(mutations, str) and (mutations.endswith(".csv") or mutations.endswith(".tsv") or mutations.endswith(".parquet")):
+        if mutations.endswith(".csv"):
+            mutations = pd.read_csv(mutations)
+        elif mutations.endswith(".tsv"):
+            mutations = pd.read_csv(mutations, sep="\t")
+        elif mutations.endswith(".parquet"):
+            mutations = pd.read_parquet(mutations)
+        
         for col in mutations.columns:
             if col not in columns_to_keep:
                 columns_to_keep.append(col)  # append "mutation_aa", "gene_name", "mutation_id"

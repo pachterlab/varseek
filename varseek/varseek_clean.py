@@ -543,11 +543,12 @@ def clean(
     adata.var.index.name = "variant"
     original_var_names = adata.var_names.copy()
 
-    first_vcrs_header = adata.var["vcrs_header"].iloc[0].split(';')[0]
+    adata.var.rename(columns={"vcrs_header": "vcrs_id"}, inplace=True)
+    first_vcrs_header = adata.var["vcrs_id"].iloc[0].split(';')[0]
     if not re.fullmatch(HGVS_pattern_general, first_vcrs_header):
-        adata.var.rename(columns={"vcrs_header": "vcrs_id"}, inplace=True)
+        pass  # deal with this later
     else:
-        adata.var["vcrs_id"] = adata.var["vcrs_header"]
+        adata.var["vcrs_header"] = adata.var["vcrs_id"]
 
     if add_hgvs_breakdown_to_adata_var or variants is not None:
         #* work with column names
@@ -564,14 +565,12 @@ def clean(
         #* explode the adata.var df and do some work
         adata_var_original_columns = adata.var.columns.tolist()
         
-        adata.var['vcrs_header_individual'] = adata.var['vcrs_header'].str.split(';')  # don't let the naming be confusing - it will only be original AFTER exploding; before, it will be a list
+        adata.var['vcrs_id_individual'] = adata.var['vcrs_id'].str.split(';')  # don't let the naming be confusing - it will only be original AFTER exploding; before, it will be a list
         if not re.fullmatch(HGVS_pattern_general, first_vcrs_header):
-            adata.var.rename(columns={"vcrs_header_individual": "vcrs_id_individual"}, inplace=True)
             if variants is None:
                 raise ValueError(f"The first vcrs_header '{first_vcrs_header}' does not match the expected HGVS format. Please provide variants as an input.")
         else:
-            adata.var["vcrs_id"] = adata.var["vcrs_header"]
-            adata.var["vcrs_id_individual"] = adata.var["vcrs_header_individual"]
+            adata.var["vcrs_header_individual"] = adata.var["vcrs_id_individual"]
         adata_var_exploded = adata.var.copy().explode('vcrs_id_individual', ignore_index=True)
         
         if variants is not None:
@@ -636,6 +635,14 @@ def clean(
             adata.var.to_csv(vcrs_metadata_df, index=False)
         else:
             raise ValueError(f"vcrs_metadata_df must be a pandas DataFrame or a file path to a csv or h5ad file. Got {type(vcrs_metadata_df)} instead.")
+        
+    if gene_id_column in adata.var.columns and "vcrs_header" in adata.var.columns:
+        # adata.var['vcrs_header_with_gene_name'] = ("(" + adata.var[gene_id_column].astype(str) + ")" + adata.var['vcrs_header'].astype(str))
+        adata.var['vcrs_header_with_gene_name'] = (
+            adata.var[gene_id_column].astype(str) + "(" +
+            adata.var['vcrs_header'].str.split(":").str[0] + "):" +
+            adata.var['vcrs_header'].str.split(":").str[1]
+        )
     
     #* fixed the parity stuff
     if parity == "paired" and parity_kb_count == "single" and adata.uns.get("corrected_barcodes") is None:  # the last part is to ensure I didn't make the correction already
@@ -839,7 +846,7 @@ def clean(
             adata,
             values_of_interest=vcrs_id_set_to_exclusively_keep,
             operation="keep",
-            var_column_name="vcrs_header",
+            var_column_name="vcrs_id",
         )
 
     if vcrs_id_set_to_exclude:
@@ -847,7 +854,7 @@ def clean(
             adata,
             values_of_interest=vcrs_id_set_to_exclude,
             operation="exclude",
-            var_column_name="vcrs_header",
+            var_column_name="vcrs_id",
         )
 
     if gene_set_to_exclusively_keep:
@@ -898,7 +905,7 @@ def clean(
     for adata_object in [adata, adata_reference_genome]:
         if isinstance(adata_object, anndata.AnnData):
             for col in adata_object.var.columns:
-                adata_object.var[col] = adata_object.var[col].apply(lambda x: ";".join(map(str, x)) if isinstance(x, list) else x)
+                adata_object.var[col] = adata_object.var[col].apply(lambda x: ";".join(map(str, x)) if isinstance(x, list) else x).astype(str)
     
     if isinstance(adata_reference_genome, anndata.AnnData):
         adata_reference_genome.write(adata_reference_genome_clean_out)
