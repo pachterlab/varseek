@@ -3,6 +3,7 @@
 import logging
 import os
 import time
+import re
 import numpy as np
 from pathlib import Path
 
@@ -21,10 +22,14 @@ from varseek.utils import (
     set_up_logger,
     set_varseek_logging_level_and_filehandler,
     plot_items_descending_order,
-    plot_histogram_with_zero_value
+    plot_histogram_with_zero_value,
+    plot_cdna_locations,
+    add_information_from_variant_header_to_adata_var_exploded,
+    plot_substitution_heatmap,
+    plot_variant_types
 )
 
-from .constants import technology_valid_values
+from .constants import technology_valid_values, HGVS_pattern_general
 
 logger = logging.getLogger(__name__)
 logger = set_up_logger(logger, logging_level="INFO", save_logs=False, log_dir=None)
@@ -68,6 +73,13 @@ def summarize(
     logging_level=None,
     save_logs=False,
     log_out_dir=None,
+    plot_strand_bias=False,
+    strand_bias_end="auto",
+    cdna_fasta=None,
+    seq_id_cdna_column="seq_ID",
+    start_variant_position_cdna_column="start_variant_position",
+    end_variant_position_cdna_column="end_variant_position",
+    read_length=None,
     **kwargs,
 ):
     """
@@ -80,12 +92,22 @@ def summarize(
     - top_values                        (int) Number of top values to report. Default: 10
     - technology                        (str) Technology used to generate the data. To see list of spported technologies, run `kb --list`. For the purposes of this function, the only distinction that matters is bulk vs. non-bulk. Default: None
     - gene_name_column                  (str) Column name in adata.var that contains the gene names. Default: None (skip any uses of this).
+    - plot_strand_bias                   (bool) Whether to plot strand bias. Default: False
     - out                               (str) Output directory. Default: "."
     - dry_run                           (bool) If True, print the commands that would be run without actually running them. Default: False
     - overwrite                         (bool) Whether to overwrite existing files. Default: False
     - logging_level                     (str) Logging level. Can also be set with the environment variable VARSEEK_LOGGING_LEVEL. Default: INFO.
     - save_logs                         (True/False) Whether to save logs to a file. Default: False.
     - log_out_dir                       (str) Directory to save logs. Default: None (do not save logs).
+
+    # Only if plot_strand_bias=True
+    - strand_bias_end                  (str) End of the strand bias plot. Options: 'auto', 'both', '5p', '3p'. Default: auto (auto-detected by technology)
+    - cdna_fasta                       (str) Path to the cDNA FASTA file. Only if strand_bias_end != '5p'. Default: None
+    - seq_id_cdna_column               (str) Column name in adata.var that contains the sequence ID for cDNA. Default: "seq_ID"
+    - start_variant_position_cdna_column   (str) Column name in adata.var that contains the start variant position for cDNA. Default: "start_variant_position"
+    - end_variant_position_cdna_column     (str) Column name in adata.var that contains the end variant position for cDNA. Default: "end_variant_position"
+    - read_length                      (int) Read length for the FASTQ data. Only used to mark a vertical line on the plot. Default: None
+
 
     # Hidden arguments (part of kwargs):
     - stats_file                        (str) Path to the stats file. Default: `out`/varseek_summarize_stats.txt
@@ -153,6 +175,8 @@ def summarize(
     logger.info("1. Number of Variants with Count > 0 in any Sample/Cell, and for bulk in particular, for each sample; then list the variants")
     if "vcrs_count" not in adata.var.columns:
         adata.var["vcrs_count"] = adata.X.sum(axis=0).A1 if hasattr(adata.X, "A1") else adata.X.sum(axis=0).flatten()
+    if "vcrs_detected" not in adata.var.columns:
+        adata.var["vcrs_detected"] = adata.var["vcrs_count"] > 0
 
     # Sort by vcrs_count
     vcrs_count_descending = adata.var.sort_values(
@@ -178,14 +202,33 @@ def summarize(
             total_counts = adata.var.loc[variant, "vcrs_count"]
             f.write(f"{variant}\t{total_counts}\n")
 
-    if "vcrs_count" not in adata.var.columns:
-        adata.var["vcrs_count"] = adata.X.sum(axis=0).A1 if hasattr(adata.X, "A1") else np.asarray(adata.X.sum(axis=0)).flatten()
-        adata.var["vcrs_count"] = adata.var["vcrs_count"].fillna(0).astype("Int32")
+    skip_plots = False
+    if "vcrs_header" not in adata.var.columns:
+        adata.var["vcrs_header"] = adata.var.index
+        first_vcrs_header = adata.var["vcrs_header"].iloc[0].split(';')[0]
+        if not re.fullmatch(HGVS_pattern_general, first_vcrs_header):
+            logger.warning("Please run vk clean, or add a column vcrs_header to adata.var with the variant headers in HGVS format to make all plots.")
+            skip_plots = True
     
     x_column = "vcrs_header_with_gene_name" if "vcrs_header_with_gene_name" in adata.var.columns else "vcrs_id"
-    plot_items_descending_order(adata.var, x_column = x_column, y_column = 'vcrs_count', item_range = (0,top_values), show_names=True, xlabel = "Variant", title = f"Top {top_values} Variants by Count", figsize = (15, 7), show=False, output_path=os.path.join(plots_folder, f"top_{top_values}_variants_descending_plot.png"))
-    plot_items_descending_order(adata.var, x_column = x_column, y_column = 'vcrs_count', show_names=False, xlabel = "Variant Index", title = "Top Variants by Count", figsize = (15, 7), show=False, output_path=os.path.join(plots_folder, "variants_descending_plot.png"))
-    plot_histogram_with_zero_value(adata.var, col="vcrs_count", save_path=os.path.join(plots_folder, "variants_histogram.png"))
+    plot_items_descending_order(adata.var, x_column = x_column, y_column = 'vcrs_count', item_range = (0,top_values), show_names=True, xlabel = "Variant", title = f"Top {top_values} Variants by Counts across All Samples", figsize = (15, 7), show=False, output_path=os.path.join(plots_folder, f"top_{top_values}_variants_descending_plot.png"))
+    plot_items_descending_order(adata.var, x_column = x_column, y_column = 'vcrs_count', show_names=False, xlabel = "Variant Index", title = "Top Variants by Counts across All Samples", figsize = (15, 7), show=False, output_path=os.path.join(plots_folder, "variants_descending_plot.png"))
+    plot_histogram_with_zero_value(adata.var, col = "vcrs_count", save_path = os.path.join(plots_folder, "variants_histogram.png"))
+
+    if not skip_plots:
+        adata_var_with_alignment = adata.var.loc[adata.var["vcrs_count"] > 0].copy() if "vcrs_count" in adata.var.columns else adata.var.copy()
+        if plot_strand_bias:
+            if seq_id_cdna_column not in adata_var_with_alignment.columns or start_variant_position_cdna_column not in adata_var_with_alignment.columns or end_variant_position_cdna_column not in adata_var_with_alignment.columns:
+                logger.info("Adding information from variant header to a copy of adata.var. Note: this assumes vcrs_header transcripts and positions are accurate for cDNA")
+                adata_var_with_alignment = add_information_from_variant_header_to_adata_var_exploded(adata_var_with_alignment, vcrs_header_individual_column="vcrs_header", seq_id_column=seq_id_cdna_column, var_column="variant", variant_source="placeholder", include_position_information=True, include_gene_information=False)
+                adata_var_with_alignment.rename(columns={"start_variant_position": start_variant_position_cdna_column, "end_variant_position": end_variant_position_cdna_column}, inplace=True)
+            
+            plot_cdna_locations(adata_var_with_alignment, cdna_fasta=cdna_fasta, seq_id_column=seq_id_cdna_column, start_variant_position_cdna_column=start_variant_position_cdna_column, end_variant_position_cdna_column=end_variant_position_cdna_column, sequence_side=strand_bias_end, log_x=True, log_y=True, read_length_cutoff=read_length, save_path = os.path.join(plots_folder, f"strand_bias_{strand_bias_end}.png"))
+
+        plot_substitution_heatmap(adata_var_with_alignment, variant_header_column="vcrs_header", count_column="vcrs_count", output_file=os.path.join(plots_folder, "substitutions_with_vcrs_count.png"), show=False, plot_type="bar")
+        plot_substitution_heatmap(adata_var_with_alignment, variant_header_column="vcrs_header", count_column="vcrs_detected", output_file=os.path.join(plots_folder, "substitutions_with_vcrs_detected.png"), show=False, plot_type="bar")
+        plot_variant_types(adata_var_with_alignment, variant_header_column="vcrs_header", variant_type_column = "variant_type", count_column="vcrs_count", output_file=os.path.join(plots_folder, "variant_type_with_vcrs_detected.png"), show=False)
+        plot_variant_types(adata_var_with_alignment, variant_header_column="vcrs_header", variant_type_column = "variant_type", count_column="vcrs_detected", output_file=os.path.join(plots_folder, "variant_type_with_vcrs_detected.png"), show=False)
 
     # 2. Variants Present Across the Most Samples
     logger.info("2. Variants Present Across the Most Samples")

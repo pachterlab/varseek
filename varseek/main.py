@@ -2358,6 +2358,49 @@ def main():  # noqa: C901
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(summarize, "log_out_dir"),
     )
+    parser_summarize.add_argument(
+        "--plot_strand_bias",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(summarize, "plot_strand_bias"),
+    )
+    parser_summarize.add_argument(
+        "--strand_bias_end",
+        required=False,
+        choices=["auto", "both", "5p", "3p"],
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(summarize, "strand_bias_end"),
+    )
+    parser_summarize.add_argument(
+        "--cdna_fasta",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(summarize, "cdna_fasta"),
+    )
+    parser_summarize.add_argument(
+        "--seq_id_cdna_column",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(summarize, "seq_id_cdna_column"),
+    )
+    parser_summarize.add_argument(
+        "--start_variant_position_cdna_column",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(summarize, "start_variant_position_cdna_column"),
+    )
+    parser_summarize.add_argument(
+        "--end_variant_position_cdna_column",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(summarize, "end_variant_position_cdna_column"),
+    )
+    parser_summarize.add_argument(
+        "--read_length",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(summarize, "read_length"),
+    )
 
     # kwargs
     parser_summarize.add_argument(

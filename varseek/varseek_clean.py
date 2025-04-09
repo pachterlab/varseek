@@ -40,7 +40,8 @@ from varseek.utils import (
     remove_variants_from_adata_for_stranded_technologies,
     merge_variants_with_adata,
     identify_variant_source,
-    add_information_from_variant_header_to_adata_var_exploded
+    add_information_from_variant_header_to_adata_var_exploded,
+    plot_cdna_locations
 )
 
 from .constants import non_single_cell_technologies, technology_valid_values, technology_to_strand_bias_mapping, technology_to_file_index_with_transcripts_mapping, HGVS_pattern_general, mutation_pattern
@@ -385,10 +386,10 @@ def clean(
         return None
 
     # * 4. Save params to config file and run info file
-    config_file = os.path.join(out, "config", "vk_info_config.json")
+    config_file = os.path.join(out, "config", "vk_clean_config.json")
     save_params_to_config_file(params_dict, config_file)
 
-    run_info_file = os.path.join(out, "config", "vk_info_run_info.txt")
+    run_info_file = os.path.join(out, "config", "vk_clean_run_info.txt")
     save_run_info(run_info_file, params_dict=params_dict, function_name="clean")
 
     # * 5. Set up default folder/file input paths, and make sure the necessary ones exist
@@ -703,9 +704,13 @@ def clean(
 
     if qc_against_gene_matrix:
         adata = adjust_variant_adata_by_normal_gene_matrix(adata, kb_count_vcrs_dir=kb_count_vcrs_dir, kb_count_reference_genome_dir=kb_count_reference_genome_dir, fastq_file_list=fastqs, technology=technology, t2g_standard=reference_genome_t2g, adata_output_path=None, mm=mm, parity=parity, bustools=bustools, check_only=(not sort_fastqs), save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=count_reads_that_dont_pseudoalign_to_reference_genome, variant_source=variant_source, gtf=gtf)
+    
+    # set all count values below min_counts to 0
+    if min_counts is not None:
+        adata.X = adata.X.multiply(adata.X >= min_counts)
 
     if account_for_strand_bias:
-        adata = remove_variants_from_adata_for_stranded_technologies(adata=adata, strand_bias_end=strand_bias_end, read_length=read_length, header_column="vcrs_header", variant_source=variant_source, gtf=gtf, forgiveness=forgiveness)
+        adata = remove_variants_from_adata_for_stranded_technologies(adata=adata, strand_bias_end=strand_bias_end, read_length=read_length, header_column="vcrs_header", variant_source=variant_source, gtf=gtf, forgiveness=forgiveness, out=out)
 
     if sum_rows and adata.shape[0] > 1:
         # Sum across barcodes (rows)
@@ -720,10 +725,6 @@ def clean(
         # Update the obs_names to reflect the first barcode
         new_adata.obs_names = [first_barcode]
         adata = new_adata.copy()
-
-    # set all count values below min_counts to 0
-    if min_counts is not None:
-        adata.X = adata.X.multiply(adata.X >= min_counts)
 
     # # remove 0s for memory purposes
     # adata.X.eliminate_zeros()
@@ -875,6 +876,7 @@ def clean(
 
     adata.var["vcrs_count"] = adata.X.sum(axis=0).A1 if hasattr(adata.X, "A1") else np.asarray(adata.X.sum(axis=0)).flatten()
     adata.var["vcrs_count"] = adata.var["vcrs_count"].fillna(0).astype("Int32")
+    adata.var["vcrs_detected"] = adata.var["vcrs_count"] > 0
 
     if gene_id_column in adata.var:
         filtered_var = adata.var[adata.var["vcrs_count"] > 0]

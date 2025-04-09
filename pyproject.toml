@@ -68,6 +68,7 @@ analysis = [
     "rpy2>=3.5.17",
     "pykegg>=0.1.7",
     "cyvcf2>=0.31.1",
+    "seaborn>=0.13.2",
 ]
 
 

@@ -72,6 +72,7 @@ if not os.path.isfile(cosmic_mutations_path):
         out=reference_out_dir,
         mutation_class="cancer",
         download_cosmic=True,
+        gget_mutate=True,
         keep_genome_info=True,
         remove_duplicates=True,
         email=os.environ.get('COSMIC_EMAIL'),

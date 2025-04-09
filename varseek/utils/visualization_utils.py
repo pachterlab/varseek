@@ -11,6 +11,8 @@ from scipy import stats
 import logging
 
 from varseek.utils.logger_utils import set_up_logger
+from varseek.utils.seq_utils import add_variant_type
+from ..constants import technology_valid_values, technology_to_strand_bias_mapping
 
 logger = logging.getLogger(__name__)
 logger = set_up_logger(logger, logging_level="INFO", save_logs=False, log_dir=None)
@@ -867,6 +869,210 @@ def plot_knee_plot(umi_counts_sorted, knee_locator, min_counts_assessed_by_knee_
     plt.ylabel("Total UMI Counts")
     plt.title("Knee Plot with Cutoff")
     plt.legend()
+    if output_file:
+        plt.savefig(output_file)
+    else:
+        show=True
+
+    if show:
+        plt.show()
+    plt.close()
+
+
+import pandas as pd
+import pyfastx
+DPI = 300
+SAVE_PDF_GLOBAL = False
+
+def plot_cdna_locations(df, start_variant_position_cdna_column=None, end_variant_position_cdna_column=None, seq_id_column=None, cdna_sequence_length_column="transcript_length", cdna_fasta=None, technology=None, sequence_side="auto", read_length_cutoff=None, log_x=False, log_y=False, save_path=None, save_path_5p=None, save_path_3p=None, show=False, plot_style = "bar"):
+    df = df.copy()
+    if sequence_side is None:
+        sequence_side = "auto"
+    if sequence_side not in {"5p", "3p", "both", "auto"}:
+        raise ValueError("sequence_side must be '5p', '3p', 'both', or 'auto'.")
+    if sequence_side == "auto":
+        strand_bias_end_possible_values = technology_to_strand_bias_mapping.get([technology.upper()], None)
+        if strand_bias_end_possible_values is None or len(strand_bias_end_possible_values) != 1:
+            sequence_side = "both"
+        else:
+            sequence_side = strand_bias_end_possible_values[0]
+    
+    cols = []
+    
+    if sequence_side == "5p" or sequence_side == "both":
+        if start_variant_position_cdna_column is None or start_variant_position_cdna_column not in df.columns:
+            raise ValueError("start_variant_position_cdna_column must be provided for 5' side analysis")
+        cols.append("distance_from_5p")
+        df[start_variant_position_cdna_column] = (
+            pd.to_numeric(df[start_variant_position_cdna_column], errors='coerce')
+            .dropna()
+            .astype(int)
+        )  # will drop semicolon-merged headers, as well as those with uncertain positions
+        df["distance_from_5p"] = df[start_variant_position_cdna_column]
+    if sequence_side == "3p" or sequence_side == "both":
+        if end_variant_position_cdna_column is None or end_variant_position_cdna_column not in df.columns:
+            raise ValueError("end_variant_position_cdna_column must be provided for 3' side analysis")
+        if seq_id_column is None or seq_id_column not in df.columns:
+            raise ValueError("seq_id_column must be provided for sequence ID analysis")
+        cols.append("distance_from_3p")
+        if cdna_sequence_length_column is None or cdna_sequence_length_column not in df.columns:
+            if cdna_fasta is None or not os.path.exists(cdna_fasta):
+                raise ValueError("cdna_fasta must be provided and exist for 3' side analysis")
+            seq_length_dict = {}
+            for name, seq in pyfastx.Fastx(cdna_fasta):
+                name = name.split(".")[0]
+                seq_len = len(seq)
+                seq_length_dict[name] = seq_len
+            df[cdna_sequence_length_column] = df[seq_id_column].map(seq_length_dict).dropna().astype(int)
+        df[end_variant_position_cdna_column] = (
+            pd.to_numeric(df[end_variant_position_cdna_column], errors='coerce')
+            .dropna()
+            .astype(int)
+        )  # will drop semicolon-merged headers, as well as those with uncertain positions
+        df = df.dropna(subset=[cdna_sequence_length_column, end_variant_position_cdna_column])
+        df["distance_from_3p"] = df[cdna_sequence_length_column] - df[end_variant_position_cdna_column]
+
+    if sequence_side == "5p" and not save_path_5p:
+        save_path_5p = save_path
+    elif sequence_side == "3p" and not save_path_3p:
+        save_path_3p = save_path
+
+    for col in cols:
+        valid_vals = df[col].dropna()
+        max_val = valid_vals.max()
+        bins = np.logspace(0, np.ceil(np.log10(max_val + 1)), num=50)
+
+        plt.figure(figsize=(10, 6))
+        if plot_style == "bar":
+            plt.hist(valid_vals, bins=bins, edgecolor='black', color='steelblue', alpha=0.8)
+        elif plot_style == "line":
+            counts, bin_edges = np.histogram(valid_vals, bins=bins)
+            bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+            plt.plot(bin_centers, counts, marker='o', linestyle='-', color='steelblue')
+
+        plt.xlabel(col)
+        plt.ylabel("Frequency")
+        plt.title(f"Histogram of {col}")
+        if log_x:
+            plt.xscale('log')
+        if log_y:
+            plt.yscale('log')
+
+        if read_length_cutoff:
+            plt.axvline(x=read_length_cutoff, color='red', linestyle='--', linewidth=1)
+            # Optional label
+            plt.text(
+                read_length_cutoff,                # x-position (same as line)
+                plt.ylim()[1] * 0.95,  # y-position (near top of y-axis)
+                'read length',
+                color='red',
+                ha='right',
+                va='top',
+                rotation=90,
+                fontsize=10
+            )
+
+        plt.grid(True, which='both', linestyle='--', linewidth=0.5, alpha=0.6)
+        plt.tight_layout()
+
+        save_path = save_path_5p if col == "distance_from_5p" else save_path_3p
+        if save_path:
+            plt.savefig(save_path, dpi=DPI)
+            if SAVE_PDF_GLOBAL:
+                plt.savefig(save_path.replace(".png", ".pdf"), format="pdf", dpi=DPI)
+        else:
+            show=True
+
+        if show:
+            plt.show()
+        plt.close()
+
+def plot_variant_types(df, variant_header_column="vcrs_header", variant_type_column = "variant_type", count_column="vcrs_count", output_file=None, show=False):
+    import seaborn as sns
+    df = df.copy()
+    
+    if variant_type_column not in df.columns:
+        if variant_header_column not in df.columns:
+            raise ValueError("variant_header_column must be in df if ref_base_column and alt_base_column are not.")
+        df["variant_header_first"] = df[variant_header_column].str.split(";").str[0]  # take the first variant header
+        df[["seq_ID", "variant"]] = df["variant_header_first"].str.split(":", expand=True)
+        add_variant_type(df, "variant")
+        df.rename(columns={"variant_type": variant_type_column}, inplace=True)
+
+    order = ["substitution", "deletion", "insertion", "delins", "duplication", "inversion"]
+    variant_type_freq = (
+        df.groupby(variant_type_column)[count_column]
+        .sum()
+        .reindex(order)
+        .fillna(0)
+    )
+    plt.figure(figsize=(8, 4))
+    sns.barplot(x=variant_type_freq.index, y=variant_type_freq.values)
+    plt.xlabel("Mutation type")
+    plt.ylabel(f"Total {count_column}")
+    plt.title("Frequency of Mutation types")
+
+    plt.tight_layout()
+    
+    if output_file:
+        plt.savefig(output_file)
+    else:
+        show=True
+
+    if show:
+        plt.show()
+    plt.close()
+
+def plot_substitution_heatmap(df, variant_header_column="vcrs_header", ref_base_column="ref_base", alt_base_column="alt_base", count_column="vcrs_count", output_file=None, show=False, plot_type="heatmap"):
+    import seaborn as sns
+    df = df.copy()
+
+    if plot_type not in {"heatmap", "bar"}:
+        raise ValueError("plot_type must be heatmap or bar")
+
+    if ref_base_column not in df.columns or alt_base_column not in df.columns:
+        if variant_header_column not in df.columns:
+            raise ValueError("variant_header_column must be in df if ref_base_column and alt_base_column are not.")
+        df["variant_header_first"] = df[variant_header_column].str.split(";").str[0]  # take the first variant header
+        df = df.loc[(df["variant_header_first"].str.contains(">")), "variant_header_first"]  # keep only substitutions     # & (~df[variant_header_column].str.contains(";"))
+        df[ref_base_column] = df["variant_header_first"].str.split(">").str[1].str[0]
+        df[alt_base_column] = df["variant_header_first"].str.split(">").str[1].str[2]
+    
+    # 1. Ensure uppercase
+    df[ref_base_column] = df[ref_base_column].str.upper()
+    df[alt_base_column] = df[alt_base_column].str.upper()
+
+    # 2. Convert to categorical (optional but useful for ordering)
+    bases = ["A", "C", "G", "T"]
+    df[ref_base_column] = pd.Categorical(df[ref_base_column], categories=bases, ordered=True)
+    df[alt_base_column] = pd.Categorical(df[alt_base_column], categories=bases, ordered=True)
+
+    if plot_type == "heatmap":
+        # 3. Group and pivot to build matrix
+        heatmap_data = (
+            df.groupby([ref_base_column, alt_base_column])[count_column]
+            .sum()
+            .unstack(fill_value=0)
+        )
+
+        # 4. Plot heatmap
+        plt.figure(figsize=(6, 5))
+        sns.heatmap(heatmap_data, annot=True, fmt=".0f", cmap="Reds")
+        plt.title(f"Sum of {count_column} by ref base and alt base")
+        plt.xlabel(alt_base_column)
+        plt.ylabel(ref_base_column)
+
+    elif plot_type == "bar":
+        df["substitution"] = df["ref_base"].str.upper() + ">" + df["alt_base"].str.upper()
+        substitution_freq = df.groupby("substitution")[count_column].sum().sort_index()  # .sort_values(ascending=False) for descending
+        plt.figure(figsize=(8, 4))
+        sns.barplot(x=substitution_freq.index, y=substitution_freq.values)
+        plt.xlabel("Substitution")
+        plt.ylabel(f"Total {count_column}")
+        plt.title("Frequency of Substitution Types")
+    
+    plt.tight_layout()
+    
     if output_file:
         plt.savefig(output_file)
     else:

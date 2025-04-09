@@ -126,6 +126,7 @@ if not os.path.exists(cosmic_mutations_path):
         out=reference_out_dir_cosmic,
         mutation_class="cancer",
         download_cosmic=True,
+        gget_mutate=True
     )
 
 with open(cosmic_mutations_path) as f:

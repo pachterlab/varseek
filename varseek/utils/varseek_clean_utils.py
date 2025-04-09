@@ -38,9 +38,10 @@ from varseek.utils.seq_utils import (
     load_in_fastqs,
     parquet_column_list_to_tuple,
     parquet_column_tuple_to_list,
-    get_ensembl_gene_id_from_transcript_id_bulk
+    get_ensembl_gene_id_from_transcript_id_bulk,
 )
 from varseek.utils.logger_utils import set_up_logger, count_chunks, determine_write_mode
+from varseek.utils.visualization_utils import plot_cdna_locations
 from varseek.utils.varseek_info_utils import identify_variant_source
 
 logger = logging.getLogger(__name__)
@@ -476,15 +477,15 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
 
     #* if parity == paired and vcrs_parity == single: (1) make a df copy; (2) groupby same barcode + read_index; (3) take union of mapped VCRSs, and the union of mapped genes; (4) assign these exclusively to the first read of the pair, and give the 2nd read of the pair nothing
     with open(f"{kb_count_vcrs_dir}/kb_info.json", 'r') as f:
-        kb_info_data = json.load(f)
-    if "--parity paired" in kb_info_data.get("call", ""):
+        kb_info_data_vcrs = json.load(f)
+    if "--parity paired" in kb_info_data_vcrs.get("call", ""):
         vcrs_parity = "paired"  # same as parity_kb_count in vk count/clean
     else:
         vcrs_parity = "single"
 
     with open(f"{kb_count_reference_genome_dir}/kb_info.json", 'r') as f:
-        kb_info_data = json.load(f)
-    if "--parity paired" in kb_info_data.get("call", ""):
+        kb_info_data_normal = json.load(f)
+    if "--parity paired" in kb_info_data_normal.get("call", ""):
         normal_parity = "paired"
     else:
         normal_parity = "single"
@@ -575,7 +576,7 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
     number_of_counts_added = 0
     number_of_counts_removed = 0
     number_of_reads_changed = 0
-    mm_original = True if "--mm" in kb_info_data.get("call", "") else False
+    mm_original = True if "--mm" in kb_info_data_vcrs.get("call", "") else False
     logging_level = logger.getEffectiveLevel()
 
     logger.info("Looping through bus_df to adjust adata")  #? consider just updating adata instead of making from scratch - would compare final_counts to original counts (1 / vcrs_names_list)
@@ -590,7 +591,7 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
             if gene_vcrs_inner_set & genes_standard_set or (count_reads_that_dont_pseudoalign_to_reference_genome and not pseudoaligns_to_reference_genome):  # (1) non-empty intersection between gene corresponding to VCRS and reference genome gene OR (2) if the read does not pseudoalign to the reference genome, count it anyway if the flag is True
                 vcrs_names_list_final.append(vcrs_name)
         
-        if logging_level > 20:  # since I only want to log this if the logging level is higher than INFO
+        if logging_level <= 20:  # since I only want to log this if the logging level is higher than INFO
             number_of_counts_added, number_of_counts_removed, number_of_reads_changed = normal_genome_validation_tallying(vcrs_names_list_final=vcrs_names_list_final, vcrs_names_list=vcrs_names_list, number_of_counts_added=number_of_counts_added, number_of_counts_removed=number_of_counts_removed, number_of_reads_changed=number_of_reads_changed, mm=mm, mm_original=mm_original)
             
         length_vcrs_names_list_final = len(vcrs_names_list_final)
@@ -613,9 +614,10 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
             col_indices.append(col_idx)
             data_values.append(counts_final)
 
-    logger.info(f"Number of counts added: {number_of_counts_added}")
-    logger.info(f"Number of counts removed: {number_of_counts_removed}")
-    logger.info(f"Number of reads that with changed count behavior: {number_of_reads_changed} / {len(bus_df)}")
+    if logging_level <= 20:  # since I only want to log this if the logging level is higher than INFO
+        logger.info(f"Number of counts added: {number_of_counts_added}")
+        logger.info(f"Number of counts removed: {number_of_counts_removed}")
+        logger.info(f"Number of reads that with changed count behavior: {number_of_reads_changed} / {len(bus_df)} ({100 * number_of_reads_changed / len(bus_df):.2f}%)")
 
     if len(data_values) == 0:
         logger.warning("No valid updates found in the bus_df. Returning the original AnnData object.")
@@ -727,23 +729,22 @@ def merge_bus_df_and_adata_var(bus_df, adata_var, vcrs_column_bus="vcrs_names", 
 
     
 def barcode_and_umi_agg(group):
-    # Compute the mode for vcrs_names
-    vcrs_as_tuples = group["vcrs_names"].apply(tuple)
-    mode_val = list(vcrs_as_tuples.mode().iloc[0])  # Find the first occurrence index of the mode in vcrs_names
-    idx = group["vcrs_names"].tolist().index(mode_val)
-    genes_vcrs_val = group["genes_vcrs"].iloc[idx]  # Use the index to extract the corresponding genes_vcrs value  #? I considered making a little more complex if there is a tie for modes, in that I would take the union of all VCRSs and their corresponding genes, but this gets a little complicated to implement and is likely not valuable (most of the time there will be a clear mode)
+    # Compute the union for vcrs_names, and grab the corresponding genes_vcrs - I take the union rather than the mode as I previously did because each UMI only guarantees that the reads are derived from the same gene, but this does not mean that they must be duplicates of each other (i.e., they can cover different parts of the gene)
+    vcrs_names_union, vcrs_genes_union = [], []
+    for vcrs_name, vcrs_gene in zip(group["vcrs_names"], group["genes_vcrs"]):
+        if vcrs_name not in vcrs_names_union:
+            vcrs_names_union.append(vcrs_name)
+            vcrs_genes_union.append(vcrs_gene)
     
-    # Aggregate read_index into a list
-    read_index_agg = list(group["read_index"])
-    # Aggregate genes_standard using union of sets
-    genes_standard_agg = sorted(set.union(*map(set, group["genes_standard"])))
+    read_index_agg = list(group["read_index"])  # Aggregate read_index into a list
+    genes_standard_agg = sorted(set.union(*map(set, group["genes_standard"])))  # Aggregate genes_standard using union of sets
     pseudoaligns_to_reference_genome = len(genes_standard_agg) > 0
     
     return pd.Series({
         "read_index": read_index_agg,
-        "vcrs_names": mode_val,
+        "vcrs_names": vcrs_names_union,
         "genes_standard": genes_standard_agg,
-        "genes_vcrs": genes_vcrs_val,
+        "genes_vcrs": vcrs_genes_union,
         "pseudoaligns_to_reference_genome": pseudoaligns_to_reference_genome,
         "original_index": list(group["original_index"])
     })
@@ -767,7 +768,7 @@ def normal_genome_validation_tallying(vcrs_names_list_final, vcrs_names_list, nu
             number_of_counts_removed += len_vcrs_names_list - len_vcrs_names_list_final  # it was counted originally (due to mm_original) and is counted now (with or without mm, due to length 1), but to a lesser extent
         number_of_reads_changed += 1
     
-    elif len_vcrs_names_list_final == 0:  
+    elif len_vcrs_names_list_final == 0:
         if not mm_original:
             if len_vcrs_names_list == 1:  # when mm_original False, only originally counted when length 1
                 number_of_counts_removed += 1  # it was counted (due to length 1) originally but is NOT counted now (due to length 0)    # the read was only originally counted if it mapped to exactly 1 VCRS
@@ -776,10 +777,10 @@ def normal_genome_validation_tallying(vcrs_names_list_final, vcrs_names_list, nu
             number_of_counts_removed += len_vcrs_names_list  # it was counted originally (due to mm_original) but is NOT counted now (due to length 0)    # all of these reads were originally counted but now are not
             number_of_reads_changed += 1
     
-    elif mm and not mm_original:
+    elif len_vcrs_names_list_final > 1 and mm and not mm_original:
         number_of_counts_added += len_vcrs_names_list_final  # no difference in initial and final VCRSs, but simply a difference in multimapping behavior
     
-    elif mm_original and not mm:
+    elif len_vcrs_names_list_final > 1 and mm_original and not mm:
         number_of_counts_removed += len_vcrs_names_list - len_vcrs_names_list_final  # no difference in initial and final VCRSs, but simply a difference in multimapping behavior
     
     return number_of_counts_added, number_of_counts_removed, number_of_reads_changed
@@ -1479,6 +1480,7 @@ def add_vcf_info_to_cosmic_tsv(cosmic_tsv=None, reference_genome_fasta=None, cos
             out=reference_out_cosmic,
             mutation_class="cancer",
             download_cosmic=True,
+            gget_mutate=True,
             keep_genome_info=True,
             remove_duplicates=True,
             email=cosmic_email,
@@ -1939,7 +1941,7 @@ def get_variant_sources_normal_genome(vcr_list):
     return result, unique_value
 
 
-def remove_variants_from_adata_for_stranded_technologies(adata, strand_bias_end, read_length, header_column="vcrs_header", variant_position_annotations=None, variant_source=None, gtf=None, forgiveness=100, seq_id_column="seq_ID", var_column="mutation"):
+def remove_variants_from_adata_for_stranded_technologies(adata, strand_bias_end, read_length, header_column="vcrs_header", variant_position_annotations=None, variant_source=None, gtf=None, forgiveness=100, seq_id_column="seq_ID", var_column="mutation", plot_histogram=True, out="."):
     #* Type-checking
     if isinstance(adata, str):  # adata is anndata object or path to h5ad
         adata = ad.read_h5ad(adata)
@@ -2011,7 +2013,10 @@ def remove_variants_from_adata_for_stranded_technologies(adata, strand_bias_end,
 
     #* Explode adata.var
     adata_var = adata.var.copy()
-    adata_var_exploded = adata_var.assign(vcrs_header=adata_var["vcrs_header"].str.split(";")).explode("vcrs_header")
+    if plot_histogram and "vcrs_count" not in adata_var.columns:
+        adata_var["vcrs_count"] = adata.X.sum(axis=0).A1 if hasattr(adata.X, "A1") else np.asarray(adata.X.sum(axis=0)).flatten()
+        adata_var["vcrs_count"] = adata_var["vcrs_count"].fillna(0).astype("Int32")
+    adata_var_exploded = adata_var.assign(vcrs_header_individual=adata_var[header_column].str.split(";")).explode("vcrs_header_individual")
 
     #* Add column information - seq_id, variant, nucleotide positions, etc
     adata_var_exploded = add_information_from_variant_header_to_adata_var_exploded(adata_var_exploded, seq_id_column=seq_id_column, var_column=var_column, variant_source=variant_source, include_gene_information=False)
@@ -2058,12 +2063,18 @@ def remove_variants_from_adata_for_stranded_technologies(adata, strand_bias_end,
             how="left"
         ).set_index(adata_var_exploded.index)
     
-    #* change cds --> cDNA by adding the preceding UTR lengths
+    #* change CDS --> cDNA by adding the preceding UTR lengths
     if variant_position_annotations == "cdna":
         pass  # RNA-seq captures cDNA (including the UTRs), so positions are correct relative to what the sequencer sees
     elif variant_position_annotations == "cds":  # add the UTR lengths to the start and end positions for genome variants - 5' UTR for + strand, 3' UTR for - strand
         adata_var_exploded["start_variant_position"] += adata_var_exploded["utr_length_preceding_transcript"]
         adata_var_exploded["end_variant_position"] += adata_var_exploded["utr_length_preceding_transcript"]
+
+    #* Plot strand bias before filtering out
+    if plot_histogram:
+        adata_var_with_alignment = adata_var_exploded.loc[adata_var_exploded["vcrs_count"] > 0].copy() if "vcrs_count" in adata_var_exploded.columns else adata_var_exploded.copy()
+        plot_cdna_locations(adata_var_with_alignment, cdna_sequence_length_column="transcript_length", seq_id_column="transcript_ID", start_variant_position_cdna_column="start_variant_position", end_variant_position_cdna_column="end_variant_position", sequence_side=strand_bias_end, log_x=True, log_y=True, read_length_cutoff=read_length, save_path = os.path.join(out, f"strand_bias_{strand_bias_end}_prefiltering.png"))
+        del adata_var_with_alignment
 
     #* Filter based on strand bias
     if strand_bias_end == "5p":  #* 5': mutation start is less than or equal to read length
@@ -2072,7 +2083,7 @@ def remove_variants_from_adata_for_stranded_technologies(adata, strand_bias_end,
         adata_var_exploded = adata_var_exploded[adata_var_exploded["end_variant_position"] >= (adata_var_exploded["transcript_length"] - read_length - forgiveness)]
 
     #* Collapse
-    adata_var = adata_var_exploded.groupby(adata_var_exploded.index)["vcrs_header"].apply(lambda x: ";".join(sorted(x))).reset_index()
+    adata_var = adata_var_exploded.groupby(adata_var_exploded.index)["vcrs_header_individual"].apply(lambda x: ";".join(sorted(x))).reset_index()
 
     valid_indices = set(adata_var["index"])  # Get the valid column indices from df_collapsed
     cols_to_keep = [i for i in range(adata.n_vars) if str(i) in valid_indices]  # Identify columns to keep (i.e., only the valid indices)
@@ -2081,7 +2092,7 @@ def remove_variants_from_adata_for_stranded_technologies(adata, strand_bias_end,
     # Subset adata
     adata = adata[:, cols_to_keep]
     adata.var.reset_index(drop=True, inplace=True)
-    adata.var["vcrs_header"] = adata_var["vcrs_header"].values  # will fix cases like where ENST0000001:c.50G>A;ENST0000006:c.1001G>A --> ENST0000001:c.50G>A
+    adata.var[header_column] = adata_var[header_column].values  # will fix cases like where ENST0000001:c.50G>A;ENST0000006:c.1001G>A --> ENST0000001:c.50G>A
 
     return adata
 
@@ -2253,9 +2264,9 @@ def make_t2g_dict_from_gtf(gtf):
     
     return t2g_dict
 
-def add_information_from_variant_header_to_adata_var_exploded(adata_var_exploded, seq_id_column="seq_ID", var_column="mutation", gene_id_column="gene_id", variant_source=None, include_position_information=True, include_gene_information=True, t2g_file=None, gtf=None):
+def add_information_from_variant_header_to_adata_var_exploded(adata_var_exploded, vcrs_header_individual_column="vcrs_header_individual", seq_id_column="seq_ID", var_column="mutation", gene_id_column="gene_id", variant_source=None, include_position_information=True, include_gene_information=True, t2g_file=None, gtf=None):
     if seq_id_column not in adata_var_exploded.columns or var_column not in adata_var_exploded.columns:
-        adata_var_exploded[[seq_id_column, var_column]] = adata_var_exploded["vcrs_header_individual"].str.split(":", expand=True)
+        adata_var_exploded[[seq_id_column, var_column]] = adata_var_exploded[vcrs_header_individual_column].str.split(":", expand=True)
 
     adata_var_exploded[seq_id_column] = adata_var_exploded[seq_id_column].str.split(".").str[0]  # strip off the version number
 
@@ -2321,9 +2332,9 @@ def add_information_from_variant_header_to_adata_var_exploded(adata_var_exploded
                 axis=1
             )
 
-    number_of_unmapped_genes = ((adata_var_exploded[gene_id_column] == adata_var_exploded[seq_id_column]).sum())
-    if number_of_unmapped_genes > 0:
-        logger.warning(f"{number_of_unmapped_genes} variants were not mapped to a gene. Please check the variant source and position annotations.")
+        number_of_unmapped_genes = ((adata_var_exploded[gene_id_column] == adata_var_exploded[seq_id_column]).sum())
+        if number_of_unmapped_genes > 0:
+            logger.warning(f"{number_of_unmapped_genes} variants were not mapped to a gene. Please check the variant source and position annotations.")
 
     return adata_var_exploded
 
