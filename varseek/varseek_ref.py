@@ -421,8 +421,7 @@ def ref(
         if variants == "cosmic_cmc":  # if someone sets variants==cosmic_cmc, then they are likely looking for the only cosmic_cmc available for download
             w = 47
             k = 51
-            dlist_reference_source = "t2t"
-        prebuilt_vk_ref_files_key = f"variants={variants},sequences={sequences},w={w},k={k},dlist_reference_source={dlist_reference_source}"  # matches constants.py and server
+        prebuilt_vk_ref_files_key = f"variants={variants},sequences={sequences},w={w},k={k}"  # matches constants.py and server
         if prebuilt_vk_ref_files_key not in prebuilt_vk_ref_files:
             raise ValueError(f"Invalid combination of parameters for downloading prebuilt reference files. Supported combinations are: {list(prebuilt_vk_ref_files.keys())}")
         file_dict = prebuilt_vk_ref_files[prebuilt_vk_ref_files_key]

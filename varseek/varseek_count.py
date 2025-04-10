@@ -188,8 +188,8 @@ def count(
     - strand_bias_end                       (str): The end of the read to use for strand bias correction. Either "5p" or "3p". Must be provided if and only if account_for_strand_bias=True. Default: None.
     - read_length                           (int): The read length used in the experiment. Must be provided if and only if account_for_strand_bias=True. Default: None.
     - strand                                (str)  The strandedness of the data. Either "unstranded", "forward", or "reverse". Default: None.
-    - mm                                    (bool)  If True, use the multi-mapping reads. Default: False.
-    - union                                 (bool)  If True, use the union of the read mappings. Default: False.
+    - mm                                    (bool)  If True, use the multi-mapping reads. Default: True.
+    - union                                 (bool)  If True, use the union of the read mappings. Default: True.
     - parity                                (str)  The parity of the reads for vk fastqpp. Either "single" or "paired". Only used if technology is bulk or a smart-seq. For parity in kb count, see parity_kb_count. Default: "single".
 
     # Optional input arguments

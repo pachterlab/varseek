@@ -2647,11 +2647,10 @@ def main():  # noqa: C901
         help=extract_help_from_doc(count, "k"),
     )
     parser_count.add_argument(
-        "--disable_qc_against_gene_matrix",
-        dest="qc_against_gene_matrix",
-        action="store_false",
+        "--qc_against_gene_matrix",
+        action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(count, "disable_qc_against_gene_matrix", disable=True),
+        help=extract_help_from_doc(count, "qc_against_gene_matrix"),
     )
     parser_count.add_argument(
         "--account_for_strand_bias",
