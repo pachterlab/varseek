@@ -1853,7 +1853,7 @@ def assign_gene_ids_row(row, gene_df):
 
 def map_genome_to_cds(chrom_pos, transcript_id, gtf_df):
     cds_df = gtf_df[
-        (gtf_df["feature"] == "CDS") &
+        (gtf_df["feature"] == "exon") &
         (gtf_df["transcript_ID"] == transcript_id)
     ].copy()
 
@@ -1984,10 +1984,13 @@ def remove_variants_from_adata_for_stranded_technologies(adata, strand_bias_end,
             gtf_df = gtf.copy()
         else:
             raise ValueError("gtf must be a path to a GTF file or a pandas DataFrame")
-        gtf_df["region_length"] = gtf_df["end"] - gtf_df["start"] + 1  # this corresponds to the unspliced transcript length, NOT the spliced transcript/CDS length (which is what I care about)
-        gtf_df["transcript_ID"] = gtf_df["attributes"].str.extract(r'transcript_id "([^"]+)"')
-        transcript_df = gtf_df[gtf_df["feature"] == "transcript"].copy()
-        transcript_df = transcript_df.drop_duplicates(subset="transcript_ID", keep="first")
+        if "transcript_ID" not in gtf_df.columns:
+            gtf_df["region_length"] = gtf_df["end"] - gtf_df["start"] + 1  # this corresponds to the unspliced transcript length, NOT the spliced transcript/CDS length (which is what I care about)
+            gtf_df["transcript_ID"] = gtf_df["attributes"].str.extract(r'transcript_id "([^"]+)"')
+            transcript_df = gtf_df[gtf_df["feature"] == "transcript"].copy()
+            transcript_df = transcript_df.drop_duplicates(subset="transcript_ID", keep="first")
+        else:
+            transcript_df = gtf_df.copy()
         
         five_prime_lengths = []
         three_prime_lengths = []
@@ -2002,8 +2005,8 @@ def remove_variants_from_adata_for_stranded_technologies(adata, strand_bias_end,
             five_prime_lengths.append(five_sum)
             three_prime_lengths.append(three_sum)
             transcript_lengths.append(transcript_length)
-        transcript_df["five_prime_length"] = five_prime_lengths
-        transcript_df["three_prime_length"] = three_prime_lengths
+        transcript_df["five_prime_utr_length"] = five_prime_lengths
+        transcript_df["three_prime_utr_length"] = three_prime_lengths
         transcript_df["transcript_length"] = transcript_lengths
 
         transcript_df["utr_length_preceding_transcript"] = transcript_df.apply(
@@ -2058,7 +2061,7 @@ def remove_variants_from_adata_for_stranded_technologies(adata, strand_bias_end,
     #* merge transcript_df into adata_var_exploded
     if not (variant_position_annotations == "cdna" and strand_bias_end == "5p"):
         adata_var_exploded = adata_var_exploded.merge(
-            transcript_df[["transcript_ID", "transcript_length", "five_prime_length", "three_prime_length", "utr_length_preceding_transcript", "strand"]],
+            transcript_df[["transcript_ID", "transcript_length", "five_prime_utr_length", "three_prime_utr_length", "utr_length_preceding_transcript", "strand"]],
             on="transcript_ID",
             how="left"
         ).set_index(adata_var_exploded.index)
@@ -2092,6 +2095,7 @@ def remove_variants_from_adata_for_stranded_technologies(adata, strand_bias_end,
     # Subset adata
     adata = adata[:, cols_to_keep]
     adata.var.reset_index(drop=True, inplace=True)
+    adata_var.rename(columns={"vcrs_header_individual": header_column}, inplace=True)
     adata.var[header_column] = adata_var[header_column].values  # will fix cases like where ENST0000001:c.50G>A;ENST0000006:c.1001G>A --> ENST0000001:c.50G>A
 
     return adata
@@ -2291,6 +2295,9 @@ def add_information_from_variant_header_to_adata_var_exploded(adata_var_exploded
     else:
         adata_var_exploded["variant_source"] = variant_source
     
+    if (variant_source != "genome" and (t2g_file is None and gtf is None)) or (variant_source != "transcriptome" and gtf is None):
+        include_gene_information = False
+    
     if include_gene_information and gene_id_column not in adata_var_exploded.columns:
         if variant_source != "genome":
             if t2g_file and os.path.isfile(t2g_file):  # use normal reference genome t2g to map transcript to gene
@@ -2298,8 +2305,9 @@ def add_information_from_variant_header_to_adata_var_exploded(adata_var_exploded
             elif gtf is not None:  # use gtf to make t2g to map transcript to gene
                 t2g_dict = make_t2g_dict_from_gtf(gtf)
             else:
-                logger.warning("Retrieving ensembl gene IDs from Ensembl API. This may take a while if there are many transcripts. Please provide t2g or gtf file to speed this up.")
-                t2g_dict = get_ensembl_gene_id_from_transcript_id_bulk(adata_var_exploded[seq_id_column].tolist())
+                raise ValueError("No t2g file or gtf file provided to map transcript to gene.")  # I don't use get_ensembl_gene_id_from_transcript_id_bulk because I would need to provide reference genome version (37 vs 38) and species - and at that point I might as well just download the gtf (and it is long)
+                # logger.warning("Retrieving ensembl gene IDs from Ensembl API. This may take a while if there are many transcripts. Please provide t2g or gtf file to speed this up.")
+                # t2g_dict = get_ensembl_gene_id_from_transcript_id_bulk(adata_var_exploded[seq_id_column].tolist())
             # adata_var_exploded[gene_id_column] = (adata_var_exploded[seq_id_column].map(t2g_dict).fillna(adata_var_exploded[seq_id_column]))
             
             t2g_dict = {key.split(".")[0]: val.split(".")[0] for key, val in t2g_dict.items()}  # strip off the version number
@@ -2335,6 +2343,14 @@ def add_information_from_variant_header_to_adata_var_exploded(adata_var_exploded
         number_of_unmapped_genes = ((adata_var_exploded[gene_id_column] == adata_var_exploded[seq_id_column]).sum())
         if number_of_unmapped_genes > 0:
             logger.warning(f"{number_of_unmapped_genes} variants were not mapped to a gene. Please check the variant source and position annotations.")
+    
+    if gene_id_column in adata_var_exploded.columns:
+        # adata_var_exploded['vcrs_header_with_gene_name'] = ("(" + adata_var_exploded[gene_id_column].astype(str) + ")" + adata_var_exploded[vcrs_header_individual_column].astype(str))
+        adata_var_exploded['vcrs_header_with_gene_name'] = (
+            adata_var_exploded[gene_id_column].astype(str) + "(" +
+            adata_var_exploded[vcrs_header_individual_column].str.split(":").str[0] + "):" +
+            adata_var_exploded[vcrs_header_individual_column].str.split(":").str[1]
+        )
 
     return adata_var_exploded
 

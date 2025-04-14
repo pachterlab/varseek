@@ -454,10 +454,10 @@ def ref(
             if fasta_out and vk_ref_output_dict["fasta"] != fasta_out:
                 os.rename(vk_ref_output_dict["fasta"], fasta_out)
                 vk_ref_output_dict["fasta"] = fasta_out
-            elif not fasta_out and not fasta_file_previously_existed:
-                # delete vk_ref_output_dict["fasta"] if a path was not provided and this file did not previously exist
-                os.remove(vk_ref_output_dict["fasta"])
-                vk_ref_output_dict["fasta"] = None
+            # elif not fasta_out and not fasta_file_previously_existed:
+            #     # delete vk_ref_output_dict["fasta"] if a path was not provided and this file did not previously exist
+            #     os.remove(vk_ref_output_dict["fasta"])
+            #     vk_ref_output_dict["fasta"] = None
 
             logger.info(f"Downloaded files: {vk_ref_output_dict}")
 

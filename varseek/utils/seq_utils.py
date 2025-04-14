@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 from collections import OrderedDict
+import json
 
 import anndata as ad
 import numpy as np
@@ -425,11 +426,12 @@ def get_ensembl_gene_id_from_transcript_id_bulk(transcript_ids: list[str]) -> di
     transcript_ids = list(set(transcript_ids))  # Remove duplicates
 
     transcript_id_to_gene_id_dict = {}
-    try:
-        chunk_size = 999  # limit for ensembl REST API is 1000 IDs per request
-        for i in range(0, len(transcript_ids), chunk_size):
-            transcript_ids_chunk = transcript_ids[i:i + chunk_size]
-            url = "https://rest.ensembl.org/lookup/id/"
+    chunk_size = 1  # can set bigger, but if one fails, it will fail for all - limit is 1000
+    for i in range(0, len(transcript_ids), chunk_size):
+        transcript_ids_chunk = transcript_ids[i:i + chunk_size]
+        url = "https://rest.ensembl.org/lookup/id/"
+        
+        try:
             response = requests.post(
                 url,
                 json={"ids": transcript_ids_chunk},
@@ -442,34 +444,73 @@ def get_ensembl_gene_id_from_transcript_id_bulk(transcript_ids: list[str]) -> di
 
             data = response.json()
 
-            transcript_id_to_gene_id_dict_chunk = {transcript_id: data[transcript_id].get("Parent") for transcript_id in transcript_ids_chunk if data[transcript_id]}
+            transcript_id_to_gene_id_dict_chunk = {transcript_id: data.get(transcript_id, {}).get("Parent", "unknown") for transcript_id in transcript_ids_chunk}
 
             transcript_id_to_gene_id_dict.update(transcript_id_to_gene_id_dict_chunk)
+        except Exception as e:
+            for transcript_id in transcript_ids_chunk:
+                transcript_id_to_gene_id_dict[transcript_id] = "unknown"
 
         return {transcript_id_to_gene_id_dict}
+    
+
+# maps ENSG to gene symbol
+def get_ensembl_gene_name_bulk(gene_ids: list[str], species="human", reference_version=None) -> dict[str, str]:
+    if not gene_ids:
+        return {}
+
+    if species == "human" and reference_version is None:
+        url = "https://rest.ensembl.org/lookup/id/"
+    elif species == "human" and (reference_version == "grch37" or int(reference_version) == 37):
+        url = "https://grch37.rest.ensembl.org/lookup/id/"
+    else:
+        url = f"https://rest.ensembl.org/lookup/id/?species={species}"  #? untested
+    
+    try:
+        response = requests.post(url, json={"ids": gene_ids}, headers={"Content-Type": "application/json"}, timeout=10)
+
+        if not response.ok:
+            response.raise_for_status()
+
+        data = response.json()
+
+        return {gene_id: data[gene_id].get("display_name") for gene_id in gene_ids if data[gene_id]}
+    except Exception as e:
+        print(f"Failed to fetch gene names from Ensembl: {e}")
+        raise e
+
+# maps ENST to ENSG
+def get_ensembl_gene_id_bulk(transcript_ids: list[str], species="human", reference_version=None) -> dict[str, str]:
+    if not transcript_ids:
+        return {}
+    
+    if species == "human" and reference_version is None:
+        url = "https://rest.ensembl.org/lookup/id/"
+    elif species == "human" and (reference_version == "grch37" or int(reference_version) == 37):
+        url = "https://grch37.rest.ensembl.org/lookup/id/"
+    else:
+        url = f"https://rest.ensembl.org/lookup/id/?species={species}"  #? untested
+    
+    transcript_ids = list(set(transcript_ids))  # Remove duplicates
+
+    try:
+        url = "https://rest.ensembl.org/lookup/id/"
+        response = requests.post(
+            url,
+            json={"ids": transcript_ids},
+            headers={"Content-Type": "application/json"},
+            timeout=10,
+        )
+
+        if not response.ok:
+            response.raise_for_status()
+
+        data = response.json()
+
+        return {transcript_id: data[transcript_id].get("Parent") for transcript_id in transcript_ids if data[transcript_id]}
     except Exception as e:
         print(f"Failed to fetch gene IDs from Ensembl: {e}")
         raise e
-
-
-# def get_ensembl_gene_name_bulk(gene_ids: list[str]) -> dict[str, str]:
-#     if not gene_ids:
-#         return {}
-
-#     try:
-#         url = "https://rest.ensembl.org/lookup/id/"
-#         response = requests.post(url, json={"ids": gene_ids}, headers={"Content-Type": "application/json"}, timeout=10)
-
-#         if not response.ok:
-#             response.raise_for_status()
-
-#         data = response.json()
-
-#         return {gene_id: data[gene_id].get("display_name") for gene_id in gene_ids if data[gene_id]}
-#     except Exception as e:
-#         print(f"Failed to fetch gene names from Ensembl: {e}")
-#         raise e
-
 
 # def get_valid_ensembl_gene_id_bulk(
 #     df: pd.DataFrame,
@@ -952,14 +993,13 @@ def add_mutation_information(mutation_metadata_df, mutation_column="mutation", v
 
 
 # convert vcf to pandas df
-def vcf_to_dataframe(vcf_file, additional_columns=True, explode_alt=True, filter_empty_alt=True, verbose=False):
+def vcf_to_dataframe(vcf_file, additional_columns=True, explode_alt=True, filter_empty_alt=True, verbose=False, total=None):
     import pysam
 
     """Convert a VCF file to a Pandas DataFrame."""
     vcf = pysam.VariantFile(vcf_file)
     with pysam.VariantFile(vcf_file) as vcf:
-        total=None
-        if verbose and vcf.compression == "NONE":
+        if verbose and total is None and vcf.compression == "NONE":
             result = subprocess.run(["wc", "-l", vcf_file], stdout=subprocess.PIPE, text=True)
             total = int(result.stdout.split()[0])
 
@@ -1208,3 +1248,37 @@ def parquet_column_tuple_to_list(df, cols=None):
         first_value = df[col].dropna().iloc[0] if not df[col].dropna().empty else None
         if isinstance(first_value, tuple):
             df["col"].astype(object).tolist()
+
+
+def save_df_types(df, out_file="df_types.json"):
+    dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
+    with open(out_file, "w") as f:
+        json.dump(dtypes, f, indent=2)
+
+def load_df_types(df, df_types_file):
+    with open(df_types_file) as f:
+        dtypes = json.load(f)
+
+    # Helper to convert string dtype back to actual type
+    def str_to_dtype(dtype_str):
+        if dtype_str == "category":
+            return "category"
+        try:
+            return np.dtype(dtype_str)
+        except TypeError:
+            return dtype_str  # fallback, e.g., for 'string[python]'
+
+    # Reapply dtypes
+    df = df.astype({k: str_to_dtype(v) for k, v in dtypes.items()})
+
+    return df
+
+def save_df_types_adata(adata, out_file_base="adata_df_types"):
+    save_df_types(adata.obs, f"{out_file_base}_obs.json")
+    save_df_types(adata.var, f"{out_file_base}_var.json")
+
+def load_df_types_adata(adata, df_types_file_base):
+    adata.obs = load_df_types(adata.obs, f"{df_types_file_base}_obs.json")
+    adata.var = load_df_types(adata.var, f"{df_types_file_base}_var.json")
+
+    return adata

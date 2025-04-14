@@ -24,7 +24,7 @@ from .conftest import (
 sample_size = 12_000  # 2,000 each for each of the 6 mutation types
 columns_to_drop_info_filter = None  # drops columns for info and filter df - will not throw an error if the column does not exist in the df  # ["cdna_and_genome_same", "nearby_variants", "VCRSs_with_overlapping_kmers"] - the order of the VCRS headers was messed up for some reason
 make_new_gt = False
-store_out_in_permanent_paths = True
+store_out_in_permanent_paths = False
 threads = 2
 chunksize = None  # None or int>0
 

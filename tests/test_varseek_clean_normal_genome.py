@@ -9,6 +9,7 @@ import pytest
 from datetime import datetime
 import subprocess
 from pathlib import Path
+import sys
 
 from varseek.utils import (
     adjust_variant_adata_by_normal_gene_matrix
@@ -19,7 +20,12 @@ from .conftest import (
     create_identity_t2g
 )
 
-store_out_in_permanent_paths = True
+#$ TOGGLE THIS SECTION TO HAVE THIS FILE RECOGNIZED BY PYTEST (commented out means it will be recognized, uncommented means it will be hidden)
+# If "tests/test_varseek_clean_normal_genome.py" is not explicitly in the command line arguments, skip this module.
+if not any("tests/test_varseek_clean_normal_genome.py" in arg for arg in sys.argv):
+    pytest.skip("Skipping test_varseek_clean_normal_genome.py due issues with kallisto compiling in some environments (e.g., GitHub actions, some MacOS systems); run this file by explicity including the file i.e., 'pytest tests/test_varseek_clean_normal_genome.py'", allow_module_level=True)
+
+store_out_in_permanent_paths = False
 tests_dir = Path(__file__).resolve().parent
 pytest_permanent_out_dir_base = tests_dir / "pytest_output" / Path(__file__).stem
 current_datetime = datetime.now().strftime("date_%Y_%m_%d_time_%H%M_%S")

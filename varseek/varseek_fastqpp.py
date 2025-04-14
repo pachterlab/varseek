@@ -104,7 +104,7 @@ def validate_input_fastqpp(params_dict):
 
 @report_time_elapsed
 def fastqpp(
-    *fastqs,
+    fastqs,
     technology,
     multiplexed=None,
     parity="single",

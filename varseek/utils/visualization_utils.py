@@ -1034,9 +1034,9 @@ def plot_substitution_heatmap(df, variant_header_column="vcrs_header", ref_base_
         if variant_header_column not in df.columns:
             raise ValueError("variant_header_column must be in df if ref_base_column and alt_base_column are not.")
         df["variant_header_first"] = df[variant_header_column].str.split(";").str[0]  # take the first variant header
-        df = df.loc[(df["variant_header_first"].str.contains(">")), "variant_header_first"]  # keep only substitutions     # & (~df[variant_header_column].str.contains(";"))
-        df[ref_base_column] = df["variant_header_first"].str.split(">").str[1].str[0]
-        df[alt_base_column] = df["variant_header_first"].str.split(">").str[1].str[2]
+        df = df.loc[(df["variant_header_first"].str.contains(">"))]  # keep only substitutions     # & (~df[variant_header_column].str.contains(";"))
+        df[ref_base_column] = df["variant_header_first"].str.split(">").str[0].str[-1]
+        df[alt_base_column] = df["variant_header_first"].str.split(">").str[1].str[0]
     
     # 1. Ensure uppercase
     df[ref_base_column] = df[ref_base_column].str.upper()

@@ -20,7 +20,7 @@ from .conftest import (
     compare_two_anndata_objects,
 )
 
-store_out_in_permanent_paths = True
+store_out_in_permanent_paths = False
 tests_dir = Path(__file__).resolve().parent
 pytest_permanent_out_dir_base = tests_dir / "pytest_output" / Path(__file__).stem
 current_datetime = datetime.now().strftime("date_%Y_%m_%d_time_%H%M_%S")
@@ -157,6 +157,9 @@ def transcript_id_df_for_strand_bias_testing():
         "transcript_ID": ["ENST0000001", "ENST0000002", "ENST0000003", "ENST0000004", "ENST0000005", "ENST0000006", "ENST0000007"],
         "start": [1, 200, 1000, 7001, 9000, 12000, 50000],
         "end": [120, 240, 1140, 8000, 10000, 12100, 50500],
+        "feature": ["exon", "exon", "exon", "exon", "exon", "exon", "exon"],
+        "region_length": [120, 40, 140, 1000, 1000, 100, 500],
+        "strand": ["+", "-", "+", "+", "-", "+", "-"]
     })
 
     return transcript_id_df
@@ -165,19 +168,19 @@ def test_strand_bias_filtering_5p(adata_for_strand_bias_testing):
     strand_bias_end = "5p"
     read_length = "90"
     
-    adata = remove_variants_from_adata_for_stranded_technologies(adata=adata_for_strand_bias_testing, strand_bias_end=strand_bias_end, read_length=read_length, header_column="vcrs_header", variant_source=None, gtf=None)
+    adata = remove_variants_from_adata_for_stranded_technologies(adata=adata_for_strand_bias_testing, strand_bias_end=strand_bias_end, read_length=read_length, header_column="vcrs_header", variant_source="transcriptome", variant_position_annotations="cdna", gtf=None, plot_histogram=False)
 
     adata_var_gt = pd.DataFrame({
-        "vcrs_header": ["ENST0000001:c.10A>G", "ENST0000001:c.11A>G;ENST0000001:c.12A>G", "ENST0000001:c.11_12insAAT", "ENST0000001:c.12del;ENST0000002:c.14del", "ENST0000001:c.50G>A", "ENST0000001:c.89_93del"],
-        "vcrs_count": [1, 4, 2, 99, 1, 1],
-        "number_obs": [1, 2, 1, 3, 1, 1],
+        "vcrs_header": ["ENST0000001:c.10A>G", "ENST0000001:c.11A>G;ENST0000001:c.12A>G", "ENST0000001:c.11_12insAAT", "ENST0000001:c.12del;ENST0000002:c.14del", "ENST0000001:c.101del;ENST0000003:c.100A>T", "ENST0000001:c.50G>A", "ENST0000001:c.89_93del"],
+        "vcrs_count": [1, 4, 2, 99, 0, 1, 1],
+        "number_obs": [1, 2, 1, 3, 0, 1, 1],
     })
 
     adata_x_gt = np.array([
-        [0, 1, 0, 1, 0, 0],
-        [0, 0, 0, 0, 0, 0],
-        [1, 3, 0, 90, 1, 0],
-        [0, 0, 2, 8, 0, 1]
+        [0, 1, 0, 1, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0],
+        [1, 3, 0, 90, 0, 1, 0],
+        [0, 0, 2, 8, 0, 0, 1]
     ])
 
     adata_obs_gt = adata_for_strand_bias_testing.obs
@@ -190,21 +193,21 @@ def test_strand_bias_filtering_3p(adata_for_strand_bias_testing, transcript_id_d
     strand_bias_end = "3p"
     read_length = "90"
     
-    adata = remove_variants_from_adata_for_stranded_technologies(adata=adata_for_strand_bias_testing, strand_bias_end=strand_bias_end, read_length=read_length, header_column="vcrs_header", variant_source=None, gtf=transcript_id_df_for_strand_bias_testing)
+    adata = remove_variants_from_adata_for_stranded_technologies(adata=adata_for_strand_bias_testing, strand_bias_end=strand_bias_end, read_length=read_length, header_column="vcrs_header", variant_source="transcriptome", variant_position_annotations="cdna", gtf=transcript_id_df_for_strand_bias_testing, plot_histogram=False)
 
     #!!! ENST0000003:c.100A>T
     #!!! ENST0000001:c.50G>A;ENST0000006:c.1001G>A got split into separate
     adata_var_gt = pd.DataFrame({
-        "vcrs_header": ["ENST0000002:c.14del", "ENST0000001:c.101del;ENST0000003:c.100A>T", "ENST0000001:c.50G>A;ENST0000006:c.1001G>A", "ENST0000001:c.89_93del"],
-        "vcrs_count": [99, 0, 1, 1],
-        "number_obs": [3, 0, 1, 1],
+        "vcrs_header": ["ENST0000001:c.10A>G", "ENST0000001:c.11A>G;ENST0000001:c.12A>G", "ENST0000001:c.11_12insAAT", "ENST0000001:c.12del;ENST0000002:c.14del", "ENST0000001:c.101del;ENST0000003:c.100A>T", "ENST0000001:c.50G>A;ENST0000006:c.1001G>A", "ENST0000001:c.89_93del"],
+        "vcrs_count": [1, 4, 2, 99, 0, 1, 1],
+        "number_obs": [1, 2, 1, 3, 0, 1, 1],
     })
 
     adata_x_gt = np.array([
-        [1, 0, 0, 0],
-        [0, 0, 0, 0],
-        [90, 0, 1, 0],
-        [8, 0, 0, 1]
+        [0, 1, 0, 1, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0],
+        [1, 3, 0, 90, 0, 1, 0],
+        [0, 0, 2, 8, 0, 0, 1]
     ])
 
     adata_obs_gt = adata_for_strand_bias_testing.obs

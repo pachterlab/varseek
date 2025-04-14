@@ -26,7 +26,8 @@ from varseek.utils import (
     plot_cdna_locations,
     add_information_from_variant_header_to_adata_var_exploded,
     plot_substitution_heatmap,
-    plot_variant_types
+    plot_variant_types,
+    load_df_types_adata
 )
 
 from .constants import technology_valid_values, HGVS_pattern_general
@@ -165,7 +166,9 @@ def summarize(
     if isinstance(adata, anndata.AnnData):
         pass
     elif isinstance(adata, str):
+        # adata_dtypes_file_base = adata.replace(".h5ad", "_dtypes")  # matches vk clean
         adata = ad.read_h5ad(adata)
+        # adata = load_df_types_adata(adata, adata_dtypes_file_base)
     else:
         raise ValueError("adata must be a string (file path) or an AnnData object.")
     
@@ -211,8 +214,8 @@ def summarize(
             skip_plots = True
     
     x_column = "vcrs_header_with_gene_name" if "vcrs_header_with_gene_name" in adata.var.columns else "vcrs_id"
-    plot_items_descending_order(adata.var, x_column = x_column, y_column = 'vcrs_count', item_range = (0,top_values), show_names=True, xlabel = "Variant", title = f"Top {top_values} Variants by Counts across All Samples", figsize = (15, 7), show=False, output_path=os.path.join(plots_folder, f"top_{top_values}_variants_descending_plot.png"))
-    plot_items_descending_order(adata.var, x_column = x_column, y_column = 'vcrs_count', show_names=False, xlabel = "Variant Index", title = "Top Variants by Counts across All Samples", figsize = (15, 7), show=False, output_path=os.path.join(plots_folder, "variants_descending_plot.png"))
+    plot_items_descending_order(adata.var, x_column = x_column, y_column = 'vcrs_count', item_range = (0,top_values), show_names=True, xlabel = "Variant", title = f"Top {top_values} Variants by Counts across All Samples", figsize = (15, 7), show=False, save_path=os.path.join(plots_folder, f"top_{top_values}_variants_descending_plot.png"))
+    plot_items_descending_order(adata.var, x_column = x_column, y_column = 'vcrs_count', show_names=False, xlabel = "Variant Index", title = "Top Variants by Counts across All Samples", figsize = (15, 7), show=False, save_path=os.path.join(plots_folder, "variants_descending_plot.png"))
     plot_histogram_with_zero_value(adata.var, col = "vcrs_count", save_path = os.path.join(plots_folder, "variants_histogram.png"))
 
     if not skip_plots:

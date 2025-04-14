@@ -139,7 +139,7 @@ def validate_input_count(params_dict):
 # don't worry if it says an argument is unused, as they will all get put in params_dict for each respective function and passed to the child functions
 @report_time_elapsed
 def count(
-    *fastqs,
+    fastqs,
     index,
     t2g,
     technology,  # params
@@ -183,10 +183,10 @@ def count(
 
     # Additional parameters
     - k                                     (int) The length of each k-mer in the kallisto reference index construction. Corresponds to `k` used in the earlier varseek commands (i.e., varseek ref). If using a downloaded index from varseek ref -d, then check the description for the k value used to construct this index with varseek ref --list_downloadable_references. Default: 59.
-    - qc_against_gene_matrix                (bool): Whether to apply correction for qc against gene matrix. If a read maps to 2+ VCRSs that belong to different genes, then cross-reference with the reference genome to determine which gene the read belongs to, and set all VCRSs that do not correspond to this gene to 0 for that read. Also, cross-reference all reads that map to 1 VCRS and ensure that the reads maps to the gene corresponding to this VCRS, or else set this value to 0 in the count matrix. Default: True.
-    - account_for_strand_bias               (bool): Whether to account for strand bias from stranded single-cell technologies. Default: False.
-    - strand_bias_end                       (str): The end of the read to use for strand bias correction. Either "5p" or "3p". Must be provided if and only if account_for_strand_bias=True. Default: None.
-    - read_length                           (int): The read length used in the experiment. Must be provided if and only if account_for_strand_bias=True. Default: None.
+    - qc_against_gene_matrix                (bool) Whether to apply correction for qc against gene matrix. If a read maps to 2+ VCRSs that belong to different genes, then cross-reference with the reference genome to determine which gene the read belongs to, and set all VCRSs that do not correspond to this gene to 0 for that read. Also, cross-reference all reads that map to 1 VCRS and ensure that the reads maps to the gene corresponding to this VCRS, or else set this value to 0 in the count matrix. Default: True.
+    - account_for_strand_bias               (bool) Whether to account for strand bias from stranded single-cell technologies. Default: False.
+    - strand_bias_end                       (str) The end of the read to use for strand bias correction. Either "5p" or "3p". Must be provided if and only if account_for_strand_bias=True. Default: None.
+    - read_length                           (int) The read length used in the experiment. Must be provided if and only if account_for_strand_bias=True. Default: None.
     - strand                                (str)  The strandedness of the data. Either "unstranded", "forward", or "reverse". Default: None.
     - mm                                    (bool)  If True, use the multi-mapping reads. Default: True.
     - union                                 (bool)  If True, use the union of the read mappings. Default: True.
@@ -195,7 +195,7 @@ def count(
     # Optional input arguments
     - reference_genome_index                (str) Path to index file for the "normal" reference genome. Created if not provided. Only used if qc_against_gene_matrix=True (see vk clean --help). Default: None.
     - reference_genome_t2g                  (str) Path to t2g file for the "normal" reference genome. Created if not provided. Only used if qc_against_gene_matrix=True (see vk clean --help). Default: None.
-    - gtf                                   (str): Path to the GTF file. Only used when account_for_strand_bias=True and either (1) strand_bias_end='3p' and/or (2) some VCRSs are derived from genome sequences. Default: None.
+    - gtf                                   (str) Path to the GTF file. Only used when account_for_strand_bias=True and either (1) strand_bias_end='3p' and/or (2) some VCRSs are derived from genome sequences. Default: None.
 
     # Optional output file paths: (only needed if changing/customizing file names or locations):
     - out                                   (str) Output directory. Default: ".".
@@ -361,7 +361,7 @@ def count(
         kwargs["length_required"] = k
 
     # define the vk fastqpp, clean, and summarize arguments (explicit arguments and allowable kwargs)
-    explicit_parameters_vk_fastqpp = vk.utils.get_set_of_parameters_from_function_signature(vk.varseek_fastqpp.fastqpp)  # does not include *fastqs due to asterisk
+    explicit_parameters_vk_fastqpp = vk.utils.get_set_of_parameters_from_function_signature(vk.varseek_fastqpp.fastqpp)  # originally did not include *fastqs due to asterisk, but I removed the asterisk so now it's fine
     allowable_kwargs_vk_fastqpp = vk.utils.get_set_of_allowable_kwargs(vk.varseek_fastqpp.fastqpp)
 
     explicit_parameters_vk_clean = vk.utils.get_set_of_parameters_from_function_signature(vk.varseek_clean.clean)
@@ -580,7 +580,8 @@ def count(
             try:
                 _ = vk.summarize(adata=adata, technology=technology, out=vk_summarize_out_dir, dry_run=dry_run, overwrite=True, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir, **kwargs_vk_summarize)
             except Exception as e:
-                os.remove(file_signifying_successful_vk_summarize_completion)  # remove the file vk summarize stats file so that the vk count can be rerun
+                if os.path.isfile(file_signifying_successful_vk_summarize_completion):
+                    os.remove(file_signifying_successful_vk_summarize_completion)  # remove the file vk summarize stats file so that the vk count can be rerun
                 logger.error(f"Error in vk summarize: {e}")
                 raise e
         else:

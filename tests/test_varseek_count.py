@@ -22,7 +22,7 @@ from .conftest import (
 
 sample_size = 250_000  # number of reads
 make_new_gt = False
-store_out_in_permanent_paths = True
+store_out_in_permanent_paths = False
 threads = 2
 quality_control_fastqs = True
 qc_against_gene_matrix = False

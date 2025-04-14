@@ -8,4 +8,4 @@ gget>=0.30.0
 scipy>=1.13.1
 pyfastx>=2.1.0
 pysam>=0.22.1
-fastparquet>=2024.11.0
+pyarrow>=19.0.1
