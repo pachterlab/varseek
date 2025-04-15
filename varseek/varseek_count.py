@@ -17,7 +17,7 @@ from varseek.utils import (
     check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal,
     is_valid_int,
     load_in_fastqs,
-    make_good_barcodes_and_file_index_tuples,
+    correct_adata_barcodes_for_running_paired_data_in_single_mode,
     make_function_parameter_to_value_dict,
     report_time_elapsed,
     save_params_to_config_file,
@@ -149,8 +149,8 @@ def count(
     strand_bias_end=None,
     read_length=None,
     strand=None,
-    mm=False,
-    union=False,
+    mm=True,
+    union=True,
     parity="single",
     reference_genome_index=None,  # optional inputs
     reference_genome_t2g=None,
@@ -183,7 +183,7 @@ def count(
 
     # Additional parameters
     - k                                     (int) The length of each k-mer in the kallisto reference index construction. Corresponds to `k` used in the earlier varseek commands (i.e., varseek ref). If using a downloaded index from varseek ref -d, then check the description for the k value used to construct this index with varseek ref --list_downloadable_references. Default: 59.
-    - qc_against_gene_matrix                (bool) Whether to apply correction for qc against gene matrix. If a read maps to 2+ VCRSs that belong to different genes, then cross-reference with the reference genome to determine which gene the read belongs to, and set all VCRSs that do not correspond to this gene to 0 for that read. Also, cross-reference all reads that map to 1 VCRS and ensure that the reads maps to the gene corresponding to this VCRS, or else set this value to 0 in the count matrix. Default: True.
+    - qc_against_gene_matrix                (bool) Whether to apply correction for qc against gene matrix. If a read maps to 2+ VCRSs that belong to different genes, then cross-reference with the reference genome to determine which gene the read belongs to, and set all VCRSs that do not correspond to this gene to 0 for that read. Also, cross-reference all reads that map to 1 VCRS and ensure that the reads maps to the gene corresponding to this VCRS, or else set this value to 0 in the count matrix. Default: False.
     - account_for_strand_bias               (bool) Whether to account for strand bias from stranded single-cell technologies. Default: False.
     - strand_bias_end                       (str) The end of the read to use for strand bias correction. Either "5p" or "3p". Must be provided if and only if account_for_strand_bias=True. Default: None.
     - read_length                           (int) The read length used in the experiment. Must be provided if and only if account_for_strand_bias=True. Default: None.
@@ -462,24 +462,8 @@ def count(
             logger.info(f"Running kb count with command: {' '.join(kb_count_command)}")
             subprocess.run(kb_count_command, check=True)
 
-            if os.path.exists(adata_vcrs) and parity == "paired" and kwargs["parity_kb_count"] == "single":
-                adata = ad.read_h5ad(adata_vcrs)
-                barcodes_file = os.path.join(kb_count_vcrs_out_dir, "matrix.sample.barcodes")
-                bad_to_good_barcode_dict = make_good_barcodes_and_file_index_tuples(barcodes_file)
-                adata.obs.index = adata.obs.index.map(lambda x: bad_to_good_barcode_dict.get(x, x))  # map from old (incorrect) barcodes to new (correct) barcodes  #!!! ensure the old barcodes don't linger anywhere else
-
-                # Convert to DataFrame for easy manipulation
-                df = pd.DataFrame(adata.X.toarray() if hasattr(adata.X, "toarray") else adata.X, 
-                        index=adata.obs.index, 
-                        columns=adata.var.index)
-                
-                # sum across pairs
-                df_grouped = df.groupby(df.index).sum()
-
-                # Create new AnnData object
-                adata = ad.AnnData(X=df_grouped.values, obs=pd.DataFrame(index=df_grouped.index), var=adata.var)
-                adata.uns["corrected_barcodes"] = True  # will be checked in vk clean
-                adata.write(adata_vcrs)
+            if os.path.exists(adata_vcrs) and parity == "paired" and kwargs["parity_kb_count"] == "single" and adata.uns.get("corrected_barcodes") is None:
+                _ = correct_adata_barcodes_for_running_paired_data_in_single_mode(kb_count_vcrs_out_dir, adata_out=adata_vcrs)  # will check if the correction has already occurred internally
     else:
         logger.info(f"Skipping kb count because file {file_signifying_successful_kb_count_vcrs_completion} already exists and overwrite=False")
 

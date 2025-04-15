@@ -13,6 +13,7 @@ from collections import OrderedDict
 import json
 
 import anndata as ad
+from scipy.sparse import coo_matrix
 import numpy as np
 import pandas as pd
 import pyfastx
@@ -908,12 +909,8 @@ def sort_fastq_files_for_kb_count(fastq_files, technology=None, multiplexed=None
         else:
             return sorted_files
     except Exception as e:
-        if check_only:
-            logger.info(f"Error sorting fastq files: {e}")
-            return fastq_files
-        else:
-            message = f"Error sorting fastq files: {e}"
-            raise ValueError(message)
+        logger.info(f"Error sorting fastq files: {e}. Returning unsorted fastq files")
+        return fastq_files
 
 
 def load_in_fastqs(fastqs):
@@ -1282,3 +1279,75 @@ def load_df_types_adata(adata, df_types_file_base):
     adata.var = load_df_types(adata.var, f"{df_types_file_base}_var.json")
 
     return adata
+
+
+def make_good_barcodes_and_file_index_tuples(barcodes, include_file_index=False):
+    if isinstance(barcodes, (str, Path)):
+        with open(barcodes, encoding="utf-8") as f:
+            barcodes = f.read().splitlines()
+
+    good_barcodes_list = []
+    for i in range(len(barcodes)):
+        good_barcode_index = i // 2
+        good_barcode = barcodes[good_barcode_index]
+        if include_file_index:
+            file_index = i % 2
+            good_barcodes_list.append((good_barcode, str(file_index)))
+        else:
+            good_barcodes_list.append(good_barcode)
+
+    bad_to_good_barcode_dict = dict(zip(barcodes, good_barcodes_list))
+    return bad_to_good_barcode_dict
+
+def correct_adata_barcodes_for_running_paired_data_in_single_mode(kb_count_out_dir, adata=None, adata_out=None, save_adata=True):
+    if adata is None:
+        adata = os.path.join(kb_count_out_dir, "counts_unfiltered", "adata.h5ad")
+    
+    if isinstance(adata, ad.AnnData):
+        if adata_out is None:
+            adata_out = "adata_updated.h5ad"
+    elif isinstance(adata, (str, Path)):
+        adata = ad.read_h5ad(adata)
+        if adata_out is None:
+            adata_out = os.path.join(kb_count_out_dir, "counts_unfiltered", "adata_updated.h5ad")
+    else:
+        raise TypeError(f"Unsupported type for adata: {type(adata)}")
+
+    if adata_updated.uns.get("corrected_barcodes", False):  # check if the barcodes were corrected
+        logger.info("Barcodes already corrected, skipping correction")
+        return adata
+    
+    barcodes_file = os.path.join(kb_count_out_dir, "matrix.sample.barcodes")
+    bad_to_good_barcode_dict = make_good_barcodes_and_file_index_tuples(barcodes_file)
+    adata.obs.index = adata.obs.index.map(lambda x: bad_to_good_barcode_dict.get(x, x))  # map from old (incorrect) barcodes to new (correct) barcodes
+
+    # 1. Extract barcode labels (adjust 'barcode' to your specific column name)
+    barcodes = adata.obs.index.values  # e.g., array(['A', 'A', 'B', 'B'])
+    unique_barcodes, barcode_indices = np.unique(barcodes, return_inverse=True)  # unique_barcodes: array(['A', 'B'])
+
+    # 2. Build a sparse barcodeing matrix:
+    #    This matrix has shape (number of barcodes, number of original obs)
+    n_obs = adata.shape[0]         # 4
+    n_barcodes = len(unique_barcodes)  # 2
+    # Create indices for the nonzero entries:
+    rows = barcode_indices        # maps each observation to its barcode (e.g., [0, 0, 1, 1])
+    cols = np.arange(n_obs)       # observations indices [0, 1, 2, 3]
+    data = np.ones(n_obs)         # each observation contributes a 1
+    # Create the barcodeing matrix (in COO sparse format)
+    grouping_matrix = coo_matrix((data, (rows, cols)), shape=(n_barcodes, n_obs))
+
+    # 3. Multiply the barcodeing matrix with the original data matrix.
+    #    This operation sums the rows for each barcode.
+    aggregated_X = grouping_matrix @ adata.X
+
+    # 4. Create a new AnnData object with the aggregated matrix.
+    adata_updated = ad.AnnData(X=aggregated_X)
+    adata_updated.obs_names = unique_barcodes     # sets the row names to 'A' and 'B'
+    adata_updated.obs.index.name = "barcode"
+
+    adata_updated.var = adata.var
+    adata_updated.uns["corrected_barcodes"] = True  # will be checked in vk clean
+    if save_adata:
+        adata_updated.write(adata_out)
+
+    return adata_updated

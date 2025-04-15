@@ -39,6 +39,7 @@ from varseek.utils.seq_utils import (
     parquet_column_list_to_tuple,
     parquet_column_tuple_to_list,
     get_ensembl_gene_id_from_transcript_id_bulk,
+    make_good_barcodes_and_file_index_tuples
 )
 from varseek.utils.logger_utils import set_up_logger, count_chunks, determine_write_mode
 from varseek.utils.visualization_utils import plot_cdna_locations
@@ -109,25 +110,6 @@ def map_transcripts_to_genes(transcript_list, mapping_dict):
 def map_transcripts_to_genes_versionless(transcript_list, mapping_dict):
     return [mapping_dict.get(transcript, transcript).split(".")[0] for transcript in transcript_list]  # if it cannot find a transcript in the mapping_dict, it will return the transcript itself (this works if I give a non-transcript too, like a chromosome name)
 
-
-def make_good_barcodes_and_file_index_tuples(barcodes, include_file_index=False):
-    if isinstance(barcodes, (str, Path)):
-        with open(barcodes, encoding="utf-8") as f:
-            barcodes = f.read().splitlines()
-
-    good_barcodes_list = []
-    for i in range(len(barcodes)):
-        good_barcode_index = i // 2
-        good_barcode = barcodes[good_barcode_index]
-        if include_file_index:
-            file_index = i % 2
-            good_barcodes_list.append((good_barcode, str(file_index)))
-        else:
-            good_barcodes_list.append(good_barcode)
-
-    bad_to_good_barcode_dict = dict(zip(barcodes, good_barcodes_list))
-    return bad_to_good_barcode_dict
-
 def find_hamming_1_match(barcode, whitelist):
     bases = ["A", "C", "G", "T"]
     barcode_list = list(barcode)
@@ -143,7 +125,7 @@ def find_hamming_1_match(barcode, whitelist):
         barcode_list[i] = original_base  # Restore original base
     return None  # No match found
 
-def make_bus_df(kb_count_out, fastq_file_list, technology=None, t2g_file=None, mm=False, parity="single", bustools="bustools", fastq_sorting_check_only=True, chunksize=None, bad_to_good_barcode_dict=None, correct_barcodes_of_hamming_distance_one=False, save_type="parquet", add_fastq_headers=True, save_transcript_names=True, add_counted_in_count_matrix=True, strip_version_number_from_genes=False):  # make sure this is in the same order as passed into kb count - [sample1, sample2, etc] OR [sample1_pair1, sample1_pair2, sample2_pair1, sample2_pair2, etc]
+def make_bus_df(kb_count_out, fastq_file_list=None, technology=None, t2g_file=None, mm=False, parity="single", bustools="bustools", fastq_sorting_check_only=True, chunksize=None, bad_to_good_barcode_dict=None, correct_barcodes_of_hamming_distance_one=False, save_type="parquet", add_fastq_headers=True, save_transcript_names=True, add_counted_in_count_matrix=True, strip_version_number_from_genes=False):  # make sure this is in the same order as passed into kb count - [sample1, sample2, etc] OR [sample1_pair1, sample1_pair2, sample2_pair1, sample2_pair2, etc]
     with open(f"{kb_count_out}/kb_info.json", 'r') as f:
         kb_info_data = json.load(f)
     if "--num" not in kb_info_data.get("call", ""):
@@ -166,8 +148,9 @@ def make_bus_df(kb_count_out, fastq_file_list, technology=None, t2g_file=None, m
     else:
         used_dlist = True
         
-    fastq_file_list = load_in_fastqs(fastq_file_list)
-    fastq_file_list = sort_fastq_files_for_kb_count(fastq_file_list, technology=technology, check_only=fastq_sorting_check_only)
+    if fastq_file_list is not None:
+        fastq_file_list = load_in_fastqs(fastq_file_list)
+        fastq_file_list = sort_fastq_files_for_kb_count(fastq_file_list, technology=technology, check_only=fastq_sorting_check_only)
     
     #* transcripts
     logger.info("loading in transcripts")
@@ -349,7 +332,10 @@ def make_bus_df(kb_count_out, fastq_file_list, technology=None, t2g_file=None, m
         first_chunk = (i == 0)
         if save_type == "parquet":  # parquet benefits over csv: much smaller file size (~10% of csv size), and saves data types upon saving and loading
             # parquet_column_tuple_to_list(bus_df)  # parquet doesn't like tuples - it only likes lists - if wanting to load back in the data as a tuple later, then use parquet_column_list_to_tuple - commented out because I don't use tuples
-            bus_df.to_parquet(bus_out_path, index=False, append=not first_chunk)
+            if total_chunks == 1:  # no appending needed, so either engine is fine
+                bus_df.to_parquet(bus_out_path, index=False)
+            else:  # need append function, which is only supported by fastparquet (ie not pyarrow)
+                bus_df.to_parquet(bus_out_path, index=False, engine="fastparquet", append=not first_chunk)
         elif save_type == "csv":  # csv benefits over parquet: human-readable, can be read/iterated in chunks, and supports tuples (which take about 3/4 the RAM of strings/lists)
             bus_df.csv(bus_out_path, index=False, header=first_chunk, mode=determine_write_mode(bus_out_path, overwrite=True, first_chunk=first_chunk))
     
@@ -372,8 +358,9 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
     if os.path.dirname(adata_output_path):
         os.makedirs(os.path.dirname(adata_output_path), exist_ok=True)
 
-    fastq_file_list = load_in_fastqs(fastq_file_list)
-    fastq_file_list = sort_fastq_files_for_kb_count(fastq_file_list, technology=technology, check_only=fastq_sorting_check_only)
+    if fastq_file_list is not None:
+        fastq_file_list = load_in_fastqs(fastq_file_list)
+        fastq_file_list = sort_fastq_files_for_kb_count(fastq_file_list, technology=technology, check_only=fastq_sorting_check_only)
 
     #* create a dataframe of the BUS file for VCRSs with useful added information
     bus_df_mutation_path = f"{kb_count_vcrs_dir}/bus_df.{save_type}"
@@ -671,16 +658,17 @@ def merge_bus_df_and_adata_var(bus_df, adata_var, vcrs_column_bus="vcrs_names", 
     else:
         merged = exploded.copy()
 
+    if "vcrs_header" not in merged.columns:  # means that we did not use a var_id_column, and thus "vcrs_names" represents our (HGVS-like) headers
+        merged["vcrs_header"] = merged[vcrs_column_bus]
+
     #* Step 3.5 Explode and collapse by semicolon - eg VCRS1;VCRS2, VCRS3 (2 rows) --> VCRS1, VCRS2, VCRS3 (3 rows)
     if gene_id_column not in merged.columns:  # I won't enter this condition if vk clean set me up properly
         logger.info("Exploding merged bus_df by vcrs_names to add gene_id_column")
-        if "vcrs_header" not in merged.columns:  # means that we did not use a var_id_column, and thus "vcrs_names" represents our (HGVS-like) headers
-            merged["vcrs_header"] = merged[vcrs_column_bus]
         merged['vcrs_header_individual'] = merged['vcrs_header'].str.split(';')  # don't let the naming be confusing - it will only be original AFTER exploding; before, it will be a list
         merged_exploded = merged[["vcrs_header", "vcrs_header_individual"]].copy().explode('vcrs_header_individual', ignore_index=True).drop_duplicates()
         include_position_information = False if variant_source == "transcriptome" else True
         logger.info("Adding information from variant header to adata.var")
-        add_information_from_variant_header_to_adata_var_exploded(merged_exploded, seq_id_column=seq_id_column, var_column=var_column, variant_source=variant_source, t2g_file=reference_genome_t2g, include_position_information=include_position_information, gtf=gtf)
+        add_information_from_variant_header_to_adata_var_exploded(merged_exploded, seq_id_column=seq_id_column, var_column=var_column, variant_source=variant_source, t2g_file=reference_genome_t2g, include_position_information=include_position_information, gtf=gtf, gene_id_column=gene_id_column)
         logger.info("Merging exploded bus_df with adata.var again to add gene_id_column")
         grouped_merged = (
             merged_exploded[["vcrs_header", gene_id_column]].groupby("vcrs_header", as_index=False)

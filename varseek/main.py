@@ -1863,6 +1863,18 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "count_reads_that_dont_pseudoalign_to_reference_genome", disable=True),
     )
     parser_clean.add_argument(
+        "--drop_reads_where_the_pairs_mapped_to_different_genes",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "drop_reads_where_the_pairs_mapped_to_different_genes"),
+    )
+    parser_clean.add_argument(
+        "--avoid_paired_double_counting",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "avoid_paired_double_counting"),
+    )
+    parser_clean.add_argument(
         "--account_for_strand_bias",
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided

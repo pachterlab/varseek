@@ -427,6 +427,9 @@ def download_varseek_files(urls_dict, out=".", verbose=True):
 
 
 def is_program_installed(program):
+    if "debugpy" in sys.modules:  # means I'm in the VScode debugger, and therefore the conda bin is not in my PATH - I must added manually to ensure I can detect packages installed with conda install
+        conda_env_bin_path = os.path.dirname(sys.executable)
+        os.environ["PATH"] += f":{conda_env_bin_path}"
     return shutil.which(program) is not None or os.path.exists(program)
 
 
