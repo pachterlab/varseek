@@ -153,7 +153,7 @@ def retrieve_value_from_metric_file(key_of_interest, metric_file):
     return value_of_interest
 
 
-def calculate_metrics(df, header_name=None, check_assertions=False, crude=False, out=None, suffix=""):
+def calculate_metrics(df, header_name=None, check_assertions=False, crude=False, out=None, suffix="", include_FPs_and_FNs_lists_in_output=False):
     if crude:
         suffix = "_crude"
 
@@ -220,9 +220,10 @@ def calculate_metrics(df, header_name=None, check_assertions=False, crude=False,
         "FP": FP,
         "FN": FN,
         "TN": TN,
-        "FPs": FPs,
-        "FNs": FNs,
     }
+    if include_FPs_and_FNs_lists_in_output:
+        metric_dictionary["FPs"] = FPs
+        metric_dictionary["FNs"] = FNs
 
     if out is not None:
         keys_to_save = [

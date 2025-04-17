@@ -704,7 +704,7 @@ def clean(
         adata = adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir=kb_count_vcrs_dir, kb_count_reference_genome_dir=kb_count_reference_genome_dir, technology=technology, t2g_standard=reference_genome_t2g, adata=adata, fastq_file_list=fastqs, adata_output_path=None, mm=mm, parity=parity, bustools=bustools, fastq_sorting_check_only=(not sort_fastqs), save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=count_reads_that_dont_pseudoalign_to_reference_genome, drop_reads_where_the_pairs_mapped_to_different_genes=drop_reads_where_the_pairs_mapped_to_different_genes, avoid_paired_double_counting=avoid_paired_double_counting, add_fastq_headers=False, seq_id_column=seq_id_column, gene_id_column=gene_id_column, variant_source=variant_source, gtf=gtf)
     
     # set all count values below min_counts to 0
-    if min_counts is not None:
+    if min_counts is not None:  # important I do BEFORE CPM normalization
         adata.X = adata.X.multiply(adata.X >= min_counts)
 
     if account_for_strand_bias:
@@ -730,99 +730,96 @@ def clean(
     if use_binary_matrix:
         adata.X = (adata.X > 0).astype(int)
 
-    if isinstance(adata_reference_genome, anndata.AnnData):
+    if isinstance(adata_reference_genome, anndata.AnnData):  # and any([filter_cells_by_min_counts, filter_cells_by_min_genes, filter_genes_by_min_cells, filter_cells_by_max_mt_content, doublet_detection, cpm_normalization]):  # the list of reasons to enter here
         adata_reference_genome = adata_reference_genome[adata.obs_names].copy()  # ensures adata_reference_genome rows/obs match order of adata
-        if technology not in non_single_cell_technologies:  # pardon the double negative - this is just a way to say "if technology is single cell"
-            for condition in scanpy_conditions:
-                if params_dict.get(condition):
-                    import scanpy as sc
-            if filter_cells_by_min_counts:
-                if not isinstance(filter_cells_by_min_counts, int):  # ie True for automatic
-                    from kneed import KneeLocator
+        import scanpy as sc
+        if filter_cells_by_min_counts:
+            if not isinstance(filter_cells_by_min_counts, int):  # ie True for automatic
+                from kneed import KneeLocator
 
-                    umi_counts = np.array(adata_reference_genome.X.sum(axis=1)).flatten()
-                    umi_counts_sorted = np.sort(umi_counts)[::-1]  # Sort in descending order for the knee plot
+                umi_counts = np.array(adata_reference_genome.X.sum(axis=1)).flatten()
+                umi_counts_sorted = np.sort(umi_counts)[::-1]  # Sort in descending order for the knee plot
 
-                    # Step 2: Use KneeLocator to find the cutoff
-                    knee_locator = KneeLocator(
-                        range(len(umi_counts_sorted)),
-                        umi_counts_sorted,
-                        curve="convex",
-                        direction="decreasing",
-                    )
-                    filter_cells_by_min_counts = umi_counts_sorted[knee_locator.knee]
-                    plot_knee_plot(
-                        umi_counts_sorted=umi_counts_sorted,
-                        knee_locator=knee_locator,
-                        min_counts_assessed_by_knee_plot=filter_cells_by_min_counts,
-                        output_file=f"{output_figures_dir}/knee_plot.png",
-                    )
-                sc.pp.filter_cells(adata_reference_genome, min_counts=filter_cells_by_min_counts)  # filter cells by min counts
-            if filter_cells_by_min_genes:
-                sc.pp.filter_cells(adata_reference_genome, min_genes=filter_cells_by_min_genes)  # filter cells by min genes
-            if filter_genes_by_min_cells:
-                sc.pp.filter_genes(adata_reference_genome, min_cells=filter_genes_by_min_cells)  # filter genes by min cells
-            if filter_cells_by_max_mt_content:
-                has_mt_genes = adata_reference_genome.var_names.str.startswith("MT-").any()
-                if has_mt_genes:
-                    adata_reference_genome.var["mt"] = adata_reference_genome.var_names.str.startswith("MT-")
-                else:
-                    mito_ensembl_ids = sc.queries.mitochondrial_genes("hsapiens", attrname="ensembl_gene_id")
-                    mito_genes = set(mito_ensembl_ids["ensembl_gene_id"].values)
-
-                    adata_base_var_names = adata_reference_genome.var_names.str.split(".").str[0]  # Removes minor version from var names
-                    mito_genes_base = {gene.split(".")[0] for gene in mito_genes}  # Removes minor version from mito_genes
-
-                    # Identify mitochondrial genes in adata.var using the stripped version of gene IDs
-                    adata_reference_genome.var["mt"] = adata_base_var_names.isin(mito_genes_base)
-
-                mito_counts = adata_reference_genome[:, adata_reference_genome.var["mt"]].X.sum(axis=1)
-
-                # Calculate total counts per cell
-                total_counts = adata_reference_genome.X.sum(axis=1)
-
-                # Calculate percent mitochondrial gene expression per cell
-                adata_reference_genome.obs["percent_mito"] = np.array(mito_counts / total_counts * 100).flatten()
-
-                adata_reference_genome.obs["total_counts"] = adata_reference_genome.X.sum(axis=1).A1
-                sc.pp.calculate_qc_metrics(
-                    adata_reference_genome,
-                    qc_vars=["mt"],
-                    percent_top=None,
-                    log1p=False,
-                    inplace=True,
+                # Step 2: Use KneeLocator to find the cutoff
+                knee_locator = KneeLocator(
+                    range(len(umi_counts_sorted)),
+                    umi_counts_sorted,
+                    curve="convex",
+                    direction="decreasing",
                 )
-
-                sc.pl.violin(
-                    adata_reference_genome,
-                    ["n_genes_by_counts", "total_counts", "pct_counts_mt"],
-                    jitter=0.4,
-                    multi_panel=True,
-                    save=True,
+                filter_cells_by_min_counts = umi_counts_sorted[knee_locator.knee]
+                plot_knee_plot(
+                    umi_counts_sorted=umi_counts_sorted,
+                    knee_locator=knee_locator,
+                    min_counts_assessed_by_knee_plot=filter_cells_by_min_counts,
+                    output_file=f"{output_figures_dir}/knee_plot.png",
                 )
+            sc.pp.filter_cells(adata_reference_genome, min_counts=filter_cells_by_min_counts)  # filter cells by min counts
+        if filter_cells_by_min_genes:
+            sc.pp.filter_cells(adata_reference_genome, min_genes=filter_cells_by_min_genes)  # filter cells by min genes
+        if filter_genes_by_min_cells:
+            sc.pp.filter_genes(adata_reference_genome, min_cells=filter_genes_by_min_cells)  # filter genes by min cells
+        if filter_cells_by_max_mt_content:
+            has_mt_genes = adata_reference_genome.var_names.str.startswith("MT-").any()
+            if has_mt_genes:
+                adata_reference_genome.var["mt"] = adata_reference_genome.var_names.str.startswith("MT-")
+            else:
+                mito_ensembl_ids = sc.queries.mitochondrial_genes("hsapiens", attrname="ensembl_gene_id")
+                mito_genes = set(mito_ensembl_ids["ensembl_gene_id"].values)
 
-                violin_plot_path = os.path.join(output_figures_dir, "qc_violin_plot.pdf")
-                os.rename(
-                    os.path.join("figures", "violin.pdf"),
-                    violin_plot_path,
-                )
+                adata_base_var_names = adata_reference_genome.var_names.str.split(".").str[0]  # Removes minor version from var names
+                mito_genes_base = {gene.split(".")[0] for gene in mito_genes}  # Removes minor version from mito_genes
 
-                if os.path.isdir("figures") and len(os.listdir("figures")) == 0:
-                    os.rmdir("figures")
+                # Identify mitochondrial genes in adata.var using the stripped version of gene IDs
+                adata_reference_genome.var["mt"] = adata_base_var_names.isin(mito_genes_base)
 
-                adata_reference_genome = adata_reference_genome[adata_reference_genome.obs.pct_counts_mt < filter_cells_by_max_mt_content, :].copy()  # filter cells by high MT content
+            mito_counts = adata_reference_genome[:, adata_reference_genome.var["mt"]].X.sum(axis=1)
 
-                adata.obs["percent_mito"] = adata_reference_genome.obs["percent_mito"]
-                adata.obs["total_counts"] = adata_reference_genome.obs["total_counts"]
-            if doublet_detection:
-                sc.pp.scrublet(adata_reference_genome, batch_key="sample")  # filter doublets
-                adata.obs["predicted_doublet"] = adata_reference_genome.obs["predicted_doublet"]
-                if remove_doublets:
-                    adata_reference_genome = adata_reference_genome[~adata_reference_genome.obs["predicted_doublet"], :].copy()
-                    adata = adata[~adata.obs["predicted_doublet"], :].copy()
+            # Calculate total counts per cell
+            total_counts = adata_reference_genome.X.sum(axis=1)
 
-            common_cells = adata.obs_names.intersection(adata_reference_genome.obs_names)
-            adata = adata[common_cells, :].copy()
+            # Calculate percent mitochondrial gene expression per cell
+            adata_reference_genome.obs["percent_mito"] = np.array(mito_counts / total_counts * 100).flatten()
+
+            adata_reference_genome.obs["total_counts"] = adata_reference_genome.X.sum(axis=1).A1
+            sc.pp.calculate_qc_metrics(
+                adata_reference_genome,
+                qc_vars=["mt"],
+                percent_top=None,
+                log1p=False,
+                inplace=True,
+            )
+
+            sc.pl.violin(
+                adata_reference_genome,
+                ["n_genes_by_counts", "total_counts", "pct_counts_mt"],
+                jitter=0.4,
+                multi_panel=True,
+                save=True,
+            )
+
+            violin_plot_path = os.path.join(output_figures_dir, "qc_violin_plot.pdf")
+            os.rename(
+                os.path.join("figures", "violin.pdf"),
+                violin_plot_path,
+            )
+
+            if os.path.isdir("figures") and len(os.listdir("figures")) == 0:
+                os.rmdir("figures")
+
+            adata_reference_genome = adata_reference_genome[adata_reference_genome.obs.pct_counts_mt < filter_cells_by_max_mt_content, :].copy()  # filter cells by high MT content
+
+            adata.obs["percent_mito"] = adata_reference_genome.obs["percent_mito"]
+            adata.obs["total_counts"] = adata_reference_genome.obs["total_counts"]
+        if doublet_detection:
+            sc.pp.scrublet(adata_reference_genome, batch_key="sample")  # filter doublets
+            adata.obs["predicted_doublet"] = adata_reference_genome.obs["predicted_doublet"]
+            if remove_doublets:
+                adata_reference_genome = adata_reference_genome[~adata_reference_genome.obs["predicted_doublet"], :].copy()
+                adata = adata[~adata.obs["predicted_doublet"], :].copy()
+
+        common_cells = adata.obs_names.intersection(adata_reference_genome.obs_names)
+        adata = adata[common_cells, :].copy()
 
         # do cpm
         if cpm_normalization and not use_binary_matrix:  # normalization not needed for binary matrix
@@ -903,6 +900,17 @@ def clean(
     for col in adata.var.columns:
         adata.var[col] = adata.var[col].apply(lambda x: ";".join(map(str, x)) if isinstance(x, list) else x).astype(str)
 
+    logger.info(f"Saving adata to {adata_vcrs_clean_out}.")
+    adata.write(adata_vcrs_clean_out)
+    # adata_dtypes_file_base = adata_vcrs_clean_out.replace(".h5ad", "_dtypes")
+    # save_df_types_adata(adata, out_file_base=adata_dtypes_file_base)
+    
+    if isinstance(adata_reference_genome, anndata.AnnData):
+        logger.info(f"Saving adata_reference_genome to {adata_reference_genome_clean_out}.")
+        adata_reference_genome.write(adata_reference_genome_clean_out)
+        # adata_reference_genome_dtypes_file_base = adata_reference_genome_clean_out.replace(".h5ad", "_dtypes")
+        # save_df_types_adata(adata_reference_genome, out_file_base=adata_reference_genome_dtypes_file_base)
+    
     if save_vcf:
         if not vcf_data_csv or not os.path.exists(vcf_data_csv):
             if variants == "cosmic_cmc":
@@ -910,15 +918,7 @@ def clean(
             # insert other supported databases here
             else:
                 raise ValueError("vcf_data_csv must be provided if variants is supported. Supported databases can be viewed with `vk ref --list_prebuilt_indices`.")
+        logger.info(f"Saving VCF file to {vcf_out}.")
         cleaned_adata_to_vcf(adata.var, vcf_data_df=vcf_data_csv, output_vcf=vcf_out, save_vcf_samples=save_vcf_samples, adata=adata)
-    
-    if isinstance(adata_reference_genome, anndata.AnnData):
-        adata_reference_genome.write(adata_reference_genome_clean_out)
-        # adata_reference_genome_dtypes_file_base = adata_reference_genome_clean_out.replace(".h5ad", "_dtypes")
-        # save_df_types_adata(adata_reference_genome, out_file_base=adata_reference_genome_dtypes_file_base)
-    
-    adata.write(adata_vcrs_clean_out)
-    # adata_dtypes_file_base = adata_vcrs_clean_out.replace(".h5ad", "_dtypes")
-    # save_df_types_adata(adata, out_file_base=adata_dtypes_file_base)
 
     return adata

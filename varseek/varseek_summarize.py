@@ -193,7 +193,7 @@ def summarize(
 
     with open(stats_file, "w", encoding="utf-8") as f:
         f.write(f"Total variants with count > 0 for any sample/cell: {len(vcrs_count_descending_greater_than_zero)}\n")
-        if technology.lower() == "bulk":
+        if technology.lower() == "bulk" and len(adata.obs_names) < 100:  # make sure this is not too long (eg smart-seq, or a ton of bulk samples)
             for sample in adata.obs_names:
                 count_nonzero_variants = (adata[sample, :].X > 0).sum()
                 f.write(f"Sample {sample} has {count_nonzero_variants} variants with count > 0.\n")
@@ -276,7 +276,7 @@ def summarize(
 
         with open(stats_file, "a", encoding="utf-8") as f:
             f.write(f"Total genes with count > 0 for any sample/cell: {len(vcrs_count_descending_greater_than_zero)}\n")
-            if technology.lower() == "bulk":
+            if technology.lower() == "bulk" and len(gene_counts.obs_names) < 100:  # make sure this is not too long (eg smart-seq, or a ton of bulk samples)
                 for sample in gene_counts.obs_names:  #!!! make sure this is right
                     count_nonzero_variants = (gene_counts[sample, :].X > 0).sum()
                     f.write(f"Sample {sample} has {count_nonzero_variants} genes with count > 0.\n")
