@@ -898,7 +898,8 @@ def clean(
 
     #* adata can't save lists in var columns, so we need to convert them to semicolon-separated strings - later get back with something like adata.var[col] = adata.var[col].apply(lambda x: x.split(";") if isinstance(x, str) else x)
     for col in adata.var.columns:
-        adata.var[col] = adata.var[col].apply(lambda x: ";".join(map(str, x)) if isinstance(x, list) else x).astype(str)
+        if isinstance(adata.var[col].iloc[0], list):  # check if 1st element is a list
+            adata.var[col] = adata.var[col].apply(lambda x: ";".join(map(str, x)) if isinstance(x, list) else x)
 
     logger.info(f"Saving adata to {adata_vcrs_clean_out}.")
     adata.write(adata_vcrs_clean_out)
