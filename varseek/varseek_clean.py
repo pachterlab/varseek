@@ -923,3 +923,4 @@ def clean(
         cleaned_adata_to_vcf(adata.var, vcf_data_df=vcf_data_csv, output_vcf=vcf_out, save_vcf_samples=save_vcf_samples, adata=adata)
 
     return adata
+
