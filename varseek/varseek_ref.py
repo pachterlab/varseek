@@ -77,7 +77,7 @@ def validate_input_ref(params_dict):
     if not is_valid_int(threads, threshold_type=">=", threshold_value=1):
         raise ValueError(f"Threads must be a positive integer, got {threads}")
 
-    for param_name in ["minimum_info_columns", "download", "dry_run"]:
+    for param_name in ["download", "dry_run"]:
         if not isinstance(params_dict.get(param_name), bool):
             raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
 
@@ -133,7 +133,6 @@ def ref(
     chunksize=None,
     dry_run=False,
     list_downloadable_references=False,
-    minimum_info_columns=True,
     overwrite=False,
     threads=2,
     logging_level=None,
@@ -204,13 +203,15 @@ def ref(
     - chunksize     (int) Number of variants to process at a time. If None, then all variants will be processed at once. Default: None.
     - dry_run       (bool) If True, print the commands that would be run without actually running them. Default: False.
     - list_downloadable_references (bool) If True, list the available downloadable references. Default: False.
-    - minimum_info_columns (bool) If True, run vk info with minimum columns. Default: True.
     - overwrite     (bool) If True, overwrite existing files. Default: False.
     - threads       (int) Number of threads to use. Default: 2.
     - logging_level (str) Logging level. Can also be set with the environment variable VARSEEK_LOGGING_LEVEL. Default: INFO.
     - save_logs     (True/False) Whether to save logs to a file. Default: False.
     - log_out_dir   (str) Directory to save logs. Default: None (do not save logs).
     - verbose       (True/False) Whether to print additional information e.g., progress bars. Default: False.
+
+    # kwargs
+    - minimum_info_columns (bool) If True, run vk info with minimum columns. Default: True.
 
     For a complete list of supported parameters, see the documentation for varseek build, varseek info, varseek filter, and kb ref. Note that any shared parameter names between functions are meant to have identical purposes.
     """
@@ -327,7 +328,7 @@ def ref(
     file_signifying_successful_kb_ref_completion = index_out
 
     # * 7. Define kwargs defaults
-    # Nothing to see here
+    minimum_info_columns = kwargs.get("minimum_info_columns", True)
 
     # * 7.5. make sure ints are ints
     w, k, threads = int(w), int(k), int(threads)

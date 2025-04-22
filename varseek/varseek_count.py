@@ -462,7 +462,7 @@ def count(
             logger.info(f"Running kb count with command: {' '.join(kb_count_command)}")
             subprocess.run(kb_count_command, check=True)
 
-            if os.path.exists(adata_vcrs) and parity == "paired" and kwargs["parity_kb_count"] == "single" and adata.uns.get("corrected_barcodes") is None:
+            if os.path.exists(adata_vcrs) and parity == "paired" and kwargs["parity_kb_count"] == "single" and technology in {"BULK", "SMARTSEQ2"}:
                 _ = correct_adata_barcodes_for_running_paired_data_in_single_mode(kb_count_vcrs_out_dir, adata_out=adata_vcrs)  # will check if the correction has already occurred internally
     else:
         logger.info(f"Skipping kb count because file {file_signifying_successful_kb_count_vcrs_completion} already exists and overwrite=False")

@@ -297,4 +297,4 @@ varseek_count_only_allowable_kb_count_arguments = {
     "zero_arguments": {"--keep-tmp", "--verbose", "--tcc", "--cellranger", "--gene-names", "--report", "--long", "--opt-off", "--matrix-to-files", "--matrix-to-directories"},
     "one_argument": {"--tmp", "--kallisto", "--bustools", "-w", "-r", "-m", "--inleaved", "--filter", "--filter-threshold", "-N", "--threshold", "--platform"},
     "multiple_arguments": set(),
-}  # don't include d-list, t, i, k, workflow here because I do it myself later
+}  # don't include t, i, workflow here because I do it myself later; cannot take in a custom value for k (because this would get confusing with k for fastqpp/clean)

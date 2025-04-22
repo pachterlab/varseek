@@ -1625,18 +1625,19 @@ def write_to_vcf(adata_var, output_file, save_vcf_samples=False, adata=None, buf
         vcf_file.write(f"{headers}\n")
 
         # Extract all column data as NumPy arrays (faster access)
-        chroms, poss, ids, refs, alts, dps, nss, afs = (
+        chroms, poss, ids, refs, alts, aos, nss, afs = (
             adata_var["CHROM"].values, adata_var["POS"].values, adata_var["ID"].values,
-            adata_var["REF"].values, adata_var["ALT"].values, adata_var["AO"].values,
-            adata_var["NS"].values,
+            adata_var["REF"].values, adata_var["ALT"].values,
+            adata_var["AO"].values if "AO" in adata_var else np.full(len(adata_var), np.nan),  # Handle optional AO column,
+            adata_var["NS"].values if "NS" in adata_var else np.full(len(adata_var), np.nan),  # Handle optional NS column,
             adata_var["AF"].values if "AF" in adata_var else np.full(len(adata_var), np.nan)  # Handle optional AF column
         )
 
         # Iterate over pre-extracted values
         buffer = []
-        for idx, (chrom, pos, id_, ref, alt, dp, ns, af) in enumerate(zip(chroms, poss, ids, refs, alts, dps, nss, afs)):
+        for idx, (chrom, pos, id_, ref, alt, ao, ns, af) in enumerate(zip(chroms, poss, ids, refs, alts, aos, nss, afs)):
             # Construct INFO field efficiently
-            info_fields = [f"AO={int(dp)}" if pd.notna(dp) else None,
+            info_fields = [f"AO={int(ao)}" if pd.notna(ao) else None,
                         f"NS={ns}" if pd.notna(ns) else None]
             if pd.notna(af):
                 info_fields.append(f"AF={af}")

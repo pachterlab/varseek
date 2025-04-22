@@ -1313,7 +1313,7 @@ def correct_adata_barcodes_for_running_paired_data_in_single_mode(kb_count_out_d
     else:
         raise TypeError(f"Unsupported type for adata: {type(adata)}")
 
-    if adata_updated.uns.get("corrected_barcodes", False):  # check if the barcodes were corrected
+    if adata.uns.get("corrected_barcodes", False):  # check if the barcodes were corrected
         logger.info("Barcodes already corrected, skipping correction")
         return adata
     

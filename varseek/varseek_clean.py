@@ -658,7 +658,7 @@ def clean(
             raise ValueError(f"vcrs_metadata_df must be a pandas DataFrame or a file path to a csv or h5ad file. Got {type(vcrs_metadata_df)} instead.")
 
     #* fixed the parity stuff
-    if parity == "paired" and parity_kb_count == "single" and adata.uns.get("corrected_barcodes") is None:  # the last part is to ensure I didn't make the correction already
+    if parity == "paired" and parity_kb_count == "single" and technology in {"BULK", "SMARTSEQ2"} and adata.uns.get("corrected_barcodes") is None:  # the last part is to ensure I didn't make the correction already
         adata = correct_adata_barcodes_for_running_paired_data_in_single_mode(kb_count_vcrs_dir, adata=adata)
 
     if adata_reference_genome:

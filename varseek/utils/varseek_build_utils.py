@@ -97,7 +97,7 @@ def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_
         logger.info(f"Loading CSV from {input_csv_path}")
         df = pd.read_csv(input_csv_path)
     elif isinstance(input_csv_path, pd.DataFrame):
-        df = input_csv_path
+        df = input_csv_path.copy()
     else:
         raise ValueError("input_csv_path must be a string or a pandas DataFrame")
 

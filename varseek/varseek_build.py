@@ -179,7 +179,7 @@ def calculate_end_mutation_overlap_with_left_flank(row):
 
     return end_mut_nucleotides_with_left_flank(sequence_to_check, original_sequence)
 
-def iterate_through_vcf_in_chunks(variants, params_dict, chunksize):
+def iterate_through_vcf_in_chunks(variants, params_dict, chunksize, merge_identical=True):
     import pysam
     tmp_file = variants.replace(".vcf", "_chunked.vcf")
     with pysam.VariantFile(variants, "r") as vcf:
@@ -195,7 +195,7 @@ def iterate_through_vcf_in_chunks(variants, params_dict, chunksize):
             if (i + 1) % chunksize == 0:
                 with open(tmp_file, "w") as f:
                     f.write(header + "".join(chunk))
-                build(variants=tmp_file, chunksize=None, chunk_number=chunk_number, running_within_chunk_iteration=True, **params_dict)  # running_within_chunk_iteration here for logger setup and report_time_elapsed decorator
+                build(variants=tmp_file, chunksize=None, chunk_number=chunk_number, running_within_chunk_iteration=True, merge_identical=False, **params_dict)  # running_within_chunk_iteration here for logger setup and report_time_elapsed decorator
                 chunk = []  # Reset the chunk
                 chunk_number += 1
 
@@ -208,7 +208,7 @@ def iterate_through_vcf_in_chunks(variants, params_dict, chunksize):
         if isinstance(tmp_file, str) and os.path.exists(tmp_file):
             os.remove(tmp_file)
         
-        if params_dict.get("merge_identical", True):
+        if merge_identical:
             out, vcrs_fasta_out, vcrs_t2g_out, id_to_header_csv_out = params_dict["out"], params_dict.get("vcrs_fasta_out", None), params_dict.get("vcrs_t2g_out", None), params_dict.get("id_to_header_csv_out", None)
             vcrs_fasta_out = os.path.join(out, "vcrs.fa") if not vcrs_fasta_out else vcrs_fasta_out  # copy-paste from below
             id_to_header_csv_out = os.path.join(out, "id_to_header_mapping.csv") if not id_to_header_csv_out else id_to_header_csv_out  # copy-paste from below
@@ -542,15 +542,16 @@ def build(
         params_dict = make_function_parameter_to_value_dict(1)
         for key in ["variants", "chunksize"]:
             params_dict.pop(key, None)
+        merge_identical = params_dict.pop("merge_identical", True)
         total_chunks, total_rows = count_chunks(variants, chunksize, return_tuple_with_total_rows=True)
         if variants.endswith(".csv") or variants.endswith(".tsv"):
             sep = "\t" if variants.endswith(".tsv") else ","
             for i, chunk in enumerate(pd.read_csv(variants, sep=sep, chunksize=chunksize)):
                 chunk_number = i + 1  # start at 1
                 logger.info(f"Processing chunk {chunk_number}/{total_chunks}")
-                build(variants=chunk, chunksize=None, chunk_number=chunk_number, total_rows=total_rows, running_within_chunk_iteration=True, **params_dict)  # running_within_chunk_iteration here for logger setup and report_time_elapsed decorator
+                build(variants=chunk, chunksize=None, chunk_number=chunk_number, total_rows=total_rows, running_within_chunk_iteration=True, merge_identical=False, **params_dict)  # running_within_chunk_iteration here for logger setup and report_time_elapsed decorator
                 if chunk_number == total_chunks:
-                    if kwargs.get("merge_identical", True):
+                    if merge_identical:
                         vcrs_fasta_out = os.path.join(out, "vcrs.fa") if not vcrs_fasta_out else vcrs_fasta_out  # copy-paste from below
                         id_to_header_csv_out = os.path.join(out, "id_to_header_mapping.csv") if not id_to_header_csv_out else id_to_header_csv_out  # copy-paste from below
                         vcrs_t2g_out = os.path.join(out, "vcrs_t2g.txt") if not vcrs_t2g_out else vcrs_t2g_out  # copy-paste from below
@@ -558,7 +559,7 @@ def build(
                         create_identity_t2g(vcrs_fasta_out, vcrs_t2g_out, mode="w")
                     return
         elif variants.endswith(".vcf") or variants.endswith(".vcf.gz"):
-            iterate_through_vcf_in_chunks(variants, params_dict, chunksize)
+            iterate_through_vcf_in_chunks(variants, params_dict, chunksize, merge_identical=merge_identical)
         else:
             raise ValueError(f"Unsupported file type for chunk iteration: {variants}")
     
