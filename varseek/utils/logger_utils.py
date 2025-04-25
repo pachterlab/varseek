@@ -56,7 +56,7 @@ def set_up_logger(logger, logging_level=None, save_logs=False, log_dir=None):
     logger.setLevel(logging_level)
 
     if not logger.handlers:
-        global formatter
+        # global formatter
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(formatter)
         # console_handler.setLevel(logging_level)  # redundant
@@ -98,7 +98,7 @@ def set_varseek_logging_level_and_filehandler(logging_level=None, save_logs=Fals
         print(f"Unknown log level: {logging_level}. Defaulting to INFO.")
         logging_level = logging.INFO
     if save_logs:
-        global formatter
+        # global formatter
         if log_dir is None:
             package_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             log_dir = os.path.join(package_dir, "logs")

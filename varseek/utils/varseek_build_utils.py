@@ -67,7 +67,7 @@ def wt_fragment_and_mutant_fragment_share_kmer(mutated_fragment: str, wildtype_f
 
 
 def return_pyfastx_index_object_with_header_versions_removed(fasta_path):
-    logger.info(f"Removing version numbers in in fasta headers for {fasta_path}")
+    logger.info(f"Removing version numbers in fasta headers for {fasta_path}")
     fa_read_only = pyfastx.Fastx(fasta_path)
     with tempfile.NamedTemporaryFile(mode="w", suffix=".fa", encoding="utf-8", delete=True) as temp_fasta:
         temp_fasta_path = temp_fasta.name
@@ -91,7 +91,7 @@ def count_leading_Ns(seq):
     return len(seq) - len(seq.lstrip("N"))
 
 
-def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_fasta_path, output_csv_path=None, verbose=True):
+def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_fasta_path, output_csv_path=None, verbose=True, strip_leading_Ns_cds=False):
     # Load the CSV
     if isinstance(input_csv_path, str):
         logger.info(f"Loading CSV from {input_csv_path}")
@@ -174,7 +174,7 @@ def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_
                 if seq_id in fa_cdna and seq_id in fa_cds:
                     cdna_seq = fa_cdna[seq_id].seq
                     cds_seq = fa_cds[seq_id].seq
-                    number_of_leading_ns = count_leading_Ns(cdna_seq)
+                    number_of_leading_ns = count_leading_Ns(cds_seq)  # modified in April 2025 - used to be count_leading_Ns(cdna_seq)
                     cds_seq = cds_seq.strip("N")
                     cds_start_pos = find_cds_position(cdna_seq, cds_seq)
                     seq_id_found_in_cdna_and_cds = True
@@ -185,8 +185,145 @@ def convert_mutation_cds_locations_to_cdna(input_csv_path, cdna_fasta_path, cds_
                 df.at[index, "mutation_cdna"] = None
                 number_bad += 1
             else:
-                df.at[index, "start_variant_position"] += cds_start_pos - number_of_leading_ns
-                df.at[index, "end_variant_position"] += cds_start_pos - number_of_leading_ns
+                if strip_leading_Ns_cds:
+                    df.at[index, "start_variant_position"] += cds_start_pos
+                    df.at[index, "end_variant_position"] += cds_start_pos
+                else:
+                    df.at[index, "start_variant_position"] += cds_start_pos - number_of_leading_ns
+                    df.at[index, "end_variant_position"] += cds_start_pos - number_of_leading_ns
+
+                start = df.at[index, "start_variant_position"]
+                end = df.at[index, "end_variant_position"]
+                actual_variant = row["actual_variant"]
+
+                if start == end:
+                    df.at[index, "mutation_cdna"] = f"c.{start}{actual_variant}"
+                else:
+                    df.at[index, "mutation_cdna"] = f"c.{start}_{end}{actual_variant}"
+
+            seq_id_previous = seq_id
+
+        logger.info(f"Number of bad mutations: {number_bad}")
+        logger.info("Merging dfs")
+
+        if (df_original.duplicated(subset=["seq_ID", "mutation"]).sum() == 0) and (df.duplicated(subset=["seq_ID", "mutation"]).sum() == 0):  # this condition should be True if downloading with default gget cosmic, but in case the user wants duplicate rows then I'll give both options
+            df_merged = df_original.set_index(["seq_ID", "mutation"]).join(df.set_index(["seq_ID", "mutation"])[["mutation_cdna"]], how="left").reset_index()
+        else:
+            df_merged = df_original.merge(df[["seq_ID", "mutation", "mutation_cdna"]], on=["seq_ID", "mutation"], how="left")  # new as of Feb 2025
+
+        # Write to new CSV
+        # if not output_csv_path:
+        #     output_csv_path = input_csv_path
+        if output_csv_path:
+            logger.info(f"Saving output to {output_csv_path}")
+            df_merged.to_csv(output_csv_path, index=False)  # new as of Feb 2025 (replaced df.to_csv with df_merged.to_csv)
+
+        return df_merged, bad_mutations_dict
+
+    except Exception as e:
+        raise RuntimeError(f"Error converting CDS to cDNA: {e}") from e
+    finally:
+        logger.info("Cleaning up temporary files...")
+        for temp_path in [temp_fasta_index_path_cdna, temp_fasta_index_path_cds]:
+            if temp_path and os.path.exists(temp_path):
+                os.remove(temp_path)
+
+
+def convert_mutation_cds_locations_to_cdna_old(input_csv_path, cdna_fasta_path, cds_fasta_path, output_csv_path=None, verbose=True):
+    # Load the CSV
+    if isinstance(input_csv_path, str):
+        logger.info(f"Loading CSV from {input_csv_path}")
+        df = pd.read_csv(input_csv_path)
+    elif isinstance(input_csv_path, pd.DataFrame):
+        df = input_csv_path.copy()
+    else:
+        raise ValueError("input_csv_path must be a string or a pandas DataFrame")
+
+    logger.info("Copying df internally to avoid in-place modifications")
+    df_original = df.copy()
+
+    bad_mutations_dict = {}
+
+    logger.info("Removing unknown mutations")
+    # get rids of mutations that are uncertain, ambiguous, intronic, posttranslational
+    uncertain_mutations = df["mutation"].str.contains(r"\?").sum()
+
+    ambiguous_position_mutations = df["mutation"].str.contains(r"\(|\)").sum()
+
+    intronic_mutations = df["mutation"].str.contains(r"\+|\-").sum()
+
+    posttranslational_region_mutations = df["mutation"].str.contains(r"\*").sum()
+
+    logger.info("Removing unsupported mutation types")
+    logger.info(f"Uncertain mutations: {uncertain_mutations}")
+    logger.info(f"Ambiguous position mutations: {ambiguous_position_mutations}")
+    logger.info(f"Intronic mutations: {intronic_mutations}")
+    logger.info(f"Posttranslational region mutations: {posttranslational_region_mutations}")
+
+    bad_mutations_dict["uncertain_mutations"] = uncertain_mutations
+    bad_mutations_dict["ambiguous_position_mutations"] = ambiguous_position_mutations
+    bad_mutations_dict["intronic_mutations"] = intronic_mutations
+    bad_mutations_dict["posttranslational_region_mutations"] = posttranslational_region_mutations
+
+    # Filter out bad mutations
+    combined_pattern = re.compile(r"(\?|\(|\)|\+|\-|\*)")  # gets rids of mutations that are uncertain, ambiguous, intronic, posttranslational
+    mask = df["mutation"].str.contains(combined_pattern)
+    df = df[~mask]
+
+    logger.info("Sorting df")
+    df = df.sort_values(by="seq_ID")  # to make iterrows more efficient
+
+    logger.info("Determining mutation positions")
+    df[["nucleotide_positions", "actual_variant"]] = df["mutation"].str.extract(mutation_pattern)
+
+    split_positions = df["nucleotide_positions"].str.split("_", expand=True)
+
+    df["start_variant_position"] = split_positions[0]
+    if split_positions.shape[1] > 1:
+        df["end_variant_position"] = split_positions[1].fillna(split_positions[0])
+    else:
+        df["end_variant_position"] = df["start_variant_position"]
+
+    df.loc[df["end_variant_position"].isna(), "end_variant_position"] = df["start_variant_position"]
+
+    df[["start_variant_position", "end_variant_position"]] = df[["start_variant_position", "end_variant_position"]].astype(int)
+
+    # # Rename the mutation column
+    # df.rename(columns={"mutation": "mutation_cds"}, inplace=True)
+
+    temp_fasta_index_path_cdna, temp_fasta_index_path_cds = None, None  # in case the block fails
+
+    # put in try-except-finally block to ensure that the temp index files are erased no matter what
+    try:
+        # Load the FASTA files
+        fa_cdna, temp_fasta_index_path_cdna = return_pyfastx_index_object_with_header_versions_removed(cdna_fasta_path)
+        fa_cds, temp_fasta_index_path_cds = return_pyfastx_index_object_with_header_versions_removed(cds_fasta_path)
+
+        number_bad = 0
+        seq_id_previous = None
+
+        iterator = tqdm(df.iterrows(), total=len(df), desc="Processing rows") if verbose else df.iterrows()
+
+        # Process each row
+        for index, row in iterator:
+            seq_id = row["seq_ID"]
+
+            if seq_id != seq_id_previous:
+                if seq_id in fa_cdna and seq_id in fa_cds:
+                    cdna_seq = fa_cdna[seq_id].seq
+                    cds_seq = fa_cds[seq_id].seq
+                    cds_seq = cds_seq.strip("N")
+                    cds_start_pos = find_cds_position(cdna_seq, cds_seq)
+                    seq_id_found_in_cdna_and_cds = True
+                else:
+                    seq_id_found_in_cdna_and_cds = False
+
+            if (not seq_id_found_in_cdna_and_cds) or (cds_start_pos is None):
+                df.at[index, "mutation_cdna"] = None
+                number_bad += 1
+            else:
+                df.at[index, "start_variant_position"] += cds_start_pos
+                df.at[index, "end_variant_position"] += cds_start_pos
 
                 start = df.at[index, "start_variant_position"]
                 end = df.at[index, "end_variant_position"]
@@ -358,7 +495,7 @@ def download_cosmic_mutations(gtf, gtf_transcript_id_column, reference_out_dir, 
     if sequences == "cdna" or sequences.endswith(supported_databases_and_corresponding_reference_sequence_type[mutations_original]["sequence_file_names"]["cdna"].replace("GRCH_NUMBER", grch)):  # covers whether sequences == "cdna" or sequences == "PATH/TO/Homo_sapiens.GRCh37.cdna.all.fa"
         if "mutation_cdna" not in mutations.columns:
             logger.info("Adding in cdna information into COSMIC. Note that the 'mutation_cdna' column will refer to cDNA mutation notation, and the 'mutation' column will refer to CDS mutation notation.")
-            mutations, bad_cosmic_mutations_dict = convert_mutation_cds_locations_to_cdna(input_csv_path=mutations, output_csv_path=mutations_path, cds_fasta_path=cds_file, cdna_fasta_path=cdna_file, verbose=verbose)
+            mutations, bad_cosmic_mutations_dict = convert_mutation_cds_locations_to_cdna(input_csv_path=mutations, output_csv_path=mutations_path, cds_fasta_path=cds_file, cdna_fasta_path=cdna_file, verbose=verbose, strip_leading_Ns_cds=True)
 
             # uncertain_mutations += bad_cosmic_mutations_dict["uncertain_mutations"]
             # ambiguous_position_mutations += bad_cosmic_mutations_dict["ambiguous_position_mutations"]

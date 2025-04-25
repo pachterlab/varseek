@@ -1998,10 +1998,12 @@ def remove_variants_from_adata_for_stranded_technologies(adata, strand_bias_end,
         transcript_df["three_prime_utr_length"] = three_prime_lengths
         transcript_df["transcript_length"] = transcript_lengths
 
-        transcript_df["utr_length_preceding_transcript"] = transcript_df.apply(
-            lambda row: row["three_prime_utr_length"] if row["strand"] == "-" else row["five_prime_utr_length"],
-            axis=1
-        )
+        transcript_df["utr_length_preceding_transcript"] = transcript_df["five_prime_utr_length"]
+        # # incorrect code, since five_prime_utr always references the transcript and not the genome, and therefore five_prime_utr is always the one upstream
+        # transcript_df["utr_length_preceding_transcript"] = transcript_df.apply(
+        #     lambda row: row["three_prime_utr_length"] if row["strand"] == "-" else row["five_prime_utr_length"],
+        #     axis=1
+        # )
 
     #* Explode adata.var
     adata_var = adata.var.copy()
