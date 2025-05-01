@@ -301,7 +301,7 @@ def clean(
     - gene_set_to_exclusively_keep          (str or Set(str) or None) If a set, will keep only the genes in this set. If a list/tuple, will convert to a set and then keep only the genes in this set. If a string, will load the text file and keep only the genes in this set. Default: None.
     - gene_set_to_exclude                   (str or Set(str) or None) If a set, will exclude the genes in this set. If a list/tuple, will convert to a set and then exclude the genes in this set. If a string, will load the text file and exclude the genes in this set. Default: None.
     - k                                     (int) K-mer length used for the k-mer index. Used only when apply_dlist_correction=True. Default: None.
-    - mm                                    (bool) Whether to count multimapped reads in the adata count matrix. Only used when apply_dlist_correction or qc_against_gene_matrix is True. Default: False.
+    - mm                                    (bool) Whether to count multimapped reads in the adata count matrix. Only used when apply_dlist_correction or qc_against_gene_matrix is True. Default: True.
     - parity                                (str) "single" or "paired". Only relevant if technology is bulk or a smart-seq. Default: "single"
     - multiplexed                           (bool) Indicates that the fastq files are multiplexed. Only used if sort_fastqs=True and technology is a smartseq technology. Default: None
     - sort_fastqs                           (bool) Whether to sort the fastqs. Default: True.

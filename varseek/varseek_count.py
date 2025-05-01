@@ -62,7 +62,7 @@ def validate_input_count(params_dict):
         "t2g": "t2g",
     }.items():
         check_file_path_is_string_with_valid_extension(params_dict[param_name], param_name, file_type=file_type, required=False)
-        if not os.path.isfile(params_dict[param_name]) or params_dict[param_name] != "None":  # ensure that all files exist
+        if not os.path.isfile(params_dict[param_name]) and params_dict[param_name] != "None":  # ensure that all files exist
             raise ValueError(f"File {params_dict[param_name]} does not exist")
 
     # file paths

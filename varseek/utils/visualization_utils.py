@@ -226,22 +226,26 @@ def calculate_metrics(df, header_name=None, check_assertions=False, crude=False,
         metric_dictionary["FNs"] = FNs
 
     if out is not None:
-        keys_to_save = [
-            "accuracy",
-            "sensitivity",
-            "specificity",
-            "TP",
-            "FP",
-            "FN",
-            "TN",
-            "mean_expression_error",
-            "median_expression_error",
-            "mean_magnitude_expression_error",
-            "median_magnitude_expression_error",
-        ]
-        with open(out, "w", encoding="utf-8") as file:
-            for key in keys_to_save:
-                file.write(f"{key}: {metric_dictionary[key]}\n")
+        if os.path.exists(out):
+            # print(f"File {out} already exists. Skipping writing.")
+            pass
+        else:
+            keys_to_save = [
+                "accuracy",
+                "sensitivity",
+                "specificity",
+                "TP",
+                "FP",
+                "FN",
+                "TN",
+                "mean_expression_error",
+                "median_expression_error",
+                "mean_magnitude_expression_error",
+                "median_magnitude_expression_error",
+            ]
+            with open(out, "w", encoding="utf-8") as file:
+                for key in keys_to_save:
+                    file.write(f"{key}: {metric_dictionary[key]}\n")
 
     return metric_dictionary
 
