@@ -1875,6 +1875,12 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "avoid_paired_double_counting"),
     )
     parser_clean.add_argument(
+        "--mistake_ratio",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "mistake_ratio"),
+    )
+    parser_clean.add_argument(
         "--account_for_strand_bias",
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
@@ -2281,6 +2287,12 @@ def main():  # noqa: C901
         action="store_false",
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(clean, "add_hgvs_breakdown_to_adata_var", disable=True),
+    )
+    parser_clean.add_argument(
+        "--skip_transcripts_without_genes",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "skip_transcripts_without_genes"),
     )
 
     # NEW PARSER

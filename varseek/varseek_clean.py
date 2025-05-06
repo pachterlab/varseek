@@ -216,6 +216,7 @@ def clean(
     count_reads_that_dont_pseudoalign_to_reference_genome=True,
     drop_reads_where_the_pairs_mapped_to_different_genes=False,
     avoid_paired_double_counting=False,
+    mistake_ratio=None,
     account_for_strand_bias=False,
     strand_bias_end=None,
     read_length=None,
@@ -284,7 +285,8 @@ def clean(
     - qc_against_gene_matrix                (bool) Whether to apply correction for qc against gene matrix. If a read maps to 2+ VCRSs that belong to different genes, then cross-reference with the reference genome to determine which gene the read belongs to, and set all VCRSs that do not correspond to this gene to 0 for that read. Also, cross-reference all reads that map to 1 VCRS and ensure that the reads maps to the gene corresponding to this VCRS, or else set this value to 0 in the count matrix. Default: True.
     - count_reads_that_dont_pseudoalign_to_reference_genome (bool) Whether to count reads that don't pseudoalign to the reference genome. Only used when qc_against_gene_matrix=True. Default: True.
     - drop_reads_where_the_pairs_mapped_to_different_genes (bool) Whether to drop reads where the pairs mapped to different genes. Only used when qc_against_gene_matrix=True. Default: False.
-    - avoid_paired_double_counting         (bool) Whether to avoid double counting of paired reads. Only used when qc_against_gene_matrix=True. Default: False.
+    - avoid_paired_double_counting          (bool) Whether to avoid double counting of paired reads. Only used when qc_against_gene_matrix=True. Default: False.
+    - mistake_ratio                         (float) The mistake ratio for the reference genome correction. Default: None (no threshold)
     - account_for_strand_bias               (bool) Whether to account for strand bias from stranded single-cell technologies. Default: False.
     - strand_bias_end                       (str) The end of the read to use for strand bias correction. Either "5p" or "3p". Must be provided if and only if account_for_strand_bias=True. Default: None.
     - read_length                           (int) The read length used in the experiment. Must be provided if and only if account_for_strand_bias=True. Default: None.
@@ -360,6 +362,7 @@ def clean(
     - cosmic_password                       (str) Password for cosmic. Only used if creating a VCF file and using a downloaded reference from vk ref and vcf_data_csv does not exist. Default: None.
     - forgiveness                           (int) Number of bases allowed to be off when account_for_strand_bias=True. E.g., if I am using a 5' technology with a read length of 91 and a forgiveness of 100, then I will keep only variants that fall within the last 191 bases of each respective transcript. Default: 100.
     - add_hgvs_breakdown_to_adata_var       (bool) Whether to add the HGVS breakdown of the variants in separate columns of adata.var including nucleotide positions, variant, variant start position, variant end position, and gene name. Default: True.
+    - skip_transcripts_without_genes        (bool) Whether to skip transcripts without genes in normal genome validation (ie if a VCRS can't find the corresponding gene, the don't check this within the function). Default: False (any read mapping to a VCRS with an invalid gene name will be tossed if the read aligns anywhere to the reference genome)
     """
     # * 1. logger
     if save_logs and not log_out_dir:
@@ -451,6 +454,7 @@ def clean(
     cosmic_password = kwargs.get("cosmic_password", None)
     forgiveness = kwargs.get("forgiveness", 100)
     add_hgvs_breakdown_to_adata_var = kwargs.get("add_hgvs_breakdown_to_adata_var", True)
+    skip_transcripts_without_genes = kwargs.get("skip_transcripts_without_genes", False)
 
     try:
         with open(f"{kb_count_vcrs_dir}/kb_info.json", 'r') as f:
@@ -700,7 +704,7 @@ def clean(
         )
 
     if qc_against_gene_matrix:
-        adata = adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir=kb_count_vcrs_dir, kb_count_reference_genome_dir=kb_count_reference_genome_dir, technology=technology, t2g_standard=reference_genome_t2g, adata=adata, fastq_file_list=fastqs, adata_output_path=None, mm=mm, parity=parity, bustools=bustools, fastq_sorting_check_only=(not sort_fastqs), save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=count_reads_that_dont_pseudoalign_to_reference_genome, drop_reads_where_the_pairs_mapped_to_different_genes=drop_reads_where_the_pairs_mapped_to_different_genes, avoid_paired_double_counting=avoid_paired_double_counting, add_fastq_headers=False, seq_id_column=seq_id_column, gene_id_column=gene_id_column, variant_source=variant_source, gtf=gtf)
+        adata = adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir=kb_count_vcrs_dir, kb_count_reference_genome_dir=kb_count_reference_genome_dir, technology=technology, t2g_standard=reference_genome_t2g, adata=adata, fastq_file_list=fastqs, adata_output_path=None, mm=mm, parity=parity, bustools=bustools, fastq_sorting_check_only=(not sort_fastqs), save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=count_reads_that_dont_pseudoalign_to_reference_genome, drop_reads_where_the_pairs_mapped_to_different_genes=drop_reads_where_the_pairs_mapped_to_different_genes, avoid_paired_double_counting=avoid_paired_double_counting, add_fastq_headers=False, seq_id_column=seq_id_column, gene_id_column=gene_id_column, variant_source=variant_source, gtf=gtf, skip_transcripts_without_genes=skip_transcripts_without_genes, mistake_ratio=mistake_ratio)
     
     # set all count values below min_counts to 0
     if min_counts is not None:  # important I do BEFORE CPM normalization
@@ -817,11 +821,11 @@ def clean(
                 adata_reference_genome = adata_reference_genome[~adata_reference_genome.obs["predicted_doublet"], :].copy()
                 adata = adata[~adata.obs["predicted_doublet"], :].copy()
 
-        common_cells = adata.obs_names.intersection(adata_reference_genome.obs_names)
-        adata = adata[common_cells, :].copy()
-
         # do cpm
         if cpm_normalization and not use_binary_matrix:  # normalization not needed for binary matrix
+            common_cells = adata.obs_names.intersection(adata_reference_genome.obs_names)
+            adata = adata[common_cells, :].copy()
+            
             total_counts = adata_reference_genome.X.sum(axis=1)
             cpm_factor = total_counts / 1e6
 

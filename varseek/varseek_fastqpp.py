@@ -157,11 +157,11 @@ def fastqpp(
     - unqualified_percent_limit          (int) Maximum percentage of unqualified bases in a read. See fastp for more details. Default: 40
     - average_qual                       (int) Minimum average quality for a read to be considered qualified. See fastp for more details. Default: 15
     - n_base_limit                       (int) Maximum number of N bases in a read. See fastp for more details. Default: 10
-    - disable_quality_filtering          (bool) If True, disable quality filtering. See fastp for more details. Default: True
+    - disable_quality_filtering          (bool) If True, disable quality filtering. See fastp for more details. Default: False
     - length_required                    (int) Reads shorter than length_required will be discarded. Also used by split_reads_by_Ns_and_low_quality_bases. See fastp for more details. Default: 31
-    - disable_length_filtering           (bool) If True, disable length filtering. See fastp for more details. Default: True
-    - dont_eval_duplication              (bool) If True, do not evaluate duplication. See fastp for more details. Default: True
-    - disable_trim_poly_g                (bool) If True, disable trimming of poly-G tails. See fastp for more details. Default: True
+    - disable_length_filtering           (bool) If True, disable length filtering. See fastp for more details. Default: False
+    - dont_eval_duplication              (bool) If True, do not evaluate duplication. See fastp for more details. Default: False
+    - disable_trim_poly_g                (bool) If True, disable trimming of poly-G tails. See fastp for more details. Default: False
     - failed_out                         (bool) If True, output reads that fail filtering. See fastp for more details. Default: False
     - split_reads_by_Ns_and_low_quality_bases   (bool) If True, split reads by Ns and low quality bases (lower than min_base_quality_for_splitting) into multiple smaller reads. If min_base_quality_for_splitting > 0, then requires seqtk to be installed. If technology == "bulk", then seqtk will speed this up significantly. Default: False
     - min_base_quality_for_splitting    (int) The minimum acceptable base quality for split_reads_by_Ns_and_low_quality_bases. Bases below this quality will split. Only used if split_reads_by_Ns_and_low_quality_bases=True. Range: 0-93. Default: 13

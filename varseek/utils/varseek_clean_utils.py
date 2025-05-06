@@ -346,17 +346,17 @@ def make_bus_df(kb_count_out, fastq_file_list=None, technology=None, t2g_file=No
     return bus_df
         
 # @profile
-def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_reference_genome_dir, technology, t2g_standard, adata=None, fastq_file_list=None, adata_output_path=None, mm=False, parity="single", bustools="bustools", fastq_sorting_check_only=False, save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=True, drop_reads_where_the_pairs_mapped_to_different_genes=False, avoid_paired_double_counting=False, add_fastq_headers=False, seq_id_column="seq_ID", gene_id_column="gene_id", variant_source=None, gtf=None):
+def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_reference_genome_dir, technology, t2g_standard, adata=None, fastq_file_list=None, adata_output_path=None, mm=False, parity="single", bustools="bustools", fastq_sorting_check_only=False, save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=True, drop_reads_where_the_pairs_mapped_to_different_genes=False, avoid_paired_double_counting=False, add_fastq_headers=False, seq_id_column="seq_ID", gene_id_column="gene_id", variant_source=None, gtf=None, skip_transcripts_without_genes=False, mistake_ratio=None):
     if not adata:
         adata = f"{kb_count_vcrs_dir}/counts_unfiltered/adata.h5ad"
     if isinstance(adata, str):
         adata = ad.read_h5ad(adata)
     adata = adata.copy()  # make a copy to avoid modifying the original adata
 
-    if not adata_output_path:
-        adata_output_path = f"{kb_count_vcrs_dir}/counts_unfiltered/adata_adjusted_with_reference_genome_alignment.h5ad"
-    if os.path.dirname(adata_output_path):
-        os.makedirs(os.path.dirname(adata_output_path), exist_ok=True)
+    # if not adata_output_path:
+    #     adata_output_path = f"{kb_count_vcrs_dir}/counts_unfiltered/adata_adjusted_with_reference_genome_alignment.h5ad"
+    # if adata_output_path and os.path.dirname(adata_output_path):
+    #     os.makedirs(os.path.dirname(adata_output_path), exist_ok=True)
 
     if fastq_file_list is not None:
         fastq_file_list = load_in_fastqs(fastq_file_list)
@@ -442,6 +442,7 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
     bus_df_standard.rename(columns={"gene_names": "genes_standard"}, inplace=True)
     
     #* strip off the version number from gene ID
+    logger.info("Stripping off the version number from gene ID")
     if "." in bus_df_mutation['genes_vcrs'].iloc[0][0][0]:
         bus_df_mutation["genes_vcrs"] = bus_df_mutation["genes_vcrs"].apply(lambda outer: [[s.partition(".")[0] for s in inner] for inner in outer])
     if "." in bus_df_standard['genes_standard'].iloc[0][0]:
@@ -550,10 +551,51 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
         #     "vcrs_names": lambda x: mode(x, keepdims=True)[0][0],  
         #     "genes_standard": lambda x: sorted(set.union(*map(set, x)))  
         # }).reset_index()
+    
+    #* if skip_transcripts_without_genes=True, then for any rows without a gene name for the transcript found in the t2g (i.e., the genes_vcrs column is an ENST, which would be guaranteed to be tossed if the read aligned to any gene in the reference genome), set the reference genome gene alignment to empty list so these don't get tossed (it's more likely an incomplete t2g than a bad alignment)
+    if skip_transcripts_without_genes:
+        mask = bus_df['genes_vcrs'].astype(str).str.contains("ENST", na=False)
+        bus_df.loc[mask, 'genes_standard'] = pd.Series([[] for _ in range(mask.sum())], index=bus_df[mask].index)
+        bus_df.loc[mask, "pseudoaligns_to_reference_genome"] = False
 
     #* take the set of normal reference genome alignment genes in a new column
     logger.info("Taking the set of normal reference genome alignment genes")
     bus_df["genes_standard_set"] = bus_df["genes_standard"].apply(lambda x: set(x))
+
+    if mistake_ratio == 0:
+        raise ValueError("Mistake ratio must be in the range (0, 1]")
+    if mistake_ratio:
+        # Make genes_vcrs_set (flattened union of inner lists)
+        bus_df['genes_vcrs_set'] = bus_df['genes_vcrs'].apply(
+            lambda lst: set(g for inner in lst for g in inner)
+        )
+
+        # Make genes_intersection column
+        bus_df['genes_intersection'] = bus_df.apply(
+            lambda row: row['genes_vcrs_set'] & row['genes_standard_set'],
+            axis=1
+        )
+
+        # Filter rows where genes_standard_set is non-empty AND genes_intersection is empty
+        filtered_df = bus_df[
+            (bus_df['genes_standard_set'].apply(bool)) &
+            (bus_df['genes_intersection'].apply(lambda s: len(s) == 0))
+        ]
+
+        # Count gene occurrences from genes_standard_set
+        from collections import Counter
+        gene_counter_original = Counter(g for s in bus_df['genes_vcrs_set'] for g in s)
+        gene_counter = Counter(g for s in filtered_df['genes_vcrs_set'] for g in s)
+
+        gene_ratio_dict = {
+            gene: gene_counter[gene] / gene_counter_original[gene]
+            for gene in gene_counter
+            if gene_counter_original[gene] > 0
+        }
+
+        set_of_genes_with_highest_ratio_of_mistakes = {gene for gene, ratio in gene_ratio_dict.items() if ratio > mistake_ratio}
+    else:
+        set_of_genes_with_highest_ratio_of_mistakes = {}
 
     #* loop through bus df (as zipped iterators)
     row_indices = []
@@ -575,7 +617,7 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
             if "dlist" in gene_vcrs_inner_set:
                 continue
             
-            if gene_vcrs_inner_set & genes_standard_set or (count_reads_that_dont_pseudoalign_to_reference_genome and not pseudoaligns_to_reference_genome):  # (1) non-empty intersection between gene corresponding to VCRS and reference genome gene OR (2) if the read does not pseudoalign to the reference genome, count it anyway if the flag is True
+            if gene_vcrs_inner_set & genes_standard_set or (count_reads_that_dont_pseudoalign_to_reference_genome and not pseudoaligns_to_reference_genome) or (mistake_ratio is not None and len(gene_vcrs_inner_set & set_of_genes_with_highest_ratio_of_mistakes)):  # (1) non-empty intersection between gene corresponding to VCRS and reference genome gene OR (2) if the read does not pseudoalign to the reference genome, count it anyway if the flag is True OR (3) if the read belongs to a variant corresponding to a gene with a high ratio of mistakes (and I am checking for this condition)
                 vcrs_names_list_final.append(vcrs_name)
         
         if logging_level <= 20:  # since I only want to log this if the logging level is higher than INFO
@@ -624,8 +666,9 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
     )
 
     #* save adata
-    logger.info(f"Saving adjusted AnnData object to {adata_output_path}")
-    adata_new.write_h5ad(adata_output_path, compression="gzip")
+    if adata_output_path:
+        logger.info(f"Saving adjusted AnnData object to {adata_output_path}")
+        adata_new.write(adata_output_path)
 
     return adata_new
 
@@ -2167,6 +2210,8 @@ def remove_columns_from_usecols_that_are_not_in_df(df, col_list):
             df = pd.read_csv(df, nrows=0)
         elif df.endswith(".tsv"):
             df = pd.read_csv(df, sep="\t", nrows=0)
+        elif df.endswith(".parquet"):
+            df = pd.read_parquet(df)
     
     if col_list is None:
         return None
@@ -2177,7 +2222,7 @@ def remove_columns_from_usecols_that_are_not_in_df(df, col_list):
     if not isinstance(col_list, list):
         raise ValueError("The usecols parameter must be a string or a list of strings.")
     
-    col_list_final = col_list
+    col_list_final = col_list.copy()
     for col in col_list:
         if col not in df.columns:
             logger.warning(f"Column '{col}' specified in usecols is not in the DataFrame. It will be removed from the usecols list.")
@@ -2204,6 +2249,8 @@ def merge_variants_with_adata(variants, adata_var_exploded, seq_id_column, var_c
             variants = pd.read_csv(variants, usecols=variants_usecols)
         elif variants.endswith(".tsv"):
             variants = pd.read_csv(variants, sep="\t", usecols=variants_usecols)
+        elif variants.endswith(".parquet"):
+            variants = pd.read_parquet(variants, columns=variants_usecols)
         elif variants.endswith(".vcf"):
             raise ValueError("vcrs headers must be in HGVS format when variants is a VCF file.")
         else:
