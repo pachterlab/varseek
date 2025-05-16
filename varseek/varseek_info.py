@@ -269,6 +269,7 @@ def info(
     max_ambiguous_reference=0,
     dlist_reference_source=None,
     dlist_reference_ensembl_release=111,
+    dlist_reference_type=None,
     vcrs_fasta=None,
     variants_updated_csv=None,
     id_to_header_csv=None,  # if none then assume no swapping occurred
@@ -321,6 +322,7 @@ def info(
         - "grch37" - Ensembl GRCh37: http://useast.ensembl.org/info/website/tutorials/grch37.html. Directory: {reference_out_dir}/ensembl_grch37_release{dlist_reference_ensembl_release}.
         If wanting to provide a reference genome outside of those above supported for automatic download, then please provide existing file paths for the parameters `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, and/or `dlist_reference_gtf`.
     - dlist_reference_ensembl_release    (int) Ensembl release number for the d-list reference genome and transcriptome if dlist_reference_source in {"grch37", "grch38"}. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_cdna', 'alignment_to_reference_genome', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_cdna', 'substring_alignment_to_reference_genome', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome', 'pseudoaligned_to_reference', 'pseudoaligned_to_reference_despite_not_truly_aligning'. Possible values are {supported_dlist_reference_values}. Ignored if values for `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, and `dlist_reference_gtf` are provided. Default: 111.
+    - dlist_reference_type              (str) Type of d-list reference to use. Only used by the following columns: 'alignment_to_reference', 'alignment_to_reference_cdna', 'alignment_to_reference_genome', 'alignment_to_reference_count_total', 'alignment_to_reference_count_cdna', 'alignment_to_reference_count_genome', 'substring_alignment_to_reference', 'substring_alignment_to_reference_cdna', 'substring_alignment_to_reference_genome', 'substring_alignment_to_reference_count_total', 'substring_alignment_to_reference_count_cdna',  'substring_alignment_to_reference_count_genome', 'pseudoaligned_to_reference', 'pseudoaligned_to_reference_despite_not_truly_aligning'. Options are "genome", "transcriptome", "combined" or None. Default: None (will utilize dlist_reference_genome_fasta and dlist_reference_cdna_fasta; if dlist_reference_source is provided, then will use combined).
 
     # Optional input file paths: (only needed if changing/customizing file names or locations):
     - vcrs_fasta                         (str) Path to the VCRS fasta file generated from varseek build. Corresponds to `vcrs_fasta_out` in the varseek build function. Only needed if the original file was changed or renamed. Default: None (will find it in `input_dir`).
@@ -519,6 +521,9 @@ def info(
             dlist_reference_cdna_fasta = dlist_reference_source
         if not dlist_reference_gtf:
             dlist_reference_gtf = dlist_reference_source
+        if dlist_reference_type != "combined":
+            logger.warning("Setting dlist_reference_type to 'combined' because dlist_reference_source is provided. If you want to use a different type, please set dlist_reference_type explicitly.")
+            dlist_reference_type = "combined"
 
     if dlist_reference_genome_fasta == "t2t" or dlist_reference_cdna_fasta == "t2t" or dlist_reference_gtf == "t2t":
         dlist_reference_dir = os.path.join(reference_out_dir, "t2t")
@@ -539,6 +544,22 @@ def info(
             dlist_reference_dir = os.path.join(reference_out_dir, "dlist_reference_dir")
 
     #* normally, I barrel through the function if I cannot successfully add a column - but in these cases, because they are defaults of vk ref and have rather unintuitive parameters, I return error early on rather than barreling through
+    if dlist_reference_type == "genome":
+        if not dlist_reference_genome_fasta:
+            raise ValueError("For alignment to reference and d-list construction, you must provide specify the arguments dlist_reference_genome_fasta and/or dlist_reference_cdna_fasta.")
+        if dlist_reference_cdna_fasta is not None:
+            logger.warning("dlist_reference_type is set to 'genome', but dlist_reference_cdna_fasta is provided. The d-list will be constructed only for the genome-based alignment. If you want to include cDNA as well, please set dlist_reference_type='combined' or None.")
+            dlist_reference_cdna_fasta = None
+    elif dlist_reference_type == "transcriptome":
+        if not dlist_reference_cdna_fasta:
+            raise ValueError("For alignment to reference and d-list construction, you must provide specify the arguments dlist_reference_genome_fasta and/or dlist_reference_cdna_fasta.")
+        if dlist_reference_genome_fasta is not None:
+            logger.warning("dlist_reference_type is set to 'transcriptome', but dlist_reference_genome_fasta is provided. The d-list will be constructed only for the cDNA-based alignment. If you want to include genome as well, please set dlist_reference_type='combined' or None.")
+            dlist_reference_genome_fasta = None
+    elif dlist_reference_type == "combined":
+        if not dlist_reference_genome_fasta or not dlist_reference_cdna_fasta:
+            raise ValueError("For alignment to reference and d-list construction, you must provide specify the arguments dlist_reference_genome_fasta and dlist_reference_cdna_fasta.")
+    
     if any(column in columns_to_include for column in bowtie_columns_dlist) or columns_to_include == "all":
         if not dlist_reference_genome_fasta and not dlist_reference_cdna_fasta:
             raise ValueError("For alignment to reference and d-list construction, you must provide specify the arguments dlist_reference_genome_fasta and/or dlist_reference_cdna_fasta.")
