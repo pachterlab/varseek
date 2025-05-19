@@ -757,6 +757,12 @@ def main():  # noqa: C901
         help=extract_help_from_doc(info, "dlist_reference_ensembl_release"),
     )
     parser_info.add_argument(
+        "--dlist_reference_type",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(info, "dlist_reference_type"),
+    )
+    parser_info.add_argument(
         "--var_id_column",
         type=str,
         required=False,
@@ -2841,10 +2847,11 @@ def main():  # noqa: C901
 
     # kwargs
     parser_count.add_argument(
-        "--num",
-        action="store_true",
+        "--disable_num",
+        action="store_false",
+        dest="num",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(count, "num"),
+        help=extract_help_from_doc(count, "num", disable=True),
     )
     parser_count.add_argument(
         "--parity_kb_count",

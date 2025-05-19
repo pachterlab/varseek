@@ -161,11 +161,11 @@ def validate_input_info(params_dict):
             raise ValueError(f"dlist_reference_genome_fasta and dlist_reference_gtf must be the same value when using a supported dlist reference. Got {params_dict.get('dlist_reference_genome_fasta')} and {params_dict.get('dlist_reference_gtf')}.")
 
     # check if any column requiring dlist_reference_genome_fasta is present, and dlist_reference_genome_fasta is not available
-    if any(column in params_dict.get("columns_to_include") for column in columns_that_require_dlist_genome) and not params_dict.get("dlist_reference_source") and not params_dict.get("dlist_reference_genome_fasta"):  # above, I checked that if it was not None, that it was either a valid string (ie in supported_dlist_reference_values) or an existing path - so now, I just need to ensure that it's not None
+    if any(column in params_dict.get("columns_to_include") for column in columns_that_require_dlist_genome) and not params_dict.get("dlist_reference_source") and not params_dict.get("dlist_reference_genome_fasta") and not params_dict.get("sequences"):  # above, I checked that if it was not None, that it was either a valid string (ie in supported_dlist_reference_values) or an existing path - so now, I just need to ensure that it's not None
         raise ValueError(f"Missing dlist_reference_source and dlist_reference_genome_fasta. At least one of these is required for columns: {columns_that_require_dlist_genome}")
-    if any(column in params_dict.get("columns_to_include") for column in columns_that_require_dlist_transcriptome) and not params_dict.get("dlist_reference_source") and not params_dict.get("dlist_reference_cdna_fasta"):  # above, I checked that if it was not None, that it was either a valid string (ie in supported_dlist_reference_values) or an existing path - so now, I just need to ensure that it's not None
+    if any(column in params_dict.get("columns_to_include") for column in columns_that_require_dlist_transcriptome) and not params_dict.get("dlist_reference_source") and not params_dict.get("dlist_reference_cdna_fasta") and not params_dict.get("sequences"):  # above, I checked that if it was not None, that it was either a valid string (ie in supported_dlist_reference_values) or an existing path - so now, I just need to ensure that it's not None
         raise ValueError(f"Missing dlist_reference_source/dlist_reference_cdna_fasta. At least one of these is required for columns: {columns_that_require_dlist_genome}")
-    if any(column in params_dict.get("columns_to_include") for column in columns_that_require_dlist_gtf) and not params_dict.get("dlist_reference_source") and not params_dict.get("dlist_reference_gtf"):  # above, I checked that if it was not None, that it was either a valid string (ie in supported_dlist_reference_values) or an existing path - so now, I just need to ensure that it's not None
+    if any(column in params_dict.get("columns_to_include") for column in columns_that_require_dlist_gtf) and not params_dict.get("dlist_reference_source") and not params_dict.get("dlist_reference_gtf") and not params_dict.get("gtf"):  # above, I checked that if it was not None, that it was either a valid string (ie in supported_dlist_reference_values) or an existing path - so now, I just need to ensure that it's not None
         raise ValueError(f"Missing dlist_reference_source/dlist_reference_gtf. At least one of these is required for columns: {columns_that_require_dlist_genome}")
 
     # integers - optional just means that it's in kwargs
@@ -521,8 +521,8 @@ def info(
             dlist_reference_cdna_fasta = dlist_reference_source
         if not dlist_reference_gtf:
             dlist_reference_gtf = dlist_reference_source
-        if dlist_reference_type != "combined":
-            logger.warning("Setting dlist_reference_type to 'combined' because dlist_reference_source is provided. If you want to use a different type, please set dlist_reference_type explicitly.")
+        if dlist_reference_type is None:
+            logger.warning("Setting dlist_reference_type to 'combined' because dlist_reference_source is provided and dlist_reference_type=None. If you want to use a different type, please set dlist_reference_type explicitly.")
             dlist_reference_type = "combined"
 
     if dlist_reference_genome_fasta == "t2t" or dlist_reference_cdna_fasta == "t2t" or dlist_reference_gtf == "t2t":
@@ -690,6 +690,8 @@ def info(
             var_cdna_column = kwargs.get("var_column")
         if (not reference_cdna_fasta or not os.path.isfile(reference_cdna_fasta)) and (sequences and os.path.isfile(sequences)):
             reference_cdna_fasta = sequences
+        if (not dlist_reference_cdna_fasta or not os.path.isfile(dlist_reference_cdna_fasta)) and (sequences and os.path.isfile(sequences)):
+            dlist_reference_cdna_fasta = sequences
     elif variant_source == "genome":
         if kwargs.get("seq_id_column") and not seq_id_genome_column:
             seq_id_genome_column = kwargs.get("seq_id_column")
@@ -697,6 +699,8 @@ def info(
             var_genome_column = kwargs.get("var_column")
         if (not reference_genome_fasta or not os.path.isfile(reference_genome_fasta)) and (sequences and os.path.isfile(sequences)):
             reference_genome_fasta = sequences
+        if (not dlist_reference_genome_fasta or not os.path.isfile(dlist_reference_genome_fasta)) and (sequences and os.path.isfile(sequences)):
+            dlist_reference_genome_fasta = sequences
 
     add_mutation_information(mutation_metadata_df_exploded, mutation_column="variant_used_for_vcrs")
 

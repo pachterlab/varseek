@@ -793,6 +793,9 @@ def build(
             var_id_column = None
         add_variant_type_column_to_vcf_derived_df(mutations)
         add_variant_column_to_vcf_derived_df(mutations, var_column=var_column)
+        if any(s.startswith("chr") for s in mutations['seq_ID'].unique()) and all(not t.startswith("chr") for t in titles):
+            logger.info("Chromosome numbers in the VCF file start with 'chr', but the input sequences do not. Removing 'chr' from the chromosome numbers in the variants dataframe.")
+            mutations['seq_ID'] = mutations['seq_ID'].str.replace('^chr', '', regex=True)
 
     # Handle mutations passed as a list
     elif isinstance(mutations, list):
@@ -842,8 +845,10 @@ def build(
 
     if "c." in mutations[var_column].values[0]:
         reference_source = "transcriptome"
-    else:
+    elif "g." in mutations[var_column].values[0]:
         reference_source = "genome"
+    else:
+        reference_source = "unknown"
     
     # Set of possible nucleotides (- and . are gap annotations)
     nucleotides = set("ATGCUNatgcun.-")
