@@ -377,6 +377,8 @@ def info(
     - reference_genome_fasta             (str) Path to the reference genome fasta file. Only utilized for the column 'cdna_and_genome_same'. Default: "genome".
     - variants                           (str) Path to the variants csv file. Only utilized for the column 'cdna_and_genome_same', and when `var_id_column` provided. Corresponds to `variants` in the varseek build function. Default: None.
     - sequences                          (str) Path to the sequences fasta file. Only utilized for the column 'cdna_and_genome_same'. Corresponds to `sequences` in the varseek build function. Default: None.
+    - seq_id_column                      (str) Name of the column containing the sequence IDs in `sequences`.
+    - var_column                         (str) Name of the column containing the variants in `sequences`.
     - kallisto                           (str) Path to the directory containing the kallisto executable. Only utilized for the columns `pseudoaligned_to_reference`, `pseudoaligned_to_reference_despite_not_truly_aligning`. Default: None.
     - bustools                           (str) Path to the directory containing the bustools executable. Only utilized for the columns `pseudoaligned_to_reference`, `pseudoaligned_to_reference_despite_not_truly_aligning`. Default: None.
     - pseudoalignment_workflow           (str) Pseudoalignment workflow to use. Only utilized for the columns `pseudoaligned_to_reference`, `pseudoaligned_to_reference_despite_not_truly_aligning`. Options: {"standard", "nac"}. Default: "nac".
@@ -543,42 +545,6 @@ def info(
         else:
             dlist_reference_dir = os.path.join(reference_out_dir, "dlist_reference_dir")
 
-    #* normally, I barrel through the function if I cannot successfully add a column - but in these cases, because they are defaults of vk ref and have rather unintuitive parameters, I return error early on rather than barreling through
-    if dlist_reference_type == "genome":
-        if not dlist_reference_genome_fasta:
-            raise ValueError("For alignment to reference and d-list construction, you must provide specify the arguments dlist_reference_genome_fasta and/or dlist_reference_cdna_fasta.")
-        if dlist_reference_cdna_fasta is not None:
-            logger.warning("dlist_reference_type is set to 'genome', but dlist_reference_cdna_fasta is provided. The d-list will be constructed only for the genome-based alignment. If you want to include cDNA as well, please set dlist_reference_type='combined' or None.")
-            dlist_reference_cdna_fasta = None
-    elif dlist_reference_type == "transcriptome":
-        if not dlist_reference_cdna_fasta:
-            raise ValueError("For alignment to reference and d-list construction, you must provide specify the arguments dlist_reference_genome_fasta and/or dlist_reference_cdna_fasta.")
-        if dlist_reference_genome_fasta is not None:
-            logger.warning("dlist_reference_type is set to 'transcriptome', but dlist_reference_genome_fasta is provided. The d-list will be constructed only for the cDNA-based alignment. If you want to include genome as well, please set dlist_reference_type='combined' or None.")
-            dlist_reference_genome_fasta = None
-    elif dlist_reference_type == "combined":
-        if not dlist_reference_genome_fasta or not dlist_reference_cdna_fasta:
-            raise ValueError("For alignment to reference and d-list construction, you must provide specify the arguments dlist_reference_genome_fasta and dlist_reference_cdna_fasta.")
-    
-    if any(column in columns_to_include for column in bowtie_columns_dlist) or columns_to_include == "all":
-        if not dlist_reference_genome_fasta and not dlist_reference_cdna_fasta:
-            raise ValueError("For alignment to reference and d-list construction, you must provide specify the arguments dlist_reference_genome_fasta and/or dlist_reference_cdna_fasta.")
-        elif dlist_reference_genome_fasta and not dlist_reference_cdna_fasta:
-            logger.warning("Only dlist_reference_genome_fasta is provided. The d-list will be constructed only for the genome-based alignment. If you want to include cDNA, please provide dlist_reference_cdna_fasta as well.")
-        elif dlist_reference_cdna_fasta and not dlist_reference_genome_fasta:
-            logger.warning("Only dlist_reference_cdna_fasta is provided. The d-list will be constructed only for the cDNA-based alignment. If you want to include genome, please provide dlist_reference_genome_fasta as well.")
-    
-    if any(column in columns_to_include for column in ["pseudoaligned_to_reference", "pseudoaligned_to_reference_despite_not_truly_aligning"]) or columns_to_include == "all":
-        if not dlist_reference_genome_fasta:
-            raise ValueError("For pseudoalignment to reference, you must provide the dlist_reference_genome_fasta argument. Please provide it.")
-        if not os.path.isfile(dlist_reference_genome_fasta):
-            raise FileNotFoundError(f"File not found: {dlist_reference_genome_fasta}")
-        if not dlist_reference_gtf:
-            raise ValueError("For pseudoalignment to reference, you must provide the dlist_reference_gtf argument. Please provide it.")
-        if not os.path.isfile(dlist_reference_gtf):
-            raise FileNotFoundError(f"File not found: {dlist_reference_gtf}")
-        
-
     columns_to_explode = ["header", "order"]
     columns_NOT_to_explode = ["vcrs_id", "vcrs_header", "vcrs_sequence", "vcrs_sequence_rc"]
     columns_not_successfully_added = []
@@ -701,6 +667,45 @@ def info(
             reference_genome_fasta = sequences
         if (not dlist_reference_genome_fasta or not os.path.isfile(dlist_reference_genome_fasta)) and (sequences and os.path.isfile(sequences)):
             dlist_reference_genome_fasta = sequences
+    
+    if (gtf and os.path.isfile(gtf)) and (not dlist_reference_gtf or not os.path.isfile(dlist_reference_gtf)):
+        dlist_reference_gtf = gtf
+    
+    #* normally, I barrel through the function if I cannot successfully add a column - but in these cases, because they are defaults of vk ref and have rather unintuitive parameters, I return error early on rather than barreling through
+    if any(column in columns_to_include for column in bowtie_columns_dlist) or columns_to_include == "all":
+        if dlist_reference_type == "genome":
+            if not dlist_reference_genome_fasta:
+                raise ValueError("For alignment to reference and d-list construction, you must provide specify the arguments dlist_reference_genome_fasta and/or dlist_reference_cdna_fasta.")
+            if dlist_reference_cdna_fasta is not None:
+                logger.warning("dlist_reference_type is set to 'genome', but dlist_reference_cdna_fasta is provided. The d-list will be constructed only for the genome-based alignment. If you want to include cDNA as well, please set dlist_reference_type='combined' or None.")
+                dlist_reference_cdna_fasta = None
+        elif dlist_reference_type == "transcriptome":
+            if not dlist_reference_cdna_fasta:
+                raise ValueError("For alignment to reference and d-list construction, you must provide specify the arguments dlist_reference_genome_fasta and/or dlist_reference_cdna_fasta.")
+            if dlist_reference_genome_fasta is not None:
+                logger.warning("dlist_reference_type is set to 'transcriptome', but dlist_reference_genome_fasta is provided. The d-list will be constructed only for the cDNA-based alignment. If you want to include genome as well, please set dlist_reference_type='combined' or None.")
+                dlist_reference_genome_fasta = None
+        elif dlist_reference_type == "combined":
+            if not dlist_reference_genome_fasta or not dlist_reference_cdna_fasta:
+                raise ValueError("For alignment to reference and d-list construction, you must provide specify the arguments dlist_reference_genome_fasta and dlist_reference_cdna_fasta.")
+        else:
+            if not dlist_reference_genome_fasta and not dlist_reference_cdna_fasta:
+                raise ValueError("For alignment to reference and d-list construction, you must provide specify the arguments dlist_reference_genome_fasta and/or dlist_reference_cdna_fasta.")
+            elif dlist_reference_genome_fasta and not dlist_reference_cdna_fasta:
+                logger.warning("Only dlist_reference_genome_fasta is provided. The d-list will be constructed only for the genome-based alignment. If you want to include cDNA, please provide dlist_reference_cdna_fasta as well.")
+            elif dlist_reference_cdna_fasta and not dlist_reference_genome_fasta:
+                logger.warning("Only dlist_reference_cdna_fasta is provided. The d-list will be constructed only for the cDNA-based alignment. If you want to include genome, please provide dlist_reference_genome_fasta as well.")
+    
+    if any(column in columns_to_include for column in ["pseudoaligned_to_reference", "pseudoaligned_to_reference_despite_not_truly_aligning"]) or columns_to_include == "all":
+        if not dlist_reference_genome_fasta:
+            raise ValueError("For pseudoalignment to reference, you must provide the dlist_reference_genome_fasta argument. Please provide it.")
+        if not os.path.isfile(dlist_reference_genome_fasta):
+            raise FileNotFoundError(f"File not found: {dlist_reference_genome_fasta}")
+        if not dlist_reference_gtf:
+            raise ValueError("For pseudoalignment to reference, you must provide the dlist_reference_gtf argument. Please provide it.")
+        if not os.path.isfile(dlist_reference_gtf):
+            raise FileNotFoundError(f"File not found: {dlist_reference_gtf}")
+    #* back to our regularly scheduled programming
 
     add_mutation_information(mutation_metadata_df_exploded, mutation_column="variant_used_for_vcrs")
 

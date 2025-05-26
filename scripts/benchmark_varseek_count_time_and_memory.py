@@ -124,7 +124,7 @@ if not os.path.exists(cosmic_mutations_path):
         grch_version=37,
         cosmic_version=101,
         out=reference_out_dir_cosmic,
-        mutation_class="cancer",
+        cosmic_project="cancer",
         download_cosmic=True,
         gget_mutate=True
     )

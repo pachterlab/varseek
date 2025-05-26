@@ -2270,15 +2270,21 @@ def merge_variants_with_adata(variants, adata_var_exploded, seq_id_column, var_c
         merged_var.drop(columns=['vcrs_header_variant'], inplace=True)
     return merged_var
 
-def make_t2g_dict(t2g_file):
+def make_t2g_dict(t2g_file, strip_versions=False, column_indices=(0,1)):
+    col1, col2 = column_indices
     if t2g_file is None or not os.path.isfile(t2g_file):
         raise ValueError(f"The specified t2g file '{t2g_file}' does not exist.")
     t2g_df = pd.read_csv(t2g_file, sep="\t", header=None)
-    t2g_df.rename(columns={0: "transcript_id", 1: "gene_name"}, inplace=True)
+    t2g_df.rename(columns={col1: "transcript_id", col2: "gene_name"}, inplace=True)
     t2g_df = t2g_df[["transcript_id", "gene_name"]].copy()  # keep only first 2 columns
     t2g_dict = dict(zip(t2g_df["transcript_id"], t2g_df["gene_name"]))
     t2g_dict["dlist"] = "dlist"
+
+    if strip_versions:
+        t2g_dict = {key.split(".")[0]: val.split(".")[0] for key, val in t2g_dict.items()}  # strip off the version number
+
     return t2g_dict
+
 
 def make_t2g_dict_from_gtf(gtf):
     if isinstance(gtf, str):

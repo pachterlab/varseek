@@ -70,7 +70,7 @@ if not os.path.isfile(cosmic_mutations_path):
         grch_version=grch,
         cosmic_version=cosmic_version,
         out=reference_out_dir,
-        mutation_class="cancer",
+        cosmic_project="cancer",
         download_cosmic=True,
         gget_mutate=True,
         keep_genome_info=True,
