@@ -717,12 +717,6 @@ def main():  # noqa: C901
         help=extract_help_from_doc(info, "id_to_header_csv"),
     )
     parser_info.add_argument(
-        "--gtf",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "gtf"),
-    )
-    parser_info.add_argument(
         "--dlist_reference_source",
         required=False,
         choices=["grch37", "grch38", "t2t"],
@@ -976,6 +970,18 @@ def main():  # noqa: C901
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(info, "variants"),
+    )
+    parser_info.add_argument(
+        "--sequences",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(info, "sequences"),
+    )
+    parser_info.add_argument(
+        "--gtf",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(info, "gtf"),
     )
     parser_info.add_argument(
         "--seq_id_column",
