@@ -163,7 +163,7 @@ def count(
     vk_summarize_out_dir=None,
     disable_fastqpp=False,  # general
     disable_clean=False,
-    summarize=True,
+    summarize=False,
     chunksize=None,
     dry_run=False,
     overwrite=False,
