@@ -7,6 +7,9 @@ from pathlib import Path
 import os
 import random
 import re
+import scipy.sparse as sp
+from scipy.io import mmread
+import anndata
 import shutil
 import subprocess
 from collections import OrderedDict
@@ -1303,13 +1306,18 @@ def correct_adata_barcodes_for_running_paired_data_in_single_mode(kb_count_out_d
     if adata is None:
         adata = os.path.join(kb_count_out_dir, "counts_unfiltered", "adata.h5ad")
     
+    if not os.path.isfile(adata):
+        mtx_file = os.path.join(kb_count_out_dir, "counts_unfiltered", "cells_x_genes.mtx")
+        if os.path.isfile(mtx_file):
+            adata = load_adata_from_mtx(mtx_file)
+    
+    if adata_out is None:
+        adata_out = os.path.join(kb_count_out_dir, "counts_unfiltered", "adata_updated.h5ad")
+
     if isinstance(adata, ad.AnnData):
-        if adata_out is None:
-            adata_out = "adata_updated.h5ad"
+        pass
     elif isinstance(adata, (str, Path)):
         adata = ad.read_h5ad(adata)
-        if adata_out is None:
-            adata_out = os.path.join(kb_count_out_dir, "counts_unfiltered", "adata_updated.h5ad")
     else:
         raise TypeError(f"Unsupported type for adata: {type(adata)}")
 
@@ -1351,3 +1359,23 @@ def correct_adata_barcodes_for_running_paired_data_in_single_mode(kb_count_out_d
         adata_updated.write(adata_out)
 
     return adata_updated
+
+
+def load_adata_from_mtx(mtx_path, adata_out = None):
+    genes_path = mtx_path.replace(".mtx", ".genes.txt")
+    cells_path = mtx_path.replace(".mtx", ".barcodes.txt")
+    
+    mtx = sp.csr_matrix(mmread(mtx_path))
+    genes = pd.read_csv(genes_path, header=None, names=["gene_id", "gene_name", "extra"], sep="\t")
+    cells = pd.read_csv(cells_path, header=None, names=["cell_barcode"], sep="\t")
+
+    # drop empty columns in genes
+    genes.replace("", pd.NA, inplace=True)
+    genes.dropna(axis=1, how='all', inplace=True)
+
+    adata = anndata.AnnData(X=mtx, var=genes, obs=cells)
+
+    if adata_out is not None:
+        adata.write(adata_out)
+
+    return adata

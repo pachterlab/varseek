@@ -27,7 +27,8 @@ from varseek.utils import (
     add_information_from_variant_header_to_adata_var_exploded,
     plot_substitution_heatmap,
     plot_variant_types,
-    load_df_types_adata
+    load_df_types_adata,
+    load_adata_from_mtx
 )
 
 from .constants import technology_valid_values, HGVS_pattern_general
@@ -165,10 +166,12 @@ def summarize(
     # * 8. Start the actual function
     if isinstance(adata, anndata.AnnData):
         pass
-    elif isinstance(adata, str):
+    elif isinstance(adata, str) and adata.endswith(".h5ad"):
         # adata_dtypes_file_base = adata.replace(".h5ad", "_dtypes")  # matches vk clean
         adata = ad.read_h5ad(adata)
         # adata = load_df_types_adata(adata, adata_dtypes_file_base)
+    elif isinstance(adata, str) and adata.endswith(".mtx"):
+        adata = load_adata_from_mtx(adata)
     else:
         raise ValueError("adata must be a string (file path) or an AnnData object.")
     

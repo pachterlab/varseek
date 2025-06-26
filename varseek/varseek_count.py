@@ -24,7 +24,8 @@ from varseek.utils import (
     save_run_info,
     set_up_logger,
     sort_fastq_files_for_kb_count,
-    set_varseek_logging_level_and_filehandler
+    set_varseek_logging_level_and_filehandler,
+    load_adata_from_mtx
 )
 from varseek.varseek_clean import needs_for_normal_genome_matrix
 
@@ -463,6 +464,11 @@ def count(
         else:
             logger.info(f"Running kb count with command: {' '.join(kb_count_command)}")
             subprocess.run(kb_count_command, check=True)
+
+            if not os.path.isfile(adata_vcrs):
+                mtx_file = os.path.join(kb_count_vcrs_out_dir, "counts_unfiltered", "cells_x_genes.mtx")
+                if os.path.isfile(mtx_file):
+                    _ = load_adata_from_mtx(mtx_file, adata_out = adata_vcrs)
 
             if os.path.exists(adata_vcrs) and parity == "paired" and kwargs["parity_kb_count"] == "single" and technology in {"BULK", "SMARTSEQ2"}:
                 _ = correct_adata_barcodes_for_running_paired_data_in_single_mode(kb_count_vcrs_out_dir, adata_out=adata_vcrs)  # will check if the correction has already occurred internally

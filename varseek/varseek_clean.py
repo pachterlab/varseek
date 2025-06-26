@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import scipy.sparse as sp
+from scipy.io import mmread
 import subprocess
 import pyfastx
 import time
@@ -44,7 +45,8 @@ from varseek.utils import (
     plot_cdna_locations,
     save_df_types_adata,
     correct_adata_barcodes_for_running_paired_data_in_single_mode,
-    safe_literal_eval
+    safe_literal_eval,
+    load_adata_from_mtx
 )
 
 from .constants import non_single_cell_technologies, technology_valid_values, technology_to_strand_bias_mapping, technology_to_file_index_with_transcripts_mapping, HGVS_pattern_general, mutation_pattern
@@ -530,8 +532,11 @@ def clean(
 
     adata = adata_vcrs
 
-    if isinstance(adata, str) and os.path.exists(adata) and adata.endswith(".h5ad"):
-        adata = ad.read_h5ad(adata)
+    if isinstance(adata, str) and os.path.exists(adata):
+        if adata.endswith(".h5ad"):
+            adata = ad.read_h5ad(adata)
+        elif adata.endswith(".mtx"):                
+            adata = load_adata_from_mtx(adata)
 
     #$ As far as naming convention goes: (1) vcrs_header is the HGVS format name, (2) vcrs_id is the name in the actual index file (and thus in the BUS file and custom t2g etc), (3) vcrs_id_from_vk_ref is the ID if I used my custom ID_to_header_csv
     if adata.var.index[0].startswith("vcrs_"):
@@ -666,8 +671,11 @@ def clean(
         adata = correct_adata_barcodes_for_running_paired_data_in_single_mode(kb_count_vcrs_dir, adata=adata)
 
     if adata_reference_genome:
-        if isinstance(adata_reference_genome, str) and os.path.exists(adata_reference_genome) and adata_reference_genome.endswith(".h5ad"):
-            adata_reference_genome = ad.read_h5ad(adata_reference_genome)
+        if isinstance(adata_reference_genome, str) and os.path.exists(adata_reference_genome):
+            if adata_reference_genome.endswith(".h5ad"):
+                adata_reference_genome = ad.read_h5ad(adata_reference_genome)
+            elif adata_reference_genome.endswith(".mtx"):                
+                adata_reference_genome = load_adata_from_mtx(adata_reference_genome)
 
     adata.var_names = original_var_names
 
