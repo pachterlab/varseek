@@ -253,7 +253,7 @@ for number_of_reads in number_of_reads_list:
     logger.info(f"varseek, {number_of_reads} reads")
     script_title = f"varseek {number_of_reads} reads {threads} threads"
     vk_count_out_tmp = os.path.join(tmp_dir, f"vk_count_{number_of_reads}_reads")
-    argparse_flags = f"--index {vk_ref_index_path} --t2g {vk_ref_t2g_path} --technology bulk --threads {threads} -k {k} --out {vk_count_out_tmp} --kb_count_reference_genome_out_dir {kb_count_reference_genome_out_dir} --reference_genome_index {reference_genome_index_path} --reference_genome_t2g {reference_genome_t2g_path} --disable_clean --disable_summarize --fastqs {fastq_output_path}"
+    argparse_flags = f"--index {vk_ref_index_path} --t2g {vk_ref_t2g_path} --technology bulk --threads {threads} -k {k} --out {vk_count_out_tmp} --kb_count_reference_genome_out_dir {kb_count_reference_genome_out_dir} --reference_genome_index {reference_genome_index_path} --reference_genome_t2g {reference_genome_t2g_path} --disable_clean --fastqs {fastq_output_path}"
     print(f"python3 {vk_count_script_path} {argparse_flags}")
     if not dry_run:
         _ = report_time_and_memory_of_script(vk_count_script_path, output_file = output_file, argparse_flags = argparse_flags, script_title = script_title)

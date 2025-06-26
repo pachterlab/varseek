@@ -2793,10 +2793,10 @@ def main():  # noqa: C901
         help=extract_help_from_doc(count, "disable_clean"),
     )
     parser_count.add_argument(
-        "--disable_summarize",
+        "--summarize",
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(count, "disable_summarize"),
+        help=extract_help_from_doc(count, "summarize"),
     )
     parser_count.add_argument(
         "--chunksize",

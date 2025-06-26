@@ -80,7 +80,7 @@ def validate_input_count(params_dict):
             raise ValueError(f"Invalid value for {param_name}: {params_dict.get(param_name, None)}")
 
     # booleans
-    for param_name in ["dry_run", "overwrite", "sort_fastqs", "disable_fastqpp", "disable_clean", "disable_summarize"]:
+    for param_name in ["dry_run", "overwrite", "sort_fastqs", "disable_fastqpp", "disable_clean", "summarize"]:
         if not isinstance(params_dict.get(param_name), bool):
             raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
 
@@ -163,7 +163,7 @@ def count(
     vk_summarize_out_dir=None,
     disable_fastqpp=False,  # general
     disable_clean=False,
-    disable_summarize=False,
+    summarize=True,
     chunksize=None,
     dry_run=False,
     overwrite=False,
@@ -209,7 +209,7 @@ def count(
     # General arguments:
     - disable_fastqpp                       (bool) If True, skip fastqpp step. Default: False.
     - disable_clean                         (bool) If True, skip clean step. Default: False.
-    - disable_summarize                     (bool) If True, skip summarize step. Default: False.
+    - summarize                             (bool) If True, perform summarize step. Default: False.
     - chunksize                             (int) Number of BUS file lines to process at a time. If None, then all lines will be processed at once. Default: None.
     - dry_run                               (bool) If True, print the commands that would be run without actually running them. Default: False.
     - overwrite                             (bool) If True, overwrite existing files. Default: False.
@@ -565,7 +565,7 @@ def count(
         adata = adata_vcrs  # for vk summarize
 
     # # vk summarize
-    if not disable_summarize:
+    if summarize:
         if not os.path.exists(file_signifying_successful_vk_summarize_completion) or overwrite:
             kwargs_vk_summarize = {key: value for key, value in kwargs.items() if ((key in all_parameter_names_set_vk_summarize) and (key not in count_signature.parameters.keys()))}
             # update anything in kwargs_vk_summarize that is not fully updated in (vk count's) kwargs (should be nothing or very close to it, as I try to avoid these double-assignments by always keeping kwargs in kwargs)
@@ -582,7 +582,7 @@ def count(
         else:
             logger.info(f"Skipping vk summarize because file {file_signifying_successful_vk_summarize_completion} already exists and overwrite=False")
     else:
-        logger.info("Skipping vk summarize because disable_summarize=True")
+        logger.info("Skipping vk summarize because summarize=False")
 
     vk_count_output_dict = {}
     vk_count_output_dict["adata_path_unprocessed"] = os.path.abspath(adata_vcrs) if os.path.isfile(os.path.abspath(adata_vcrs)) else None
