@@ -543,7 +543,7 @@ def count(
             subprocess.run(kb_count_standard_index_command, check=True)
 
     else:
-        logger.info(f"Skipping kb count for reference genome because the reference genome adata object was not needed and/or the file '{file_signifying_successful_kb_count_reference_genome_completion}' already exists. Note that even setting overwrite=True will still not overwrite this particular directory")
+        logger.info(f"Skipping kb count for reference genome because the reference genome adata object was not needed and/or the file '{file_signifying_successful_kb_count_reference_genome_completion}' already exists. Note that even setting overwrite=True will still not overwrite this particular file.")
 
     if not os.path.exists(kb_count_reference_genome_out_dir) or len(os.listdir(kb_count_reference_genome_out_dir)) == 0:
         kb_count_reference_genome_out_dir, kwargs["kb_count_reference_genome_dir"] = None, None  # don't pass anything into clean if they're empty
