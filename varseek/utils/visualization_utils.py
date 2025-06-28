@@ -51,7 +51,14 @@ def calculate_sensitivity_specificity(TP, TN, FP, FN):
     # Specificity = TN / (TN + FP)
     specificity = TN / (TN + FP) if (TN + FP) > 0 else 1.0
 
-    return accuracy, sensitivity, specificity
+    # Precision = TP / (TP + FP)
+    precision = TP / (TP + FP) if (TP + FP) > 0 else 0.0
+
+    # F1 Score = 2 * (Precision * Sensitivity) / (Precision + Sensitivity)
+    F1_score = 2 * (precision * sensitivity) / (precision + sensitivity) if (precision + sensitivity) > 0 else 0.0
+
+
+    return accuracy, sensitivity, specificity, precision, F1_score
 
 
 def print_column_summary_stats(df_overlap, column, output_file=None):
@@ -181,7 +188,7 @@ def calculate_metrics(df, header_name=None, check_assertions=False, crude=False,
     # if FN != 0:
     #     print(f"FNs: {FNs}")
 
-    accuracy, sensitivity, specificity = calculate_sensitivity_specificity(TP, TN, FP, FN)
+    accuracy, sensitivity, specificity, precision, f1_score = calculate_sensitivity_specificity(TP, TN, FP, FN)
 
     print(f"Accuracy: {accuracy}, Sensitivity: {sensitivity}, Specificity: {specificity}")
 
@@ -212,6 +219,9 @@ def calculate_metrics(df, header_name=None, check_assertions=False, crude=False,
         "accuracy": accuracy,
         "sensitivity": sensitivity,
         "specificity": specificity,
+        "precision": precision,
+        "recall": sensitivity,  # Recall is the same as sensitivity
+        "f1_score": f1_score,
         "mean_expression_error": mean_expression_error,
         "median_expression_error": median_expression_error,
         "mean_magnitude_expression_error": mean_magnitude_expression_error,
