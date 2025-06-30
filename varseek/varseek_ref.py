@@ -109,8 +109,8 @@ downloadable_references = [
 def ref(
     variants,
     sequences,
-    w=54,
-    k=59,
+    w=47,
+    k=51,
     filters=(
         "alignment_to_reference:is_not_true",
         # "substring_alignment_to_reference:is_not_true",  # filter out variants that are a substring of the reference genome  #* uncomment this and erase the line above when implementing d-list
@@ -177,8 +177,8 @@ def ref(
                     NOTE: When 'sequences' input is a genome, also see the arguments `gtf`, `gtf_transcript_id_column`, and `transcript_boundaries` in varseek build.
 
     # Additional parameters
-    - w             (int) Length of sequence windows flanking the variant. Default: 30. If w > total length of the sequence, the entire sequence will be kept.
-    - k             (int) The length of each k-mer in the kallisto reference index construction. Accordingly corresponds to the length of the k-mers to be considered in vk build's remove_seqs_with_wt_kmers, and the default minimum value for vk build's minimum sequence length (which can be changed with 'min_seq_len'). Must be greater than the value passed in for w. Default: 59.
+    - w             (int) Length of sequence windows flanking the variant. Default: 47. If w > total length of the sequence, the entire sequence will be kept.
+    - k             (int) The length of each k-mer in the kallisto reference index construction. Accordingly corresponds to the length of the k-mers to be considered in vk build's remove_seqs_with_wt_kmers, and the default minimum value for vk build's minimum sequence length (which can be changed with 'min_seq_len'). Must be greater than the value passed in for w. Default: 51.
     - filters       (str or list[str]) Filter or list of filters to apply to the variant reference fasta. Each filter should be in the format COLUMN-RULE=VALUE or COLUMN-RULE (for boolean evaluation). For details, run vk filter --list_filter_rules, or see the documentation at https://github.com/pachterlab/varseek/blob/main/docs/filter.md
     - dlist         (str) Specifies whether ones wants to d-list against the genome, transcriptome, or both. Possible values are "genome", "transcriptome", "genome_and_transcriptome", or None. Default: None.
     - dlist_reference_source (str or None) Specifies which reference to use during alignment of VCRS k-mers to the reference genome/transcriptome and any possible d-list construction. However, no d-list is used during the creation of the VCRS reference index unless `dlist` is not None. This can refer to the same genome version as used by the "sequences" argument, but need not be. The purpose of this genome is simply to provide an accurate and comprehensive reference genome/transcriptome to determine which k-mers from the VCRSs overlap with the reference. Will look for files in `reference_out_dir`, and will download in this directory if necessary files do not exist. Ignored if values for `dlist_reference_genome_fasta`, `dlist_reference_cdna_fasta`, and `dlist_reference_gtf` are provided. Default: None. Possible values:

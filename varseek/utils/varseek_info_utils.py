@@ -479,7 +479,7 @@ def create_df_of_vcrs_to_self_headers(
     return substring_to_superstring_df, superstring_to_substring_df
 
 
-def compare_cdna_and_genome(mutation_metadata_df_exploded, reference_out_dir=None, varseek_build_temp_folder="vk_build_tmp", reference_cdna_fasta="cdna", reference_genome_fasta="genome", mutations_csv=None, w=30, variant_source="cdna", columns_to_explode=None, seq_id_column_cdna="seq_ID", var_column_cdna="mutation_cdna", seq_id_column_genome="chromosome", var_column_genome="mutation_genome", delete_temp_dir=True):
+def compare_cdna_and_genome(mutation_metadata_df_exploded, reference_out_dir=None, varseek_build_temp_folder="vk_build_tmp", reference_cdna_fasta="cdna", reference_genome_fasta="genome", mutations_csv=None, w=47, k=51, variant_source="cdna", columns_to_explode=None, seq_id_column_cdna="seq_ID", var_column_cdna="mutation_cdna", seq_id_column_genome="chromosome", var_column_genome="mutation_genome", delete_temp_dir=True):
     from varseek.varseek_build import build
 
     if columns_to_explode is None:
@@ -509,6 +509,7 @@ def compare_cdna_and_genome(mutation_metadata_df_exploded, reference_out_dir=Non
             out=varseek_build_temp_folder_cdna,
             reference_out_dir=reference_out_dir_temp,
             w=w,
+            k=k,
             remove_seqs_with_wt_kmers=False,
             optimize_flanking_regions=False,
             min_seq_len=None,
@@ -544,6 +545,7 @@ def compare_cdna_and_genome(mutation_metadata_df_exploded, reference_out_dir=Non
             out=varseek_build_temp_folder_genome,
             reference_out_dir=reference_out_dir_temp,
             w=w,
+            k=k,
             remove_seqs_with_wt_kmers=False,
             optimize_flanking_regions=False,
             min_seq_len=None,

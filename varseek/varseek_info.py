@@ -738,6 +738,7 @@ def info(
                     reference_genome_fasta=reference_genome_fasta,
                     mutations_csv=variants,
                     w=w,
+                    k=k,
                     variant_source=variant_source,
                     columns_to_explode=columns_to_explode,
                     seq_id_column_cdna=seq_id_cdna_column,

@@ -346,8 +346,8 @@ accepted_build_file_types = (".csv", ".tsv", ".vcf", ".parquet")
 def build(
     variants,
     sequences,
-    w=54,
-    k=59,
+    w=47,
+    k=51,
     max_ambiguous=0,
     var_column="mutation",
     seq_id_column="seq_ID",
@@ -423,11 +423,11 @@ def build(
                                         NOTE: When 'sequences' input is a genome, also see the arguments `gtf`, `gtf_transcript_id_column`, and `transcript_boundaries` in varseek build.
 
     # Parameters affecting VCRS creation
-    - w                                  (int) Length of sequence windows flanking the variant. Default: 30.
+    - w                                  (int) Length of sequence windows flanking the variant. Default: 47.
                                          If w > total length of the sequence, the entire sequence will be kept.
     - k                                  (int) Length of the k-mers to be considered in remove_seqs_with_wt_kmers, and the default minimum value for the minimum sequence length (which can be changed with 'min_seq_len').
                                          If using kallisto in a later workflow, then this should correspond to kallisto k.
-                                         Must be greater than the value passed in for w. Default: 59.
+                                         Must be greater than the value passed in for w. Default: 51.
     - max_ambiguous                      (int) Maximum number of 'N' (or 'n') characters allowed in a VCRS. None means no 'N' filter will be applied. Default: 0.
 
     # Additional input files and associated parameters

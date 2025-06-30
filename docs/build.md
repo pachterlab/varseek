@@ -96,7 +96,7 @@ Required when `gtf` is provided. Default: None
   
 **Optional mutant sequence generation/filtering arguments**  
 `-w` `--w`  
-Length of sequence windows flanking the mutation. Default: 30.  
+Length of sequence windows flanking the mutation. Default: 47.  
 If w > total length of the sequence, the entire sequence will be kept.  
 
 `-k` `--k`  
