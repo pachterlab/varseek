@@ -37,7 +37,7 @@ Options:
   -h, --help             Show this help
 
 Positional arguments:
-  Input BAM or FASTQ files. If -1/-2 are specified, those are used instead.
+  Input BAM or FASTQ files, or a directory containing such. If -1/-2 are specified, those are used instead.
 
 Example:
   $0 --threads 4 -f ref.fa -x ref_idx -o out.vcf.gz -i 'FORMAT/AD[1]>=5' aln1.bam aln2.bam
@@ -177,6 +177,39 @@ if [[ -n "$FASTQ1" ]]; then
     BAM_FILES+=("$OUT_BAM")
   fi
 fi
+
+# Handles the case where input files are directories
+EXPANDED_ARGS=()
+
+# Loop over all positional arguments
+for INPUT in "${ARGS[@]}"; do
+  if [[ -d "$INPUT" ]]; then
+    echo "Found directory: $INPUT"
+    FILES_FOUND=0
+    while IFS= read -r -d $'\0' FILE; do
+      # Extract file extension
+      EXT="${FILE##*.}"
+      case "$EXT" in
+        bam|fq|fastq)
+          FILES_FOUND=1
+          EXPANDED_ARGS+=("$FILE")
+          ;;
+        *)
+          echo "Skipping unsupported file: $FILE"
+          ;;
+      esac
+    done < <(find "$INPUT" -maxdepth 1 -type f -print0 | sort -z)
+    if [[ $FILES_FOUND -eq 0 ]]; then
+      echo "Error: directory '$INPUT' contains no FASTQ or BAM files."
+      exit 1
+    fi
+  else
+    EXPANDED_ARGS+=("$INPUT")
+  fi
+done
+
+# Replace ARGS with the expanded list
+ARGS=("${EXPANDED_ARGS[@]}")
 
 # Process positional inputs
 for INPUT in "${ARGS[@]}"; do
