@@ -125,13 +125,18 @@ check_tool samtools
 check_tool bowtie2
 
 # Validation
-if [[ -z "$FASTA_REF" ]] || [[ -z "$OUTPUT" ]]; then
-  echo "Error: --fasta-ref and --output are required."
+if [[ ${#ARGS[@]} -eq 0 && -z "$FASTQ1" ]]; then
+  echo "Error: No input files provided."
+  usage
+fi
+
+if [[ -z "$FASTA_REF" ]]; then
+  echo "Error: --fasta-ref is required."
   usage
 fi
 
 if [[ -n "$FASTQ1" && -z "$REF_INDEX" ]]; then
-  echo "Error: -x is required when FASTQs are provided."
+  echo "Error: -x is required when FASTQs are provided."  # I check for positional FASTQ and REF_INDEX later
   usage
 fi
 
@@ -140,8 +145,13 @@ if [[ -n "$FASTQ2" && -z "$FASTQ1" ]]; then
   usage
 fi
 
-if [[ ${#ARGS[@]} -eq 0 && -z "$FASTQ1" ]]; then
-  echo "Error: No input files provided."
+if [[ "$OUTPUT" != *.vcf* ]]; then
+  echo "Error: --output must be a .vcf file path."
+  usage
+fi
+
+if ! [[ "$THREADS" =~ ^[0-9]+$ ]] || [[ "$THREADS" -lt 1 ]]; then
+  echo "Error: --threads must be an integer >= 1."
   usage
 fi
 
@@ -163,10 +173,6 @@ BAM_FILES=()
 
 # If FASTQs are specified vis FASTQ1/FASTQ2, process them
 if [[ -n "$FASTQ1" ]]; then
-  if [[ -z "$REF_INDEX" ]]; then
-    echo "Error: FASTQ input '$INPUT' requires -x reference index."
-    exit 1
-  fi
   # Build index if needed
   if [[ ! -f "${REF_INDEX}.1.bt2" ]]; then
     echo "Bowtie2 index not found, building..."
