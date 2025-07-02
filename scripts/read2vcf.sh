@@ -155,24 +155,35 @@ fi
 # Collect BAMs to pass to bcftools mpileup
 BAM_FILES=()
 
-# If FASTQs are specified, process them
+# If FASTQs are specified vis FASTQ1/FASTQ2, process them
 if [[ -n "$FASTQ1" ]]; then
+  if [[ -z "$REF_INDEX" ]]; then
+    echo "Error: FASTQ input '$INPUT' requires -x reference index."
+    exit 1
+  fi
   # Build index if needed
   if [[ ! -f "${REF_INDEX}.1.bt2" ]]; then
     echo "Bowtie2 index not found, building..."
     bowtie2-build "$FASTA_REF" "$REF_INDEX"
   fi
 
+  # puts out_bam in the same directory as the first entry of FASTQ1, and makes filename "reads_aligned_to_<ref>.bam"
+  FIRST_FASTQ="${FASTQ1%% *}"
+  FASTQ_DIR="$(dirname "$FIRST_FASTQ")"
+  REF_FASTA_BASE="$(basename "$FASTA_REF" | sed -E 's/\.(fa|fasta|fna)(\.gz)?$//' | tr '.' '_')"
+  OUT_BAM="$FASTQ_DIR/$reads_aligned_to_${REF_FASTA_BASE}.bam"
+
+  FASTQ1_CSV=$(IFS=,; echo "${FASTQ1[*]}")
+  
   if [[ -n "$FASTQ2" ]]; then
+    FASTQ2_CSV=$(IFS=,; echo "${FASTQ2[*]}")
     echo "Aligning paired-end FASTQs..."
-    OUT_BAM="$(basename "$FASTQ1" .fq).bam"
-    bowtie2 --xeq --very-sensitive $BOWTIE2_OPTIONS --threads "$THREADS" -x "$REF_INDEX" -1 "$FASTQ1" -2 "$FASTQ2" \
+    bowtie2 --xeq --very-sensitive $BOWTIE2_OPTIONS --threads "$THREADS" -x "$REF_INDEX" -1 "$FASTQ1_CSV" -2 "$FASTQ2_CSV" \
       | samtools sort --threads "$THREADS" -o "$OUT_BAM"
     BAM_FILES+=("$OUT_BAM")
   else
     echo "Aligning single-end FASTQ..."
-    OUT_BAM="$(basename "$FASTQ1" .fq).bam"
-    bowtie2 --xeq --very-sensitive $BOWTIE2_OPTIONS --threads "$THREADS" -x "$REF_INDEX" "$FASTQ1" \
+    bowtie2 --xeq --very-sensitive $BOWTIE2_OPTIONS --threads "$THREADS" -x "$REF_INDEX" -U "$FASTQ1_CSV" \
       | samtools sort --threads "$THREADS" -o "$OUT_BAM"
     BAM_FILES+=("$OUT_BAM")
   fi
@@ -211,6 +222,9 @@ done
 # Replace ARGS with the expanded list
 ARGS=("${EXPANDED_ARGS[@]}")
 
+# Process positional inputs - first, collect all FASTQs
+FASTQ_INPUTS=()
+
 # Process positional inputs
 for INPUT in "${ARGS[@]}"; do
   EXT="${INPUT##*.}"
@@ -227,11 +241,7 @@ for INPUT in "${ARGS[@]}"; do
         echo "Bowtie2 index not found, building..."
         bowtie2-build "$FASTA_REF" "$REF_INDEX"
       fi
-      echo "Aligning single-end FASTQ '$INPUT'..."
-      OUT_BAM="$(basename "$INPUT" .fq).bam"
-      bowtie2 --xeq --very-sensitive $BOWTIE2_OPTIONS --threads "$THREADS" -x "$REF_INDEX" "$INPUT" \
-        | samtools sort --threads "$THREADS" -o "$OUT_BAM"
-      BAM_FILES+=("$OUT_BAM")
+      FASTQ_INPUTS+=("$INPUT")
       ;;
     *)
       echo "Error: Unsupported file type '$INPUT'"
@@ -239,6 +249,39 @@ for INPUT in "${ARGS[@]}"; do
       ;;
   esac
 done
+
+# If there are FASTQs to align, do it one at a time
+if [[ ${#FASTQ_INPUTS[@]} -gt 0 ]]; then
+  for FASTQ_FILE in "${FASTQ_INPUTS[@]}"; do
+    # Build output BAM path
+    FASTQ_DIR="$(dirname "$FASTQ_FILE")"
+    FQ_BASE="$(basename "$FASTQ_FILE")"
+    FQ_BASE="${FQ_BASE%%.*}"
+    REF_FASTA_BASE="$(basename "$FASTA_REF" | sed -E 's/\.(fa|fasta|fna)(\.gz)?$//' | tr '.' '_')"
+    OUT_BAM="$FASTQ_DIR/${FQ_BASE}_aligned_to_${REF_FASTA_BASE}.bam"
+
+    echo "Aligning single-end FASTQ '$FASTQ_FILE' to '$OUT_BAM'..."
+
+    bowtie2 --xeq --very-sensitive $BOWTIE2_OPTIONS --threads "$THREADS" -x "$REF_INDEX" -U "$FASTQ_FILE" \
+      | samtools sort --threads "$THREADS" -o "$OUT_BAM" -
+
+    BAM_FILES+=("$OUT_BAM")
+  done
+fi
+
+
+# # If there are FASTQs to align, do it once for all - not a bad approach, but having many FASTQs can cause a bowtie error (arguments too long)
+# if [[ ${#FASTQ_INPUTS[@]} -gt 0 ]]; then
+#   FASTQ_DIR="$(dirname "${FASTQ_INPUTS[0]}")"
+#   REF_FASTA_BASE="$(basename "$FASTA_REF" | sed -E 's/\.(fa|fasta|fna)(\.gz)?$//' | tr '.' '_')"
+#   OUT_BAM="$FASTQ_DIR/reads_aligned_to_${REF_FASTA_BASE}.bam"
+
+#   echo "Aligning all FASTQ inputs into '$OUT_BAM'..."
+#   bowtie2 --xeq --very-sensitive $BOWTIE2_OPTIONS --threads "$THREADS" -x "$REF_INDEX" -U "$(IFS=,; echo "${FASTQ_INPUTS[*]}")" \
+#     | samtools sort --threads "$THREADS" -o "$OUT_BAM"
+
+#   BAM_FILES+=("$OUT_BAM")
+# fi
 
 if [[ ${#BAM_FILES[@]} -eq 0 ]]; then
   echo "Error: No BAM files to process."
