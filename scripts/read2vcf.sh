@@ -19,6 +19,7 @@ INCLUDE_EXPR="INFO/AD[1] >= 3"
 SKIP_INDELS=""
 FASTQ1=""
 FASTQ2=""
+OUT_BAM_DIR=""
 
 # Helper
 usage() {
@@ -34,6 +35,7 @@ Options:
   -I, --skip-indels      Skip indels in the output
   -1 FILE                Paired-end FASTQ read 1
   -2 FILE                Paired-end FASTQ read 2
+  --out-bam-dir DIR      Directory to write output BAM files (default: directory of first FASTQ)
   -h, --help             Show this help
 
 Positional arguments:
@@ -89,6 +91,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     -2)
       FASTQ2="$2"
+      shift 2
+      ;;
+    --out-bam-dir)
+      OUT_BAM_DIR="$2"
       shift 2
       ;;
     -h|--help)
@@ -167,26 +173,33 @@ if [[ -n "$FASTQ1" ]]; then
     bowtie2-build "$FASTA_REF" "$REF_INDEX"
   fi
 
-  # puts out_bam in the same directory as the first entry of FASTQ1, and makes filename "reads_aligned_to_<ref>.bam"
+  # puts out_bam in the same directory as the first entry of FASTQ1 (if OUT_BAM_DIR not provided), and makes filename "reads_aligned_to_<ref>.bam"
   FIRST_FASTQ="${FASTQ1%% *}"
-  FASTQ_DIR="$(dirname "$FIRST_FASTQ")"
+  if [[ -z "$OUT_BAM_DIR" ]]; then
+    OUT_BAM_DIR="$(dirname "$FIRST_FASTQ")"
+  fi
   REF_FASTA_BASE="$(basename "$FASTA_REF" | sed -E 's/\.(fa|fasta|fna)(\.gz)?$//' | tr '.' '_')"
-  OUT_BAM="$FASTQ_DIR/$reads_aligned_to_${REF_FASTA_BASE}.bam"
+  OUT_BAM="$OUT_BAM_DIR/$reads_aligned_to_${REF_FASTA_BASE}.bam"
 
   FASTQ1_CSV=$(IFS=,; echo "${FASTQ1[*]}")
-  
-  if [[ -n "$FASTQ2" ]]; then
-    FASTQ2_CSV=$(IFS=,; echo "${FASTQ2[*]}")
-    echo "Aligning paired-end FASTQs..."
-    bowtie2 --xeq --very-sensitive $BOWTIE2_OPTIONS --threads "$THREADS" -x "$REF_INDEX" -1 "$FASTQ1_CSV" -2 "$FASTQ2_CSV" \
-      | samtools sort --threads "$THREADS" -o "$OUT_BAM"
-    BAM_FILES+=("$OUT_BAM")
+
+  mkdir -p "$OUT_BAM_DIR"
+  if [[ -f "$OUT_BAM" ]]; then
+    echo "Skipping alignment: $OUT_BAM already exists."
   else
-    echo "Aligning single-end FASTQ..."
-    bowtie2 --xeq --very-sensitive $BOWTIE2_OPTIONS --threads "$THREADS" -x "$REF_INDEX" -U "$FASTQ1_CSV" \
-      | samtools sort --threads "$THREADS" -o "$OUT_BAM"
+    if [[ -n "$FASTQ2" ]]; then
+      FASTQ2_CSV=$(IFS=,; echo "${FASTQ2[*]}")
+      echo "Aligning paired-end FASTQs..."
+      bowtie2 --xeq --very-sensitive $BOWTIE2_OPTIONS --threads "$THREADS" -x "$REF_INDEX" -1 "$FASTQ1_CSV" -2 "$FASTQ2_CSV" \
+        | samtools sort --threads "$THREADS" -o "$OUT_BAM"
+    else
+      echo "Aligning single-end FASTQ..."
+      bowtie2 --xeq --very-sensitive $BOWTIE2_OPTIONS --threads "$THREADS" -x "$REF_INDEX" -U "$FASTQ1_CSV" \
+        | samtools sort --threads "$THREADS" -o "$OUT_BAM"
     BAM_FILES+=("$OUT_BAM")
+    fi
   fi
+  
 fi
 
 # Handles the case where input files are directories
@@ -209,7 +222,7 @@ for INPUT in "${ARGS[@]}"; do
           echo "Skipping unsupported file: $FILE"
           ;;
       esac
-    done < <(find "$INPUT" -maxdepth 1 -type f -print0 | sort -z)
+    done < <(find "$INPUT" -maxdepth 1 -type f -print0 | sort -z)  # maxdepth 1 means only files in the directory, not subdirectories
     if [[ $FILES_FOUND -eq 0 ]]; then
       echo "Error: directory '$INPUT' contains no FASTQ or BAM files."
       exit 1
@@ -254,16 +267,22 @@ done
 if [[ ${#FASTQ_INPUTS[@]} -gt 0 ]]; then
   for FASTQ_FILE in "${FASTQ_INPUTS[@]}"; do
     # Build output BAM path
-    FASTQ_DIR="$(dirname "$FASTQ_FILE")"
+    if [[ -z "$OUT_BAM_DIR" ]]; then
+      OUT_BAM_DIR="$(dirname "$FASTQ_FILE")"
+    fi
     FQ_BASE="$(basename "$FASTQ_FILE")"
     FQ_BASE="${FQ_BASE%%.*}"
     REF_FASTA_BASE="$(basename "$FASTA_REF" | sed -E 's/\.(fa|fasta|fna)(\.gz)?$//' | tr '.' '_')"
-    OUT_BAM="$FASTQ_DIR/${FQ_BASE}_aligned_to_${REF_FASTA_BASE}.bam"
+    OUT_BAM="$OUT_BAM_DIR/${FQ_BASE}_aligned_to_${REF_FASTA_BASE}.bam"
 
-    echo "Aligning single-end FASTQ '$FASTQ_FILE' to '$OUT_BAM'..."
-
-    bowtie2 --xeq --very-sensitive $BOWTIE2_OPTIONS --threads "$THREADS" -x "$REF_INDEX" -U "$FASTQ_FILE" \
-      | samtools sort --threads "$THREADS" -o "$OUT_BAM" -
+    mkdir -p "$OUT_BAM_DIR"
+    if [[ -f "$OUT_BAM" ]]; then
+      echo "Skipping alignment: $OUT_BAM already exists."
+    else
+      echo "Aligning single-end FASTQ '$FASTQ_FILE' to '$OUT_BAM'..."
+      bowtie2 --xeq --very-sensitive $BOWTIE2_OPTIONS --threads "$THREADS" -x "$REF_INDEX" -U "$FASTQ_FILE" \
+        | samtools sort --threads "$THREADS" -o "$OUT_BAM" -
+    fi
 
     BAM_FILES+=("$OUT_BAM")
   done
@@ -272,9 +291,9 @@ fi
 
 # # If there are FASTQs to align, do it once for all - not a bad approach, but having many FASTQs can cause a bowtie error (arguments too long)
 # if [[ ${#FASTQ_INPUTS[@]} -gt 0 ]]; then
-#   FASTQ_DIR="$(dirname "${FASTQ_INPUTS[0]}")"
+#   OUT_BAM_DIR="$(dirname "${FASTQ_INPUTS[0]}")"
 #   REF_FASTA_BASE="$(basename "$FASTA_REF" | sed -E 's/\.(fa|fasta|fna)(\.gz)?$//' | tr '.' '_')"
-#   OUT_BAM="$FASTQ_DIR/reads_aligned_to_${REF_FASTA_BASE}.bam"
+#   OUT_BAM="$OUT_BAM_DIR/reads_aligned_to_${REF_FASTA_BASE}.bam"
 
 #   echo "Aligning all FASTQ inputs into '$OUT_BAM'..."
 #   bowtie2 --xeq --very-sensitive $BOWTIE2_OPTIONS --threads "$THREADS" -x "$REF_INDEX" -U "$(IFS=,; echo "${FASTQ_INPUTS[*]}")" \
