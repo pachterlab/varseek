@@ -20,6 +20,8 @@ SKIP_INDELS=""
 FASTQ1=""
 FASTQ2=""
 OUT_BAM_DIR=""
+MERGE_BAM_FILES=false
+MERGED_BAM="merged_merged_pseudobulk.bam"
 
 # Helper
 usage() {
@@ -36,6 +38,8 @@ Options:
   -1 FILE                Paired-end FASTQ read 1
   -2 FILE                Paired-end FASTQ read 2
   --out-bam-dir DIR      Directory to write output BAM files (default: directory of first FASTQ)
+  --merge-bam-files      Merge BAM files into a single BAM (default: false)
+  --merged-bam FILE      Directory to read/write merged BAM file (default: merged_merged_pseudobulk.bambam)
   -h, --help             Show this help
 
 Positional arguments:
@@ -95,6 +99,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --out-bam-dir)
       OUT_BAM_DIR="$2"
+      shift 2
+      ;;
+    --merge-bam-files)
+      MERGE_BAM_FILES=true
+      shift
+      ;;
+    --merged-bam)
+      MERGED_BAM="$2"
       shift 2
       ;;
     -h|--help)
@@ -202,6 +214,12 @@ if [[ -n "$FASTQ1" ]]; then
       echo "Aligning single-end FASTQ..."
       bowtie2 --xeq --very-sensitive $BOWTIE2_OPTIONS --threads "$THREADS" -x "$REF_INDEX" -U "$FASTQ1_CSV" \
         | samtools sort --threads "$THREADS" -o "$OUT_BAM"
+    
+    if [[ ! -f "${OUT_BAM}.bai" ]]; then
+      echo "Indexing BAM '$OUT_BAM'..."
+      samtools index -@ "$THREADS" "$OUT_BAM"
+    fi
+
     BAM_FILES+=("$OUT_BAM")
     fi
   fi
@@ -288,6 +306,12 @@ if [[ ${#FASTQ_INPUTS[@]} -gt 0 ]]; then
       echo "Aligning single-end FASTQ '$FASTQ_FILE' to '$OUT_BAM'..."
       bowtie2 --xeq --very-sensitive $BOWTIE2_OPTIONS --threads "$THREADS" -x "$REF_INDEX" -U "$FASTQ_FILE" \
         | samtools sort --threads "$THREADS" -o "$OUT_BAM" -
+      samtools index -@ "$THREADS" "$OUT_BAM"  # anytime I make a new BAM, I index it, even if it exists
+    fi
+
+    if [[ ! -f "${OUT_BAM}.bai" ]]; then
+      echo "Indexing BAM '$OUT_BAM'..."
+      samtools index -@ "$THREADS" "$OUT_BAM"
     fi
 
     BAM_FILES+=("$OUT_BAM")
@@ -320,19 +344,54 @@ else
   OUTPUT_TYPE="-Ov"
 fi
 
+if $MERGE_BAM_FILES; then
+    echo "Merging BAM files..."
+
+    # Create BAM list file
+    if [[ -n "${OUT_BAM_DIR:-}" ]]; then
+        BAM_LIST_PATH="${OUT_BAM_DIR%/}/all_bams.txt"
+    else
+        BAM_LIST_PATH="all_bams.txt"
+    fi
+    printf "%s\n" "${BAM_FILES[@]}" > "$BAM_LIST_PATH"
+
+    # make directory for merged BAM if it doesn't exist
+    MERGED_BAM_DIR="$(dirname "$MERGED_BAM")"
+    if [[ -n "$MERGED_BAM_DIR" && "$MERGED_BAM_DIR" != "." ]]; then
+        mkdir -p "$MERGED_BAM_DIR"
+    fi
+
+    # Merge if not already done
+    SORTED_BAM="${MERGED_BAM%.bam}.sorted.bam"
+    if [[ ! -f "$SORTED_BAM" ]]; then
+        samtools merge -@ "$THREADS" -b "$BAM_LIST_PATH" "$MERGED_BAM"
+        samtools sort -@ "$THREADS" -o "$SORTED_BAM" "$MERGED_BAM"
+        samtools index -@ "$THREADS" "$SORTED_BAM"
+    else
+        echo "Merged and sorted BAM already exists: $SORTED_BAM"
+    fi
+
+    INPUT_BAMS=("$SORTED_BAM")
+else
+    echo "Using individual BAM files without merging."
+    INPUT_BAMS=("${BAM_FILES[@]}")
+fi
+
 echo "Processing with bcftools mpileup + filter..."
-echo "BAMs: ${BAM_FILES[*]}"
-echo "Output: $OUTPUT ($OUTPUT_TYPE)"
-echo "Filter expression: ${INCLUDE_EXPR:-None}"
+# echo "BAMs: ${BAM_FILES[*]}"
+# echo "Output: $OUTPUT ($OUTPUT_TYPE)"
+# echo "Filter expression: ${INCLUDE_EXPR:-None}"
+
+
 
 bcftools mpileup \
-  --threads "$THREADS" \
-  -f "$FASTA_REF" \
-  -a INFO/AD \
-  -Q 0 \
-  -d 1000000 \
-  ${SKIP_INDELS:+-I} \
-  "${BAM_FILES[@]}" \
+    --threads "$THREADS" \
+    -f "$FASTA_REF" \
+    -a INFO/AD \
+    -Q 0 \
+    -d 10000 \
+    ${SKIP_INDELS:+-I} \
+    "${INPUT_BAMS[@]}" \
 | bcftools filter \
   ${INCLUDE_EXPR:+-i "$INCLUDE_EXPR"} \
 | bcftools norm -m - \
