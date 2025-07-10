@@ -346,6 +346,7 @@ fi
 
 if $MERGE_BAM_FILES; then
     echo "Merging BAM files..."
+    echo "Note that more threads will use more RAM"
 
     # Create BAM list file
     if [[ -n "${OUT_BAM_DIR:-}" ]]; then
