@@ -115,7 +115,7 @@ def ref(
         "alignment_to_reference:is_not_true",
         # "substring_alignment_to_reference:is_not_true",  # filter out variants that are a substring of the reference genome  #* uncomment this and erase the line above when implementing d-list
         "pseudoaligned_to_reference_despite_not_truly_aligning:is_not_true",  # filter out variants that pseudoaligned to human genome despite not truly aligning
-        "triplet_complexity:top_percent=99",  # filters out VCRSs in bottom 1% of triplet complexity
+        "num_distinct_triplets:greater_than=5",  # filters out VCRSs in with 5 or fewer distinct triplets
         "longest_homopolymer_length:less_or_equal=10",  # filters out VCRSs with a homopolymer length greater than 10 bp
     ),
     dlist=None,

@@ -22,6 +22,7 @@ FASTQ2=""
 OUT_BAM_DIR=""
 MERGE_BAM_FILES=false
 MERGED_BAM="merged_merged_pseudobulk.bam"
+REGIONS_FILE=""
 
 # Helper
 usage() {
@@ -40,6 +41,7 @@ Options:
   --out-bam-dir DIR      Directory to write output BAM files (default: directory of first FASTQ)
   --merge-bam-files      Merge BAM files into a single BAM (default: false)
   --merged-bam FILE      Directory to read/write merged BAM file (default: merged_merged_pseudobulk.bambam)
+  --regions FILE         BED file of regions to restrict variant calling to (optional)
   -h, --help             Show this help
 
 Positional arguments:
@@ -109,6 +111,10 @@ while [[ $# -gt 0 ]]; do
       MERGED_BAM="$2"
       shift 2
       ;;
+    --regions)
+      REGIONS_FILE="$2"
+      shift 2
+      ;;
     -h|--help)
       usage
       ;;
@@ -165,6 +171,12 @@ fi
 if ! [[ "$THREADS" =~ ^[0-9]+$ ]] || [[ "$THREADS" -lt 1 ]]; then
   echo "Error: --threads must be an integer >= 1."
   usage
+fi
+
+# check if REGIONS_FILE exists if provided
+if [[ -n "$REGIONS_FILE" && ! -f "$REGIONS_FILE" ]]; then
+  echo "Error: Regions file '$REGIONS_FILE' does not exist."
+  exit 1
 fi
 
 if [[ "$INCLUDE_EXPR" == "INFO/AD[1] >= 1" || -z "$INCLUDE_EXPR" ]]; then
@@ -383,8 +395,6 @@ echo "Processing with bcftools mpileup + filter..."
 # echo "Output: $OUTPUT ($OUTPUT_TYPE)"
 # echo "Filter expression: ${INCLUDE_EXPR:-None}"
 
-
-
 bcftools mpileup \
     --threads "$THREADS" \
     -f "$FASTA_REF" \
@@ -395,7 +405,7 @@ bcftools mpileup \
     "${INPUT_BAMS[@]}" \
 | bcftools filter \
   ${INCLUDE_EXPR:+-i "$INCLUDE_EXPR"} \
-| bcftools norm -m - \
+| bcftools norm -f "$FASTA_REF" -c s -d all -m -any ${REGIONS_FILE:+-R "$REGIONS_FILE"} \
 | bcftools view -e 'ALT="<*>"' \
   "$OUTPUT_TYPE" -o "$OUTPUT"
 
