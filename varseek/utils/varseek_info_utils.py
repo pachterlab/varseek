@@ -1227,14 +1227,13 @@ def run_bowtie_build_dlist(ref_fa, ref_folder, ref_prefix, bowtie2_build, thread
     if not os.path.exists(ref_folder) or not os.listdir(ref_folder):
         logger.info("Running bowtie2 build")
         os.makedirs(ref_folder, exist_ok=True)
-        bowtie_reference_prefix = os.path.join(ref_folder, ref_prefix)
         subprocess.run(
             [
                 bowtie2_build,  # Path to the bowtie2-build executable
                 "--threads",
                 str(threads),  # Number of threads
                 ref_fa,  # Input FASTA file
-                bowtie_reference_prefix,  # Output reference folder
+                ref_prefix,  # Output reference folder
             ],
             check=True,
             stdout=subprocess.DEVNULL,  # don't need output
