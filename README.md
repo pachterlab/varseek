@@ -57,17 +57,13 @@ Read the article here: PAPER DOI
 ```bash
 pip install varseek
 ```
-Or with conda:
-```bash
-conda install -c bioconda varseek
-```
 
 # 🪄 Quick start guide
 ## 1. Acquire a Reference
 
 Follow one of the below options:
 
-### a. Download a Pre-built Reference (Standard Workflow)
+### a. Download a Pre-built Reference
 - (optional) View all downloadable references: `vk ref --list_downloadable_references`
 - `vk ref --download --variants VARIANTS --sequences SEQUENCES`
 
@@ -98,14 +94,6 @@ Follow one of the below options:
 - (optional) `vk summarize --adata ADATA ...`
 
 
-## 3. Analyze results
-### a. View results of vk summarize (txt, vcf, Anndata - in OUT from vk count)
-### b. Jupyter - see varseek/notebooks for examples to get started, and [GitHub - pachterlab/RLSRWP_2025](https://github.com/pachterlab/RLSRWP_2025.git) for figures from our first preprint
-
-
-
-
-
-FAQs:
-- Q: I want to add a custom filter to my VCRS index. How can I do this?
-- A: First run vk build with the desired parameters to generate the vcrs.fa file. Optionally run this file through vk info and vk filter if any filtering performed by these steps is desired. Then, write any necessary logic to filter undesired entries out of the VCRS reference file. Generate a new t2g file with vk.utils.create_identity_t2g. Then pass the filtered vcrs fasta file into kb ref with --workflow custom.
+**Examples for getting started:** [GitHub - pachterlab/varseek](https://github.com/pachterlab/varseek-examples.git)
+**Manuscript**: ...
+**Repository for manuscript figures**: [GitHub - pachterlab/RLSRP_2025](https://github.com/pachterlab/RLSRP_2025.git)
