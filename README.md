@@ -13,7 +13,7 @@
   
 ![alt text](https://github.com/pachterlab/varseek/blob/main/figures/varseek_overview_simple.png?raw=true)
 
-The two commands used in a standard workflow are `varseek ref` and `varseek count`. `varseek ref` generates a variant-containing reference sequence (VCRS) index that serves as the basis for variant calling. `varseek count` aligns RNA-seq or DNA-seq reads against the VCRS index and generates a variant count matrix. The variant count matrix can be used for downstream analysis. Each step wraps around other steps within the varseek package and the kb-python package, as described below.
+The two commands used in a standard workflow are `varseek ref` and `varseek count`. `varseek ref` generates a variant-containing reference sequence (VCRS) index that serves as the basis for variant calling. `varseek count` pseudoaligns RNA-seq or DNA-seq reads against the VCRS index and generates a variant count matrix. The variant count matrix can be used for downstream analysis. Each step wraps around other steps within the varseek package and the kb-python package, as described below.
 
 ![alt text](https://github.com/pachterlab/varseek/blob/main/figures/varseek_overview.png?raw=true)
 
