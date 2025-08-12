@@ -74,8 +74,8 @@ analysis = [
 [project.urls]
 "Homepage" = "https://github.com/pachterlab/varseek"
 
-[tool.setuptools]
-packages = ["varseek"]
+[tool.setuptools.packages.find]
+include = ["varseek*"]
 
 [tool.setuptools.package-data]
 varseek = ["*.txt", "*.md", "*.csv"]  # Ensure additional files like data or docs are included
