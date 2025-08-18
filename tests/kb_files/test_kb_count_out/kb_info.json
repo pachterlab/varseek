@@ -1,0 +1,28 @@
+{
+    "workdir": "/home/jrich/Desktop/varseek/tests",
+    "version": "0.29.1",
+    "kallisto": {
+        "path": "/home/jrich/miniconda3/envs/varseek2/lib/python3.10/site-packages/kb_python/bins/linux/kallisto/kallisto",
+        "version": "0.51.1"
+    },
+    "bustools": {
+        "path": "/home/jrich/miniconda3/envs/varseek2/lib/python3.10/site-packages/kb_python/bins/linux/bustools/bustools",
+        "version": "0.44.1"
+    },
+    "start_time": "2024-12-02T19:01:58.027101",
+    "end_time": "2024-12-02T19:02:06.553351",
+    "elapsed": 8.52625,
+    "call": "/home/jrich/miniconda3/envs/varseek2/bin/kb count -t 8 -i /home/jrich/Desktop/varseek/tests/kb_files/index_test.idx -g /home/jrich/Desktop/varseek/tests/kb_files/t2g_test.txt -x bulk --num --h5ad --parity single -o /home/jrich/Desktop/varseek/tests/kb_files/test_kb_count_out /home/jrich/Desktop/varseek/tests/kb_files/reads1_test.fq /home/jrich/Desktop/varseek/tests/kb_files/reads2_test.fq",
+    "commands": [
+        "kallisto bus -i /home/jrich/Desktop/varseek/tests/kb_files/index_test.idx -o /home/jrich/Desktop/varseek/tests/kb_files/test_kb_count_out -x BULK -t 8 --num /home/jrich/Desktop/varseek/tests/kb_files/reads1_test.fq /home/jrich/Desktop/varseek/tests/kb_files/reads2_test.fq",
+        "bustools sort -o /home/jrich/Desktop/varseek/tests/kb_files/test_kb_count_out/tmp/output.s.bus -T /home/jrich/Desktop/varseek/tests/kb_files/test_kb_count_out/tmp -t 8 -m 2G --no-flags /home/jrich/Desktop/varseek/tests/kb_files/test_kb_count_out/output.bus",
+        "bustools inspect -o /home/jrich/Desktop/varseek/tests/kb_files/test_kb_count_out/inspect.json /home/jrich/Desktop/varseek/tests/kb_files/test_kb_count_out/tmp/output.s.bus",
+        "bustools count -o /home/jrich/Desktop/varseek/tests/kb_files/test_kb_count_out/counts_unfiltered/cells_x_genes -g /home/jrich/Desktop/varseek/tests/kb_files/t2g_test.txt -e /home/jrich/Desktop/varseek/tests/kb_files/test_kb_count_out/matrix.ec -t /home/jrich/Desktop/varseek/tests/kb_files/test_kb_count_out/transcripts.txt --genecounts --cm /home/jrich/Desktop/varseek/tests/kb_files/test_kb_count_out/tmp/output.s.bus"
+    ],
+    "runtimes": [
+        1.102653980255127,
+        2.907007932662964,
+        1.1022882461547852,
+        1.1028368473052979
+    ]
+}

@@ -1,0 +1,392 @@
+import os
+import tempfile
+from pdb import set_trace as st
+
+import numpy as np
+import pandas as pd
+import pytest
+from datetime import datetime
+from pathlib import Path
+
+from varseek.utils import (
+    add_vcrs_variant_type,
+    align_to_normal_genome_and_build_dlist,
+    calculate_nearby_mutations,
+    collapse_df,
+    compare_cdna_and_genome,
+    compare_dicts,
+    compute_distance_to_closest_splice_junction,
+    count_kmer_overlaps_new,
+    create_df_of_vcrs_to_self_headers,
+    explode_df,
+    get_df_overlap,
+    get_vcrss_that_pseudoalign_but_arent_dlisted,
+    longest_homopolymer,
+    triplet_stats,
+    add_mutation_information
+)
+
+store_out_in_permanent_paths = False
+tests_dir = Path(__file__).resolve().parent
+pytest_permanent_out_dir_base = tests_dir / "pytest_output" / Path(__file__).stem
+current_datetime = datetime.now().strftime("date_%Y_%m_%d_time_%H%M_%S")
+
+@pytest.fixture
+def out_dir(tmp_path, request):
+    """Fixture that returns the appropriate output directory for each test."""
+    if store_out_in_permanent_paths:
+        current_test_function_name = request.node.name
+        out = Path(f"{pytest_permanent_out_dir_base}/{current_datetime}/{current_test_function_name}")
+    else:
+        out = tmp_path / "out_vk_info"
+
+    out.mkdir(parents=True, exist_ok=True)  # Ensure the directory exists
+    return out
+
+
+@pytest.fixture
+def temporary_output_files():
+    with tempfile.NamedTemporaryFile(suffix=".csv") as output_metadata_df, \
+         tempfile.NamedTemporaryFile(suffix=".fasta") as output_vcrs_fasta, \
+         tempfile.NamedTemporaryFile(suffix=".fasta") as output_dlist_fasta, \
+         tempfile.NamedTemporaryFile(suffix=".csv") as output_id_to_header_csv, \
+         tempfile.NamedTemporaryFile(suffix=".txt") as output_t2g:
+        
+        # Dictionary of temporary paths
+        temp_files = {
+            "output_metadata_df": output_metadata_df.name,
+            "output_vcrs_fasta": output_vcrs_fasta.name,
+            "output_dlist_fasta": output_dlist_fasta.name,
+            "output_id_to_header_csv": output_id_to_header_csv.name,
+            "output_t2g": output_t2g.name
+        }
+        
+        yield temp_files  # Provide paths to test
+
+        # Temporary files are automatically cleaned up after `yield`
+
+
+def test_add_mutation_information(toy_mutation_metadata_df_exploded):
+    expected_df = toy_mutation_metadata_df_exploded
+
+    column_to_drop_list = ["vcrs_header", "header_list", "order", "order_list"]
+    for column in column_to_drop_list:
+        if column in toy_mutation_metadata_df_exploded.columns:
+            toy_mutation_metadata_df_exploded.drop(column, axis=1, inplace=True)
+
+    mutation_metadata_df = toy_mutation_metadata_df_exploded[["mutation", "seq_ID", "vcrs_id", "header", "vcrs_sequence"]].copy()
+    output_df = add_mutation_information(mutation_metadata_df, mutation_column="mutation")
+    output_df = add_mutation_information(mutation_metadata_df, mutation_column="mutation", variant_source="cdna")
+    output_df = output_df[expected_df.columns]
+
+    # Assert that the output matches the expected DataFrame
+    pd.testing.assert_frame_equal(output_df, expected_df)
+
+def test_collapse(toy_mutation_metadata_df_exploded, toy_mutation_metadata_df_collapsed):
+    expected_df = toy_mutation_metadata_df_collapsed
+
+    mutation_metadata_df_exploded = toy_mutation_metadata_df_exploded
+    columns_to_explode = [col for col in mutation_metadata_df_exploded.columns if col not in ['vcrs_id', 'vcrs_header', 'vcrs_sequence']]
+    output_df, _ = collapse_df(mutation_metadata_df_exploded, columns_to_explode = columns_to_explode)
+    output_df = output_df[expected_df.columns]
+
+    # Assert that the output matches the expected DataFrame
+    pd.testing.assert_frame_equal(output_df, expected_df)
+
+
+def test_explode(toy_mutation_metadata_df_exploded, toy_mutation_metadata_df_collapsed):
+    expected_df = toy_mutation_metadata_df_exploded
+
+    mutation_metadata_df_collapsed = toy_mutation_metadata_df_collapsed
+    columns_to_explode = [col for col in mutation_metadata_df_collapsed.columns if col not in ['vcrs_id', 'vcrs_header', 'vcrs_sequence']]
+    output_df = explode_df(mutation_metadata_df_collapsed, columns_to_explode = columns_to_explode)
+    output_df = output_df[expected_df.columns]
+
+    output_df = output_df.sort_values(by=['vcrs_id']).reset_index(drop=True)
+    expected_df = expected_df.sort_values(by=['vcrs_id']).reset_index(drop=True)
+
+    output_df[["start_variant_position", "end_variant_position", "start_variant_position_cdna", "end_variant_position_cdna"]] = output_df[["start_variant_position", "end_variant_position", "start_variant_position_cdna", "end_variant_position_cdna"]].astype("Int64")
+    expected_df[["start_variant_position", "end_variant_position", "start_variant_position_cdna", "end_variant_position_cdna"]] = expected_df[["start_variant_position", "end_variant_position", "start_variant_position_cdna", "end_variant_position_cdna"]].astype("Int64")
+
+    # Assert that the output matches the expected DataFrame
+    pd.testing.assert_frame_equal(output_df, expected_df)
+
+
+def mock_load_splice_junctions_from_gtf(gtf_path):
+    # Simulate a GTF file with splice junctions
+    # Format: {"chromosome": [junction1, junction2, ...]}
+    return {
+        "1": [100, 200, 300],
+        "2": [150, 250, 350]
+    }
+
+@pytest.fixture
+def mock_helpers(monkeypatch):
+    monkeypatch.setattr("varseek.utils.varseek_info_utils.load_splice_junctions_from_gtf", mock_load_splice_junctions_from_gtf)
+
+def test_compute_distance_to_closest_splice_junction(mock_helpers):
+    # Create a toy DataFrame with mutations
+    data = {
+        "chromosome": ["1", "1", "2", "2", "2", "2", "2", "3"],  # Chromosome 3 is to check missing junctions
+        "start_variant_position_genome": [95, 210, 240, 248, 250, 550, 700, 400],
+        "end_variant_position_genome": [105, 210, 260, 254, 250, 550, 700, 400]
+    }
+    mutation_metadata_df_exploded = pd.DataFrame(data)
+
+    # Expected results
+    expected_distances = [5, 10, 10, 2, 0, 200, 350, np.nan]
+    expected_is_near = [True, True, True, True, True, False, False, np.nan]  # Using threshold 10
+
+    # Run the function with the toy DataFrame and mock GTF path
+    output_df, columns_to_explode = compute_distance_to_closest_splice_junction(
+        mutation_metadata_df_exploded,
+        reference_genome_gtf="mock_path",
+        columns_to_explode=None,
+        near_splice_junction_threshold=10
+    )
+
+    # Check that the computed distances are as expected
+    pd.testing.assert_series_equal(
+        output_df["distance_to_nearest_splice_junction"],
+        pd.Series(expected_distances, name="distance_to_nearest_splice_junction"),
+        check_dtype=False
+    )
+
+    # Check the is_near_splice_junction column
+    pd.testing.assert_series_equal(
+        output_df["is_near_splice_junction_10"],
+        pd.Series(expected_is_near, name="is_near_splice_junction_10"),
+        check_dtype=False
+    )
+
+    # Check that columns to explode includes the correct columns
+    assert "distance_to_nearest_splice_junction" in columns_to_explode
+    assert "is_near_splice_junction_10" in columns_to_explode
+
+def mock_plot_histogram_of_nearby_mutations_7_5(mutation_metadata_df_exploded, column, bins, output_file):
+    pass
+
+# Use a pytest fixture to patch the function with the mock version
+@pytest.fixture
+def mock_helpers_visualization(monkeypatch):
+    #* notice I use seq_utils and not visualization_utils
+    monkeypatch.setattr("varseek.utils.varseek_info_utils.plot_histogram_of_nearby_mutations_7_5", mock_plot_histogram_of_nearby_mutations_7_5)
+
+def test_calculate_nearby_mutations(mock_helpers_visualization):
+    # Create a toy DataFrame
+    data = {
+        "seq_ID_used_for_vcrs": ["ENST0001", "ENST0001", "ENST0001", "ENST0001"],
+        "start_variant_position": [100, 101, 112, 123],
+        "end_variant_position": [105, 101, 112, 123],
+        "header": ["ENST0001:c.101_105del", "ENST0001:c.101C>A", "ENST0001:c.112G>C", "ENST0001:c.123A>G"],
+        "vcrs_header": ["ENST0001:c.101_105del", "ENST0001:c.101C>A", "ENST0001:c.112G>C", "ENST0001:c.123A>G"]  # duplicated to avoid errors
+    }
+    mutation_metadata_df_exploded = pd.DataFrame(data)
+    
+    # Run the function with the mock data
+    output_df, columns_to_explode = calculate_nearby_mutations(
+        variant_source_column=None,
+        k=10,
+        output_plot_folder="mock_folder",
+        variant_source="not_combined",
+        mutation_metadata_df_exploded=mutation_metadata_df_exploded,
+        columns_to_explode=None
+    )
+
+    # Check that the expected columns are in the output
+    assert "nearby_variants" in output_df.columns
+    assert "nearby_variants_count" in output_df.columns
+    assert "has_a_nearby_variant" in output_df.columns
+
+    # Verify contents of 'nearby_variants_count' and 'has_a_nearby_variant'
+    expected_nearby_mutations = [['ENST0001:c.101C>A', "ENST0001:c.112G>C"], ["ENST0001:c.101_105del"], ['ENST0001:c.101_105del'], []]
+    expected_nearby_mutations = [sorted(sublist) for sublist in expected_nearby_mutations]
+    expected_nearby_mutations_count = [2, 1, 1, 0]
+    expected_has_a_nearby_mutation = [True, True, True, False]
+
+    # sort output_df["nearby_variants"]
+    output_df["nearby_variants"] = output_df["nearby_variants"].apply(lambda x: sorted(x))
+    pd.testing.assert_series_equal(
+        output_df["nearby_variants"],
+        pd.Series(expected_nearby_mutations, name="nearby_variants"),
+        check_dtype=False
+    )
+    
+    pd.testing.assert_series_equal(
+        output_df["nearby_variants_count"],
+        pd.Series(expected_nearby_mutations_count, name="nearby_variants_count"),
+        check_dtype=False
+    )
+
+    pd.testing.assert_series_equal(
+        output_df["has_a_nearby_variant"],
+        pd.Series(expected_has_a_nearby_mutation, name="has_a_nearby_variant"),
+        check_dtype=False
+    )
+
+
+
+def test_longest_homopolymer_in_series():
+    sequences = pd.Series([
+        "AAAAA",         # Single long homopolymer of A
+        "ACGTACGT",      # No homopolymer longer than 1
+        "GGGGGTT",       # Longest is GGGGG
+        np.nan,          # NaN sequence, should return NaN for both outputs
+        "CCCAAAAATTT",   # Multiple homopolymers, longest is AAAAA
+        "TTTCCCGGG"      # Multiple equal-length homopolymers
+    ], name="vcrs_sequence")
+
+    # Apply the function and unpack results into two new columns
+    sequences_df = pd.DataFrame({"vcrs_sequence": sequences})
+    sequences_df["longest_homopolymer_length"], sequences_df["longest_homopolymer"] = zip(
+        *sequences_df["vcrs_sequence"].apply(lambda x: longest_homopolymer(x) if pd.notna(x) else (np.nan, np.nan))
+    )
+
+    # Expected results
+    expected_lengths = [5, 1, 5, np.nan, 5, 3]
+    expected_homopolymers = ["AAAAA", "A", "GGGGG", np.nan, "AAAAA", ["CCC", "GGG", "TTT"]]
+
+    # Test each column separately
+    pd.testing.assert_series_equal(
+        sequences_df["longest_homopolymer_length"],
+        pd.Series(expected_lengths, name="longest_homopolymer_length"),
+        check_dtype=False
+    )
+
+    # # For homopolymer values, handle cases with lists
+    # for i, expected in enumerate(expected_homopolymers):
+    #     if isinstance(expected, list):
+    #         # Sort lists for consistent comparison
+    #         assert sorted(sequences_df["longest_homopolymer"].iloc[i]) == sorted(expected)
+    #     else:
+    #         # Direct comparison for single homopolymer strings or NaN
+    #         assert sequences_df["longest_homopolymer"].iloc[i] == expected
+
+
+def test_triplet_stats_in_series():
+    # Create a Series with test sequences
+    sequences = pd.Series([
+        "AAATTTCCCGGG",  # 10 distinct triplets, 10 total triplets, complexity = 1.0
+        "AAAAAA",        # 1 distinct triplet (AAA), 4 total triplets, complexity = 0.25
+        "ATCGATCG",      # 4 distinct triplets, 6 total triplets, complexity = 0.67
+        np.nan,          # NaN sequence, should return NaN for all outputs
+        "ATATAT",        # 2 distinct triplets (ATA, TAT), 4 total triplets, complexity = 0.5
+    ], name="vcrs_sequence")
+
+    # Apply the function and unpack results into three new columns
+    sequences_df = pd.DataFrame({"vcrs_sequence": sequences})
+    sequences_df["num_distinct_triplets"], sequences_df["num_total_triplets"], sequences_df["triplet_complexity"] = zip(
+        *sequences_df["vcrs_sequence"].apply(lambda x: triplet_stats(x) if pd.notna(x) else (np.nan, np.nan, np.nan))
+    )
+
+    # Expected results
+    expected_num_distinct_triplets = [10, 1, 4, np.nan, 2]
+    expected_num_total_triplets = [10, 4, 6, np.nan, 4]
+    expected_triplet_complexity = [1.0, 0.25, 0.67, np.nan, 0.5]
+
+    # Test each column separately
+    pd.testing.assert_series_equal(
+        sequences_df["num_distinct_triplets"],
+        pd.Series(expected_num_distinct_triplets, name="num_distinct_triplets"),
+        check_dtype=False
+    )
+
+    pd.testing.assert_series_equal(
+        sequences_df["num_total_triplets"],
+        pd.Series(expected_num_total_triplets, name="num_total_triplets"),
+        check_dtype=False
+    )
+
+    pd.testing.assert_series_equal(
+        sequences_df["triplet_complexity"],
+        pd.Series(expected_triplet_complexity, name="triplet_complexity"),
+        check_dtype=False,
+        atol=0.01  # Allows a small tolerance for floating point comparison
+    )
+
+def test_count_kmer_overlaps(mock_helpers):
+    # Create a temporary FASTA file for testing
+    sequences_list = ["ATCGATCGATCG", "GCTAGCTAGCTA", "GATCTTTGCTA", "TTTTTTTTTT"]
+    with tempfile.NamedTemporaryFile("w+", suffix=".fasta") as fasta_file:
+        for i in range(len(sequences_list)):
+            # write normally
+            fasta_file.write(f">seq_{i}\n{sequences_list[i]}\n")
+        fasta_file.seek(0)
+
+        # Run the function with the temporary FASTA file (strandedness=False)
+        df = count_kmer_overlaps_new(fasta_file.name, k=4, strandedness=True, vcrs_id_column="vcrs_id")
+
+        # Expected results
+        expected_data = {
+            "vcrs_id": ["seq_0", "seq_1", "seq_2", "seq_3"],
+            "number_of_kmers_with_overlap_to_other_VCRSs": [2, 3, 2, 0],
+            "number_of_other_VCRSs_with_overlapping_kmers": [1, 1, 2, 0],
+            "VCRSs_with_overlapping_kmers": [{"seq_2"}, {"seq_2"}, {"seq_0", "seq_1"}, set()],
+            # "overlapping_kmers": [["GATC", "GATC"], ["GCTA", "GCTA", "GCTA"], ["GATC", "GCTA"], []],
+        }
+        expected_df = pd.DataFrame(expected_data)
+
+        # set columns in same order
+        df = df[expected_df.columns]
+
+        # Assertions: Check that the columns and values match the expected DataFrame
+        pd.testing.assert_frame_equal(df, expected_df)
+
+
+def test_add_vcrs_variant_type(mock_helpers):
+    # Create a toy DataFrame
+    data = {
+        "vcrs_header": [
+            "ENST2:c.1211_1212insAAG",                             # Single insertion mutation
+            "ENST1:c.101A>G;ENST1:c.101A>G;ENST11:c.108A>G",       # Mixed mutations with substitution duplicates
+            "ENST1:c.101A>G;ENST2:c.1211_1212insAAG",              # Mixed insertion and substitution
+            "ENST1:c.101_102delinsAG",                              # Mixed deletion and insertion
+            "ENST1:c.101dup",                                       # Duplication mutation
+            "ENST1:c.101A>G",                                       # Single substitution mutation
+            np.nan                                                 # NaN mutation entry
+        ]
+    }
+    mutation_metadata_df = pd.DataFrame(data)
+
+    # Run the function
+    result_df = add_vcrs_variant_type(mutation_metadata_df, var_column="vcrs_header")
+
+    # Expected results
+    expected_variant_type = ["insertion", "substitution", "mixed", "delins", "duplication", "substitution", np.nan]
+    expected_columns = ["vcrs_header", "vcrs_variant_type"]
+
+    # Assertions
+    # Check that the output has the expected columns
+    assert all(col in result_df.columns for col in expected_columns)
+
+    # Check the values in the vcrs_variant_type column
+    pd.testing.assert_series_equal(
+        result_df["vcrs_variant_type"],
+        pd.Series(expected_variant_type, name="vcrs_variant_type"),
+        check_dtype=False
+    )
+
+    # Check that NaN values remain NaN
+    assert result_df.loc[result_df["vcrs_header"].isna(), "vcrs_variant_type"].isna().all()
+
+
+# recommended temp path:
+# def test_write_temp_file(tmp_path):
+#     # Create a temporary file path within tmp_path
+#     temp_file = tmp_path / "example.txt"
+    
+#     # Write some content to the file
+#     temp_file.write_text("Hello, pytest!")
+    
+#     # Read back the content to verify it was written correctly
+#     content = temp_file.read_text()
+#     assert content == "Hello, pytest!"
+
+
+
+    
+
+# compare_cdna_and_genome - requires having a toy reference genome and toy reference transcriptome, and it generally just relies on vk build working for both cdna and genome
+# align_to_normal_genome_and_build_dlist
+# get_vcrss_that_pseudoalign_but_arent_dlisted
+# create_df_of_vcrs_to_self_headers - pretty simple logic - bowtie align VCRS's to themselves, go through the SAM file, and consider the reads the substrings and the reference items the superstrings

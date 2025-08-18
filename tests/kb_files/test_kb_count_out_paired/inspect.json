@@ -1,0 +1,12 @@
+{
+	"numRecords": 1,
+	"numReads": 1,
+	"numBarcodes": 1,
+	"medianReadsPerBarcode": 0.000000,
+	"meanReadsPerBarcode": 1.000000,
+	"numUMIs": 1,
+	"numBarcodeUMIs": 1,
+	"medianUMIsPerBarcode": 0.000000,
+	"meanUMIsPerBarcode": 1.000000,
+	"gtRecords": 1
+}

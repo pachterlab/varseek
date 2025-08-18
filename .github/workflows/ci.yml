@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  schedule:
+    - cron: "0 16 * * 1,4"
+  push:
+    paths:
+    - 'varseek/**'
+    - 'tests/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.9', '3.10', '3.11']
+        os: ['ubuntu-22.04']
+    name: Test on Python ${{ matrix.python }}
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@main
+      - name: Setup python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install pytest>=7.0.0 coverage .
+      - name: Run tests
+        run: coverage run -m pytest -ra -v tests && coverage report --omit=main.py,tests*

@@ -1,0 +1,7 @@
+barcode,UMI,EC,count,read_index,fastq_header,transcript_ids,transcript_ids_list,transcript_names,transcript_ids_list_final,transcript_names_final,gene_names,gene_names_final,gene_names_final_set,counted_in_count_matrix
+AAAAAAAAAAAAAAAA,T,0,1,0,file1_read1,2,[2],['ref3'],[2],['ref3'],['ref3'],['ref3'],{'ref3'},True
+AAAAAAAAAAAAAAAA,T,1,1,1,file1_read2,0,[0],['ref1'],[0],['ref1'],['ref1'],['ref1'],{'ref1'},True
+AAAAAAAAAAAAAAAA,T,0,1,2,file1_read3,2,[2],['ref3'],[2],['ref3'],['ref3'],['ref3'],{'ref3'},True
+AAAAAAAAAAAAAAAC,T,0,1,1,file2_read2,2,[2],['ref3'],[2],['ref3'],['ref3'],['ref3'],{'ref3'},True
+AAAAAAAAAAAAAAAC,T,0,1,2,file2_read3,2,[2],['ref3'],[2],['ref3'],['ref3'],['ref3'],{'ref3'},True
+AAAAAAAAAAAAAAAC,T,2,1,0,file2_read1,1,[1],['ref2'],[1],['ref2'],['ref2'],['ref2'],{'ref2'},True
