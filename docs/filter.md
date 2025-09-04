@@ -1,32 +1,5 @@
-Input table
-| Parameter                                                           | File type         | Required?           | Corresponding parameter from vk build/info        | Description             |
-|----------------------------------------------------------------|--------------------|------------------------|-----------------------------------------------------------------|---------------------------|
-| input_dir                                                              | directory         | True                    | N/A                                                                        | ...                            |
-| variants_updated_vk_info_csv                         | .csv                | False                  | variants_updated_vk_info_csv_out                   | ...                             |
-| variants_updated_exploded_vk_info_csv        | .csv                | False                  | variants_updated_exploded_vk_info_csv_out   | ...                             |
-| id_to_header_csv                                                | .csv                | False                  | id_to_header_csv_out                                          | ...                             |
-| dlist_fasta                                                            | .fa                  | False                  | dlist_combined_fasta_out (or any other dlist)       | ...                             |
-
-
-Output table
-| Parameter                                                           | File type         | Flag                                                                           | Default Path                                                                                                     | Description           |
-|----------------------------------------------------------------|--------------------|---------------------------------------------------------------------|------------------------------------------------------------------------------------------------------|-------------------------|
-| out                                                                       | directory         | N/A                                                                            | <input_dir>                                                                                                       | ...                          |
-| variants_updated_filtered_csv_out                  | .csv                | N/A                                                                            | <out>/mutation_metadata_df_updated_filtered.csv                                         | ...                          |
-| variants_updated_exploded_filtered_csv_out  | .csv                | save_variants_updated_exploded_filtered_csv    | <out>/mutation_metadata_df_updated_filtered_exploded.csv                        | ...                          |
-| id_to_header_filtered_csv_out                            | .csv                | N/A                                                                            | <out>/id_to_header_mapping_filtered.csv                                                      | ...                          |
-| dlist_filtered_fasta_out                                         | .fa                  | N/A                                                                            | <out>/dlist_filtered.fa                                                                                       | ...                          |
-| vcrs_filtered_fasta_out                                       | .fa                  | N/A                                                                            | <out>/vcrs_filtered.fa                                                                                      | ...                          |
-| vcrs_filtered_t2g_out                                          | .txt                 | N/A                                                                            | <out>/vcrs_t2g_filtered.txt                                                                              | ...                          |
-| wt_vcrs_filtered_fasta_out                                  | .txt                 | N/A                                                                            | <out>/wt_vcrs_filtered.fa                                                                                | ...                          |
-| wt_vcrs_filtered_t2g_out                                     | .txt                 | N/A                                                                            | <out>/wt_vcrs_t2g_filtered.txt                                                                       | ...                          |
-
-
-Takes in:
-- info csv
-- vcrs fasta
-- filters in the following format
-
+# varseek filter 🔎
+                                                               | ...                          |
 Only keeps values that pass the filters (e.g., COLUMN0:min=5 will only keep rows where COLUMN0 is greater than or equal to 5)
 
 COLUMN:RULE or COLUMN:RULE=VALUE

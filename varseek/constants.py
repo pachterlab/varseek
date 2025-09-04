@@ -242,10 +242,8 @@ default_filename_dict = {"index": "vcrs_index.idx", "t2g": "vcrs_t2g.txt", "fast
 # * matches varseek ref and server
 # * for cosmic, leave the value "COSMIC" in place of a link (used for authentication), and keep the links in varseek_server/validate_cosmic.py; for others, replace with a link
 prebuilt_vk_ref_files = {
-    "variants=cosmic_cmc,sequences=cdna,w=47,k=51": {"index": "COSMIC", "t2g": "COSMIC", "fasta": "COSMIC"},
-    #  ("variants=cosmic_cmc", "sequences=genome", "w=47", "k=51", "dlist_reference_source=grch37"): {"index": "COSMIC", "t2g": "COSMIC", "fasta": "COSMIC"},
-    #  ("variants=cosmic_cmc", "sequences=genome", "w=47", "k=51", "dlist_reference_source=t2t"): {"index": "COSMIC", "t2g": "COSMIC", "fasta": "COSMIC"},
-    "variants=geuvadis,sequences=cdna,w=47,k=51": {"index": "LINK", "t2g": "LINK", "fasta": "LINK"},
+    "variants=cosmic_cmc,sequences=cdna": {"index": "COSMIC", "t2g": "COSMIC", "fasta": "COSMIC"},
+    "variants=geuvadis,sequences=cdna": {"index": "https://caltech.box.com/shared/static/gk3bxwsm2huvs5xm6v0lfv2oleatlerc.idx", "t2g": "https://caltech.box.com/shared/static/3zc01t3h9kt2nurbikbagqrmo0xsxcmz.txt", "fasta": "https://caltech.box.com/shared/static/foimmij3hz8etf444jpb4h3gk5p5282f.fa"},
 }
 
 

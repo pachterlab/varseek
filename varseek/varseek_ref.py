@@ -100,6 +100,7 @@ def validate_input_ref(params_dict):
 # a list of dictionaries with keys "variants", "sequences", and "description"
 downloadable_references = [
     {"description": "COSMIC Cancer Mutation Census version 101 - Ensembl GRCh37 release 93 cDNA reference annotations. w=47, k=51, dlist_reference_source=t2t. Header format (showing the column(s) from the original database used): 'seq_ID':'mutation_cdna'.", "download_command": "vk ref -v cosmic_cmc -s cdna -d"},
+    {"description": "Geuvadis dataset - Ensembl GRCh37 release 113 cDNA reference annotations. w=37, k=41, dlist_reference_source=t2t. Header format (showing the column(s) from the original database used): 'seq_ID':'mutation_cdna'.", "download_command": "vk ref -v geuvadis -s cdna -d"},
     # {"variants": "cosmic_cmc", "sequences": "genome", "description": "COSMIC Cancer Mutation Census version 101 - Ensembl GRCh37 release 93 genome reference annotations. w=47,k=51. Header format (showing the column(s) from the original database used): 'chromosome':'mutation_genome'"},
 ]
 
@@ -419,29 +420,27 @@ def ref(
 
     # download if download argument is True
     if download:
-        if variants == "cosmic_cmc":  # if someone sets variants==cosmic_cmc, then they are likely looking for the only cosmic_cmc available for download
-            w = 47
-            k = 51
-        prebuilt_vk_ref_files_key = f"variants={variants},sequences={sequences},w={w},k={k}"  # matches constants.py and server
+        prebuilt_vk_ref_files_key = f"variants={variants},sequences={sequences}"  # matches constants.py (all) and server (COSMIC only)  #* if I need more keys (eg w, k), then add onto this string conditionally based on the database
         if prebuilt_vk_ref_files_key not in prebuilt_vk_ref_files:
             raise ValueError(f"Invalid combination of parameters for downloading prebuilt reference files. Supported combinations are: {list(prebuilt_vk_ref_files.keys())}")
         file_dict = prebuilt_vk_ref_files[prebuilt_vk_ref_files_key]
         if file_dict:
             if file_dict["index"] == "COSMIC":
-                if not cosmic_email:
-                    cosmic_email = input("Please enter your COSMIC email: ")
-                if not is_valid_email(cosmic_email):
-                    raise ValueError("The email address is not valid.")
-                if not cosmic_password:
-                    cosmic_password = getpass.getpass("Please enter your COSMIC password: ")
-                response = requests.post(COSMIC_CREDENTIAL_VALIDATION_URL, json={"email": cosmic_email, "password": cosmic_password, "prebuilt_vk_ref_files_key": prebuilt_vk_ref_files_key})
-                if response.status_code == 200:
-                    file_dict = response.json()  # Converts JSON to dict
-                    file_dict = file_dict.get("download_links")
-                    logger.info("Successfully verified COSMIC credentials.")
-                    logger.warning("According to COSMIC regulations, please do not share any data that utilizes the COSMIC database. See more here: https://cancer.sanger.ac.uk/cosmic/help/terms")
-                else:
-                    raise ValueError(f"Failed to verify COSMIC credentials. Status code: {response.status_code}")
+                raise NotImplementedError("Downloading COSMIC files is not currently supported. Please select another option or build a custom index.")
+                # if not cosmic_email:
+                #     cosmic_email = input("Please enter your COSMIC email: ")
+                # if not is_valid_email(cosmic_email):
+                #     raise ValueError("The email address is not valid.")
+                # if not cosmic_password:
+                #     cosmic_password = getpass.getpass("Please enter your COSMIC password: ")
+                # response = requests.post(COSMIC_CREDENTIAL_VALIDATION_URL, json={"email": cosmic_email, "password": cosmic_password, "prebuilt_vk_ref_files_key": prebuilt_vk_ref_files_key})
+                # if response.status_code == 200:
+                #     file_dict = response.json()  # Converts JSON to dict
+                #     file_dict = file_dict.get("download_links")
+                #     logger.info("Successfully verified COSMIC credentials.")
+                #     logger.warning("According to COSMIC regulations, please do not share any data that utilizes the COSMIC database. See more here: https://cancer.sanger.ac.uk/cosmic/help/terms")
+                # else:
+                #     raise ValueError(f"Failed to verify COSMIC credentials. Status code: {response.status_code}")
             
             fasta_file_previously_existed = os.path.isfile(vcrs_fasta_for_index)
             logger.info(f"Downloading reference files with variants={variants}, sequences={sequences}")
