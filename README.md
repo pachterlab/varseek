@@ -97,7 +97,7 @@ vk count -h
 ```
 
 # Additional examples and citation
-**Examples for getting started:** [GitHub - pachterlab/varseek](https://github.com/pachterlab/varseek-examples.git)
+**Examples for getting started:** [GitHub - pachterlab/varseek-examples](https://github.com/pachterlab/varseek-examples.git)
 
 **Repository for manuscript figures**: [GitHub - pachterlab/RLSRP_2025](https://github.com/pachterlab/RLSRP_2025.git)
 
