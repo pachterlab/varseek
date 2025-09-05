@@ -105,4 +105,5 @@ If you use `varseek` in a publication, please cite the following study:
 ```
 PAPER CITATION
 ```
-Read the article here: PAPER DOI  
+Read the article here: https://doi.org/10.1101/2025.09.03.674039
+  
