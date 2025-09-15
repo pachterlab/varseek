@@ -10,13 +10,13 @@ import time
 import pyfastx
 
 import requests
-from gget.gget_cosmic import is_valid_email
 
 import varseek as vk
 from varseek.utils import (
     check_file_path_is_string_with_valid_extension,
     check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal,
     download_varseek_files,
+    authenticate_cosmic_credentials,
     get_python_or_cli_function_call,
     is_valid_int,
     make_function_parameter_to_value_dict,
@@ -427,12 +427,7 @@ def ref(
         if file_dict:
             if file_dict["index"] == "COSMIC":
                 raise NotImplementedError("Downloading COSMIC files is not currently supported. Please select another option or build a custom index.")
-                # if not cosmic_email:
-                #     cosmic_email = input("Please enter your COSMIC email: ")
-                # if not is_valid_email(cosmic_email):
-                #     raise ValueError("The email address is not valid.")
-                # if not cosmic_password:
-                #     cosmic_password = getpass.getpass("Please enter your COSMIC password: ")
+                # authenticate_cosmic_credentials(cosmic_email, cosmic_password)  # will raise an error if credentials are not valid
                 # response = requests.post(COSMIC_CREDENTIAL_VALIDATION_URL, json={"email": cosmic_email, "password": cosmic_password, "prebuilt_vk_ref_files_key": prebuilt_vk_ref_files_key})
                 # if response.status_code == 200:
                 #     file_dict = response.json()  # Converts JSON to dict

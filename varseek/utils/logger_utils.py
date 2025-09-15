@@ -22,7 +22,6 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 import requests
-from gget.gget_cosmic import is_valid_email
 
 from varseek.constants import default_filename_dict
 
@@ -869,6 +868,14 @@ def extract_documentation_file_blocks(file_path, start_pattern, stop_pattern):
 
 
 # from gget cosmic
+def is_valid_email(email):
+    """
+    Check if an e-mail address is valid.
+    """
+    email_pattern = re.compile(r"(^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$)")
+
+    return re.match(email_pattern, email) is not None
+
 def authenticate_cosmic_credentials(email=None, password=None):
     if not email:
         email = input("Please enter your COSMIC email: ")
