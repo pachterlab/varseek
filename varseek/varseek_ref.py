@@ -368,29 +368,6 @@ def ref(
             if "columns_to_include" in kwargs:
                 del kwargs["columns_to_include"]
 
-    # use the value of sequences as of one of the dlist reference files if it is not provided
-    if any(column in kwargs.get("columns_to_include", []) for column in vk.varseek_info.bowtie_columns_dlist) or kwargs.get("columns_to_include") == "all":
-        if not dlist_reference_source and (not kwargs.get("dlist_reference_genome_fasta") or not kwargs.get("dlist_reference_cdna_fasta")):
-            # determine if sequences is genome or transcriptome
-            sequences_pyfastx = pyfastx.Fastx(sequences)
-
-            max_seq_length = 0
-            for name, seq in sequences_pyfastx:
-                if len(seq) > max_seq_length:
-                    max_seq_length = len(seq)
-            if max_seq_length > 1_000_000 or (isinstance(variants, str) and variants.endswith(".vcf")):  # a heuristic to differentiate genome from transcriptome
-                if not kwargs.get("dlist_reference_genome_fasta"):
-                    logger.info("Assuming sequences is a genome based on its length (> 1,000,000 bp) or because variants parameter is a vcf file. Setting dlist_reference_genome_fasta to sequences.")
-                    kwargs["dlist_reference_genome_fasta"] = sequences
-            else:
-                if not kwargs.get("dlist_reference_cdna_fasta"):
-                    logger.info("Assuming sequences is a transcriptome based on its length (<= 1,000,000 bp). Setting dlist_reference_cdna_fasta to sequences.")
-                    kwargs["dlist_reference_cdna_fasta"] = sequences
-        if not dlist_reference_source and not kwargs.get("dlist_reference_genome_fasta"):
-            logger.warning("Please provide a value to dlist_reference_source or dlist_reference_genome_fasta to cross-check VCRS k-mers to the reference genome. With the current setup, only the transcriptome will be checked.")
-        if not dlist_reference_source and not kwargs.get("dlist_reference_cdna_fasta"):
-            logger.warning("Please provide a value to dlist_reference_source or dlist_reference_cdna_fasta to cross-check VCRS k-mers to the reference transcriptome. With the current setup, only the genome will be checked.")
-
     # decide whether to skip vk info and vk filter
     # filters_column_names = list({filter.split('-')[0] for filter in filters})
     skip_filter = not bool(filters)  # skip filtering if no filters provided
@@ -460,6 +437,29 @@ def ref(
         else:
             raise ValueError(f"No prebuilt files found for the given arguments:\nvariants: {variants}\nsequences: {sequences}")
 
+    # use the value of sequences as of one of the dlist reference files if it is not provided
+    if any(column in kwargs.get("columns_to_include", []) for column in vk.varseek_info.bowtie_columns_dlist) or kwargs.get("columns_to_include") == "all":
+        if not dlist_reference_source and (not kwargs.get("dlist_reference_genome_fasta") or not kwargs.get("dlist_reference_cdna_fasta")):
+            # determine if sequences is genome or transcriptome
+            sequences_pyfastx = pyfastx.Fastx(sequences)
+
+            max_seq_length = 0
+            for name, seq in sequences_pyfastx:
+                if len(seq) > max_seq_length:
+                    max_seq_length = len(seq)
+            if max_seq_length > 1_000_000 or (isinstance(variants, str) and variants.endswith(".vcf")):  # a heuristic to differentiate genome from transcriptome
+                if not kwargs.get("dlist_reference_genome_fasta"):
+                    logger.info("Assuming sequences is a genome based on its length (> 1,000,000 bp) or because variants parameter is a vcf file. Setting dlist_reference_genome_fasta to sequences.")
+                    kwargs["dlist_reference_genome_fasta"] = sequences
+            else:
+                if not kwargs.get("dlist_reference_cdna_fasta"):
+                    logger.info("Assuming sequences is a transcriptome based on its length (<= 1,000,000 bp). Setting dlist_reference_cdna_fasta to sequences.")
+                    kwargs["dlist_reference_cdna_fasta"] = sequences
+        if not dlist_reference_source and not kwargs.get("dlist_reference_genome_fasta"):
+            logger.warning("Please provide a value to dlist_reference_source or dlist_reference_genome_fasta to cross-check VCRS k-mers to the reference genome. With the current setup, only the transcriptome will be checked.")
+        if not dlist_reference_source and not kwargs.get("dlist_reference_cdna_fasta"):
+            logger.warning("Please provide a value to dlist_reference_source or dlist_reference_cdna_fasta to cross-check VCRS k-mers to the reference transcriptome. With the current setup, only the genome will be checked.")
+    
     # set d-list argument
     if dlist == "genome":
         dlist_kb_argument = dlist_genome_fasta_out  # for kb ref
