@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "varseek"
-version = "0.1.1"
+version = "0.1.2"
 description = "Efficient variant screening of RNA-seq and DNA-seq data using k-mer-based alignment against a reference of known variants."
 readme = {file = "README.md", content-type = "text/markdown"}
 license = {file = "LICENSE"}

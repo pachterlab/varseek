@@ -151,6 +151,7 @@ logs/
 
 # Scratch directories
 trash/
+config/
 **/pytest_ground_truth*/
 data
 data/
