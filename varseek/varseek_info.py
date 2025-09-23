@@ -164,9 +164,9 @@ def validate_input_info(params_dict):
     if any(column in params_dict.get("columns_to_include") for column in columns_that_require_dlist_genome) and not params_dict.get("dlist_reference_source") and not params_dict.get("dlist_reference_genome_fasta") and not params_dict.get("sequences"):  # above, I checked that if it was not None, that it was either a valid string (ie in supported_dlist_reference_values) or an existing path - so now, I just need to ensure that it's not None
         raise ValueError(f"Missing dlist_reference_source and dlist_reference_genome_fasta. At least one of these is required for columns: {columns_that_require_dlist_genome}")
     if any(column in params_dict.get("columns_to_include") for column in columns_that_require_dlist_transcriptome) and not params_dict.get("dlist_reference_source") and not params_dict.get("dlist_reference_cdna_fasta") and not params_dict.get("sequences"):  # above, I checked that if it was not None, that it was either a valid string (ie in supported_dlist_reference_values) or an existing path - so now, I just need to ensure that it's not None
-        raise ValueError(f"Missing dlist_reference_source/dlist_reference_cdna_fasta. At least one of these is required for columns: {columns_that_require_dlist_genome}")
+        raise ValueError(f"Missing dlist_reference_source/dlist_reference_cdna_fasta. At least one of these is required for columns: {columns_that_require_dlist_transcriptome}")
     if any(column in params_dict.get("columns_to_include") for column in columns_that_require_dlist_gtf) and not params_dict.get("dlist_reference_source") and not params_dict.get("dlist_reference_gtf") and not params_dict.get("gtf"):  # above, I checked that if it was not None, that it was either a valid string (ie in supported_dlist_reference_values) or an existing path - so now, I just need to ensure that it's not None
-        raise ValueError(f"Missing dlist_reference_source/dlist_reference_gtf. At least one of these is required for columns: {columns_that_require_dlist_genome}")
+        raise ValueError(f"Missing dlist_reference_source/dlist_reference_gtf. At least one of these is required for columns: {columns_that_require_dlist_gtf}")
 
     # integers - optional just means that it's in kwargs
     for param_name, min_value, optional_value in [
