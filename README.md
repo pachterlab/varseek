@@ -103,7 +103,8 @@ vk count -h
 
 If you use `varseek` in a publication, please cite the following study:    
 ```
-PAPER CITATION
+Rich JM, Luebbert L, Sullivan DK, Rosa R, Pachter L. Reference-based variant detection with varseek. bioRxiv. 2025 September 3. Available from: https://doi.org/10.1101/2025.09.03.674039
 ```
+
 Read the article here: https://doi.org/10.1101/2025.09.03.674039
   

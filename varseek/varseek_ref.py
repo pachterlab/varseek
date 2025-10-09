@@ -249,6 +249,13 @@ def ref(
     # * 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
     params_dict["out"], params_dict["input_dir"] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(params_dict.get("out"), params_dict.get("input_dir"))  # because input_dir is a required argument, it does not have a default, and so I should enforce this default manually
+    minimum_info_columns = kwargs.get("minimum_info_columns", True)
+    if params_dict.get("columns_to_include") is None and minimum_info_columns:
+        if isinstance(filters, str):
+            columns_to_include = filters.split(":")[0]
+        else:
+            columns_to_include = tuple([item.split(":")[0] for item in filters])
+        params_dict["columns_to_include"] = columns_to_include
 
     # Set params_dict to default values of children functions - important so type checking works properly
     ref_signature = inspect.signature(ref)
@@ -329,7 +336,6 @@ def ref(
     file_signifying_successful_kb_ref_completion = index_out
 
     # * 7. Define kwargs defaults
-    minimum_info_columns = kwargs.get("minimum_info_columns", True)
 
     # * 7.5. make sure ints are ints
     w, k, threads = int(w), int(k), int(threads)

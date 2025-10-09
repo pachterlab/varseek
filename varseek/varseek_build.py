@@ -763,7 +763,7 @@ def build(
             column_name_dict["var_column"] = var_column
             column_name_dict["var_id_column"] = var_id_column
 
-            column_name_dict["gtf"] = gtf if os.path.exists(gtf) else None
+            column_name_dict["gtf"] = gtf if gtf and os.path.exists(gtf) else None
             column_name_dict["reference_genome_fasta"] = genome_file if os.path.exists(genome_file) else None
             column_name_dict["reference_cds_fasta"] = cds_file if os.path.exists(cds_file) else None
             column_name_dict["reference_cdna_fasta"] = cdna_file if os.path.exists(cdna_file) else None
