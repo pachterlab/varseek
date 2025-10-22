@@ -1111,7 +1111,7 @@ def add_variant_type_column_to_vcf_derived_df(sample_vcf_df):
     # Apply np.select
     sample_vcf_df["variant_type"] = np.select(conditions, choices, default="unknown")
     
-def add_variant_column_to_vcf_derived_df(sample_vcf_df, var_column="variant"):
+def add_variant_column_to_vcf_derived_df(sample_vcf_df, var_column="variant", cdna_derived_vcf=False):
     # Compute end position for delins
     sample_vcf_df["start_POS_deletion"] = (sample_vcf_df["POS"] + 1).astype(str)
     sample_vcf_df["start_POS_deletion_starting_at_1"] = "1"
@@ -1158,7 +1158,10 @@ def add_variant_column_to_vcf_derived_df(sample_vcf_df, var_column="variant"):
 
     sample_vcf_df["POS"] = sample_vcf_df["POS"].astype('Int64')
 
-def update_vcf_derived_df_with_multibase_duplication(mutations, seq_dict, seq_id_column="seq_id", var_column="variant"):
+    if cdna_derived_vcf:  # replace g. with c.
+        sample_vcf_df[var_column] = "c" + sample_vcf_df[var_column].str[1:]
+
+def update_vcf_derived_df_with_multibase_duplication(mutations, seq_dict, seq_id_column="seq_id", var_column="variant", cdna_derived_vcf=False):
     mutations["wt_sequence_full"] = mutations[seq_id_column].map(seq_dict)
     mutations["ALT_len"] = mutations["ALT"].str.len()
     mutations["ALT_first_base_trimmed"] = mutations["ALT"].str[1:]
@@ -1179,8 +1182,9 @@ def update_vcf_derived_df_with_multibase_duplication(mutations, seq_dict, seq_id
     compare_mask = mask & (mutations["ALT_first_base_trimmed"] == mutations["seq_slice"])
 
     # Step 5: Update variant_type and variant only for matched rows
+    mutation_beginning = "g." if not cdna_derived_vcf else "c."
     mutations.loc[compare_mask, "variant_type"] = "duplication"
-    mutations.loc[compare_mask, var_column] = "g." + mutations.loc[compare_mask, "start_pos"].astype(int).astype(str) + "_" + mutations.loc[compare_mask, "POS"].astype(str) + "dup"
+    mutations.loc[compare_mask, var_column] = mutation_beginning + mutations.loc[compare_mask, "start_pos"].astype(int).astype(str) + "_" + mutations.loc[compare_mask, "POS"].astype(str) + "dup"
 
     mutations.drop(columns=["ALT_first_base_trimmed", "ALT_len", "start_pos", "seq_slice"], inplace=True, errors="ignore")
 

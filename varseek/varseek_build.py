@@ -505,6 +505,7 @@ def build(
     - use_IDs                            (True/False) Whether to keep the original sequence headers in the output fasta file, or to replace them with unique IDs of the form 'vcrs_<int>.
                                          If False, then an additional file at the path <id_to_header_csv_out> will be formed that maps sequence IDs from the fasta file to the <var_id_column>. Default: True.
     - original_order                     (True/False) Whether to keep the original order of the sequences in the output fasta file. Default: True.
+    - cdna_derived_vcf                   (True/False) Whether the input VCF variants were derived from cDNA sequences.
 
     # # specific databases
     - cosmic_version                     (str) COSMIC release version to download. Default: "101".
@@ -651,6 +652,7 @@ def build(
     use_IDs = kwargs.get("use_IDs", True)
     original_order = kwargs.get("original_order", True)
     save_column_names_json_path = kwargs.get("save_column_names_json_path", None)
+    cdna_derived_vcf = kwargs.get("cdna_derived_vcf", False)
 
     # get COSMIC info
     cosmic_email = kwargs.get("cosmic_email", None)
@@ -763,7 +765,7 @@ def build(
             column_name_dict["var_column"] = var_column
             column_name_dict["var_id_column"] = var_id_column
 
-            column_name_dict["gtf"] = gtf if gtf and os.path.exists(gtf) else None
+            column_name_dict["gtf"] = gtf if os.path.exists(gtf) else None
             column_name_dict["reference_genome_fasta"] = genome_file if os.path.exists(genome_file) else None
             column_name_dict["reference_cds_fasta"] = cds_file if os.path.exists(cds_file) else None
             column_name_dict["reference_cdna_fasta"] = cdna_file if os.path.exists(cdna_file) else None
@@ -792,7 +794,7 @@ def build(
             logger.warning("var_id_column not supported with varseek build for VCF input. Using default var_id_column as <seq_id_column>:<var_column> for each row.")
             var_id_column = None
         add_variant_type_column_to_vcf_derived_df(mutations)
-        add_variant_column_to_vcf_derived_df(mutations, var_column=var_column)
+        add_variant_column_to_vcf_derived_df(mutations, var_column=var_column, cdna_derived_vcf=cdna_derived_vcf)
         if any(s.startswith("chr") for s in mutations['seq_ID'].unique()) and all(not t.startswith("chr") for t in titles):
             logger.info("Chromosome numbers in the VCF file start with 'chr', but the input sequences do not. Removing 'chr' from the chromosome numbers in the variants dataframe.")
             mutations['seq_ID'] = mutations['seq_ID'].str.replace('^chr', '', regex=True)
@@ -911,7 +913,7 @@ def build(
     if store_full_sequences or ".vcf" in mutations_path:
         mutations["wt_sequence_full"] = mutations[seq_id_column].map(seq_dict)
         if ".vcf" in mutations_path:  # look for long duplications - needed seq_dict
-            update_vcf_derived_df_with_multibase_duplication(mutations, seq_dict, seq_id_column=seq_id_column, var_column=var_column)
+            update_vcf_derived_df_with_multibase_duplication(mutations, seq_dict, seq_id_column=seq_id_column, var_column=var_column, cdna_derived_vcf=cdna_derived_vcf)
             if not store_full_sequences:
                 mutations.drop(columns=["wt_sequence_full"], inplace=True)
 

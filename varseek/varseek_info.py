@@ -164,9 +164,9 @@ def validate_input_info(params_dict):
     if any(column in params_dict.get("columns_to_include") for column in columns_that_require_dlist_genome) and not params_dict.get("dlist_reference_source") and not params_dict.get("dlist_reference_genome_fasta") and not params_dict.get("sequences"):  # above, I checked that if it was not None, that it was either a valid string (ie in supported_dlist_reference_values) or an existing path - so now, I just need to ensure that it's not None
         raise ValueError(f"Missing dlist_reference_source and dlist_reference_genome_fasta. At least one of these is required for columns: {columns_that_require_dlist_genome}")
     if any(column in params_dict.get("columns_to_include") for column in columns_that_require_dlist_transcriptome) and not params_dict.get("dlist_reference_source") and not params_dict.get("dlist_reference_cdna_fasta") and not params_dict.get("sequences"):  # above, I checked that if it was not None, that it was either a valid string (ie in supported_dlist_reference_values) or an existing path - so now, I just need to ensure that it's not None
-        raise ValueError(f"Missing dlist_reference_source/dlist_reference_cdna_fasta. At least one of these is required for columns: {columns_that_require_dlist_transcriptome}")
+        raise ValueError(f"Missing dlist_reference_source/dlist_reference_cdna_fasta. At least one of these is required for columns: {columns_that_require_dlist_genome}")
     if any(column in params_dict.get("columns_to_include") for column in columns_that_require_dlist_gtf) and not params_dict.get("dlist_reference_source") and not params_dict.get("dlist_reference_gtf") and not params_dict.get("gtf"):  # above, I checked that if it was not None, that it was either a valid string (ie in supported_dlist_reference_values) or an existing path - so now, I just need to ensure that it's not None
-        raise ValueError(f"Missing dlist_reference_source/dlist_reference_gtf. At least one of these is required for columns: {columns_that_require_dlist_gtf}")
+        raise ValueError(f"Missing dlist_reference_source/dlist_reference_gtf. At least one of these is required for columns: {columns_that_require_dlist_genome}")
 
     # integers - optional just means that it's in kwargs
     for param_name, min_value, optional_value in [
@@ -382,6 +382,7 @@ def info(
     - kallisto                           (str) Path to the directory containing the kallisto executable. Only utilized for the columns `pseudoaligned_to_reference`, `pseudoaligned_to_reference_despite_not_truly_aligning`. Default: None.
     - bustools                           (str) Path to the directory containing the bustools executable. Only utilized for the columns `pseudoaligned_to_reference`, `pseudoaligned_to_reference_despite_not_truly_aligning`. Default: None.
     - pseudoalignment_workflow           (str) Pseudoalignment workflow to use. Only utilized for the columns `pseudoaligned_to_reference`, `pseudoaligned_to_reference_despite_not_truly_aligning`. Options: {"standard", "nac"}. Default: "nac".
+    - variant_source                     (str) Source of the variants. Options are {"genome", "cdna", "both", None}.
     """
     # CELL
     # * 0. Informational arguments that exit early
@@ -507,6 +508,7 @@ def info(
     kallisto = kwargs.get("kallisto", None)
     bustools = kwargs.get("bustools", None)
     pseudoalignment_workflow = kwargs.get("pseudoalignment_workflow", "nac")
+    variant_source = kwargs.get("variant_source", None)
 
     # * 7.5 make sure ints are ints
     k, max_ambiguous_vcrs, max_ambiguous_reference, dlist_reference_ensembl_release, threads = int(k), int(max_ambiguous_vcrs), int(max_ambiguous_reference), int(dlist_reference_ensembl_release), int(threads)
@@ -643,10 +645,11 @@ def info(
     mutation_metadata_df_exploded[["seq_ID_used_for_vcrs", "variant_used_for_vcrs"]] = mutation_metadata_df_exploded["header"].str.split(":", expand=True)
     mutation_metadata_df_exploded["seq_ID_used_for_vcrs"] = mutation_metadata_df_exploded["seq_ID_used_for_vcrs"].astype(str)
 
-    if variant_source_column not in mutation_metadata_df_exploded.columns:
-        identify_variant_source(mutation_metadata_df_exploded, variant_source_column=variant_source_column)
-    unique_vcrs_sources = mutation_metadata_df_exploded[variant_source_column].unique()
-    variant_source = "combined" if len(unique_vcrs_sources) > 1 else unique_vcrs_sources[0]
+    if not variant_source:
+        if variant_source_column not in mutation_metadata_df_exploded.columns:
+            identify_variant_source(mutation_metadata_df_exploded, variant_source_column=variant_source_column)
+        unique_vcrs_sources = mutation_metadata_df_exploded[variant_source_column].unique()
+        variant_source = "combined" if len(unique_vcrs_sources) > 1 else unique_vcrs_sources[0]
 
     # ensures proper handling if someone passes in seq_id_column and var_column to vk ref, but not cdna/genome columns in particular; as well as if they passed sequences but not reference_cdna_fasta
     if variant_source == "cdna":
