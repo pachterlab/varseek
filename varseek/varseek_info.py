@@ -724,7 +724,8 @@ def info(
 
     # CELL
     if variant_source in {"genome", "combined"}:
-        mutation_metadata_df_exploded = mutation_metadata_df_exploded.loc[~((mutation_metadata_df_exploded[variant_source_column] == "genome") & ((pd.isna(mutation_metadata_df_exploded[seq_id_genome_column])) | (mutation_metadata_df_exploded[var_genome_column].str.contains("g.nan", na=True))))]
+        # mutation_metadata_df_exploded = mutation_metadata_df_exploded.loc[~((mutation_metadata_df_exploded[variant_source_column] == "genome") & ((pd.isna(mutation_metadata_df_exploded[seq_id_genome_column])) | (mutation_metadata_df_exploded[var_genome_column].str.contains("g.nan", na=True))))]
+        mutation_metadata_df_exploded = mutation_metadata_df_exploded.loc[~((mutation_metadata_df_exploded[variant_source_column] == "genome") & ((pd.isna(mutation_metadata_df_exploded["seq_ID_used_for_vcrs"])) | (mutation_metadata_df_exploded["variant_used_for_vcrs"].str.contains("g.nan", na=True))))]
 
     # CELL
     if columns_to_include == "all" or "cdna_and_genome_same" in columns_to_include:
