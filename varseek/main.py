@@ -20,6 +20,7 @@ from .utils import set_up_logger
 from .varseek_build import build
 from .varseek_clean import clean
 from .varseek_count import count
+from .varseek_denovo import denovo
 from .varseek_fastqpp import fastqpp
 from .varseek_filter import filter
 from .varseek_info import info
@@ -291,6 +292,225 @@ def main():  # noqa: C901
     vk_info_list_information_and_exit_flag_present = list_information_and_exit_flag_dict["list_columns"]
     vk_filter_list_information_and_exit_flag_present = list_information_and_exit_flag_dict["list_filter_rules"] 
     vk_ref_list_information_and_exit_flag_present = any(list_information_and_exit_flag_dict.values())
+
+
+    # denovo parser arguments
+    denovo_desc = "Call de novo variants from FASTQ or BAM inputs."
+
+    parser_denovo = parent_subparsers.add_parser(
+        "denovo",
+        parents=[parent],
+        description=denovo_desc,
+        help=denovo_desc,
+        add_help=True,
+        formatter_class=CustomHelpFormatter,
+    )
+    parser_denovo.add_argument(
+        "inputs",
+        nargs="+",
+        help=extract_help_from_doc(denovo, "inputs"),
+    )
+    parser_denovo.add_argument(
+        "-f",
+        "--fasta-ref",
+        "--fasta_ref",
+        required=True,
+        help=extract_help_from_doc(denovo, "fasta_ref"),
+    )
+    parser_denovo.add_argument(
+        "-g",
+        "--gtf",
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "gtf"),
+    )
+    parser_denovo.add_argument(
+        "-xs",
+        "--star-genome-index-dir",
+        "--star_genome_index_dir",
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "star_genome_index_dir"),
+    )
+    parser_denovo.add_argument(
+        "-xb",
+        "--bowtie2-genome-index-prefix",
+        "--bowtie2_genome_index_prefix",
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "bowtie2_genome_index_prefix"),
+    )
+    parser_denovo.add_argument(
+        "--star-alignment-prefix",
+        "--star_alignment_prefix",
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "star_alignment_prefix"),
+    )
+    parser_denovo.add_argument(
+        "--bowtie2-alignment-dir",
+        "--bowtie2_alignment_dir",
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "bowtie2_alignment_dir"),
+    )
+    parser_denovo.add_argument(
+        "-R",
+        "--regions",
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "regions"),
+    )
+    parser_denovo.add_argument(
+        "-obd",
+        "--out-bam-dir",
+        "--out_bam_dir",
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "out_bam_dir"),
+    )
+    parser_denovo.add_argument(
+        "-o",
+        "--output",
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "output"),
+    )
+    parser_denovo.add_argument(
+        "--output-tsv",
+        "--output_tsv",
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "output_tsv"),
+    )
+    parser_denovo.add_argument(
+        "--tsv-reference-type",
+        "--tsv_reference_type",
+        choices=["auto", "dna", "genome", "cdna", "transcriptome"],
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "tsv_reference_type"),
+    )
+    parser_denovo.add_argument(
+        "-r",
+        "--read-length",
+        "--read_length",
+        type=int,
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "read_length"),
+    )
+    parser_denovo.add_argument(
+        "-m",
+        "--min-counts",
+        "--min_counts",
+        type=int,
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "min_counts"),
+    )
+    parser_denovo.add_argument(
+        "-a",
+        "--aligner",
+        choices=["STAR", "bowtie2"],
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "aligner"),
+    )
+    parser_denovo.add_argument(
+        "--variant-caller",
+        "--variant_caller",
+        choices=["bcftools", "cigar"],
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "variant_caller"),
+    )
+    parser_denovo.add_argument(
+        "--bowtie2-seed-length",
+        "--bowtie2_seed_length",
+        type=int,
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "bowtie2_seed_length"),
+    )
+    parser_denovo.add_argument(
+        "--bowtie2-score-min",
+        "--bowtie2_score_min",
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "bowtie2_score_min"),
+    )
+    parser_denovo.add_argument(
+        "-i",
+        "--include",
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "include"),
+    )
+    parser_denovo.add_argument(
+        "-I",
+        "--skip-indels",
+        "--skip_indels",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "skip_indels"),
+    )
+    parser_denovo.add_argument(
+        "--disable-baq",
+        "--disable_baq",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "disable_baq"),
+    )
+    parser_denovo.add_argument(
+        "--split-bam-by-n",
+        "--split_bam_by_n",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "split_bam_by_n"),
+    )
+    parser_denovo.add_argument(
+        "--merge-bam-files",
+        "--merge_bam_files",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "merge_bam_files"),
+    )
+    parser_denovo.add_argument(
+        "--strip-version-numbers",
+        "--strip_version_numbers",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "strip_version_numbers"),
+    )
+    parser_denovo.add_argument(
+        "--disable-bcftools-norm",
+        "--disable_bcftools_norm",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "disable_bcftools_norm"),
+    )
+    parser_denovo.add_argument(
+        "--bcftools-call-prior",
+        "--bcftools_call_prior",
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "bcftools_call_prior"),
+    )
+    parser_denovo.add_argument(
+        "--tmp-dir",
+        "--tmp_dir",
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "tmp_dir"),
+    )
+    parser_denovo.add_argument(
+        "-t",
+        "--threads",
+        type=int,
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "threads"),
+    )
+    parser_denovo.add_argument(
+        "--overwrite",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "overwrite"),
+    )
+    parser_denovo.add_argument(
+        "--verbose",
+        action="count",
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "verbose"),
+    )
+    parser_denovo.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "quiet"),
+    )
 
 
     # NEW PARSER
@@ -2937,6 +3157,7 @@ def main():  # noqa: C901
     # Show  module specific help if only module but no further arguments are given
     command_to_parser = {
         "build": parser_build,
+        "denovo": parser_denovo,
         "info": parser_info,
         "filter": parser_filter,
         "sim": parser_sim,
@@ -2995,6 +3216,16 @@ def main():  # noqa: C901
         if build_results:
             for mut_seq in build_results:
                 print(mut_seq)
+
+    # * denovo return
+    if args.command == "denovo":
+        params_dict = {**kwargs, **params_dict}
+
+        # for pytest
+        if os.getenv("TESTING") == "true":
+            return params_dict
+
+        denovo_results = denovo(**params_dict)
 
     # * info return
     if args.command == "info":
