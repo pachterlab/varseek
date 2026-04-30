@@ -324,6 +324,13 @@ def main():  # noqa: C901
         help=extract_help_from_doc(denovo, "gtf"),
     )
     parser_denovo.add_argument(
+        "-p",
+        "--parity",
+        choices=["single", "paired"],
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "parity"),
+    )
+    parser_denovo.add_argument(
         "-xs",
         "--star-genome-index-dir",
         "--star_genome_index_dir",

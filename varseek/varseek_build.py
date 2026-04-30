@@ -918,6 +918,7 @@ def build(
                 mutations.drop(columns=["wt_sequence_full"], inplace=True)
 
     # Handle sequences that were not found based on their sequence IDs
+    mutations[seq_id_column] = mutations[seq_id_column].str.split(".").str[0]  #$ new 2026
     seqs_not_found_count = len(mutations[~mutations[seq_id_column].isin(seq_dict.keys())])
     if seqs_not_found_count > 0:
         logger.warning(

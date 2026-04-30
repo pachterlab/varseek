@@ -243,6 +243,7 @@ def parse_cigars(bam_path=None, total=None, out_plot=None, do_baq=False, regions
 def denovo(
     inputs,
     fasta_ref,
+    parity="single",
     gtf=None,
     star_genome_index_dir="genome_index",
     bowtie2_genome_index_prefix="bowtie2_index",
@@ -255,7 +256,7 @@ def denovo(
     tsv_reference_type="auto",
     read_length=90,
     min_counts=3,
-    aligner="STAR",
+    aligner="bowtie2",
     variant_caller="bcftools",
     bowtie2_seed_length=None,
     bowtie2_score_min=None,
@@ -277,10 +278,11 @@ def denovo(
     Call de novo variants from FASTQ or BAM inputs.
 
     # Required input arguments:
-    - inputs                         (str or list[str]) Input BAMs or FASTQs. If multiple BAMs or FASTQs, separate with commas. If paired FASTQs, pass R1 files as the first value and R2 files as the second value.
+    - inputs                         (str or list[str]) Input BAMs or FASTQs. Pass one or more files as separate values. For paired FASTQs, pass alternating R1/R2 files.
     - fasta_ref                      (str) Reference FASTA file.
 
     # Optional input arguments:
+    - parity                         (str) Whether FASTQ inputs are single-end or paired-end. Use "single" to treat each FASTQ separately. Use "paired" to pair alternating inputs as R1/R2 and require an even number of FASTQs. Default: "single"
     - gtf                            (str) Genome annotation GTF file. Required for STAR genome generation.
     - star_genome_index_dir          (str) STAR genome index directory. Default: "genome_index"
     - bowtie2_genome_index_prefix    (str) Prefix for Bowtie2 genome index files. Default: "bowtie2_index"
@@ -349,6 +351,8 @@ def denovo(
         raise ValueError("--aligner must be either 'STAR' or 'bowtie2'")
     if not variant_caller in ["bcftools", "cigar"]:
         raise ValueError("--variant-caller must be either 'bcftools' or 'cigar'")
+    if parity not in ["single", "paired"]:
+        raise ValueError("parity must be either 'single' or 'paired'")
     if os.path.exists(output) and not overwrite:
         raise ValueError(f"output file '{output}' already exists. Use --overwrite to overwrite.")
     if output_tsv:
@@ -361,53 +365,56 @@ def denovo(
     #* Validate inputs
     if isinstance(inputs, str):
         inputs = [inputs]
-    if isinstance(inputs, (list, tuple)):
-        if len(inputs) > 2:
-            raise ValueError("when providing multiple inputs, only two entries are allowed (R1 and R2 for paired-end reads)")
-        fastq_files_1 = inputs[0].split(",")
-        if len(inputs) == 2:
-            fastq_files_2 = inputs[1].split(",")
-            if len(fastq_files_1) != len(fastq_files_2):
-                raise ValueError("number of R1 and R2 FASTQ files must be the same for paired-end reads")   
-    else:
+    elif isinstance(inputs, tuple):
+        inputs = list(inputs)
+    elif not isinstance(inputs, list):
         raise ValueError("inputs must be a string or a list/tuple of strings")
+    if not inputs:
+        raise ValueError("at least one input file is required")
+    if any("," in input_file for input_file in inputs):
+        raise ValueError("inputs must be provided as separate values; comma-separated input lists are not supported")
     
     valid_fastq_extensions = [".fq", ".fastq", ".fq.gz", ".fastq.gz"]
     valid_bam_extensions = [".bam"]
     input_type = None
-    for input_pair in inputs:
-        files = input_pair.split(",")
-        for file in files:
-            if any(file.endswith(ext) for ext in valid_fastq_extensions):
-                if input_type is None:
-                    input_type = "fastq"
-                elif input_type != "fastq":
-                    raise ValueError("all inputs must be of the same type (either FASTQ or BAM)")
-            elif any(file.endswith(ext) for ext in valid_bam_extensions):
-                if input_type is None:
-                    input_type = "bam"
-                elif input_type != "bam":
-                    raise ValueError("all inputs must be of the same type (either FASTQ or BAM)")
-            else:
-                raise ValueError(f"input file '{file}' must be a FASTQ or BAM file")
-            if not os.path.isfile(file):
-                raise ValueError(f"input file '{file}' not found")
+    for file in inputs:
+        if any(file.endswith(ext) for ext in valid_fastq_extensions):
+            if input_type is None:
+                input_type = "fastq"
+            elif input_type != "fastq":
+                raise ValueError("all inputs must be of the same type (either FASTQ or BAM)")
+        elif any(file.endswith(ext) for ext in valid_bam_extensions):
+            if input_type is None:
+                input_type = "bam"
+            elif input_type != "bam":
+                raise ValueError("all inputs must be of the same type (either FASTQ or BAM)")
+        else:
+            raise ValueError(f"input file '{file}' must be a FASTQ or BAM file")
+        if not os.path.isfile(file):
+            raise ValueError(f"input file '{file}' not found")
+
+    if input_type == "bam":
+        if parity != "single":
+            raise ValueError("parity='paired' is only supported for FASTQ inputs")
+        single_fastq_files = []
+        paired_fastq_files = []
+    elif parity == "single":
+        single_fastq_files = inputs
+        paired_fastq_files = []
+    else:
+        if len(inputs) % 2 != 0:
+            raise ValueError("paired FASTQ inputs require an even number of files in alternating R1/R2 order")
+        single_fastq_files = []
+        paired_fastq_files = list(zip(inputs[0::2], inputs[1::2]))
     
     #* Define derivative variables
     output_type = "-Oz" if output.endswith(".gz") else "-Ov"
     os.makedirs(os.path.dirname(output) or ".", exist_ok=True)
-    
-    bcftools_verbosity = ""
-    if quiet:
-        bcftools_verbosity = f" --verbosity 0"
-    elif verbose == 1:
-        bcftools_verbosity = f" --verbosity 2"
-    elif verbose >= 2:
-        bcftools_verbosity = f" --verbosity 3"
+
 
     do_filtering = (min_counts > 1) or (include is not None)
     if do_filtering:
-        filter_expression = f"bcftools filter --threads {threads} {bcftools_verbosity}"
+        filter_expression = f"bcftools filter --threads {threads}"
         if include:
             filter_expression += f" -i '{include}'"
         if min_counts > 1:
@@ -430,7 +437,10 @@ def denovo(
                     run(star_build_command)
                 
                 logger.info("Running STAR alignment...")
-                inputs_star = " ".join(inputs)
+                if parity == "paired":
+                    inputs_star = " ".join([",".join(fastq1 for fastq1, _ in paired_fastq_files), ",".join(fastq2 for _, fastq2 in paired_fastq_files)])
+                else:
+                    inputs_star = ",".join(single_fastq_files)
                 # TODO: add merge_bam_files logic for STAR (right now it always merges into one BAM)
                 cmd = f"""
                 STAR --runThreadN {threads} \
@@ -478,22 +488,26 @@ def denovo(
                     if not os.path.exists(bowtie2_genome_index_file):
                         run(bowtie_build_command)
                     os.makedirs(bowtie2_alignment_dir, exist_ok=True)
-                    if len(inputs) == 2:  # paired-end
-                        bowtie2_align_command = f"bowtie2 --xeq --very-sensitive {bowtie2_options} --threads {threads} -x {bowtie2_genome_index_prefix} -1 {inputs[0]} -2 {inputs[1]} | samtools view -bS - | samtools sort -o {bam_for_bcftools}"
-                    elif len(inputs) == 1:  # single-end
-                        bowtie2_align_command = f"bowtie2 --xeq --very-sensitive {bowtie2_options} --threads {threads} -x {bowtie2_genome_index_prefix} -U {inputs[0]} | samtools view -bS - | samtools sort -o {bam_for_bcftools}"
+                    if parity == "paired":
+                        fastq1_arg = ",".join(fastq1 for fastq1, _ in paired_fastq_files)
+                        fastq2_arg = ",".join(fastq2 for _, fastq2 in paired_fastq_files)
+                        bowtie2_align_command = f"bowtie2 --xeq --very-sensitive {bowtie2_options} --threads {threads} -x {bowtie2_genome_index_prefix} -1 {fastq1_arg} -2 {fastq2_arg} | samtools view -bS - | samtools sort -o {bam_for_bcftools}"
+                    else:
+                        fastq_arg = ",".join(single_fastq_files)
+                        bowtie2_align_command = f"bowtie2 --xeq --very-sensitive {bowtie2_options} --threads {threads} -x {bowtie2_genome_index_prefix} -U {fastq_arg} | samtools view -bS - | samtools sort -o {bam_for_bcftools}"
                     logger.info("Running Bowtie2 alignment...")
                     run(bowtie2_align_command)
             else:
                 bam_for_bcftools = []
-                first_fastq = fastq_files_1[0]
+                first_fastq = inputs[0]
                 if not out_bam_dir:
                     out_bam_dir = os.path.dirname(first_fastq)
+                os.makedirs(out_bam_dir, exist_ok=True)
                 fasta_ref_base = os.path.basename(fasta_ref)
                 fasta_ref_base = re.sub(r"\.(fa|fasta|fna)(\.gz)?$", "", fasta_ref_base)
                 fasta_ref_base = fasta_ref_base.replace(".", "_")
-                if len(inputs) == 2:  # paired-end
-                    for fastq1, fastq2 in zip(fastq_files_1, fastq_files_2):
+                if parity == "paired":
+                    for fastq1, fastq2 in paired_fastq_files:
                         fq_base = re.sub(r"\..*", "", os.path.basename(fastq1))
                         bam_out = os.path.join(out_bam_dir, f"{fq_base}_aligned_to_{fasta_ref_base}.bam")
                         if not os.path.exists(bam_out):
@@ -502,8 +516,8 @@ def denovo(
                             bowtie2_align_command = f"bowtie2 --xeq --very-sensitive {bowtie2_options} --threads {threads} -x {bowtie2_genome_index_prefix} -1 {fastq1} -2 {fastq2} | samtools view -bS - | samtools sort -o {bam_out}"
                             run(bowtie2_align_command)
                         bam_for_bcftools.append(bam_out)
-                elif len(inputs) == 1:  # single-end
-                    for fastq in fastq_files_1:
+                else:
+                    for fastq in single_fastq_files:
                         fq_base = re.sub(r"\..*", "", os.path.basename(fastq))
                         bam_out = os.path.join(out_bam_dir, f"{fq_base}_aligned_to_{fasta_ref_base}.bam")
                         if not os.path.exists(bam_out):
@@ -512,14 +526,12 @@ def denovo(
                             bowtie2_align_command = f"bowtie2 --xeq --very-sensitive {bowtie2_options} --threads {threads} -x {bowtie2_genome_index_prefix} -U {fastq} | samtools view -bS - | samtools sort -o {bam_out}"
                             run(bowtie2_align_command)
                         bam_for_bcftools.append(bam_out)
-                else:
-                    raise ValueError("invalid number of inputs for bowtie2 alignment")
                 
                 bam_for_bcftools = " ".join(bam_for_bcftools)
         else:
             raise ValueError(f"aligner '{aligner}' not supported")
     elif input_type == "bam":
-        bam_for_bcftools = " ".join(file for input_pair in inputs for file in input_pair.split(","))
+        bam_for_bcftools = " ".join(inputs)
 
     #* Index BAM
     assert isinstance(bam_for_bcftools, str)
@@ -536,7 +548,7 @@ def denovo(
         if not output.endswith(".vcf") and not output.endswith(".vcf.gz"):
             raise ValueError("when using 'bcftools' variant caller, --output must end with .vcf or .vcf.gz")
         
-        bcftools_cmd = f"bcftools mpileup --threads {threads} -A -f {fasta_ref} -a INFO/AD -Q 0 -d 10000 -Ou {bcftools_verbosity}"
+        bcftools_cmd = f"bcftools mpileup --threads {threads} -A -f {fasta_ref} -a INFO/AD -Q 0 -d 10000 -Ou"
         if regions:
             bcftools_cmd += f" -R {regions}"
         if disable_baq:
@@ -550,13 +562,13 @@ def denovo(
             bcftools_cmd += f" | {filter_expression} -Ou"
         
         #* bcftools call
-        bcftools_cmd += f" | bcftools call -m -A -v --threads {threads} {bcftools_verbosity}"
+        bcftools_cmd += f" | bcftools call -m -A -v --threads {threads}"
         if bcftools_call_prior:
             bcftools_cmd += f" --prior {bcftools_call_prior}"
 
         #* optional: bcftools norm and additional filter (must repeat after normalization)
         if not disable_bcftools_norm:
-            bcftools_cmd += f" -Ou | bcftools norm -f {fasta_ref} -c s -d all -m -any --threads {threads} {bcftools_verbosity}"
+            bcftools_cmd += f" -Ou | bcftools norm -f {fasta_ref} -c s -d all -m -any --threads {threads}"
             if do_filtering:
                 bcftools_cmd += f" -Ou | {filter_expression}"
 
@@ -621,8 +633,9 @@ read2vcf = denovo
 
 def main():
     parser = argparse.ArgumentParser(description="STAR alignment + bcftools variant calling pipeline")
-    parser.add_argument("inputs", nargs="+", help="Input or BAMS or FASTQs. If multiple bams or fastqs, separate with commas. If paired fastqs, first pass in R1 files separated by commas, then space, then R2 files separated by commas.")
+    parser.add_argument("inputs", nargs="+", help="Input BAMs or FASTQs. For paired FASTQs, pass alternating R1/R2 files.")
     parser.add_argument("-f", "--fasta-ref", required=True, help="Reference FASTA file")
+    parser.add_argument("-p", "--parity", default="single", choices=["single", "paired"], help="FASTQ parity. Use paired to pair alternating R1/R2 inputs.")
     parser.add_argument("-g", "--gtf", default="", help="genome annotation GTF file")
     parser.add_argument("-xs", "--star-genome-index-dir", default="genome_index", help="STAR or Bowtie2 genome index directory")
     parser.add_argument("-xb", "--bowtie2-genome-index-prefix", default="bowtie2_index", help="prefix for Bowtie2 genome index files")
@@ -657,6 +670,7 @@ def main():
     denovo(
         inputs=args.inputs,
         fasta_ref=args.fasta_ref,
+        parity=args.parity,
         gtf=args.gtf,
         star_genome_index_dir=args.star_genome_index_dir,
         bowtie2_genome_index_prefix=args.bowtie2_genome_index_prefix,
