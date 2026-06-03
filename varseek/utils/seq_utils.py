@@ -867,14 +867,19 @@ def sort_fastq_files_for_kb_count(fastq_files, technology=None, multiplexed=None
     file_name_format = None
 
     try:
+        # Determine the file naming format up front (Illumina takes priority if any file matches its convention)
+        if any(bool(rnaseq_fastq_filename_pattern_illumina.match(os.path.basename(f))) for f in fastq_files):
+            file_name_format = "illumina"
+
         for fastq_file in fastq_files:
             if not fastq_file.endswith(fastq_extensions):  # check for valid extension
                 message = f"File {fastq_file} does not have a valid FASTQ extension of one of the following: {fastq_extensions}."
                 raise ValueError(message)  # invalid regardless of order
 
-            if bool(rnaseq_fastq_filename_pattern_illumina.match(os.path.basename(fastq_file))):  # check for Illumina file naming convention
-                file_name_format = "illumina"
-            elif bool(rnaseq_fastq_filename_pattern_bulk.match(os.path.basename(fastq_file))):
+            if file_name_format == "illumina":
+                continue  # non-conforming Illumina files are removed (not raised on) below
+
+            if bool(rnaseq_fastq_filename_pattern_bulk.match(os.path.basename(fastq_file))):
                 file_name_format = "bulk"
             else:
                 message = f"File {fastq_file} does not match the expected bulk file naming convention of SAMPLE_PAIR.EXT where SAMPLE is sample name, PAIR is 1/2, and EXT is a fastq extension - or the Illumina file naming convention of SAMPLE_LANE_R[12]_001.fastq.gz, where SAMPLE is letters, numbers, underscores; LANE is numbers with optional leading 0s; pair is either R1 or R2; and it has .fq or .fastq extension (or .fq.gz or .fastq.gz)."
@@ -895,6 +900,16 @@ def sort_fastq_files_for_kb_count(fastq_files, technology=None, multiplexed=None
         else:  # remove the index files
             logger.info(f"Removing index files from fastq files list, as they are not utilized in kb count with technology {technology}")
             filtered_files = [f for f in fastq_files if not any(x in os.path.basename(f) for x in ["I1", "I2"])]
+
+        if file_name_format == "illumina":
+            # Drop any remaining files that don't fit the Illumina naming convention rather than raising
+            conforming_files = []
+            for f in filtered_files:
+                if bool(rnaseq_fastq_filename_pattern_illumina.match(os.path.basename(f))):
+                    conforming_files.append(f)
+                else:
+                    logger.info(f"File {f} does not match the Illumina file naming convention of SAMPLE_LANE_R[12]_001.fastq.gz, so removing it from the fastq files list.")
+            filtered_files = conforming_files
 
         if file_name_format == "illumina":
             sorted_files = sorted(filtered_files, key=illumina_sort_order_for_kb_count_fastqs)

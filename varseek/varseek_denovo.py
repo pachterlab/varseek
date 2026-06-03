@@ -9,6 +9,7 @@ import shlex
 import tempfile
 
 from collections import Counter
+import gzip
 import pysam
 from tqdm import tqdm
 import pandas as pd
@@ -254,7 +255,7 @@ def denovo(
     output="out.vcf.gz",
     output_tsv=None,
     tsv_reference_type="auto",
-    read_length=90,
+    read_length=None,
     min_counts=3,
     aligner="bowtie2",
     variant_caller="bcftools",
@@ -293,7 +294,7 @@ def denovo(
     - output                         (str) Output VCF file for bcftools or CSV file for cigar. Default: "out.vcf.gz"
     - output_tsv                     (str) Optional TSV output converted from the bcftools VCF with columns seq_id and variant. Default: None
     - tsv_reference_type             (str) Variant coordinate prefix for output_tsv. One of auto, dna, genome, cdna, transcriptome. Default: "auto"
-    - read_length                    (int) Read length. Default: 90
+    - read_length                    (int) Read length. Default: None
     - min_counts                     (int) Minimum count threshold for filtering. Default: 3
     - aligner                        (str) Aligner to use. One of STAR or bowtie2. Default: "STAR"
     - variant_caller                 (str) Variant caller to use. One of bcftools or cigar. Default: "bcftools"
@@ -426,6 +427,13 @@ def denovo(
         check_tool("samtools")
         if aligner == "STAR":
             check_tool("STAR")
+
+            if read_length is None:
+                first_fastq = single_fastq_files[0] if parity == "single" else paired_fastq_files[0][0]
+                with gzip.open(first_fastq, "rt") if first_fastq.endswith(".gz") else open(first_fastq, "rt") as f:
+                    f.readline()  # skip header
+                    read_length = len(f.readline().strip())  # get read length
+
             read_length_minus_one = read_length - 1
             bam_for_bcftools = f"{star_alignment_prefix}Aligned.sortedByCoord.out.bam"
             
@@ -442,8 +450,7 @@ def denovo(
                 else:
                     inputs_star = ",".join(single_fastq_files)
                 # TODO: add merge_bam_files logic for STAR (right now it always merges into one BAM)
-                cmd = f"""
-                STAR --runThreadN {threads} \
+                cmd = f"""STAR --runThreadN {threads} \
                     --genomeDir {star_genome_index_dir} \
                     --readFilesIn {inputs_star} \
                     --sjdbOverhang {read_length_minus_one} \
@@ -452,8 +459,7 @@ def denovo(
                     --outSAMmapqUnique 60 \
                     --twopassMode Basic \
                     --limitSjdbInsertNsj 1000000 \
-                    --limitBAMsortRAM 0
-                """
+                    --limitBAMsortRAM 0"""
                 if inputs[0].endswith(".gz"):
                     cmd += " --readFilesCommand zcat"
                 run(cmd)
