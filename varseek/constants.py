@@ -2,141 +2,166 @@
 
 from collections import defaultdict
 
-# allowable_kwargs = {
-#     "varseek_build": {"insertion_size_limit", "min_seq_len", "optimize_flanking_regions", "remove_seqs_with_wt_kmers", "required_insertion_overlap_length", "merge_identical", "merge_identical_strandedness", "use_IDs", "cosmic_version", "cosmic_grch", "cosmic_email", "cosmic_password", "save_files"},
-#     "varseek_info": {"bowtie_path"},
-#     "varseek_filter": {"filter_all_dlists", "dlist_genome_fasta", "dlist_cdna_fasta", "dlist_genome_filtered_fasta_out", "dlist_cdna_filtered_fasta_out"},
-#     "kb_ref": set(),
-#     "kb_count": {"union"},
-#     "varseek_fastqpp": {"seqtk"},
-#     "varseek_clean": set(),
-#     "varseek_summarize": set(),
-#     "varseek_ref": set(),
-#     "varseek_count": set()
-# }
-
 fasta_extensions = (".fa", ".fasta", ".fa.gz", ".fasta.gz", ".fna", ".fna.gz", ".ffn", ".ffn.gz")
 fastq_extensions = (".fq", ".fastq", ".fq.gz", ".fastq.gz")
 
-technology_valid_values = {"10XV1", "10XV2", "10XV3", "10XV3_ULTIMA", "BDWTA", "BULK", "CELSEQ", "CELSEQ2", "DROPSEQ", "INDROPSV1", "INDROPSV2", "INDROPSV3", "SCRUBSEQ", "SMARTSEQ2", "SMARTSEQ3", "SPLIT-SEQ", "STORMSEQ", "SURECELL", "VISIUM"}
+# Canonical per-technology metadata. One nested entry per sequencing technology is the
+# single source of truth for the technology vocabulary and every per-technology lookup.
+# Look these up with the canonical (upper-cased) technology name, e.g.
+# technology_info[technology.upper()]["num_files"]. Fields:
+#   strand_bias           -> tuple of possible strand-bias ends, or None
+#   transcript_file_index -> index of the FASTQ file holding the transcript/cDNA read
+#   barcode_position      -> (file_index, start, end) of the barcode (nested tuple if the
+#                            barcode is split across positions); None if no barcode. Same
+#                            format as "barcode" in `kb --list`.
+#   num_files             -> number of FASTQ files (int, or {"single": .., "paired": ..})
+#   barcode_umi           -> barcode/UMI/spacer offsets used by fastq preprocessing, or
+#                            None if the technology has no barcode/UMI entry.
+technology_info = {
+    "10XV1": {
+        "strand_bias": ("5p", "3p"),
+        "transcript_file_index": 2,
+        "barcode_position": (0, 0, 14),
+        "num_files": 3,
+        "barcode_umi": None,
+    },
+    "10XV2": {
+        "strand_bias": ("5p", "3p"),
+        "transcript_file_index": 1,
+        "barcode_position": (0, 0, 16),
+        "num_files": 2,
+        "barcode_umi": {"barcode_start": 0, "barcode_end": 16, "umi_start": 16, "umi_end": 26, "spacer_start": None, "spacer_end": None},
+    },
+    "10XV3": {
+        "strand_bias": ("5p", "3p"),
+        "transcript_file_index": 1,
+        "barcode_position": (0, 0, 16),
+        "num_files": 2,
+        "barcode_umi": {"barcode_start": 0, "barcode_end": 16, "umi_start": 16, "umi_end": 28, "spacer_start": None, "spacer_end": None},
+    },
+    "10XV3_ULTIMA": {
+        "strand_bias": ("5p", "3p"),
+        "transcript_file_index": 0,
+        "barcode_position": (0, 22, 38),
+        "num_files": 1,
+        "barcode_umi": None,
+    },
+    "10XV4": {
+        "strand_bias": ("5p", "3p"),
+        "transcript_file_index": 1,
+        "barcode_position": (0, 0, 16),
+        "num_files": 2,
+        "barcode_umi": {"barcode_start": 0, "barcode_end": 16, "umi_start": 16, "umi_end": 26, "spacer_start": None, "spacer_end": None},
+    },
+    "BDWTA": {
+        "strand_bias": ("3p",),
+        "transcript_file_index": 1,
+        "barcode_position": ((0, 0, 9), (0, 21, 30), (0, 43, 52)),
+        "num_files": 2,
+        "barcode_umi": None,
+    },
+    "BULK": {
+        "strand_bias": None,
+        "transcript_file_index": 0,
+        "barcode_position": None,
+        "num_files": {"single": 1, "paired": 2},
+        "barcode_umi": {"barcode_start": None, "barcode_end": None, "umi_start": None, "umi_end": None, "spacer_start": None, "spacer_end": None},
+    },
+    "CELSEQ": {
+        "strand_bias": ("3p",),
+        "transcript_file_index": 1,
+        "barcode_position": (0, 0, 8),
+        "num_files": 2,
+        "barcode_umi": None,
+    },
+    "CELSEQ2": {
+        "strand_bias": ("3p",),
+        "transcript_file_index": 1,
+        "barcode_position": (0, 6, 12),
+        "num_files": 2,
+        "barcode_umi": None,
+    },
+    "DROPSEQ": {
+        "strand_bias": ("3p",),
+        "transcript_file_index": 1,
+        "barcode_position": (0, 0, 12),
+        "num_files": 2,
+        "barcode_umi": None,
+    },
+    "INDROPSV1": {
+        "strand_bias": ("3p",),
+        "transcript_file_index": 1,
+        "barcode_position": ((0, 0, 11), (0, 30, 38)),
+        "num_files": 2,
+        "barcode_umi": None,
+    },
+    "INDROPSV2": {
+        "strand_bias": ("3p",),
+        "transcript_file_index": 0,
+        "barcode_position": ((1, 0, 11), (1, 30, 38)),
+        "num_files": 1,
+        "barcode_umi": None,
+    },
+    "INDROPSV3": {
+        "strand_bias": ("3p",),
+        "transcript_file_index": 2,
+        "barcode_position": (0, 0, 8),
+        "num_files": 3,
+        "barcode_umi": None,
+    },
+    "SCRUBSEQ": {
+        "strand_bias": ("3p",),
+        "transcript_file_index": 1,
+        "barcode_position": (0, 0, 6),
+        "num_files": 2,
+        "barcode_umi": None,
+    },
+    "SMARTSEQ2": {
+        "strand_bias": None,
+        "transcript_file_index": 0,
+        "barcode_position": None,
+        "num_files": {"single": 1, "paired": 2},
+        "barcode_umi": {"barcode_start": None, "barcode_end": None, "umi_start": None, "umi_end": None, "spacer_start": None, "spacer_end": None},
+    },
+    "SMARTSEQ3": {
+        "strand_bias": None,
+        "transcript_file_index": 0,
+        "barcode_position": None,
+        "num_files": 2,
+        "barcode_umi": {"barcode_start": None, "barcode_end": None, "umi_start": 11, "umi_end": 19, "spacer_start": 0, "spacer_end": 11},
+    },
+    "SPLIT-SEQ": {
+        "strand_bias": ("3p",),
+        "transcript_file_index": 0,
+        "barcode_position": ((1, 10, 18), (1, 48, 56), (1, 78, 86)),
+        "num_files": 2,
+        "barcode_umi": None,
+    },
+    "STORMSEQ": {
+        "strand_bias": ("3p",),
+        "transcript_file_index": 0,
+        "barcode_position": None,
+        "num_files": 2,
+        "barcode_umi": None,
+    },
+    "SURECELL": {
+        "strand_bias": ("3p",),
+        "transcript_file_index": 1,
+        "barcode_position": ((0, 0, 6), (0, 21, 27), (0, 42, 48)),
+        "num_files": 2,
+        "barcode_umi": None,
+    },
+    "VISIUM": {
+        "strand_bias": ("3p",),
+        "transcript_file_index": 1,
+        "barcode_position": (0, 0, 16),
+        "num_files": 2,
+        "barcode_umi": {"barcode_start": 0, "barcode_end": 16, "umi_start": 16, "umi_end": 28, "spacer_start": None, "spacer_end": None},
+    },
+}
+technology_valid_values = set(technology_info)
 non_single_cell_technologies = {"BULK", "VISIUM"}
 supported_downloadable_normal_reference_genomes_with_kb_ref = {"human", "mouse", "dog", "monkey", "zebrafish"}  # see full list at https://github.com/pachterlab/kallisto-transcriptome-indices/
-technology_to_strand_bias_mapping = {
-    "10XV1": ("5p", "3p"),
-    "10XV2": ("5p", "3p"),
-    "10XV3": ("5p", "3p"),
-    "10XV3_ULTIMA": ("5p", "3p"),
-    "BDWTA": ("3p",),
-    "BULK": None,
-    "CELSEQ": ("3p",),
-    "CELSEQ2": ("3p",),
-    "DROPSEQ": ("3p",),
-    "INDROPSV1": ("3p",),
-    "INDROPSV2": ("3p",),
-    "INDROPSV3": ("3p",),
-    "SCRUBSEQ": ("3p",),
-    "SMARTSEQ2": None,
-    "SMARTSEQ3": None,
-    "SPLIT-SEQ": ("3p",),
-    "STORMSEQ": ("3p",),
-    "SURECELL": ("3p",),
-    "VISIUM": ("3p",),
-}
-technology_to_file_index_with_transcripts_mapping = {
-    "10XV1": 2,
-    "10XV2": 1,
-    "10XV3": 1,
-    "10XV3_ULTIMA": 0,
-    "BDWTA": 1,
-    "BULK": 0,
-    "CELSEQ": 1,
-    "CELSEQ2": 1,
-    "DROPSEQ": 1,
-    "INDROPSV1": 1,
-    "INDROPSV2": 0,
-    "INDROPSV3": 2,
-    "SCRUBSEQ": 1,
-    "SMARTSEQ2": 0,
-    "SMARTSEQ3": 0,
-    "SPLIT-SEQ": 0,
-    "STORMSEQ": 0,
-    "SURECELL": 1,
-    "VISIUM": 1,
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# follows same format as "barcode" in kb --list
-technology_to_file_index_with_barcode_and_barcode_start_and_end_position_mapping = {
-    "10XV1": (0,0,14),
-    "10XV2": (0,0,16),
-    "10XV3": (0,0,16),
-    "10XV3_ULTIMA": (0,22,38),
-    "BDWTA": ((0,0,9), (0,21,30), (0,43,52)),
-    "BULK": None,
-    "CELSEQ": (0,0,8),
-    "CELSEQ2": (0,6,12),
-    "DROPSEQ": (0,0,12),
-    "INDROPSV1": ((0,0,11), (0,30,38)),
-    "INDROPSV2": ((1,0,11), (1,30,38)),
-    "INDROPSV3": (0,0,8),
-    "SCRUBSEQ": (0,0,6),
-    "SMARTSEQ2": None,
-    "SMARTSEQ3": None,
-    "SPLIT-SEQ": ((1,10,18), (1,48,56), (1,78,86)),
-    "STORMSEQ": None,
-    "SURECELL": ((0,0,6), (0,21,27), (0,42,48)),
-    "VISIUM": (0,0,16),
-}
-technology_to_number_of_files_mapping = {
-    "10XV1": 3,
-    "10XV2": 2,
-    "10XV3": 2,
-    "10XV3_ULTIMA": 1,
-    "BDWTA": 2,
-    "BULK": {"single": 1, "paired": 2},
-    "CELSEQ": 2,
-    "CELSEQ2": 2,
-    "DROPSEQ": 2,
-    "INDROPSV1": 2,
-    "INDROPSV2": 1,
-    "INDROPSV3": 3,
-    "SCRUBSEQ": 2,
-    "SMARTSEQ2": {"single": 1, "paired": 2},
-    "SMARTSEQ3": 2,
-    "SPLIT-SEQ": 2,
-    "STORMSEQ": 2,
-    "SURECELL": 2,
-    "VISIUM": 2,
-}
-# None means no barcode/umi
-technology_barcode_and_umi_dict = {
-    "bulk": {"barcode_start": None, "barcode_end": None, "umi_start": None, "umi_end": None, "spacer_start": None, "spacer_end": None},
-    "10xv2": {"barcode_start": 0, "barcode_end": 16, "umi_start": 16, "umi_end": 26, "spacer_start": None, "spacer_end": None},
-    "10xv3": {"barcode_start": 0, "barcode_end": 16, "umi_start": 16, "umi_end": 28, "spacer_start": None, "spacer_end": None},
-    "Visium": {"barcode_start": 0, "barcode_end": 16, "umi_start": 16, "umi_end": 28, "spacer_start": None, "spacer_end": None},
-    "SMARTSEQ2": {"barcode_start": None, "barcode_end": None, "umi_start": None, "umi_end": None, "spacer_start": None, "spacer_end": None},
-    "SMARTSEQ3": {"barcode_start": None, "barcode_end": None, "umi_start": 11, "umi_end": 19, "spacer_start": 0, "spacer_end": 11},
-}
 
 
 complement_trans = str.maketrans("ACGTNacgtn.", "TGCANtgcan.")
@@ -296,3 +321,20 @@ varseek_count_only_allowable_kb_count_arguments = {
     "one_argument": {"--tmp", "--kallisto", "--bustools", "-w", "-r", "-m", "--inleaved", "--filter", "--filter-threshold", "-N", "--threshold", "--platform"},
     "multiple_arguments": set(),
 }  # don't include t, i, workflow here because I do it myself later; cannot take in a custom value for k (because this would get confusing with k for fastqpp/clean)
+
+# species -> reference_type -> k -> prebuilt-index URL (placeholder URLs for now).
+# Source of truth for the Species vocabulary (type_utils.Species derives from its keys).
+species_to_url = {
+    "human": {
+        "genome": {"41": "https://example.com/human_index.idx"},
+        "cdna": {"41": "https://example.com/human_cdna_index.idx"},
+        "transcriptome": {"41": "https://example.com/human_transcriptome_index.idx"},
+        "genome_or_transcriptome": {"41": "https://example.com/human_genome_or_transcriptome_index.idx"},
+    },
+}
+
+# a list of dictionaries with keys "variants", "sequences", and "description" (used by the download / list_downloadable_references features that vk build absorbed from vk ref)
+downloadable_references = [
+    {"description": "COSMIC Cancer Mutation Census version 101 - Ensembl GRCh37 release 93 cDNA reference annotations. w=47, k=51. Header format (showing the column(s) from the original database used): 'seq_ID':'mutation_cdna'.", "download_command": "vk build -v cosmic_cmc -s cdna -d"},
+    {"description": "Geuvadis dataset - Ensembl GRCh37 release 113 cDNA reference annotations. w=37, k=41. Header format (showing the column(s) from the original database used): 'seq_ID':'mutation_cdna'.", "download_command": "vk build -v geuvadis -s cdna -d"},
+]

@@ -86,6 +86,7 @@ def assert_global_variables_zero(number_intronic_position_mutations = 0, number_
 
 def test_single_substitution(long_sequence, out_dir):
     result = vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.35G>A",
@@ -102,6 +103,7 @@ def test_single_substitution(long_sequence, out_dir):
 
 def test_single_substitution_near_right_end(long_sequence, out_dir):
     result = vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.65G>A",
@@ -119,6 +121,7 @@ def test_single_substitution_near_right_end(long_sequence, out_dir):
 
 def test_single_substitution_near_left_end(long_sequence, out_dir):
     result = vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.5G>A",
@@ -136,6 +139,7 @@ def test_single_substitution_near_left_end(long_sequence, out_dir):
 
 def test_single_deletion(long_sequence, out_dir):
     result = vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.35del",  # del the G
@@ -153,6 +157,7 @@ def test_single_deletion(long_sequence, out_dir):
 
 def test_multi_deletion(long_sequence, out_dir):
     result = vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.35_40del",
@@ -169,6 +174,7 @@ def test_multi_deletion(long_sequence, out_dir):
 
 def test_single_deletion_with_right_repeats(long_sequence, out_dir):
     result = vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.31del",
@@ -185,6 +191,7 @@ def test_single_deletion_with_right_repeats(long_sequence, out_dir):
 
 def test_single_deletion_with_left_repeats(long_sequence, out_dir):
     result = vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.34del",
@@ -201,6 +208,7 @@ def test_single_deletion_with_left_repeats(long_sequence, out_dir):
 
 def test_multi_deletion_with_right_repeats(long_sequence, out_dir):
     result = vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.31_32del",
@@ -217,6 +225,7 @@ def test_multi_deletion_with_right_repeats(long_sequence, out_dir):
 
 def test_single_insertion(long_sequence, out_dir):
     result = vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.4_5insT",
@@ -233,6 +242,7 @@ def test_single_insertion(long_sequence, out_dir):
 
 def test_single_insertion_mid_sequence_small_w(long_sequence, out_dir):
     result = vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.20_21insA", # --> 19_20 (index 0) --> start at 15, end at 24 (0-index positions, inclusive, from original sequence)
@@ -252,6 +262,7 @@ def test_single_insertion_mid_sequence_small_w(long_sequence, out_dir):
 
 def test_multi_insertion(long_sequence, out_dir):
     result = vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.65_66insTTTTT",
@@ -269,6 +280,7 @@ def test_multi_insertion(long_sequence, out_dir):
 
 def test_multi_insertion_with_left_repeats(long_sequence, out_dir):
     result = vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.20_21insCCAAA",
@@ -286,6 +298,7 @@ def test_multi_insertion_with_left_repeats(long_sequence, out_dir):
 
 def test_single_delins(long_sequence, out_dir):
     result = vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.38delinsAAA",
@@ -303,6 +316,7 @@ def test_single_delins(long_sequence, out_dir):
 
 def test_multi_delins(long_sequence, out_dir):
     result = vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.38_40delinsAAA",
@@ -320,6 +334,7 @@ def test_multi_delins(long_sequence, out_dir):
 
 def test_multi_delins_with_psuedo_left_repeats(long_sequence, out_dir):
     result = vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.36_37delinsAG",
@@ -336,6 +351,7 @@ def test_multi_delins_with_psuedo_left_repeats(long_sequence, out_dir):
 
 def test_multi_delins_with_true_left_repeats(long_sequence, out_dir):
     result = vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.36_37delinsAC",
@@ -353,6 +369,7 @@ def test_multi_delins_with_true_left_repeats(long_sequence, out_dir):
 
 def test_multi_delins_with_true_right_repeats(long_sequence, out_dir):
     result = vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.36_37delinsCA",
@@ -369,6 +386,7 @@ def test_multi_delins_with_true_right_repeats(long_sequence, out_dir):
 
 def test_single_dup(long_sequence, out_dir):
     result = vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.35dup",
@@ -385,6 +403,7 @@ def test_single_dup(long_sequence, out_dir):
 
 def test_multi_dup(long_sequence, out_dir):
     result = vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.35_37dup",
@@ -401,6 +420,7 @@ def test_multi_dup(long_sequence, out_dir):
 
 def test_inversion_with_overlaps(long_sequence, out_dir):
     result = vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.35_38inv",
@@ -423,6 +443,7 @@ def test_list_of_mutations(long_sequence, out_dir):
     sequence_list = [long_sequence for _ in range(len(mutation_list))]
     
     result = vk.build(
+        dont_create_index=True,
         sequences=sequence_list,
         variants=mutation_list,
         return_variant_output=True,
@@ -441,6 +462,7 @@ def test_csv_of_mutations(create_temp_files, out_dir):
     mutation_temp_csv_file, sequence_temp_fasta_path = create_temp_files
 
     result = vk.build(
+        dont_create_index=True,
         sequences=sequence_temp_fasta_path,
         variants=mutation_temp_csv_file,
         return_variant_output=True,
@@ -458,6 +480,7 @@ def test_csv_of_mutations_with_chunks(create_temp_files, out_dir):
     mutation_temp_csv_file, sequence_temp_fasta_path = create_temp_files
 
     result = vk.build(
+        dont_create_index=True,
         sequences=sequence_temp_fasta_path,
         variants=mutation_temp_csv_file,
         required_insertion_overlap_length=None,
@@ -480,6 +503,7 @@ def test_csv_of_mutations_with_chunks(create_temp_files, out_dir):
 
 def test_intron_mutation_plus(long_sequence, out_dir):
     vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.20+3T>A",
@@ -490,6 +514,7 @@ def test_intron_mutation_plus(long_sequence, out_dir):
 
 def test_intron_mutation_minus(long_sequence, out_dir):
     vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.20-3T>A",
@@ -501,6 +526,7 @@ def test_intron_mutation_minus(long_sequence, out_dir):
 
 def test_posttranslational_mutation(long_sequence, out_dir):
     vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.20*5T>A",
@@ -511,6 +537,7 @@ def test_posttranslational_mutation(long_sequence, out_dir):
 
 def test_uncertain_mutation(long_sequence, out_dir):
     vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.?",
@@ -521,6 +548,7 @@ def test_uncertain_mutation(long_sequence, out_dir):
 
 def test_ambiguous_mutation(long_sequence, out_dir):
     vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.(20_28)del",
@@ -531,6 +559,7 @@ def test_ambiguous_mutation(long_sequence, out_dir):
 
 def test_index_error(long_sequence, out_dir):
     vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.99999999C>A",
@@ -541,6 +570,7 @@ def test_index_error(long_sequence, out_dir):
 
 def test_mismatch_error(long_sequence, out_dir):
     vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.2G>A",
@@ -553,6 +583,7 @@ def test_mismatch_error(long_sequence, out_dir):
 
 def test_large_w(extra_long_sequence, out_dir):
     result = vk.build(
+        dont_create_index=True,
         sequences=extra_long_sequence,
         optimize_flanking_regions = True,
         variants="c.40T>G",
@@ -570,6 +601,7 @@ def test_large_w(extra_long_sequence, out_dir):
 
 def test_large_min_seq_length(long_sequence, out_dir):
     result = vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = True,
         variants="c.35G>A",
@@ -586,6 +618,7 @@ def test_large_min_seq_length(long_sequence, out_dir):
 
 def test_single_deletion_with_right_repeats_and_unoptimized_flanks(long_sequence, out_dir):
     result = vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = False,
         remove_seqs_with_wt_kmers = False,
@@ -602,6 +635,7 @@ def test_single_deletion_with_right_repeats_and_unoptimized_flanks(long_sequence
 
 def test_single_deletion_with_right_repeats_and_removing_seqs_with_wt_kmers(long_sequence, out_dir):
     result = vk.build(
+        dont_create_index=True,
         sequences=long_sequence,
         optimize_flanking_regions = False,
         variants="c.31del",
@@ -618,6 +652,7 @@ def test_single_deletion_with_right_repeats_and_removing_seqs_with_wt_kmers(long
 
 def test_sequence_with_N(long_sequence_with_N, out_dir):
     result = vk.build(
+        dont_create_index=True,
         sequences=long_sequence_with_N,
         optimize_flanking_regions = True,
         variants="c.35G>A",
@@ -638,6 +673,7 @@ def test_semicolon_merging(long_sequence, out_dir):
     sequence_list = [long_sequence, f"{long_sequence}AAAAAAA"]
     
     result = vk.build(
+        dont_create_index=True,
         sequences=sequence_list,
         variants=mutation_list,
         merge_identical=True,
@@ -655,6 +691,7 @@ def test_semicolon_merging(long_sequence, out_dir):
 
 # def test_translation(long_sequence_with_N, out_dir):
 #     result = vk.build(
+dont_create_index=True,
 #         sequences=long_sequence_with_N,
 #         optimize_flanking_regions = True,
 #         variants="c.35G>A",
@@ -689,11 +726,11 @@ def test_parameter_values(toy_sequences_fasta_for_vk_ref, toy_variants_csv_for_v
     ]
     
     for parameter_dict in good_parameter_values_list_of_dicts:
-        vk.build(**parameter_dict, overwrite=True)
+        vk.build(**parameter_dict, overwrite=True, dont_create_index=True)
 
     for parameter_dict in bad_parameter_values_list_of_dicts:
         with pytest.raises(ValueError):
-            vk.build(**parameter_dict, overwrite=True)
+            vk.build(**parameter_dict, overwrite=True, dont_create_index=True)
 
 
 
@@ -703,6 +740,7 @@ def test_vcf(vcf_file_and_corresponding_sequences, out_dir):
     vcf_file_path, sequences_fasta_path, vcf_output_ground_truth_df = vcf_file_and_corresponding_sequences
 
     _ = vk.build(
+        dont_create_index=True,
         variants=vcf_file_path,
         sequences=sequences_fasta_path,
         out=out_dir,
@@ -727,6 +765,7 @@ def test_vcf_chunks(vcf_file_and_corresponding_sequences, out_dir):
     vcf_file_path, sequences_fasta_path, vcf_output_ground_truth_df = vcf_file_and_corresponding_sequences
 
     _ = vk.build(
+        dont_create_index=True,
         variants=vcf_file_path,
         sequences=sequences_fasta_path,
         out=out_dir,

@@ -157,3 +157,4 @@ data
 data/
 **/pytest_output/
 tests/kb_files/
+tmp/

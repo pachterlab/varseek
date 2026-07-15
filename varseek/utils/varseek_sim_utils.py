@@ -1,3 +1,4 @@
+import ast
 import os
 import random
 
@@ -18,6 +19,171 @@ tqdm.pandas()
 
 logger = logging.getLogger(__name__)
 logger = set_up_logger(logger, logging_level="INFO", save_logs=False, log_dir=None)
+
+
+# ---------------------------------------------------------------------------
+# Self-contained variant dataframe filtering used by vk sim.
+# Ported from the (now removed) vk filter module so that sim has no dependency
+# on varseek.filter. Supports the same "COLUMN:RULE[=VALUE]" filter strings.
+# ---------------------------------------------------------------------------
+all_possible_filter_rules = {"greater_than", "greater_or_equal", "less_than", "less_or_equal", "between_inclusive", "between_exclusive", "top_percent", "bottom_percent", "equal", "not_equal", "is_in", "is_not_in", "is_true", "is_false", "is_not_true", "is_not_false", "is_null", "is_not_null"}
+filter_rules_that_expect_single_numeric_value = {"greater_than", "greater_or_equal", "less_than", "less_or_equal", "top_percent", "bottom_percent"}
+filter_rules_that_expect_comma_separated_pair_of_numerics_value = {"between_inclusive", "between_exclusive"}
+filter_rules_that_expect_string_value = {"equal", "not_equal"}
+filter_rules_that_expect_text_file_or_list_value = {"is_in", "is_not_in"}
+filter_rules_that_expect_no_value = {"is_true", "is_false", "is_not_true", "is_not_false", "is_null", "is_not_null"}
+
+
+def convert_txt_to_list(txt_path):
+    with open(txt_path, "r", encoding="utf-8") as f:
+        return [line.strip() for line in f if line.strip()]
+
+
+def prepare_filters_list(filters):
+    """Parse a list of ``COLUMN:RULE[=VALUE]`` strings into filter dicts."""
+    filter_list = []
+
+    if isinstance(filters, str) and filters.endswith(".txt"):
+        filters = convert_txt_to_list(filters)
+    elif isinstance(filters, str) and not filters.endswith(".txt"):
+        filters = [filters]
+
+    for f in filters:
+        f_split_by_equal = f.split("=")
+        col_rule = f_split_by_equal[0]
+
+        if col_rule.count(":") != 1:
+            raise ValueError(f"Filter format invalid: {f}. Missing colon. Expected 'COLUMN:RULE' or 'COLUMN:RULE=VALUE'")
+
+        column, rule = col_rule.split(":")
+
+        if rule not in all_possible_filter_rules:
+            raise ValueError(f"Filter format invalid: {f}. Invalid rule: {rule}.")
+
+        if f.count("=") == 0:
+            if rule not in filter_rules_that_expect_no_value:
+                raise ValueError(f"Filter format invalid: {f}. Requires a VALUE for rule {rule}. Expected 'COLUMN:RULE=VALUE'")
+            value = None
+        elif f.count("=") == 1:
+            if rule not in filter_rules_that_expect_single_numeric_value and rule not in filter_rules_that_expect_comma_separated_pair_of_numerics_value and rule not in filter_rules_that_expect_string_value and rule not in filter_rules_that_expect_text_file_or_list_value:
+                raise ValueError(f"Filter format invalid: {f}. Requires no VALUE for rule {rule}. Expected 'COLUMN:RULE'")
+            value = f_split_by_equal[1]
+        else:
+            raise ValueError(f"Filter format invalid: {f}. Too many '='s. Expected 'COLUMN:RULE' or 'COLUMN:RULE=VALUE'")
+
+        if rule in filter_rules_that_expect_single_numeric_value:
+            try:
+                value = float(value)
+            except ValueError as exc:
+                raise ValueError(f"Filter format invalid: {f}. Expected single numeric value for rule {rule}. 'COLUMN:RULE=VALUE'") from exc
+        elif rule in filter_rules_that_expect_comma_separated_pair_of_numerics_value:
+            try:
+                value_min, value_max = value.split(",")
+                value_min, value_max = float(value_min), float(value_max)
+            except ValueError as exc:
+                raise ValueError(f"Filter format invalid: {f}. Expected a pair of comma-separated numeric values for rule {rule}. 'COLUMN:RULE=VALUE'") from exc
+        elif rule in filter_rules_that_expect_string_value:
+            pass
+        elif rule in filter_rules_that_expect_text_file_or_list_value:
+            if value.endswith(".txt"):
+                pass
+            elif (value[0] == "[" and value[-1] == "]") or (value[0] == "{" and value[-1] == "}") or (value[0] == "(" and value[-1] == ")"):
+                pass
+            elif isinstance(value, (list, set, tuple)):
+                pass
+            else:
+                raise ValueError(f"Filter format invalid: {f}. Expected a text file path or list for rule {rule}. 'COLUMN:RULE=VALUE'")
+        elif rule in filter_rules_that_expect_no_value:
+            pass
+        else:
+            raise ValueError(f"Filter format invalid: {f}. Invalid rule: {rule}.")
+
+        if rule in {"is_true", "is_not_true"}:
+            value = True
+        if rule in {"is_false", "is_not_false"}:
+            value = False
+
+        filter_list.append({"column": column, "rule": rule, "value": value})
+
+    return filter_list
+
+
+def apply_filters_to_df(df, filters):
+    """Apply ``COLUMN:RULE[=VALUE]`` filter strings to ``df`` and return the result.
+
+    Rows whose filter column is null are retained for numeric/range rules (matching
+    the original vk filter semantics). Filters referencing an absent column are skipped.
+    """
+    for individual_filter in prepare_filters_list(filters):
+        column = individual_filter["column"]
+        rule = individual_filter["rule"]
+        value = individual_filter["value"]
+
+        if column not in df.columns:
+            continue
+
+        logger.info(f"{column} {rule} {value}")
+
+        if rule == "greater_than":
+            df = df.loc[(df[column].astype(float) > float(value)) | (df[column].isnull())]
+        elif rule == "greater_or_equal":
+            df = df.loc[(df[column].astype(float) >= float(value)) | (df[column].isnull())]
+        elif rule == "less_than":
+            df = df.loc[(df[column].astype(float) < float(value)) | (df[column].isnull())]
+        elif rule == "less_or_equal":
+            df = df.loc[(df[column].astype(float) <= float(value)) | (df[column].isnull())]
+        elif rule == "between_inclusive":
+            value_min, value_max = value.split(",")
+            value_min, value_max = float(value_min), float(value_max)
+            if value_min >= value_max:
+                raise ValueError(f"Invalid range: {value}. Minimum value must be less than maximum value.")
+            df = df.loc[((df[column] >= value_min) & (df[column] <= value_max) | (df[column].isnull()))]
+        elif rule == "between_exclusive":
+            value_min, value_max = value.split(",")
+            value_min, value_max = float(value_min), float(value_max)
+            if value_min >= value_max:
+                raise ValueError(f"Invalid range: {value}. Minimum value must be less than maximum value.")
+            df = df.loc[((df[column] > value_min) & (df[column] < value_max) | (df[column].isnull()))]
+        elif rule == "top_percent":
+            percent_value = df[column].quantile((100 - float(value)) / 100)
+            df = df.loc[(df[column].isnull()) | (df[column] >= percent_value)]
+        elif rule == "bottom_percent":
+            percent_value = df[column].quantile(float(value) / 100)
+            df = df.loc[(df[column].isnull()) | (df[column] <= percent_value)]
+        elif rule == "equal":
+            df = df.loc[df[column].astype(str) == str(value)]
+        elif rule == "not_equal":
+            df = df.loc[df[column].astype(str) != str(value)]
+        elif rule in {"is_in", "is_not_in"}:
+            if isinstance(value, str) and value.endswith(".txt"):
+                value = set(convert_txt_to_list(value))
+            else:
+                try:
+                    value = ast.literal_eval(value)
+                    if not isinstance(value, (set, list, tuple)):
+                        raise ValueError("Value must be a set, list, tuple, or path to text file")
+                except ValueError as exc:
+                    raise ValueError("Value must be a set, list, tuple, or path to text file") from exc
+            if rule == "is_in":
+                df = df.loc[df[column].isin(set(value))]
+            else:
+                df = df.loc[~df[column].isin(set(value))]
+        elif rule == "is_null":
+            df = df.loc[df[column].isnull()]
+        elif rule == "is_not_null":
+            df = df.loc[df[column].notnull()]
+        elif rule == "is_true":
+            df = df.loc[df[column] == True]  # noqa: E712
+        elif rule == "is_false":
+            df = df.loc[df[column] == False]  # noqa: E712
+        elif rule == "is_not_true":
+            df = df.loc[(df[column] != True)]  # noqa: E712
+        elif rule == "is_not_false":
+            df = df.loc[(df[column] != False)]  # noqa: E712
+        else:
+            raise ValueError(f"Rule '{rule}' not recognized")
+
+    return df
 
 
 def merge_synthetic_read_info_into_variants_metadata_df(mutation_metadata_df, sampled_reference_df, sample_type="all", header_column="header"):
@@ -312,3 +478,17 @@ def build_random_genome_read_df(
         read_df.to_csv(read_df_out, index=False)
 
     return read_df
+
+
+def assign_strands(read_start_indices_mutant, strand, seed=None):
+    if strand in ("f", "r"):
+        return [(idx, strand) for idx in read_start_indices_mutant]
+    elif strand == "random":
+        if seed:
+            random.seed(seed)
+        return [(idx, random.choice(["f", "r"])) for idx in read_start_indices_mutant]
+    elif strand == "both":
+        half = len(read_start_indices_mutant) // 2
+        return [(idx, "f") for idx in read_start_indices_mutant[:half]] + [(idx, "r") for idx in read_start_indices_mutant[half:]]
+    else:
+        raise ValueError("strand must be 'f', 'r', 'random', or 'both'")

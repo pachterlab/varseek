@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 import varseek as vk
+from varseek.varseek_sim import sim  # sim is intentionally not part of the public API; import it directly
 
 store_out_in_permanent_paths = False
 tests_dir = Path(__file__).resolve().parent
@@ -55,7 +56,7 @@ def test_basic_sim(toy_mutation_metadata_df_with_read_parents_path, temporary_ou
 
     variants_updated_csv_out, reads_csv_out, reads_fastq_out = temporary_output_files["variants_updated_csv_out"], temporary_output_files["reads_csv_out"], temporary_output_files["reads_fastq_out"]
 
-    simulated_df_dict_from_test = vk.sim(
+    simulated_df_dict_from_test = sim(
         variants = toy_mutation_metadata_df_with_read_parents_path,
         number_of_variants_to_sample=number_of_variants_to_sample,
         number_of_reads_per_variant_alt="all",

@@ -5,9 +5,11 @@ import os
 import random
 import time
 from pathlib import Path
+from typing import Literal, Optional, Union
 
 import numpy as np
 import pandas as pd
+from pydantic import BaseModel, ConfigDict, model_validator
 from tqdm import tqdm
 
 import varseek
@@ -15,6 +17,7 @@ from varseek.varseek_build import accepted_build_file_types
 
 from .constants import supported_databases_and_corresponding_reference_sequence_type
 from .utils import (
+    apply_filters_to_df,
     check_file_path_is_string_with_valid_extension,
     fasta_to_fastq,
     introduce_sequencing_errors,
@@ -28,119 +31,132 @@ from .utils import (
     save_run_info,
     set_up_logger,
     splitext_custom,
-    set_varseek_logging_level_and_filehandler
+    set_varseek_logging_level_and_filehandler,
+    validate_call,
+    vk_config,
+    PositiveInt,
 )
+from .utils.varseek_sim_utils import assign_strands
 
 tqdm.pandas()
 logger = logging.getLogger(__name__)
 logger = set_up_logger(logger, logging_level="INFO", save_logs=False, log_dir=None)
 
 
-def assign_strands(read_start_indices_mutant, strand, seed=None):
-    if strand in ("f", "r"):
-        return [(idx, strand) for idx in read_start_indices_mutant]
-    elif strand == "random":
-        if seed:
-            random.seed(seed)
-        return [(idx, random.choice(["f", "r"])) for idx in read_start_indices_mutant]
-    elif strand == "both":
-        half = len(read_start_indices_mutant) // 2
-        return [(idx, "f") for idx in read_start_indices_mutant[:half]] + [(idx, "r") for idx in read_start_indices_mutant[half:]]
-    else:
-        raise ValueError("strand must be 'f', 'r', 'random', or 'both'")
+class SimParams(BaseModel):
+    """Cross-field and kwargs-only validation for :func:`sim`.
 
+    Per-parameter type checks (``w``/``k`` positivity, the boolean flags, ``strand``,
+    ``error_rate`` being a float) are enforced on the ``sim`` signature by
+    ``@validate_call``. This model captures the remaining logic — the polymorphic
+    ``variants`` argument, the ``number_of_reads_per_variant_*`` "int or 'all'"
+    rules and their relationships, ``error_distribution``/``max_errors``, and the
+    output file-path extension checks. Instantiate it with the full params dict
+    (extra keys are ignored).
+    """
 
-def validate_input_sim(params_dict):
-    variants = params_dict["variants"]
-    sequences = params_dict["sequences"]
+    model_config = ConfigDict(extra="ignore", arbitrary_types_allowed=True)
 
-    if isinstance(variants, (str, Path)):
-        if variants in supported_databases_and_corresponding_reference_sequence_type:
-            if sequences not in supported_databases_and_corresponding_reference_sequence_type[variants]["sequence_download_commands"]:
-                raise ValueError(f"sequences {sequences} not internally supported.\nTo see a list of supported variant databases and reference genomes, please use the 'list_internally_supported_indices' flag/argument.")
-            elif os.path.isfile(variants) and variants.endswith(accepted_build_file_types):  # a path to a variant database with a valid extension
-                pass
-            else:
-                raise ValueError(f"variants must be a df, a path to a variant database, or a string specifying a variant database supported by varseek. Got {type(variants)}.\nTo see a list of supported variant databases and reference genomes, please use the 'list_internally_supported_indices' flag/argument.")
-    elif isinstance(variants, pd.DataFrame):
-        pass
-    else:
-        raise ValueError(f"variants must be a df, a path to a variant database, or a string specifying a variant database supported by varseek. Got {type(variants)}.\nTo see a list of supported variant databases and reference genomes, please use the 'list_internally_supported_indices' flag/argument.")
+    variants: object = None
+    sequences: object = None
+    number_of_variants_to_sample: object = None
+    seed: object = None
+    number_of_reads_per_variant_alt: object = None
+    number_of_reads_per_variant_ref: object = None
+    sample_ref_and_alt_reads_from_same_locations: object = None
+    error_rate: object = None
+    error_distribution: object = None
+    max_errors: object = None
+    reads_fastq_parent: object = None
+    reads_csv_parent: object = None
+    variants_updated_csv_out: object = None
+    reads_fastq_out: object = None
+    reads_csv_out: object = None
+    wt_vcrs_fasta_out: object = None
+    wt_vcrs_t2g_out: object = None
+    removed_variants_text_out: object = None
+    gtf: object = None
 
-    # integers - optional just means that it's in kwargs
-    for param_name, min_value, optional_value in [
-        ("w", 1, False),
-        ("k", 1, False),
-        ("number_of_variants_to_sample", 1, False),
-        ("seed", 0, True),
-    ]:
-        param_value = params_dict.get(param_name)
-        if not is_valid_int(param_value, ">=", min_value, optional=optional_value):
-            raise ValueError(f"{param_name} must be an integer >= {min_value}. Got {params_dict.get(param_name)}.")
+    @model_validator(mode="after")
+    def _validate(self):
+        variants = self.variants
+        sequences = self.sequences
 
-    number_of_reads_per_variant_alt = params_dict["number_of_reads_per_variant_alt"]
-    if not (is_valid_int(number_of_reads_per_variant_alt, ">=", 0) or number_of_reads_per_variant_alt == "all"):
-        raise ValueError(f"number_of_reads_per_variant_alt must be an integer >= 0 or 'all'. Got {number_of_reads_per_variant_alt}.")
+        if isinstance(variants, (str, Path)):
+            if variants in supported_databases_and_corresponding_reference_sequence_type:
+                if sequences not in supported_databases_and_corresponding_reference_sequence_type[variants]["sequence_download_commands"]:
+                    raise ValueError(f"sequences {sequences} not internally supported.\nTo see a list of supported variant databases and reference genomes, please use the 'list_internally_supported_indices' flag/argument.")
+                elif os.path.isfile(variants) and variants.endswith(accepted_build_file_types):  # a path to a variant database with a valid extension
+                    pass
+                else:
+                    raise ValueError(f"variants must be a df, a path to a variant database, or a string specifying a variant database supported by varseek. Got {type(variants)}.\nTo see a list of supported variant databases and reference genomes, please use the 'list_internally_supported_indices' flag/argument.")
+        elif isinstance(variants, pd.DataFrame):
+            pass
+        else:
+            raise ValueError(f"variants must be a df, a path to a variant database, or a string specifying a variant database supported by varseek. Got {type(variants)}.\nTo see a list of supported variant databases and reference genomes, please use the 'list_internally_supported_indices' flag/argument.")
 
-    number_of_reads_per_variant_ref = params_dict["number_of_reads_per_variant_ref"]
-    if not (is_valid_int(number_of_reads_per_variant_ref, ">=", 0) or number_of_reads_per_variant_ref == "all"):
-        raise ValueError(f"number_of_reads_per_variant_ref must be an integer >= 0 or 'all'. Got {number_of_reads_per_variant_ref}.")
+        # integers - optional just means that it's in kwargs (w and k enforced on the signature)
+        for param_name, min_value, optional_value in [
+            ("number_of_variants_to_sample", 1, False),
+            ("seed", 0, True),
+        ]:
+            param_value = getattr(self, param_name)
+            if not is_valid_int(param_value, ">=", min_value, optional=optional_value):
+                raise ValueError(f"{param_name} must be an integer >= {min_value}. Got {param_value}.")
 
-    if number_of_reads_per_variant_alt == 0 and number_of_reads_per_variant_ref == 0:
-        raise ValueError("number_of_reads_per_variant_alt and number_of_reads_per_variant_ref cannot both be 0.")
+        number_of_reads_per_variant_alt = self.number_of_reads_per_variant_alt
+        if not (is_valid_int(number_of_reads_per_variant_alt, ">=", 0) or number_of_reads_per_variant_alt == "all"):
+            raise ValueError(f"number_of_reads_per_variant_alt must be an integer >= 0 or 'all'. Got {number_of_reads_per_variant_alt}.")
 
-    if params_dict["sample_ref_and_alt_reads_from_same_locations"] is True:
-        if number_of_reads_per_variant_alt != number_of_reads_per_variant_ref:
-            raise ValueError("When sample_ref_and_alt_reads_from_same_locations is True, number_of_reads_per_variant_alt must be equal to number_of_reads_per_variant_ref")
+        number_of_reads_per_variant_ref = self.number_of_reads_per_variant_ref
+        if not (is_valid_int(number_of_reads_per_variant_ref, ">=", 0) or number_of_reads_per_variant_ref == "all"):
+            raise ValueError(f"number_of_reads_per_variant_ref must be an integer >= 0 or 'all'. Got {number_of_reads_per_variant_ref}.")
 
-    if params_dict["strand"] not in ["f", "r", "both", "random", None]:
-        raise ValueError("strand must be 'f', 'r', 'both', 'random', or None.")
+        if number_of_reads_per_variant_alt == 0 and number_of_reads_per_variant_ref == 0:
+            raise ValueError("number_of_reads_per_variant_alt and number_of_reads_per_variant_ref cannot both be 0.")
 
-    if not (0 <= params_dict["error_rate"] <= 1):
-        raise ValueError("error_rate must be between 0 and 1.")
+        if self.sample_ref_and_alt_reads_from_same_locations is True:
+            if number_of_reads_per_variant_alt != number_of_reads_per_variant_ref:
+                raise ValueError("When sample_ref_and_alt_reads_from_same_locations is True, number_of_reads_per_variant_alt must be equal to number_of_reads_per_variant_ref")
 
-    # check if the values in error_distribution sum to 1 and are each non-negative
-    if not (sum(params_dict["error_distribution"]) == 1):
-        raise ValueError("error_distribution must sum to 1.")
-    for value in params_dict["error_distribution"]:
-        if value < 0:
-            raise ValueError("error_distribution must be non-negative.")
+        # strand enforced on the signature
 
-    # check if max_errors is a positive integer or float
-    if not (is_valid_int(params_dict["max_errors"], ">=", 0) or isinstance(params_dict["max_errors"], float)):
-        raise ValueError("max_errors must be a positive integer or float.")
+        if not (0 <= self.error_rate <= 1):
+            raise ValueError("error_rate must be between 0 and 1.")
 
-    for param_name, file_type in {"reads_fastq_parent": "fastq", "reads_csv_parent": "csv", "variants_updated_csv_out": ["csv", "tsv"], "reads_fastq_out": "fastq", "reads_csv_out": "csv", "wt_vcrs_fasta_out": "fasta", "wt_vcrs_t2g_out": "t2g", "removed_variants_text_out": "txt", "gtf": "gtf"}.items():
-        check_file_path_is_string_with_valid_extension(params_dict.get(param_name), param_name, file_type)
+        # check if the values in error_distribution sum to 1 and are each non-negative
+        if not (sum(self.error_distribution) == 1):
+            raise ValueError("error_distribution must sum to 1.")
+        for value in self.error_distribution:
+            if value < 0:
+                raise ValueError("error_distribution must be non-negative.")
 
-    # Boolean
-    for param_name in [
-        "sample_ref_and_alt_reads_from_same_locations",
-        "with_replacement",
-        "add_noise_sequencing_error",
-        "add_noise_base_quality",
-        "save_reads_csv",
-        "save_variants_updated_csv",
-        "gzip_reads_fastq_out",
-        "dry_run",
-    ]:
-        if not isinstance(params_dict.get(param_name), bool):
-            raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
+        # check if max_errors is a positive integer or float
+        if not (is_valid_int(self.max_errors, ">=", 0) or isinstance(self.max_errors, float)):
+            raise ValueError("max_errors must be a positive integer or float.")
+
+        for param_name, file_type in {"reads_fastq_parent": "fastq", "reads_csv_parent": "csv", "variants_updated_csv_out": ["csv", "tsv"], "reads_fastq_out": "fastq", "reads_csv_out": "csv", "wt_vcrs_fasta_out": "fasta", "wt_vcrs_t2g_out": "t2g", "removed_variants_text_out": "txt", "gtf": "gtf"}.items():
+            check_file_path_is_string_with_valid_extension(getattr(self, param_name), param_name, file_type)
+
+        # boolean flags enforced on the signature
+        return self
+
 
 @report_time_elapsed
+@validate_call(config=vk_config)
 def sim(
-    variants,
+    variants: object,
     number_of_variants_to_sample=1500,
     number_of_reads_per_variant_alt="all",
     number_of_reads_per_variant_ref="all",
-    sample_ref_and_alt_reads_from_same_locations=False,
-    with_replacement=False,
-    strand=None,
-    read_length=150,
+    sample_ref_and_alt_reads_from_same_locations: bool = False,
+    with_replacement: bool = False,
+    strand: Optional[Literal["f", "r", "both", "random"]] = None,
+    read_length: int = 150,
     filters=None,
-    add_noise_sequencing_error=False,
-    add_noise_base_quality=False,
-    error_rate=0.0001,
+    add_noise_sequencing_error: bool = False,
+    add_noise_base_quality: bool = False,
+    error_rate: float = 0.0001,
     error_distribution=(0.85, 0.1, 0.05),  # sub, del, ins
     max_errors=float("inf"),
     variant_sequence_read_parent_column="mutant_sequence_read_parent",
@@ -149,20 +165,20 @@ def sim(
     ref_sequence_read_parent_rc_column="wt_sequence_read_parent_rc",
     reads_fastq_parent=None,
     reads_csv_parent=None,
-    out=".",
+    out: Union[str, Path] = ".",
     reads_fastq_out=None,
     variants_updated_csv_out=None,
     reads_csv_out=None,
-    save_variants_updated_csv=True,
-    save_reads_csv=True,
+    save_variants_updated_csv: bool = True,
+    save_reads_csv: bool = True,
     vk_build_out_dir=None,
     sequences=None,
     seq_id_column="seq_ID",
     var_column="mutation",
     var_id_column="header",
     variant_type_column = "vcrs_variant_type",
-    k=59,
-    w=54,
+    k: PositiveInt = 59,
+    w: PositiveInt = 54,
     sequences_cdna=None,
     seq_id_column_cdna="seq_ID",
     var_column_cdna="mutation",
@@ -170,11 +186,11 @@ def sim(
     seq_id_column_genome="chromosome",
     var_column_genome="mutation_genome",
     seed=None,
-    gzip_reads_fastq_out=False,
-    dry_run=False,
-    logging_level=None,
-    save_logs=False,
-    log_out_dir=None,
+    gzip_reads_fastq_out: bool = False,
+    dry_run: bool = False,
+    logging_level: Optional[Union[str, int]] = None,
+    save_logs: bool = False,
+    log_out_dir: Optional[Union[str, Path]] = None,
     **kwargs,
 ):
     """
@@ -249,9 +265,9 @@ def sim(
     set_varseek_logging_level_and_filehandler(logging_level=logging_level, save_logs=save_logs, log_dir=log_out_dir)
 
 
-    # * 2. Type-checking
+    # * 2. Type-checking (per-parameter types enforced by @validate_call; cross-field by SimParams)
     params_dict = make_function_parameter_to_value_dict(1)
-    validate_input_sim(params_dict)
+    SimParams(**params_dict)
 
     if number_of_reads_per_variant_alt == 0:
         sample_type = "w"
@@ -339,11 +355,11 @@ def sim(
         if sequences_cdna is not None and sequences_genome is not None:
             update_df_out_cdna = update_df_out.replace(".csv", "_cdna.csv")
             if not os.path.exists(update_df_out_cdna):
-                varseek.build(sequences=sequences_cdna, variants=variants, out=vk_build_out_dir, w=read_w, k=read_k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, required_insertion_overlap_length=None, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, save_variants_updated_csv=True, variants_updated_csv_out=update_df_out_cdna, seq_id_column=seq_id_column_cdna, var_column=var_column_cdna, overwrite=True, **kwargs)
+                varseek.build(sequences=sequences_cdna, variants=variants, out=vk_build_out_dir, w=read_w, k=read_k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, required_insertion_overlap_length=None, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, save_variants_updated_csv=True, variants_updated_csv_out=update_df_out_cdna, seq_id_column=seq_id_column_cdna, var_column=var_column_cdna, overwrite=True, dont_create_index=True, **kwargs)
 
             update_df_out_genome = update_df_out.replace(".csv", "_genome.csv")
             if not os.path.exists(update_df_out_genome):
-                varseek.build(sequences=sequences_genome, variants=variants, out=vk_build_out_dir, w=read_w, k=read_k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, required_insertion_overlap_length=None, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, save_variants_updated_csv=True, variants_updated_csv_out=update_df_out_genome, seq_id_column=seq_id_column_genome, var_column=var_column_genome, overwrite=True, **kwargs)
+                varseek.build(sequences=sequences_genome, variants=variants, out=vk_build_out_dir, w=read_w, k=read_k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, required_insertion_overlap_length=None, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, save_variants_updated_csv=True, variants_updated_csv_out=update_df_out_genome, seq_id_column=seq_id_column_genome, var_column=var_column_genome, overwrite=True, dont_create_index=True, **kwargs)
 
             # Load the CSV files
             df_cdna = pd.read_csv(update_df_out_cdna)
@@ -356,7 +372,7 @@ def sim(
         else:
             if not os.path.exists(update_df_out):
                 logger.info("running varseek build")
-                varseek.build(sequences=sequences, variants=variants, out=vk_build_out_dir, w=read_w, k=read_k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, required_insertion_overlap_length=None, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, save_variants_updated_csv=True, variants_updated_csv_out=update_df_out, seq_id_column=seq_id_column, var_column=var_column, var_id_column=var_id_column, overwrite=True, **kwargs)
+                varseek.build(sequences=sequences, variants=variants, out=vk_build_out_dir, w=read_w, k=read_k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, required_insertion_overlap_length=None, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, save_variants_updated_csv=True, variants_updated_csv_out=update_df_out, seq_id_column=seq_id_column, var_column=var_column, var_id_column=var_id_column, overwrite=True, dont_create_index=True, **kwargs)
 
             sim_data_df = pd.read_csv(update_df_out)
         
@@ -426,18 +442,7 @@ def sim(
     filters = list(dict.fromkeys(filters))  # equivalent to `list(set(filters))`, but maintains order of filters
 
     if filters:
-        filtered_df = varseek.filter(
-            input_dir=".",
-            variants_updated_vk_info_csv=variants,
-            filters=filters,
-            out=out,
-            return_variants_updated_filtered_csv_df=True,
-            save_vcrs_filtered_fasta_and_t2g=False,
-            vcrs_id_column=header_column,
-            overwrite=True,
-            make_internal_copies=False,
-            called_from_vk_sim=True
-        )  # filter to include only rows not already in variant and whatever condition I would like
+        filtered_df = apply_filters_to_df(variants, filters)  # keep only rows matching the requested conditions
     else:
         filtered_df = variants
 

@@ -9,7 +9,7 @@ import tempfile
 import pyfastx
 from tqdm import tqdm
 
-from varseek.constants import technology_barcode_and_umi_dict
+from varseek.constants import technology_info
 from varseek.utils.logger_utils import is_program_installed, set_up_logger
 
 logger = logging.getLogger(__name__)
@@ -272,13 +272,14 @@ def split_fastq_reads_by_N(input_fastq_file, out_dir=".", minimum_sequence_lengt
             barcode_key = "barcode"
 
         if technology != "bulk" and contains_barcodes_or_umis:
-            if technology_barcode_and_umi_dict[technology][f"{barcode_key}_end"] is not None:
-                barcode_length = technology_barcode_and_umi_dict[technology][f"{barcode_key}_end"] - technology_barcode_and_umi_dict[technology][f"{barcode_key}tart"]
+            barcode_umi = technology_info[technology.upper()]["barcode_umi"]
+            if barcode_umi[f"{barcode_key}_end"] is not None:
+                barcode_length = barcode_umi[f"{barcode_key}_end"] - barcode_umi[f"{barcode_key}_start"]
             else:
                 barcode_length = 0
 
-            if technology_barcode_and_umi_dict[technology]["umi_start"] is not None:
-                umi_length = technology_barcode_and_umi_dict[technology]["umi_end"] - technology_barcode_and_umi_dict[technology]["umi_start"]
+            if barcode_umi["umi_start"] is not None:
+                umi_length = barcode_umi["umi_end"] - barcode_umi["umi_start"]
             else:
                 umi_length = 0
 

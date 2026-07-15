@@ -1,6 +1,11 @@
 import os
 import re
+import gzip
+import json
+import shutil
 import tempfile
+from pathlib import Path
+from typing import get_args
 from collections import OrderedDict, defaultdict
 
 import subprocess
@@ -11,8 +16,10 @@ import pandas as pd
 import pyfastx
 from tqdm import tqdm
 
-from varseek.constants import codon_to_amino_acid, mutation_pattern, supported_databases_and_corresponding_reference_sequence_type, complement
-from varseek.utils.logger_utils import set_up_logger
+from varseek.constants import codon_to_amino_acid, mutation_pattern, supported_databases_and_corresponding_reference_sequence_type, complement, fasta_extensions, varseek_ref_only_allowable_kb_ref_arguments, species_to_url
+from varseek.utils.logger_utils import set_up_logger, download_box_url
+from varseek.utils.seq_utils import fasta_to_fastq, make_intergenic_fasta, make_transcriptome_fasta, create_identity_t2g, reverse_complement
+from varseek.utils.type_utils import ReferenceType
 
 import logging
 
@@ -360,6 +367,136 @@ def convert_mutation_cds_locations_to_cdna_old(input_csv_path, cdna_fasta_path, 
         for temp_path in [temp_fasta_index_path_cdna, temp_fasta_index_path_cds]:
             if temp_path and os.path.exists(temp_path):
                 os.remove(temp_path)
+
+
+# --- cDNA-vs-genome detection ------------------------------------------------------
+# Description-line biotype tokens. cDNA is checked before genome because Ensembl cDNA
+# headers also carry a `chromosome:` token (e.g. ">ENST... cdna chromosome:GRCh38:1:...").
+_CDNA_TOKEN_RE = re.compile(r"\b(cdna|ncrna|transcript:)", re.IGNORECASE)
+_GENOME_TOKEN_RE = re.compile(r"\bdna(_sm|_rm)?:(chromosome|scaffold|supercontig|primary_assembly)|\bchromosome:", re.IGNORECASE)
+# First-token accession / ID patterns (most decisive when present).
+_ENSEMBL_TRANSCRIPT_RE = re.compile(r"^ENS[A-Z]{0,5}T\d{6,}", re.IGNORECASE)  # e.g. ENST..., ENSMUST...
+_REFSEQ_TRANSCRIPT_RE = re.compile(r"^(NM|NR|XM|XR)_\d+", re.IGNORECASE)
+_REFSEQ_GENOMIC_RE = re.compile(r"^(NC|NT|NW|NG|NZ)_\d+", re.IGNORECASE)
+_CHROM_NAME_RE = re.compile(r"^(chr)?([0-9]{1,2}|[XYWZ]|MT?)$", re.IGNORECASE)  # 1, chr1, X, MT, ...
+
+
+def _iter_fasta_headers(fasta_path):
+    """Yield fasta header lines (without the leading '>'), reading only header lines.
+
+    Avoids parsing sequence bodies entirely; transparently handles gzipped fastas.
+    """
+    open_func = gzip.open if str(fasta_path).endswith(".gz") else open
+    with open_func(fasta_path, "rt") as fh:
+        for line in fh:
+            if line.startswith(">"):
+                yield line[1:].strip()
+
+
+def _classify_fasta_header(header):
+    """Classify a single header as 'cdna', 'genome', or None (undetermined)."""
+    tokens = header.split()
+    first = tokens[0] if tokens else header
+    if _ENSEMBL_TRANSCRIPT_RE.match(first) or _REFSEQ_TRANSCRIPT_RE.match(first):
+        return "cdna"
+    if _REFSEQ_GENOMIC_RE.match(first) or _CHROM_NAME_RE.match(first):
+        return "genome"
+    if _CDNA_TOKEN_RE.search(header):  # check cdna before genome (see note above)
+        return "cdna"
+    if _GENOME_TOKEN_RE.search(header):
+        return "genome"
+    return None
+
+
+def _gtf_seqnames_and_transcript_ids(gtf):
+    """Return (seqname set, transcript_id set) from a GTF, versions stripped, read in chunks."""
+    seqnames, transcript_ids = set(), set()
+    for chunk in pd.read_csv(
+        gtf,
+        sep="\t",
+        comment="#",
+        header=None,
+        usecols=[0, 8],
+        names=["seqname", "attribute"],
+        dtype=str,
+        chunksize=200_000,
+    ):
+        seqnames.update(chunk["seqname"].dropna().astype(str))
+        tids = chunk["attribute"].str.extract(r'transcript_id "([^"]+)"')[0].dropna()
+        transcript_ids.update(tids)
+    strip_version = lambda s: s.split(".")[0]
+    return {strip_version(s) for s in seqnames}, {strip_version(t) for t in transcript_ids}
+
+
+def fasta_looks_like_cdna(fasta_path, gtf=None, genome_min_seq_len=1_000_000, header_sample_size=200):
+    """Heuristically decide whether a fasta is cDNA/transcriptome rather than genomic DNA.
+
+    Detection is layered from most to least reliable, returning as soon as a layer decides:
+
+    1. **Header tokens.** Standard references self-identify in their description lines --
+       Ensembl ``dna:chromosome`` vs ``cdna``/``transcript:``; RefSeq ``NC_``/``NW_``
+       genomic accessions vs ``NM_``/``NR_``/``XM_`` transcript accessions; Ensembl
+       ``ENS...T`` transcript IDs; bare chromosome names (``1``, ``chr1``, ``MT``). The
+       first ``header_sample_size`` headers are sampled and a majority vote is taken.
+    2. **GTF cross-check.** If ``gtf`` is given, a genome fasta's sequence names match the
+       gtf ``seqname`` (chromosome) column, whereas a cDNA fasta's names match its
+       ``transcript_id``s. Whichever set the fasta's names overlap more wins.
+    3. **Sequence length.** Last resort: stream sequences; a chromosome-scale sequence
+       (>= ``genome_min_seq_len``) means genomic DNA, otherwise cDNA. This reads sequence
+       bodies, so it only runs when the cheaper header/gtf layers are inconclusive.
+
+    Returns:
+        True  if the fasta looks like cDNA/transcriptome,
+        False if it looks like genomic DNA,
+        None  if the file is empty or could not be inspected (classification skipped).
+    """
+    # --- Layer 1: header tokens --------------------------------------------------------
+    try:
+        genome_votes = cdna_votes = 0
+        for n, header in enumerate(_iter_fasta_headers(fasta_path)):
+            label = _classify_fasta_header(header)
+            if label == "genome":
+                genome_votes += 1
+            elif label == "cdna":
+                cdna_votes += 1
+            if n + 1 >= header_sample_size:
+                break
+        if cdna_votes > genome_votes:
+            return True
+        if genome_votes > cdna_votes:
+            return False
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.debug("Could not read headers of %s to detect cDNA vs genome: %s", fasta_path, exc)
+
+    # --- Layer 2: gtf cross-check ------------------------------------------------------
+    if gtf is not None and isinstance(gtf, str) and os.path.isfile(gtf):
+        try:
+            fasta_ids = set()
+            for header in _iter_fasta_headers(fasta_path):
+                tokens = header.split()
+                if tokens:
+                    fasta_ids.add(tokens[0].split(".")[0])  # first token, version stripped
+                if len(fasta_ids) >= 5000:
+                    break
+            seqnames, transcript_ids = _gtf_seqnames_and_transcript_ids(gtf)
+            genome_overlap = len(fasta_ids & seqnames)
+            cdna_overlap = len(fasta_ids & transcript_ids)
+            if genome_overlap or cdna_overlap:
+                return cdna_overlap > genome_overlap
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.debug("Could not cross-check %s against gtf %s: %s", fasta_path, gtf, exc)
+
+    # --- Layer 3: sequence length ------------------------------------------------------
+    try:
+        saw_sequence = False
+        for _, sequence in pyfastx.Fastx(fasta_path):
+            saw_sequence = True
+            if len(sequence) >= genome_min_seq_len:
+                return False  # chromosome-scale sequence -> genomic DNA
+        return True if saw_sequence else None
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.debug("Could not inspect %s to detect cDNA vs genome: %s", fasta_path, exc)
+        return None
 
 
 def find_matching_sequences_through_fasta(file_path, ref_sequence):
@@ -740,7 +877,121 @@ def get_last_vcrs_number(filename):
 
 
 
-def merge_fasta_file_headers(input_fasta, use_IDs=False, id_to_header_csv_out=None):
+def find_subsequence_merge_targets(sequences, merge_identical_rc=False, seed_len=31):
+    """Map each VCRS to the longest VCRS that fully contains it.
+
+    Given a list of *unique* ``sequences`` (i.e. after identical VCRSs have already
+    been merged), return a list ``target`` where ``target[i]`` is the index of the
+    longest sequence that fully contains ``sequences[i]`` as a substring (also
+    checking the reverse complement of ``sequences[i]`` when ``merge_identical_rc``
+    is True), or ``i`` itself when ``sequences[i]`` is maximal (not contained in any
+    other sequence).
+
+    Sequences are processed longest-first, so every potential container is indexed
+    before any shorter sequence is queried against it; this guarantees each returned
+    target is itself a maximal ("kept") sequence and that groups are flat (no chains).
+
+    A k-mer seed index over the kept sequences prunes the containment checks: because
+    ``seed_len`` is clamped to be no longer than the shortest sequence, every candidate
+    has a prefix seed, and if the candidate is contained in a kept sequence then that
+    kept sequence was indexed under the candidate's prefix seed - so the prune has no
+    false negatives.
+    """
+    n = len(sequences)
+    target = list(range(n))
+    if n < 2:
+        return target
+
+    lengths = [len(s) for s in sequences]
+    if min(lengths) == max(lengths):
+        return target  # unique sequences of equal length cannot strictly contain one another
+
+    seed_len = max(1, min(seed_len, min(lengths)))  # every candidate must have a prefix seed of this length
+
+    # longest-first (ties broken by original index for determinism)
+    order = sorted(range(n), key=lambda i: (-lengths[i], i))
+
+    seed_index = {}  # seed (str) -> list of kept indices whose sequence contains that seed
+    for i in order:
+        s = sequences[i]
+        queries = (s, reverse_complement(s)) if merge_identical_rc else (s,)
+        container = None
+        for query in queries:
+            for j in seed_index.get(query[:seed_len], ()):
+                t = sequences[j]
+                if len(t) > len(s) and query in t:  # strictly longer container that contains the candidate
+                    container = j
+                    break
+            if container is not None:
+                break
+        if container is not None:
+            target[i] = container
+        else:
+            # keep as maximal, and index all of its overlapping seeds for future lookups
+            seen_seeds = set()
+            for p in range(len(s) - seed_len + 1):
+                seed = s[p : p + seed_len]
+                if seed not in seen_seeds:
+                    seen_seeds.add(seed)
+                    seed_index.setdefault(seed, []).append(i)
+    return target
+
+
+def _concatenate_lists(series):
+    merged = []
+    for value in series:
+        merged.extend(value)
+    return merged
+
+
+def merge_subsequence_vcrss(mutations, merge_identical_rc=False):
+    """Merge VCRSs whose sequence is a subsequence of another VCRS's sequence.
+
+    Operates on ``mutations`` *after* identical VCRSs have already been merged, so
+    every row has a unique ``vcrs_sequence``. When VCRS A's ``vcrs_sequence`` is fully
+    contained in VCRS B's (B strictly longer; reverse complements are also considered
+    when ``merge_identical_rc`` is True), A is merged into B: B keeps the longer
+    sequence, A's ``header`` is semicolon-joined into B's, and A's row is dropped.
+
+    Columns other than ``header``/``vcrs_sequence`` are combined the same way the
+    identical-merge does: list-valued columns are concatenated, ``original_order`` takes
+    the minimum, and any remaining scalar column keeps the surviving (longest) VCRS's
+    value. Returns ``(merged_mutations, num_merged)`` where ``num_merged`` is the number
+    of rows that were folded into a supersequence VCRS.
+    """
+    if len(mutations) < 2:
+        return mutations, 0
+
+    sequences = mutations["vcrs_sequence"].tolist()
+    target = find_subsequence_merge_targets(sequences, merge_identical_rc=merge_identical_rc)
+    num_merged = sum(1 for i, t in enumerate(target) if t != i)
+    if num_merged == 0:
+        return mutations, 0
+
+    mutations = mutations.reset_index(drop=True).copy()
+    mutations["merge_target"] = target
+    mutations["seq_len"] = [len(s) for s in sequences]
+    # order so the longest (the container = merge target) is first within each group -> "first" keeps its value
+    mutations = mutations.sort_values(by=["merge_target", "seq_len"], ascending=[True, False], kind="stable")
+
+    agg_dict = {}
+    for col in mutations.columns:
+        if col in ("merge_target", "seq_len"):
+            continue
+        if col == "header":
+            agg_dict[col] = lambda values: ";".join(sorted(values))  # alphabetical, matching the identical-merge ordering
+        elif col == "original_order":
+            agg_dict[col] = "min"
+        elif isinstance(mutations[col].iloc[0], list):
+            agg_dict[col] = _concatenate_lists
+        else:
+            agg_dict[col] = "first"
+
+    mutations = mutations.groupby("merge_target", sort=False).agg(agg_dict).reset_index(drop=True)
+    return mutations, num_merged
+
+
+def merge_fasta_file_headers(input_fasta, use_IDs=False, id_to_header_csv_out=None, merge_subsequences=True, merge_identical_rc=True):
     output_fasta = input_fasta.replace(".fa", "_merged.fa")
     
     # Create two temporary files for the intermediate steps.
@@ -791,6 +1042,31 @@ def merge_fasta_file_headers(input_fasta, use_IDs=False, id_to_header_csv_out=No
             }}' {sorted_tsv_name} > {step_3_output_fasta}"""
         subprocess.run(awk_merge_cmd, shell=True, check=True, executable="/bin/bash")
 
+        # Step 3.5: fold any VCRS whose sequence is a subsequence of a longer VCRS into that longer VCRS
+        if merge_subsequences:
+            headers, sequences = [], []
+            with open(step_3_output_fasta, "r", encoding="utf-8") as merged_handle:
+                current_header = None
+                current_seq = []
+                for line in merged_handle:
+                    line = line.rstrip("\n")
+                    if line.startswith(">"):
+                        if current_header is not None:
+                            headers.append(current_header)
+                            sequences.append("".join(current_seq))
+                        current_header = line[1:]
+                        current_seq = []
+                    else:
+                        current_seq.append(line)
+                if current_header is not None:
+                    headers.append(current_header)
+                    sequences.append("".join(current_seq))
+
+            merged_df = pd.DataFrame({"header": headers, "vcrs_sequence": sequences})
+            merged_df, _ = merge_subsequence_vcrss(merged_df, merge_identical_rc=merge_identical_rc)
+            with open(step_3_output_fasta, "w", encoding="utf-8") as merged_handle:
+                merged_handle.write("".join(f">{h}\n{s}\n" for h, s in zip(merged_df["header"], merged_df["vcrs_sequence"])))
+
         if use_IDs:
             # Step 4: Count the number of merged FASTA records.
             count_cmd = f"grep -c '^>' {merged_fasta_name}"
@@ -827,3 +1103,562 @@ def merge_fasta_file_headers(input_fasta, use_IDs=False, id_to_header_csv_out=No
         os.remove(sorted_tsv_name)
         if os.path.exists(merged_fasta_name):
             os.remove(merged_fasta_name)
+
+
+# --------------------------------------------------------------------------- #
+# Sequence-complexity helpers (used by vk build quality filters)
+# --------------------------------------------------------------------------- #
+def longest_homopolymer(sequence):
+    """Return (length, sequence(s)) of the longest homopolymer run in ``sequence``."""
+    homopolymers = re.findall(r"(A+|C+|G+|T+)", sequence)
+
+    if homopolymers:
+        max_length = len(max(homopolymers, key=len))
+        longest_homopolymers = [h for h in homopolymers if len(h) == max_length]
+        if len(longest_homopolymers) == 1:
+            return max_length, longest_homopolymers[0]
+        return max_length, sorted(list(set(longest_homopolymers)))
+    return 0, None  # If no homopolymer is found
+
+
+def triplet_stats(sequence):
+    """Return (num_distinct_triplets, num_total_triplets, triplet_complexity) for ``sequence``."""
+    triplets = [sequence[i : (i + 3)] for i in range(len(sequence) - 2)]
+    distinct_triplets = set(triplets)
+    total_triplets = len(triplets)
+    triplet_complexity = len(distinct_triplets) / total_triplets if total_triplets > 0 else 0
+    return len(distinct_triplets), total_triplets, triplet_complexity
+
+
+# --------------------------------------------------------------------------- #
+# Pseudoalignment-based reference filtering (alignment_to_reference filter)
+# --------------------------------------------------------------------------- #
+# Maps to the reference index built (or downloaded) for the pseudoalignment filter.
+# Single source of truth for these vocabularies is the Literal types in type_utils.
+REFERENCE_TYPES = get_args(ReferenceType)
+
+
+def run_kb_ref(index, workflow, dna_fasta, t2g=None, f1=None, f2=None, c1=None, c2=None, k=None, threads=None, kallisto=None, bustools=None, gtf=None, tmp=None, skip_index=False):
+    """Build a kallisto index for a normal reference by wrapping ``kb ref``."""
+    kb_ref_command = ["kb", "ref", "--workflow", workflow, "--make-unique", "-i", index]
+    if workflow != "custom":
+        kb_ref_command += ["-g", t2g, "-f1", f1, "--d-list=None"]
+
+    if workflow == "nac":
+        if f2 is None or c1 is None or c2 is None:
+            raise ValueError("f2, c1, and c2 are required for 'nac' workflow")
+        kb_ref_command += ["-f2", f2, "-c1", c1, "-c2", c2]
+    else:
+        for arg in [f2, c1, c2]:
+            if arg is not None:
+                logger.warning(f"{arg} is ignored for '{workflow}' workflow")
+
+    if k:
+        kb_ref_command += ["-k", str(k)]
+    if threads:
+        kb_ref_command += ["-t", str(threads)]
+    if kallisto:
+        kb_ref_command += ["--kallisto", kallisto]
+    if bustools:
+        kb_ref_command += ["--bustools", bustools]
+    if tmp:
+        # kb ref requires its --tmp directory to NOT already exist
+        if os.path.exists(tmp):
+            shutil.rmtree(tmp, ignore_errors=True)
+        kb_ref_command += ["--tmp", tmp]
+    logging_level = logging.getLevelName(logger.getEffectiveLevel())
+    if logging_level == "DEBUG":
+        kb_ref_command += ["--verbose"]
+    kb_ref_command += [dna_fasta]
+
+    if workflow == "custom":
+        if gtf is not None:
+            logger.warning("gtf file is ignored for 'custom' workflow")
+    else:
+        if gtf is None:
+            raise ValueError(f"gtf file is required for '{workflow}' workflow")
+        kb_ref_command += [gtf]
+
+    if skip_index:
+        if not os.path.exists(index):
+            open(index, "w").close()  # empty file at index lets kb ref create f1 without building the index
+
+    logger.debug(f"Running kb ref command: {' '.join(kb_ref_command)}")
+    subprocess.run(kb_ref_command, check=True)
+
+
+def make_reference_index(dna_fasta, reference_type, out_dir="reference_index", index=None, t2g=None, gtf=None, k=None, threads=None, kallisto=None, bustools=None, overwrite=False, species=None, tmp=None):
+    """Build (or download) a kallisto index for a normal reference of the given ``reference_type``."""
+    os.makedirs(out_dir, exist_ok=True)
+    if index is None:
+        index = os.path.join(out_dir, f"{reference_type}.idx")
+    if t2g is None:
+        t2g = os.path.join(out_dir, f"{reference_type}_t2g.txt")
+    if tmp is None:
+        # give kb ref a scoped temp dir so it does not collide with a `tmp/` in the CWD
+        tmp = os.path.join(out_dir, "kb_ref_tmp")
+    f1 = os.path.join(out_dir, "cdna.fasta")
+
+    if os.path.exists(index) or os.path.exists(t2g):
+        if overwrite:
+            logger.warning(f"Overwriting existing index/t2g files at {index} and/or {t2g}")
+        else:
+            raise FileExistsError(f"Index or t2g files already exist at {index} and/or {t2g}. Use overwrite=True to overwrite.")
+
+    # Download a prebuilt index if a supported species is given.
+    if species is not None:
+        if k is None:
+            raise ValueError("k must be provided to download a prebuilt index via `species`.")
+        try:
+            url = species_to_url[species][reference_type][str(k)]
+        except KeyError as exc:
+            raise ValueError(
+                f"No prebuilt index for species={species}, reference_type={reference_type}, k={k}. "
+                f"Valid options for this species: {species_to_url.get(species, {})}"
+            ) from exc
+        logger.info(f"Downloading prebuilt index for species={species}, reference_type={reference_type}, k={k}")
+        download_box_url(url, output_folder=out_dir, output_file_name=index, verbose=True)
+        logger.info(f"Downloaded reference index to {index}")
+        return  # only the .idx is needed for `kallisto bus`
+
+    if reference_type == "genome":  # custom-dna: map to dna directly
+        run_kb_ref(index=index, t2g=t2g, f1=f1, workflow="custom", dna_fasta=dna_fasta, gtf=gtf, k=k, threads=threads, kallisto=kallisto, bustools=bustools, tmp=tmp)
+    elif reference_type == "cdna":  # standard: map to cdna
+        run_kb_ref(index=index, t2g=t2g, f1=f1, workflow="standard", dna_fasta=dna_fasta, gtf=gtf, k=k, threads=threads, kallisto=kallisto, bustools=bustools, tmp=tmp)
+    elif reference_type == "transcriptome":  # nac: map to spliced + unspliced
+        f2 = os.path.join(out_dir, "nascent.fasta")
+        c1 = os.path.join(out_dir, "cdna.txt")
+        c2 = os.path.join(out_dir, "nascent.txt")
+        run_kb_ref(index=index, t2g=t2g, f1=f1, workflow="nac", dna_fasta=dna_fasta, gtf=gtf, k=k, threads=threads, kallisto=kallisto, bustools=bustools, f2=f2, c1=c1, c2=c2, tmp=tmp)
+    elif reference_type == "genome_or_transcriptome":  # custom-dna + cdna
+        cdna_index = os.path.join(out_dir, "cdna.idx")
+        cdna_t2g = os.path.join(out_dir, "cdna.txt")
+        cdna_fasta = os.path.join(out_dir, "cdna.fasta")
+        if not os.path.exists(cdna_fasta):
+            # only the cdna fasta is needed here, so skip building its standalone index
+            run_kb_ref(index=cdna_index, t2g=cdna_t2g, f1=cdna_fasta, workflow="standard", dna_fasta=dna_fasta, k=k, threads=threads, kallisto=kallisto, bustools=bustools, gtf=gtf, tmp=tmp, skip_index=True)
+
+        # combine genome and cdna fasta into a single fasta for kb ref
+        genome_or_transcriptome_fasta = dna_fasta.replace(".fasta", "_plus_cdna.fasta").replace(".fa", "_plus_cdna.fa").replace(".fna", "_plus_cdna.fna")
+        with open(genome_or_transcriptome_fasta, "wb") as wfd:
+            for f in [dna_fasta, cdna_fasta]:
+                with open(f, "rb") as fd:
+                    wfd.write(fd.read())
+
+        run_kb_ref(index=index, t2g=t2g, f1=f1, workflow="custom", dna_fasta=genome_or_transcriptome_fasta, k=k, threads=threads, kallisto=kallisto, bustools=bustools, tmp=tmp)
+    else:
+        raise ValueError(f"Invalid reference_type: {reference_type}. Must be one of {REFERENCE_TYPES}")
+
+    logger.info(f"Reference index created at {index}")
+
+
+def pseudoalign(vcrs_fasta, reference_type, out_dir="kallisto_bus_out", dna_fasta=None, index_dir=None, index=None, t2g=None, gtf=None, k=None, threads=None, kallisto=None, bustools=None, overwrite=False, species=None, tmp=None):
+    """Pseudoalign ``vcrs_fasta`` against a normal ``reference_type`` index and return the list of aligned read ids."""
+    os.makedirs(out_dir, exist_ok=True)
+    if index is None:
+        index = os.path.join(index_dir, f"{reference_type}.idx")
+    if t2g is None:
+        t2g = os.path.join(index_dir, f"{reference_type}.txt")
+
+    if not os.path.exists(index) or overwrite:
+        if not os.path.exists(index):
+            logger.info(f"Index file not found at {index}. Will create file.")
+        else:
+            logger.info(f"Overwriting existing index file at {index}.")
+        make_reference_index(dna_fasta=dna_fasta, reference_type=reference_type, out_dir=index_dir, index=index, t2g=t2g, gtf=gtf, k=k, threads=threads, kallisto=kallisto, bustools=bustools, overwrite=overwrite, species=species, tmp=tmp)
+
+    vcrs_fastq = os.path.splitext(vcrs_fasta)[0] + ".fastq"
+    fasta_to_fastq(vcrs_fasta, vcrs_fastq)
+
+    import kb_python  # bundled kallisto/bustools binaries live alongside kb_python
+    if kallisto is None:
+        kb_dir = Path(kb_python.__file__).parent
+        kallisto_exec = "kallisto_k64" if (k and k > 32) else "kallisto"
+        kallisto = str(kb_dir / "bins" / "linux" / "kallisto" / kallisto_exec)
+    if bustools is None:
+        kb_dir = Path(kb_python.__file__).parent
+        bustools = str(kb_dir / "bins" / "linux" / "bustools" / "bustools")
+
+    kallisto_bus_command = [kallisto, "bus", "-i", index, "-o", out_dir, "-x", "BULK", "--num", "--unstranded", "--union"]
+    if threads:
+        kallisto_bus_command += ["-t", str(threads)]
+    logging_level = logging.getLevelName(logger.getEffectiveLevel())
+    if logging_level == "DEBUG":
+        kallisto_bus_command += ["--verbose"]
+    kallisto_bus_command += [vcrs_fastq]
+
+    bus_file = os.path.join(out_dir, "output.bus")
+    bus_txt = os.path.join(out_dir, "output.txt")
+    run_info_path = os.path.join(out_dir, "run_info.json")
+    if not os.path.exists(bus_file) or overwrite:
+        logger.debug(f"Running kallisto bus command: {' '.join(kallisto_bus_command)}")
+        result = subprocess.run(kallisto_bus_command, check=False)
+        # kallisto bus returns a non-zero exit code when 0 reads pseudoalign; treat that as a valid empty result
+        if result.returncode != 0:
+            if os.path.exists(run_info_path):
+                with open(run_info_path, encoding="utf-8") as fh:
+                    run_info = json.load(fh)
+                if run_info.get("n_pseudoaligned", 0) == 0:
+                    logger.info(f"reference_type: {reference_type}, pseudoaligned: 0 / {run_info.get('n_processed', 0)} reads (no VCRSs aligned to the reference).")
+                    return []
+            raise subprocess.CalledProcessError(result.returncode, kallisto_bus_command)
+
+    bustools_text_command = [bustools, "text", "-f", "-o", bus_txt, bus_file]
+    if not os.path.exists(bus_txt) or overwrite:
+        logger.debug(f"Running bustools text command: {' '.join(bustools_text_command)}")
+        subprocess.run(bustools_text_command, check=True)
+
+    # an empty bus text file means nothing pseudoaligned
+    if not os.path.exists(bus_txt) or os.path.getsize(bus_txt) == 0:
+        aligned_headers = []
+    else:
+        bus_df = pd.read_csv(bus_txt, sep="\t", header=None, names=["barcode", "umi", "gene", "count", "read"], usecols=["read"])
+        aligned_headers = sorted(set(bus_df["read"].unique()))
+    n_pseudoaligned_set = len(aligned_headers)
+
+    # Cross-check against kallisto's own tally in run_info.json.
+    with open(run_info_path, encoding="utf-8") as fh:
+        run_info = json.load(fh)
+    n_pseudoaligned = run_info["n_pseudoaligned"]
+    n_processed = run_info["n_processed"]
+    if n_pseudoaligned != n_pseudoaligned_set:
+        logger.warning(f"Mismatch between run_info.json ({n_pseudoaligned}) and BUS ({n_pseudoaligned_set}) pseudoaligned read counts")
+    logger.info(f"reference_type: {reference_type}, pseudoaligned: {n_pseudoaligned} / {n_processed} reads ({(n_pseudoaligned / n_processed) if n_processed else 0:.2%})")
+    return aligned_headers
+
+
+def run_pseudoalign_on_vcrs_df(df, reference_type, index_dir, out_dir, dna_fasta=None, gtf=None, k=None, threads=None, seq_col="vcrs_sequence", species=None):
+    """Drop rows of ``df`` whose VCRS sequence pseudoaligns to the normal ``reference_type`` reference.
+
+    A temporary fasta is written with contiguous positional headers (0..n-1 over the written,
+    non-empty records) so that the read ids kallisto reports map unambiguously back to the
+    originating rows of ``df``. Rows that pseudoalign are removed (they would be false positives).
+    Returns the filtered DataFrame with its original index labels preserved.
+    """
+    if seq_col not in df.columns:
+        raise ValueError(f"Column '{seq_col}' not found in DataFrame. Available columns: {df.columns.tolist()}")
+
+    fd, vcrs_fasta = tempfile.mkstemp(suffix=".fasta")
+    os.close(fd)
+    vcrs_fastq = os.path.splitext(vcrs_fasta)[0] + ".fastq"
+    try:
+        written_positions = []  # maps written fastq record index -> positional row index in df
+        with open(vcrs_fasta, "w", encoding="utf-8") as fasta_file:
+            for i, seq in enumerate(df[seq_col].values):
+                if seq:  # empty sequences can never pseudoalign
+                    fasta_file.write(f">{len(written_positions)}\n{seq}\n")
+                    written_positions.append(i)
+
+        len_df = len(df)
+        mask = np.ones(len_df, dtype=bool)
+
+        if written_positions:
+            aligned_headers = pseudoalign(
+                reference_type=reference_type,
+                index_dir=index_dir,
+                out_dir=out_dir,
+                vcrs_fasta=vcrs_fasta,
+                dna_fasta=dna_fasta,
+                gtf=gtf,
+                threads=threads,
+                k=k,
+                species=species,
+            )
+            rows_to_remove = [written_positions[int(h)] for h in aligned_headers]
+            if rows_to_remove:
+                mask[rows_to_remove] = False
+
+        kept = df.iloc[mask]  # positional; preserves original index labels
+        logger.info(f"After pseudoalignment ({reference_type}), {len(kept)} / {len_df} VCRSs remain ({(len(kept) / len_df) if len_df else 0:.2%}); removed {len_df - len(kept)} that aligned to the reference.")
+        return kept
+    finally:
+        for tmp_path in (vcrs_fasta, vcrs_fastq):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+
+def create_vcrs_index(vcrs_fasta_for_index, index_out, k, threads=2, overwrite=False, dry_run=False, kb_ref_kwargs=None, wt_vcrs_fasta_for_index=None, wt_vcrs_index_out=None, dlist="None"):
+    """Build the kallisto index from a VCRS fasta by wrapping `kb ref` (previously done by vk ref).
+
+    Runs `kb ref` for the main VCRS fasta, and — if a wildtype VCRS fasta exists — for the wildtype
+    counterpart as well. Existing index files are left untouched unless overwrite=True, and dry_run
+    prints the command(s) instead of running them.
+
+    `dlist` is the already-resolved value passed through to `kb ref --d-list`: either the literal
+    "None" (no d-list) or a path to a d-list fasta (see `resolve_dlist`).
+    """
+    # nothing to index if no (non-empty) VCRS fasta was produced (e.g. all variants were dropped) - skip gracefully (but still allow dry_run to print the command)
+    if not dry_run and (not vcrs_fasta_for_index or not os.path.isfile(vcrs_fasta_for_index) or os.path.getsize(vcrs_fasta_for_index) == 0):
+        logger.warning(f"Skipping index creation because no non-empty VCRS fasta was found at {vcrs_fasta_for_index}")
+        return
+
+    dlist = dlist if dlist is not None else "None"
+    kb_ref_command = ["kb", "ref", "--workflow", "custom", "-t", str(threads), "-i", index_out, "--d-list", dlist, "-k", str(k), "--overwrite"]
+
+    # assumes any allowable kb ref pass-through argument matches kb ref identically (matched to python kwargs by replacing dashes with underscores)
+    kb_ref_kwargs = kb_ref_kwargs or {}
+    for dict_key, arguments in varseek_ref_only_allowable_kb_ref_arguments.items():
+        for argument in list(arguments):
+            argument_py = argument.lstrip("-").replace("-", "_")
+            if argument_py in kb_ref_kwargs:
+                value = kb_ref_kwargs[argument_py]
+                if dict_key == "zero_arguments":
+                    if value:  # only add if value is True
+                        kb_ref_command.append(argument)
+                elif dict_key == "one_argument":
+                    kb_ref_command.extend([argument, value])
+                else:  # multiple_arguments or something else
+                    pass
+
+    # Give kb ref a scoped --tmp dir (unless the caller already supplied one) so it does not collide
+    # with a `tmp/` directory in the current working directory.
+    default_tmp = None
+    if "--tmp" not in kb_ref_command:
+        default_tmp = os.path.join(os.path.dirname(index_out) or ".", "kb_ref_tmp")
+        kb_ref_command.extend(["--tmp", default_tmp])
+
+    kb_ref_command.append(vcrs_fasta_for_index)
+
+    if not os.path.exists(index_out) or overwrite:
+        if dry_run:
+            print(" ".join(kb_ref_command))
+        else:
+            if default_tmp and os.path.exists(default_tmp):
+                shutil.rmtree(default_tmp, ignore_errors=True)
+            logger.info(f"Running kb ref with command: {' '.join(kb_ref_command)}")
+            subprocess.run(kb_ref_command, check=True)
+    else:
+        logger.warning(f"Skipping kb ref because {index_out} already exists and overwrite=False")
+
+    #!!! erase if removing wt vcrs feature
+    if wt_vcrs_fasta_for_index and os.path.exists(wt_vcrs_fasta_for_index) and wt_vcrs_index_out:
+        if not os.path.exists(wt_vcrs_index_out) or overwrite:
+            wt_tmp = os.path.join(os.path.dirname(wt_vcrs_index_out) or ".", "kb_ref_tmp_wt")
+            kb_ref_wt_vcrs_command = ["kb", "ref", "--workflow", "custom", "-t", str(threads), "-i", wt_vcrs_index_out, "--d-list", dlist, "-k", str(k), "--overwrite", "--tmp", wt_tmp, wt_vcrs_fasta_for_index]
+            if dry_run:
+                print(" ".join(kb_ref_wt_vcrs_command))
+            else:
+                if os.path.exists(wt_tmp):
+                    shutil.rmtree(wt_tmp, ignore_errors=True)
+                logger.info(f"Running kb ref for wt vcrs index with command: {' '.join(kb_ref_wt_vcrs_command)}")
+                subprocess.run(kb_ref_wt_vcrs_command, check=True)
+        else:
+            logger.warning(f"Skipping kb ref for wt vcrs because {wt_vcrs_index_out} already exists and overwrite=False")
+    #!!! erase if removing wt vcrs feature
+
+
+def resolve_reference_dna_and_gtf(reference_dna, reference_gtf, sequences, gtf, need_gtf=True):
+    """Resolve the reference genome DNA fasta and GTF for downstream steps (pseudoalignment
+    filter, d-list construction), falling back to the build `sequences` (if it looks like a
+    genome fasta) and `gtf` respectively when not explicitly provided.
+
+    Returns (reference_dna, reference_gtf); either element may still be None if unresolvable.
+    """
+    if reference_dna is None and isinstance(sequences, str) and os.path.isfile(sequences) and sequences.endswith(fasta_extensions):
+        logger.warning("Reference DNA fasta not provided; falling back to `sequences`. Ensure `sequences` is a genome (DNA) fasta, not cDNA.")
+        reference_dna = sequences
+    if need_gtf and reference_gtf is None and isinstance(gtf, str) and os.path.isfile(gtf):
+        logger.warning("Reference GTF not provided; falling back to the build `gtf`.")
+        reference_gtf = gtf
+    return reference_dna, reference_gtf
+
+
+def resolve_dlist(dlist, reference_dna, reference_gtf, sequences, gtf, out_dir, k, overwrite=False, dry_run=False):
+    """Resolve the `dlist` argument into a value for `kb ref --d-list`.
+
+    Returns the literal "None" (no d-list) or a path to a d-list fasta:
+      - None (or "None")  -> "None"
+      - "intergenic_dna"  -> build an intergenic-region fasta from the reference DNA + GTF
+      - "cdna"            -> build a spliced-transcript (cDNA) fasta from the reference DNA + GTF
+      - path to a fasta   -> used directly
+
+    For "intergenic_dna"/"cdna", the reference DNA fasta and GTF are resolved via
+    `resolve_reference_dna_and_gtf` (falling back to the build `sequences`/`gtf`).
+    """
+    if dlist is None or dlist == "None":
+        return "None"
+    dlist = str(dlist)
+
+    if dlist not in ("intergenic_dna", "cdna"):
+        # anything else must be a path to an existing fasta file
+        if dlist.endswith(fasta_extensions) and os.path.isfile(dlist):
+            return dlist
+        raise ValueError(f"Invalid dlist value: {dlist!r}. Must be None, 'intergenic_dna', 'cdna', or a path to a fasta file.")
+
+    reference_dna, reference_gtf = resolve_reference_dna_and_gtf(reference_dna, reference_gtf, sequences, gtf, need_gtf=True)
+    if not reference_dna or not reference_gtf:
+        raise ValueError(f"dlist='{dlist}' requires a reference DNA (genome) fasta and a GTF (via alignment_to_reference_dna/alignment_to_reference_gtf, or the build `sequences`/`gtf`).")
+
+    os.makedirs(out_dir, exist_ok=True)
+    if dlist == "intergenic_dna":
+        dlist_fasta = os.path.join(out_dir, "dlist_intergenic.fa")
+        builder = lambda: make_intergenic_fasta(reference_dna, reference_gtf, dlist_fasta, min_length=k)
+    else:  # cdna
+        dlist_fasta = os.path.join(out_dir, "dlist_cdna.fa")
+        builder = lambda: make_transcriptome_fasta(reference_dna, reference_gtf, dlist_fasta)
+
+    if dry_run:
+        return dlist_fasta
+    if not os.path.isfile(dlist_fasta) or overwrite:
+        logger.info(f"Building d-list fasta ('{dlist}') from {reference_dna} + {reference_gtf} at {dlist_fasta}")
+        builder()
+    else:
+        logger.info(f"Using existing d-list fasta at {dlist_fasta}")
+    return dlist_fasta
+
+
+def print_valid_values_for_variants_and_sequences_in_varseek_build():
+    mydict = supported_databases_and_corresponding_reference_sequence_type
+
+    # mydict.keys() has mutations, and mydict[mutation]["sequence_download_commands"].keys() has sequences
+    message = "vk build internally supported values for 'variants' and 'sequences' are as follows:\n"
+    for mutation, mutation_data in mydict.items():
+        sequences = list(mutation_data["sequence_download_commands"].keys())
+        message += f"'variants': {mutation}\n"
+        message += f"  'sequences': {', '.join(sequences)}\n"
+    print(message)
+
+
+def get_sequence_length(seq_id, seq_dict):
+    return len(seq_dict.get(seq_id, ""))
+
+
+def get_nucleotide_at_position(seq_id, pos, seq_dict):
+    full_seq = seq_dict.get(seq_id, "")
+    if pos < len(full_seq):
+        return full_seq[pos]
+    return None
+
+
+def remove_gt_after_semicolon(line):
+    parts = line.split(";")
+    # Remove '>' from the beginning of each part except the first part
+    parts = [parts[0]] + [part.lstrip(">") for part in parts[1:]]
+    return ";".join(parts)
+
+
+def extract_sequence(row, seq_dict, seq_id_column="seq_ID"):
+    if pd.isna(row["start_variant_position"]) or pd.isna(row["end_variant_position"]):
+        return None
+    seq = seq_dict[row[seq_id_column]][int(row["start_variant_position"]) : int(row["end_variant_position"]) + 1]
+    return seq
+
+
+def common_prefix_length(s1, s2):
+    min_len = min(len(s1), len(s2))
+    for i in range(min_len):
+        if s1[i] != s2[i]:
+            return i
+    return min_len
+
+
+# Function to find the length of the common suffix with the prefix
+def common_suffix_length(s1, s2):
+    min_len = min(len(s1), len(s2))
+    for i in range(min_len):
+        if s1[-(i + 1)] != s2[-(i + 1)]:
+            return i
+    return min_len
+
+
+def count_repeat_right_flank(mut_nucleotides, right_flank_region):
+    total_overlap_len = 0
+    while right_flank_region.startswith(mut_nucleotides):
+        total_overlap_len += len(mut_nucleotides)
+        right_flank_region = right_flank_region[len(mut_nucleotides) :]
+    total_overlap_len += common_prefix_length(mut_nucleotides, right_flank_region)
+    return total_overlap_len
+
+
+def count_repeat_left_flank(mut_nucleotides, left_flank_region):
+    total_overlap_len = 0
+    while left_flank_region.endswith(mut_nucleotides):
+        total_overlap_len += len(mut_nucleotides)
+        left_flank_region = left_flank_region[: -len(mut_nucleotides)]
+    total_overlap_len += common_suffix_length(mut_nucleotides, left_flank_region)
+    return total_overlap_len
+
+
+def beginning_mut_nucleotides_with_right_flank(mut_nucleotides, right_flank_region):
+    if mut_nucleotides == right_flank_region[: len(mut_nucleotides)]:
+        return count_repeat_right_flank(mut_nucleotides, right_flank_region)
+    else:
+        return common_prefix_length(mut_nucleotides, right_flank_region)
+
+
+# Comparing end of mut_nucleotides to the end of left_flank_region
+def end_mut_nucleotides_with_left_flank(mut_nucleotides, left_flank_region):
+    if mut_nucleotides == left_flank_region[-len(mut_nucleotides) :]:
+        return count_repeat_left_flank(mut_nucleotides, left_flank_region)
+    else:
+        return common_suffix_length(mut_nucleotides, left_flank_region)
+
+
+def calculate_beginning_mutation_overlap_with_right_flank(row):
+    if row["variant_type"] == "deletion":
+        sequence_to_check = row["wt_nucleotides_ensembl"]
+    else:
+        sequence_to_check = row["mut_nucleotides"]
+
+    if row["variant_type"] == "delins" or row["variant_type"] == "inversion":
+        original_sequence = row["wt_nucleotides_ensembl"] + row["right_flank_region"]
+    else:
+        original_sequence = row["right_flank_region"]
+
+    return beginning_mut_nucleotides_with_right_flank(sequence_to_check, original_sequence)
+
+
+def calculate_end_mutation_overlap_with_left_flank(row):
+    if row["variant_type"] == "deletion":
+        sequence_to_check = row["wt_nucleotides_ensembl"]
+    else:
+        sequence_to_check = row["mut_nucleotides"]
+
+    if row["variant_type"] == "delins" or row["variant_type"] == "inversion":
+        original_sequence = row["left_flank_region"] + row["wt_nucleotides_ensembl"]
+    else:
+        original_sequence = row["left_flank_region"]
+
+    return end_mut_nucleotides_with_left_flank(sequence_to_check, original_sequence)
+
+def iterate_through_vcf_in_chunks(variants, params_dict, chunksize, merge_identical=True):
+    from varseek.varseek_build import build
+    import pysam
+    tmp_file = variants.replace(".vcf", "_chunked.vcf")
+    with pysam.VariantFile(variants, "r") as vcf:
+        header = str(vcf.header)  # Store the header lines
+
+        chunk = []
+        chunk_number = 1
+
+        for i, record in enumerate(vcf):
+            chunk.append(str(record))
+
+            # Process the chunk once it reaches the desired size
+            if (i + 1) % chunksize == 0:
+                with open(tmp_file, "w") as f:
+                    f.write(header + "".join(chunk))
+                build(variants=tmp_file, chunksize=None, chunk_number=chunk_number, running_within_chunk_iteration=True, merge_identical=False, **params_dict)  # running_within_chunk_iteration here for logger setup and report_time_elapsed decorator
+                chunk = []  # Reset the chunk
+                chunk_number += 1
+
+        # Process any remaining variants
+        if chunk:
+            with open(tmp_file, "w") as f:
+                f.write(header + "".join(chunk))
+            build(variants=tmp_file, chunksize=None, chunk_number=chunk_number, running_within_chunk_iteration=True, **params_dict)  # running_within_chunk_iteration here for logger setup and report_time_elapsed decorator
+
+        if isinstance(tmp_file, str) and os.path.exists(tmp_file):
+            os.remove(tmp_file)
+
+        if merge_identical:
+            # the unfiltered vcrs was appended (unmerged) per-chunk; the merge + t2g happen on the filtered file
+            out, vcrs_fasta_out, vcrs_t2g_out, id_to_header_csv_out = params_dict["out"], params_dict.get("vcrs_fasta_out", None), params_dict.get("vcrs_t2g_out", None), params_dict.get("id_to_header_csv_out", None)
+            vcrs_fasta_out = os.path.join(out, "vcrs.fa") if not vcrs_fasta_out else vcrs_fasta_out  # copy-paste from below
+            id_to_header_csv_out = os.path.join(out, "id_to_header_mapping.csv") if not id_to_header_csv_out else id_to_header_csv_out  # copy-paste from below
+            vcrs_t2g_out = os.path.join(out, "vcrs_t2g.txt") if not vcrs_t2g_out else vcrs_t2g_out  # copy-paste from below
+            merge_fasta_file_headers(vcrs_fasta_out, use_IDs=params_dict.get("use_IDs", True), id_to_header_csv_out=id_to_header_csv_out, merge_subsequences=params_dict.get("merge_subsequences", True), merge_identical_rc=not params_dict.get("vcrs_strandedness", False))
+            create_identity_t2g(vcrs_fasta_out, vcrs_t2g_out, mode="w")
+        return

@@ -10,7 +10,6 @@ import kb_python
 import numpy as np
 import tempfile
 import pandas as pd
-import time
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +34,8 @@ species_to_url = {
         },
     },
 }
+
+species_to_url
 
 class Types:
     @staticmethod
@@ -296,7 +297,7 @@ def download_box_url(url, output_folder=".", output_file_name=None, verbose=True
 
 @validate_call
 def run_kb_ref(
-    index: Types.PotentialIndex,
+    index: Types.NewIndex,
     workflow: WORKFLOWS,
     dna_fasta: Types.ExistingFasta,
     t2g: Optional[Types.NewTxt] = None,
@@ -309,10 +310,9 @@ def run_kb_ref(
     kallisto: Optional[Types.ExistingExecutable] = None,
     bustools: Optional[Types.ExistingExecutable] = None,
     gtf: Optional[Types.ExistingGtf] = None,
-    tmp : Optional[Types.PotentialDirectory] = None,
-    skip_index : bool = False
+    tmp : Optional[Types.PotentialDirectory] = None
 ):
-    kb_ref_command = ["kb", "ref", "--workflow", workflow, "--make-unique", "-i", index]
+    kb_ref_command = ["kb", "ref", "--workflow", workflow, "-i", index]
     if workflow != "custom":
         kb_ref_command += ["-g", t2g, "-f1", f1, "--d-list=None"]
     
@@ -336,8 +336,8 @@ def run_kb_ref(
     if tmp:
         kb_ref_command += ["--tmp", tmp]
     logging_level = logging.getLevelName(logger.getEffectiveLevel())
-    # if logging_level == "DEBUG":
-    #     kb_ref_command += ["--verbose"]
+    if logging_level == "DEBUG":
+        kb_ref_command += ["--verbose"]
     kb_ref_command += [dna_fasta]
     
     if workflow == "custom":
@@ -349,14 +349,8 @@ def run_kb_ref(
             raise ValueError(f"gtf file is required for '{workflow}' workflow")
         kb_ref_command += [gtf]
     
-    if skip_index:
-        if not os.path.exists(index):
-            open(index, "w").close()  # make empty file at index - will allow kb ref to create f1 without creating index
-    
     logger.debug(f"Running kb ref command: {' '.join(kb_ref_command)}")
-    start = time.perf_counter()
     subprocess.run(kb_ref_command, check=True)
-    logger.info(f"kb ref runtime: {time.perf_counter() - start:.2f} s")
 
 @validate_call
 def make_reference_index(
@@ -370,7 +364,7 @@ def make_reference_index(
     threads: Optional[int] = None,
     kallisto: Optional[Types.ExistingExecutable] = None,
     bustools: Optional[Types.ExistingExecutable] = None,
-    overwrite: bool = False,  #! not yet working with type-checking
+    overwrite: bool = False,
     species: Optional[SPECIES] = None,
     tmp: Optional[Types.PotentialDirectory] = None
 ):
@@ -388,12 +382,11 @@ def make_reference_index(
     
     if species is not None:
         logger.info(f"Downloading reference index for species: {species}")
-        download_box_url(species_to_url[species][reference_type][str(k)], output_folder=out_dir, output_file_name=f"{reference_type}.idx", verbose=True)
+        download_box_url(species_to_url[species], output_folder=out_dir, output_file_name=f"{reference_type}.idx", verbose=True)
         logger.info(f"Downloaded reference index to {index}")
         return  # Exit after downloading the reference files
     
     if reference_type == "genome":  # custom-dna
-        t2g, f1 = None, None
         run_kb_ref(
             index = index,
             t2g = t2g,
@@ -444,31 +437,29 @@ def make_reference_index(
     elif reference_type == "genome_plus_transcriptome":  # custom-dna + standard/nac-cell/nac-total
         #* make cdna fasta
         cdna_index = os.path.join(out_dir, "cdna.idx")
-        cdna_t2g = os.path.join(out_dir, "cdna_t2g.txt")
-        if not os.path.exists(f1):
-            run_kb_ref(
-                index = cdna_index,
-                t2g = cdna_t2g,
-                f1 = f1,
-                workflow = "standard",
-                dna_fasta = dna_fasta,
-                k = k,
-                threads = threads,
-                kallisto = kallisto,
-                bustools = bustools,
-                gtf = gtf,
-                tmp = tmp,
-                skip_index = True
-            )
+        cdna_t2g = os.path.join(out_dir, "cdna.txt")
+        cdna_fasta = os.path.join(out_dir, "cdna.fasta")
+        run_kb_ref(
+            index = cdna_index,
+            t2g = cdna_t2g,
+            f1 = cdna_fasta,
+            workflow = "standard",
+            dna_fasta = dna_fasta,
+            k = k,
+            threads = threads,
+            kallisto = kallisto,
+            bustools = bustools,
+            gtf = gtf,
+            tmp = tmp
+        )
 
         #* combine genome and cdna fasta into a single fasta for kb ref
-        genome_plus_transcriptome_fasta = dna_fasta.replace(".fasta", "_plus_cdna.fasta").replace(".fa", "_plus_cdna.fa").replace(".fna", "_plus_cdna.fna")
+        genome_plus_transcriptome_fasta = dna_fasta.replace(".fasta", "_plus_cdna.fasta").replace(".fa", "_plus_cdna.fa")
         with open(genome_plus_transcriptome_fasta, "wb") as wfd:
-            for f in [dna_fasta, f1]:
+            for f in [dna_fasta, cdna_fasta]:
                 with open(f, "rb") as fd:
                     wfd.write(fd.read())
 
-        t2g, f1 = None, None
         run_kb_ref(
             index = index,
             t2g = t2g,
@@ -487,7 +478,7 @@ def make_reference_index(
 
 def fasta_to_fastq(fasta_file, fastq_file = None, overwrite=False):
     if fastq_file is None:
-        fastq_file = fasta_file.replace(".fasta", ".fastq").replace(".fna", ".fastq").replace(".fa", ".fastq")
+        fastq_file = fasta_file.replace(".fasta", ".fastq").replace(".fa", ".fastq")
     if os.path.exists(fastq_file):
         if not overwrite:
             logger.warning(f"Fastq file {fastq_file} already exists. Use overwrite=True to overwrite. Skipping conversion.")
@@ -501,8 +492,6 @@ def fasta_to_fastq(fasta_file, fastq_file = None, overwrite=False):
                 sequence = next(fasta).strip()
                 fastq.write(f"@{header}\n{sequence}\n+\n{'I' * len(sequence)}\n")
     return fastq_file
-
-RUNTIMES = {key: {} for key in get_args(REFERENCE_TYPES)}
 
 @validate_call
 def pseudoalign(
@@ -518,7 +507,7 @@ def pseudoalign(
     threads: Optional[int] = None,
     kallisto: Optional[Types.ExistingExecutable] = None,
     bustools: Optional[Types.ExistingExecutable] = None,
-    overwrite: bool = False,  #! not yet working with type-checking
+    overwrite: bool = False,
     species: Optional[SPECIES] = None,
     tmp: Optional[Types.PotentialDirectory] = None
 ):
@@ -531,7 +520,6 @@ def pseudoalign(
             logger.info(f"Index file not found at {index}. Will create file.")
         else:
             logger.info(f"Overwriting existing index file at {index}.")
-        start = time.perf_counter()
         make_reference_index(
             dna_fasta=dna_fasta,
             reference_type=reference_type,
@@ -547,15 +535,13 @@ def pseudoalign(
             species=species,
             tmp=tmp
         )
-        runtime = time.perf_counter() - start
-        logger.info(f"kb ref runtime: {runtime:.2f} s")
-        RUNTIMES[reference_type]["kb_ref"] = runtime
+        # return None  #!!! erase
 
     vcrs_fastq = fasta_to_fastq(vcrs_fasta)
 
     if kallisto is None:
         kb_dir = Path(kb_python.__file__).parent
-        kallisto_exec = "kallisto_k64" if (k is not None and k > 32) else "kallisto"
+        kallisto_exec = "kallisto_k64" if k > 32 else "kallisto"
         kallisto = str(kb_dir / "bins" / "linux" / "kallisto" / kallisto_exec)
     
     if bustools is None:
@@ -566,8 +552,8 @@ def pseudoalign(
     if threads:
         kallisto_bus_command += ["-t", str(threads)]
     logging_level = logging.getLevelName(logger.getEffectiveLevel())
-    # if logging_level == "DEBUG":
-    #     kallisto_bus_command += ["--verbose"]
+    if logging_level == "DEBUG":
+        kallisto_bus_command += ["--verbose"]
     kallisto_bus_command += [vcrs_fastq]
 
     # kb_count_command = ["kb", "count", "-i", index, "-g", t2g, "-o", out_dir, "-x", "bustools", "--single", "--parity", "single", "--strand", "unstranded", "--union", "--mm", "--num"]
@@ -589,12 +575,8 @@ def pseudoalign(
         else:
             logger.info(f"Overwriting existing BUS file at {bus_file}.")
         logger.debug(f"Running kallisto bus command: {' '.join(kallisto_bus_command)}")
-        start = time.perf_counter()
         subprocess.run(kallisto_bus_command, check=True)
-        runtime = time.perf_counter() - start
-        logger.info(f"kallisto bus runtime: {runtime:.2f} s")
-        RUNTIMES[reference_type]["kallisto_bus"] = runtime
-
+    
     bustools_text_command = [bustools, "text", "-f", "-o", bus_txt, bus_file]
     if not os.path.exists(bus_txt) or overwrite:
         if not os.path.exists(bus_txt):
@@ -635,7 +617,7 @@ def pseudoalign(
         run_info = json.load(fh)
     n_pseudoaligned = run_info["n_pseudoaligned"]
     n_processed = run_info["n_processed"]
-    assert n_pseudoaligned == n_pseudoaligned_set, f"Mismatch between run_info.json ({n_pseudoaligned}) and BUS ({n_pseudoaligned_set}) pseudoaligned read counts"
+    assert n_pseudoaligned == n_pseudoaligned_set, f"Mismatch between run_info.json ({n_pseudoaligned}) and BAM ({n_pseudoaligned_set}) pseudoaligned read counts"
     logger.info(f"reference_type: {reference_type}, pseudoaligned: {n_pseudoaligned} / {n_processed} reads ({n_pseudoaligned/n_processed:.2%})")
     return aligned_headers
 
@@ -683,7 +665,7 @@ def run_pseudoalign_on_vcrs_df(
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
-    base_dir = "/home/jrich/Desktop/varseek-examples/data/kallisto_bus_tests4"
+    base_dir = "/home/jrich/Desktop/varseek-examples/data/kb_quant_tests"
     vcrs_fasta = "/home/jrich/Desktop/varseek-examples/data/cosmic_vs_denovo/vk_ref_cosmic/vcrs.fa"
     dna_fasta = "/home/jrich/data/reference/t2t_CHM13v2/data/GCF_009914755.1/GCF_009914755.1_T2T-CHM13v2.0_genomic.fna"  # "/home/jrich/data/reference/ensembl_grch38_release114/Homo_sapiens.GRCh38.dna.primary_assembly.fa"
     gtf = "/home/jrich/data/reference/t2t_CHM13v2/data/GCF_009914755.1/genomic.gtf"  # "/home/jrich/data/reference/ensembl_grch38_release114/Homo_sapiens.GRCh38.114.gtf"
@@ -714,8 +696,3 @@ if __name__ == "__main__":
         for reference_type, aligned_headers in reference_type_to_aligned_headers.items():
             n_aligned = len(aligned_headers)
             f.write(f"Aligned headers for {reference_type}: {n_aligned} / {total_headers} ({n_aligned/total_headers:.2%})\n")
-        f.write("\nRuntimes:\n")
-        for reference_type, runtimes in RUNTIMES.items():
-            f.write(f"{reference_type}:\n")
-            for step, runtime in runtimes.items():
-                f.write(f"  {step}: {runtime:.2f} s\n")

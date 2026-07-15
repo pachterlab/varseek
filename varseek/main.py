@@ -17,16 +17,13 @@ from .constants import (
     varseek_ref_only_allowable_kb_ref_arguments,
 )
 from .utils import set_up_logger
-from .varseek_build import build
-from .varseek_clean import clean
-from .varseek_count import count
+from .varseek_build import build, vk_build_hidden_from_help
+from .varseek_clean import clean, vk_clean_hidden_from_help
+from .varseek_count import count, vk_count_hidden_from_help
 from .varseek_denovo import denovo
-from .varseek_fastqpp import fastqpp
-from .varseek_filter import filter
-from .varseek_info import info
+from .varseek_fastqpp import fastqpp, vk_fastqpp_hidden_from_help
 from .varseek_ref import ref
-from .varseek_sim import sim
-from .varseek_summarize import summarize
+from .varseek_summarize import summarize, vk_summarize_hidden_from_help
 
 # Get current date and time for alphafold default foldername
 dt_string = datetime.now().strftime("%Y_%m_%d-%H_%M")
@@ -281,16 +278,14 @@ def main():  # noqa: C901
 
     # Check if a flag is passed that causes a script to exist early, thus making normally required arguments optional (eg I can call vk build --list_internally_supported_indices without providing -s and -v)
     list_information_and_exit_flag_dict = {}
-    for list_information_and_exit_flag in ("list_internally_supported_indices", "list_columns", "list_filter_rules", "list_downloadable_references"):
+    for list_information_and_exit_flag in ("list_internally_supported_indices", "list_downloadable_references"):
         list_information_and_exit_flag_dict[list_information_and_exit_flag] = False
         for i, arg in enumerate(sys.argv):
             if arg == f"--{list_information_and_exit_flag}":
                 list_information_and_exit_flag_dict[list_information_and_exit_flag] = True
                 break
-    
-    vk_build_list_information_and_exit_flag_present = list_information_and_exit_flag_dict["list_internally_supported_indices"] 
-    vk_info_list_information_and_exit_flag_present = list_information_and_exit_flag_dict["list_columns"]
-    vk_filter_list_information_and_exit_flag_present = list_information_and_exit_flag_dict["list_filter_rules"] 
+
+    vk_build_list_information_and_exit_flag_present = list_information_and_exit_flag_dict["list_internally_supported_indices"]
     vk_ref_list_information_and_exit_flag_present = any(list_information_and_exit_flag_dict.values())
 
 
@@ -538,7 +533,7 @@ def main():  # noqa: C901
         "--variants",
         # type=strpath_or_str_or_list_or_df,
         nargs="+",
-        required=not vk_build_list_information_and_exit_flag_present,
+        required=not vk_ref_list_information_and_exit_flag_present,
         help=extract_help_from_doc(build, "variants"),
     )
     parser_build.add_argument(
@@ -546,7 +541,7 @@ def main():  # noqa: C901
         "--sequences",
         type=str,
         nargs="+",
-        required=not vk_build_list_information_and_exit_flag_present,
+        required=not vk_ref_list_information_and_exit_flag_present,
         help=extract_help_from_doc(build, "sequences"),
     )
     parser_build.add_argument(
@@ -638,10 +633,10 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "reference_out_dir"),
     )
     parser_build.add_argument(
-        "--vcrs_fasta_out",
+        "--vcrs_unfiltered_fasta_out",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "vcrs_fasta_out"),
+        help=extract_help_from_doc(build, "vcrs_unfiltered_fasta_out"),
     )
     parser_build.add_argument(
         "--variants_updated_csv_out",
@@ -660,18 +655,6 @@ def main():  # noqa: C901
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(build, "vcrs_t2g_out"),
-    )
-    parser_build.add_argument(
-        "--wt_vcrs_fasta_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "wt_vcrs_fasta_out"),
-    )
-    parser_build.add_argument(
-        "--wt_vcrs_t2g_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "wt_vcrs_t2g_out"),
     )
     parser_build.add_argument(
         "--removed_variants_text_out",
@@ -696,26 +679,6 @@ def main():  # noqa: C901
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(build, "save_variants_updated_csv"),
-    )
-    parser_build.add_argument(
-        "--save_wt_vcrs_fasta_and_t2g",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "save_wt_vcrs_fasta_and_t2g"),
-    )
-    parser_build.add_argument(
-        "--disable_save_removed_variants_text",
-        dest="save_removed_variants_text",
-        action="store_false",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "save_removed_variants_text"),
-    )
-    parser_build.add_argument(
-        "--disable_save_filtering_report_text",
-        dest="save_filtering_report_text",
-        action="store_false",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "save_filtering_report_text"),
     )
     parser_build.add_argument(
         "--store_full_sequences",
@@ -837,6 +800,13 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "merge_identical", disable=True),
     )
     parser_build.add_argument(
+        "--disable_merge_subsequences",
+        dest="merge_subsequences",
+        action="store_false",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "merge_subsequences", disable=True),
+    )
+    parser_build.add_argument(
         "-vs",
         "--vcrs_strandedness",
         action="store_true",
@@ -875,911 +845,118 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "cosmic_password"),
     )
 
-    # NEW PARSER
-    info_desc = "Takes in the input directory containing with the VCRS fasta file generated from varseek build, and returns a dataframe with additional columns containing information about the variants."
-    parser_info = parent_subparsers.add_parser(
-        "info",
-        parents=[parent],
-        description=info_desc,
-        help=info_desc,
-        add_help=True,
-        formatter_class=CustomHelpFormatter,
-    )
-
-    parser_info.add_argument(
+    # index-creation / reference arguments (kb ref is now run by vk build; formerly vk ref)
+    parser_build.add_argument(
         "-i",
-        "--input_dir",
-        type=str,
-        required=not vk_info_list_information_and_exit_flag_present,
-        help=extract_help_from_doc(info, "input_dir"),
-    )
-    parser_info.add_argument(
-        "-c",
-        "--columns_to_include",
-        type=strpath_or_list_like_of_strings,
-        nargs="+",
+        "--index_out",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "columns_to_include"),
+        help=extract_help_from_doc(build, "index_out"),
     )
-    parser_info.add_argument(
-        "-k",
-        "--k",
+    parser_build.add_argument(
+        "-g",
+        "--t2g_out",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "t2g_out"),
+    )
+    parser_build.add_argument(
+        "--fasta_out",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "fasta_out"),
+    )
+    parser_build.add_argument(
+        "--vcrs_fasta_out",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "vcrs_fasta_out"),
+    )
+    parser_build.add_argument(
+        "--max_homopolymer_length",
         type=int,
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "k"),
+        help=extract_help_from_doc(build, "max_homopolymer_length"),
     )
-    parser_info.add_argument(
-        "--max_ambiguous_vcrs",
-        type=int,
+    parser_build.add_argument(
+        "--min_triplet_complexity",
+        type=float,
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "max_ambiguous_vcrs"),
+        help=extract_help_from_doc(build, "min_triplet_complexity"),
     )
-    parser_info.add_argument(
-        "--max_ambiguous_reference",
-        type=int,
+    parser_build.add_argument(
+        "--keep_alignment_to_reference",
+        dest="remove_alignment_to_reference",
+        action="store_false",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "remove_alignment_to_reference"),
+    )
+    parser_build.add_argument(
+        "--alignment_to_reference_type",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "max_ambiguous_reference"),
+        help=extract_help_from_doc(build, "alignment_to_reference_type"),
     )
-    parser_info.add_argument(
-        "--vcrs_fasta",
-        type=str,
+    parser_build.add_argument(
+        "--species",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "vcrs_fasta"),
+        help=extract_help_from_doc(build, "species"),
     )
-    parser_info.add_argument(
-        "--variants_updated_csv",
+    parser_build.add_argument(
+        "--alignment_to_reference_dna",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "variants_updated_csv"),
+        help=extract_help_from_doc(build, "alignment_to_reference_dna"),
     )
-    parser_info.add_argument(
-        "--id_to_header_csv",
+    parser_build.add_argument(
+        "--alignment_to_reference_gtf",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "id_to_header_csv"),
+        help=extract_help_from_doc(build, "alignment_to_reference_gtf"),
     )
-    parser_info.add_argument(
-        "--dlist_reference_source",
-        required=False,
-        choices=["grch37", "grch38", "t2t"],
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "dlist_reference_source"),
-    )
-    parser_info.add_argument(
-        "--dlist_reference_genome_fasta",
+    parser_build.add_argument(
+        "--dlist",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "dlist_reference_genome_fasta"),
+        help=extract_help_from_doc(build, "dlist"),
     )
-    parser_info.add_argument(
-        "--dlist_reference_cdna_fasta",
-        type=str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "dlist_reference_cdna_fasta"),
-    )
-    parser_info.add_argument(
-        "--dlist_reference_gtf",
-        type=str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "dlist_reference_gtf"),
-    )
-    parser_info.add_argument(
-        "--dlist_reference_ensembl_release",
-        type=int,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "dlist_reference_ensembl_release"),
-    )
-    parser_info.add_argument(
-        "--dlist_reference_type",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "dlist_reference_type"),
-    )
-    parser_info.add_argument(
-        "--var_id_column",
-        type=str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "gene_name_column"),
-    )
-    parser_info.add_argument(
-        "--gene_name_column",
-        type=str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "gene_name_column"),
-    )
-    parser_info.add_argument(
-        "--variant_source_column",
-        type=str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "variant_source_column"),
-    )
-    parser_info.add_argument(
-        "--var_cdna_column",
-        type=str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "var_cdna_column"),
-    )
-    parser_info.add_argument(
-        "--seq_id_cdna_column",
-        type=str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "seq_id_cdna_column"),
-    )
-    parser_info.add_argument(
-        "--var_genome_column",
-        type=str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "var_genome_column"),
-    )
-    parser_info.add_argument(
-        "--seq_id_genome_column",
-        type=str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "seq_id_genome_column"),
-    )
-    parser_info.add_argument(
-        "-o",
-        "--out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "out"),
-    )
-    parser_info.add_argument(
-        "-r",
-        "--reference_out_dir",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "reference_out_dir"),
-    )
-    parser_info.add_argument(
-        "--variants_updated_vk_info_csv_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "variants_updated_vk_info_csv_out"),
-    )
-    parser_info.add_argument(
-        "--variants_updated_exploded_vk_info_csv_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "variants_updated_exploded_vk_info_csv_out"),
-    )
-    parser_info.add_argument(
-        "--dlist_genome_fasta_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "dlist_genome_fasta_out"),
-    )
-    parser_info.add_argument(
-        "--dlist_cdna_fasta_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "dlist_cdna_fasta_out"),
-    )
-    parser_info.add_argument(
-        "--dlist_combined_fasta_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "dlist_combined_fasta_out"),
-    )
-    parser_info.add_argument(
-        "--save_variants_updated_exploded_vk_info_csv",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "save_variants_updated_exploded_vk_info_csv"),
-    )
-    parser_info.add_argument(
-        "--make_pyfastx_summary_file",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "make_pyfastx_summary_file"),
-    )
-    parser_info.add_argument(
-        "--make_kat_histogram",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "make_kat_histogram"),
-    )
-    parser_info.add_argument(
-        "--chunksize",
-        type=int,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "chunksize"),
-    )
-    parser_info.add_argument(
-        "--dry_run",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "dry_run"),
-    )
-    parser_info.add_argument(
-        "--list_columns",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "list_columns"),
-    )
-    parser_info.add_argument(
-        "--overwrite",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "overwrite"),
-    )
-    parser_info.add_argument(
+    parser_build.add_argument(
+        "-t",
         "--threads",
         type=int,
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "threads"),
+        help=extract_help_from_doc(build, "threads"),
     )
-    parser_info.add_argument(
-        "--logging_level",
-        choices=["NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "0", "10", "20", "30", "40", "50", "60", None],
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "logging_level"),
-    )
-    parser_info.add_argument(
-        "--save_logs",
+    parser_build.add_argument(
+        "--dont_create_index",
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "save_logs"),
+        help="Skip the kb ref index-creation step and only produce the VCRS fasta/t2g (the classic vk build behavior). By default the index is created.",
     )
-    parser_info.add_argument(
-        "--log_out_dir",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "log_out_dir"),
-    )
-    parser_info.add_argument(
-        "--verbose",
+    parser_build.add_argument(
+        "-d",
+        "--download",
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "verbose"),
+        help=extract_help_from_doc(build, "download"),
+    )
+    parser_build.add_argument(
+        "--list_downloadable_references",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "list_downloadable_references"),
     )
 
-    # kwargs
-    parser_info.add_argument(
-        "-w",
-        "--w",
-        type=int,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "w"),
-    )
-    parser_info.add_argument(
-        "--bowtie2_path",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "bowtie2_path"),
-    )
-    parser_info.add_argument(
-        "-vs",
-        "--vcrs_strandedness",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "vcrs_strandedness"),
-    )
-    parser_info.add_argument(
-        "--near_splice_junction_threshold",
-        type=int,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "near_splice_junction_threshold"),
-    )
-    parser_info.add_argument(
-        "--reference_cdna_fasta",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "reference_cdna_fasta"),
-    )
-    parser_info.add_argument(
-        "--reference_genome_fasta",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "reference_genome_fasta"),
-    )
-    parser_info.add_argument(
-        "--variants",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "variants"),
-    )
-    parser_info.add_argument(
-        "--sequences",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "sequences"),
-    )
-    parser_info.add_argument(
-        "--gtf",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "gtf"),
-    )
-    parser_info.add_argument(
-        "--seq_id_column",
-        type=str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "seq_id_column"),
-    )
-    parser_info.add_argument(
-        "--var_column",
-        type=str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "var_column"),
-    )
-    parser_info.add_argument(
-        "--kallisto",
-        type=str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "kallisto"),
-    )
-    parser_info.add_argument(
-        "--bustools",
-        type=str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(info, "bustools"),
-    )
-
-    # NEW PARSER
-    filter_desc = "Filter variants based on the provided filters and save the filtered variants to a fasta file."
-    parser_filter = parent_subparsers.add_parser(
-        "filter",
-        parents=[parent],
-        description=filter_desc,
-        help=filter_desc,
-        add_help=True,
-        formatter_class=CustomHelpFormatter,
-    )
-    parser_filter.add_argument(
-        "-i",
-        "--input_dir",
-        type=str,
-        required=not vk_filter_list_information_and_exit_flag_present,
-        help=extract_help_from_doc(filter, "input_dir"),
-    )
-    parser_filter.add_argument(
-        "-f",
-        "--filters",
-        type=strpath_or_list_like_of_strings,
-        nargs="+",
-        required=not vk_filter_list_information_and_exit_flag_present,
-        help=extract_help_from_doc(filter, "filters"),
-    )
-    parser_filter.add_argument(
-        "--variants_updated_vk_info_csv",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "variants_updated_vk_info_csv"),
-    )
-    parser_filter.add_argument(
-        "--variants_updated_exploded_vk_info_csv",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "variants_updated_exploded_vk_info_csv"),
-    )
-    parser_filter.add_argument(
-        "--id_to_header_csv",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "id_to_header_csv"),
-    )
-    parser_filter.add_argument(
-        "--dlist_fasta",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "dlist_fasta"),
-    )
-    parser_filter.add_argument(
-        "--vcrs_id_column",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "vcrs_id_column"),
-    )
-    parser_filter.add_argument(
-        "--vcrs_sequence_column",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "vcrs_sequence_column"),
-    )
-    parser_filter.add_argument(
-        "-o",
-        "--out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "out"),
-    )
-    parser_filter.add_argument(
-        "--variants_updated_filtered_csv_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "variants_updated_filtered_csv_out"),
-    )
-    parser_filter.add_argument(
-        "--variants_updated_exploded_filtered_csv_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "variants_updated_exploded_filtered_csv_out"),
-    )
-    parser_filter.add_argument(
-        "--id_to_header_filtered_csv_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "id_to_header_filtered_csv_out"),
-    )
-    parser_filter.add_argument(
-        "--dlist_filtered_fasta_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "dlist_filtered_fasta_out"),
-    )
-    parser_filter.add_argument(
-        "--vcrs_filtered_fasta_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "vcrs_filtered_fasta_out"),
-    )
-    parser_filter.add_argument(
-        "--vcrs_t2g_filtered_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "vcrs_t2g_filtered_out"),
-    )
-    parser_filter.add_argument(
-        "--wt_vcrs_filtered_fasta_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "wt_vcrs_filtered_fasta_out"),
-    )
-    parser_filter.add_argument(
-        "--wt_vcrs_t2g_filtered_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "wt_vcrs_t2g_filtered_out"),
-    )
-    parser_filter.add_argument(
-        "--save_wt_vcrs_fasta_and_t2g",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "save_wt_vcrs_fasta_and_t2g"),
-    )
-    parser_filter.add_argument(
-        "--save_variants_updated_filtered_csvs",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "save_variants_updated_filtered_csvs"),
-    )
-    parser_filter.add_argument(
-        "--return_variants_updated_filtered_csv_df",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "return_variants_updated_filtered_csv_df"),
-    )
-    parser_filter.add_argument(
-        "--chunksize",
-        type=int,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "chunksize"),
-    )
-    parser_filter.add_argument(
-        "--dry_run",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "dry_run"),
-    )
-    parser_filter.add_argument(
-        "--list_filter_rules",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "list_filter_rules"),
-    )
-    parser_filter.add_argument(
-        "--overwrite",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "overwrite"),
-    )
-    parser_filter.add_argument(
-        "--logging_level",
-        choices=["NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "0", "10", "20", "30", "40", "50", "60", None],
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "logging_level"),
-    )
-    parser_filter.add_argument(
-        "--save_logs",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "save_logs"),
-    )
-    parser_filter.add_argument(
-        "--log_out_dir",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "log_out_dir"),
-    )
-    parser_filter.add_argument(
-        "--disable_make_internal_copies",
-        action="store_false",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "make_internal_copies", disable=True),
-    )
-
-    # kwargs
-    parser_filter.add_argument(
-        "--filter_all_dlists",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "filter_all_dlists"),
-    )
-    parser_filter.add_argument(
-        "--dlist_genome_fasta",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "dlist_genome_fasta"),
-    )
-    parser_filter.add_argument(
-        "--dlist_cdna_fasta",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "dlist_cdna_fasta"),
-    )
-    parser_filter.add_argument(
-        "--dlist_genome_filtered_fasta_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "dlist_genome_filtered_fasta_out"),
-    )
-    parser_filter.add_argument(
-        "--dlist_cdna_filtered_fasta_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "dlist_cdna_filtered_fasta_out"),
-    )
-    parser_filter.add_argument(
-        "--disable_save_vcrs_filtered_fasta_and_t2g",
-        dest="save_vcrs_filtered_fasta_and_t2g",
-        action="store_false",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "save_vcrs_filtered_fasta_and_t2g", disable=True),
-    )
-    parser_filter.add_argument(
-        "--disable_use_IDs",
-        dest="use_IDs",
-        action="store_false",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(filter, "use_IDs", disable=True),
-    )
-
-    # NEW PARSER
-    sim_desc = "Create synthetic RNA-seq dataset with variant-containing reads."
-    parser_sim = parent_subparsers.add_parser(
-        "sim",
-        parents=[parent],
-        description=sim_desc,
-        help=sim_desc,
-        add_help=True,
-        formatter_class=CustomHelpFormatter,
-    )
-    parser_sim.add_argument(
-        "-v",
-        "--variants",
-        default=None,
-        type=strpath_or_strnonpath_or_df,
-        required=True,
-        help=extract_help_from_doc(sim, "variants"),
-    )
-    parser_sim.add_argument(
-        "--number_of_variants_to_sample",
-        type=int,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "number_of_variants_to_sample"),
-    )
-    parser_sim.add_argument(
-        "--number_of_reads_per_variant_alt",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "number_of_reads_per_variant_alt"),
-    )
-    parser_sim.add_argument(
-        "--number_of_reads_per_variant_ref",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "number_of_reads_per_variant_ref"),
-    )
-    parser_sim.add_argument(
-        "--sample_ref_and_alt_reads_from_same_locations",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "sample_ref_and_alt_reads_from_same_locations"),
-    )
-    parser_sim.add_argument(
-        "--with_replacement",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "with_replacement"),
-    )
-    parser_sim.add_argument(
-        "--strand",
-        choices=["f", "r", "both", "random", None],
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "strand"),
-    )
-    parser_sim.add_argument(
-        "--read_length",
-        type=int,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "read_length"),
-    )
-    parser_sim.add_argument(
-        "-f",
-        "--filters",
-        nargs="*",  # Accept multiple sequential filters or a single JSON file
-        type=str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "filters"),
-    )
-    parser_sim.add_argument(
-        "--add_noise_sequencing_error",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "add_noise_sequencing_error"),
-    )
-    parser_sim.add_argument(
-        "--add_noise_base_quality",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "add_noise_base_quality"),
-    )
-    parser_sim.add_argument(
-        "--error_rate",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "error_rate"),
-    )
-    parser_sim.add_argument(
-        "--error_distribution",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "error_distribution"),
-    )
-    parser_sim.add_argument(
-        "--max_errors",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "max_errors"),
-    )
-    parser_sim.add_argument(
-        "--variant_sequence_read_parent_column",
-        required=False,
-        default="mutant_sequence_read_parent",
-        help=extract_help_from_doc(sim, "variant_sequence_read_parent_column"),
-    )
-    parser_sim.add_argument(
-        "--ref_sequence_read_parent_column",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "ref_sequence_read_parent_column"),
-    )
-    parser_sim.add_argument(
-        "--variant_sequence_read_parent_rc_column",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "variant_sequence_read_parent_rc_column"),
-    )
-    parser_sim.add_argument(
-        "--ref_sequence_read_parent_rc_column",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "ref_sequence_read_parent_rc_column"),
-    )
-    parser_sim.add_argument(
-        "--reads_fastq_parent",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "reads_fastq_parent"),
-    )
-    parser_sim.add_argument(
-        "--reads_csv_parent",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "reads_csv_parent"),
-    )
-    parser_sim.add_argument(
-        "--out",
-        type=str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "out"),
-    )
-    parser_sim.add_argument(
-        "--reads_fastq_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "reads_fastq_out"),
-    )
-    parser_sim.add_argument(
-        "--variants_updated_csv_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "variants_updated_csv_out"),
-    )
-    parser_sim.add_argument(
-        "--reads_csv_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "reads_csv_out"),
-    )
-    parser_sim.add_argument(
-        "--disable_save_variants_updated_csv",
-        dest="save_variants_updated_csv",
-        action="store_false",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "save_variants_updated_csv", disable=True),
-    )
-    parser_sim.add_argument(
-        "--disable_save_reads_csv",
-        dest="save_reads_csv",
-        action="store_false",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "save_reads_csv", disable=True),
-    )
-    parser_sim.add_argument(
-        "--vk_build_out_dir",
-        type=str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "vk_build_out_dir"),
-    )
-    parser_sim.add_argument(
-        "--sequences",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "sequences"),
-    )
-    parser_sim.add_argument(
-        "--seq_id_column",
-        type=str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "seq_id_column"),
-    )
-    parser_sim.add_argument(
-        "--var_column",
-        type=str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "var_column"),
-    )
-    parser_sim.add_argument(
-        "--var_id_column",
-        type=str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "var_id_column"),
-    )
-    parser_sim.add_argument(
-        "--k",
-        type=int,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "k"),
-    )
-    parser_sim.add_argument(
-        "-w",
-        "--w",
-        type=int,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "w"),
-    )
-    parser_sim.add_argument(
-        "--sequences_cdna",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "sequences_cdna"),
-    )
-    parser_sim.add_argument(
-        "--seq_id_column_cdna",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "seq_id_column_cdna"),
-    )
-    parser_sim.add_argument(
-        "--var_column_cdna",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "var_column_cdna"),
-    )
-    parser_sim.add_argument(
-        "--sequences_genome",
-        required=False,
-        help=extract_help_from_doc(sim, "sequences_genome"),
-    )
-    parser_sim.add_argument(
-        "--seq_id_column_genome",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "seq_id_column_genome"),
-    )
-    parser_sim.add_argument(
-        "--var_column_genome",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "var_column_genome"),
-    )
-    parser_sim.add_argument(
-        "--seed",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "seed"),
-    )
-    parser_sim.add_argument(
-        "--gzip_reads_fastq_out",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "gzip_reads_fastq_out"),
-    )
-    parser_sim.add_argument(
-        "--dry_run",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "dry_run"),
-    )
-    parser_sim.add_argument(
-        "--logging_level",
-        choices=["NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "0", "10", "20", "30", "40", "50", "60", None],
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "logging_level"),
-    )
-    parser_sim.add_argument(
-        "--save_logs",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "save_logs"),
-    )
-    parser_sim.add_argument(
-        "--log_out_dir",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "log_out_dir"),
-    )
-    # kwargs
-    parser_sim.add_argument(
-        "--disable_make_internal_copies",
-        action="store_false",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "make_internal_copies", disable=True),
-    )
-    parser_sim.add_argument(
-        "--disable_filter_null_rows_from_important_cols",
-        action="store_false",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(sim, "filter_null_rows_from_important_cols", disable=True),
-    )
+    # Hide the advanced `build` parameters (defined in varseek_build.vk_build_hidden_from_help) from
+    # `vk build --help`. They remain fully parseable — only their help text is suppressed. Matched by
+    # dest, so the --disable_* flags map to their underlying parameter name.
+    for action in parser_build._actions:
+        if action.dest in vk_build_hidden_from_help:
+            action.help = argparse.SUPPRESS
 
     # NEW PARSER
     fastqpp_desc = "Preprocess the fastq files."
@@ -2021,6 +1198,12 @@ def main():  # noqa: C901
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(fastqpp, "delete_intermediate_files"),
     )
+
+    # Hide the advanced `fastqpp` parameters (defined in varseek_fastqpp.vk_fastqpp_hidden_from_help)
+    # from `vk fastqpp --help`. They remain fully parseable — only their help text is suppressed.
+    for action in parser_fastqpp._actions:
+        if action.dest in vk_fastqpp_hidden_from_help:
+            action.help = argparse.SUPPRESS
 
     # NEW PARSER
     clean_desc = "Run standard processing on the VCRS count matrix."
@@ -2534,6 +1717,13 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "skip_transcripts_without_genes"),
     )
 
+    # Hide the advanced `clean` parameters (defined in varseek_clean.vk_clean_hidden_from_help) from
+    # `vk clean --help`. They remain fully parseable — only their help text is suppressed. Matched by
+    # dest, so the --disable_* flags map to their underlying parameter name.
+    for action in parser_clean._actions:
+        if action.dest in vk_clean_hidden_from_help:
+            action.help = argparse.SUPPRESS
+
     # NEW PARSER
     summarize_desc = "Analyze the VCRS count matrix results."
     parser_summarize = parent_subparsers.add_parser(
@@ -2678,9 +1868,15 @@ def main():  # noqa: C901
         help=extract_help_from_doc(summarize, "plots_folder"),
     )
 
+    # Hide the advanced `summarize` parameters (defined in varseek_summarize.vk_summarize_hidden_from_help)
+    # from `vk summarize --help`. They remain fully parseable — only their help text is suppressed.
+    for action in parser_summarize._actions:
+        if action.dest in vk_summarize_hidden_from_help:
+            action.help = argparse.SUPPRESS
+
     # NEW PARSER
-    ref_desc = "Create a reference index and t2g file for variant screening with varseek count. Wraps around varseek build, varseek info, varseek filter, and kb ref."
-    parser_ref = parent_subparsers.add_parser("ref", parents=[parent], description=ref_desc, help=ref_desc, add_help=True, formatter_class=CustomHelpFormatter, epilog="To see the full list of allowable arguments, please explore vk build, vk info, vk filter, and (kallisto-bustools') kb ref")
+    ref_desc = "Create a reference index and t2g file for variant screening with varseek count. Wraps around varseek build and kb ref."
+    parser_ref = parent_subparsers.add_parser("ref", parents=[parent], description=ref_desc, help=ref_desc, add_help=True, formatter_class=CustomHelpFormatter, epilog="To see the full list of allowable arguments, please explore vk build and (kallisto-bustools') kb ref")
 
     parser_ref.add_argument(
         "-v",
@@ -2688,7 +1884,7 @@ def main():  # noqa: C901
         # type=strpath_or_str_or_list_or_df,
         nargs="+",
         required=not vk_ref_list_information_and_exit_flag_present,  # generally True
-        help=extract_help_from_doc(ref, "variants"),
+        help=extract_help_from_doc(build, "variants"),
     )
     parser_ref.add_argument(
         "-s",
@@ -2696,7 +1892,7 @@ def main():  # noqa: C901
         type=str,
         nargs="+",
         required=not vk_ref_list_information_and_exit_flag_present,  # generally True
-        help=extract_help_from_doc(ref, "sequences"),
+        help=extract_help_from_doc(build, "sequences"),
     )
     parser_ref.add_argument(
         "-w",
@@ -2704,7 +1900,7 @@ def main():  # noqa: C901
         type=int,
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(ref, "w"),
+        help=extract_help_from_doc(build, "w"),
     )
     parser_ref.add_argument(
         "-k",
@@ -2712,53 +1908,82 @@ def main():  # noqa: C901
         type=int,
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(ref, "k"),
+        help=extract_help_from_doc(build, "k"),
     )
     parser_ref.add_argument(
-        "-f",
-        "--filters",
-        type=strpath_or_list_like_of_strings,
-        nargs="*",
+        "--vcrs_fasta_out",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(ref, "filters"),
+        help=extract_help_from_doc(build, "vcrs_fasta_out"),
+    )
+    parser_ref.add_argument(
+        "--max_homopolymer_length",
+        type=int,
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "max_homopolymer_length"),
+    )
+    parser_ref.add_argument(
+        "--min_triplet_complexity",
+        type=float,
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "min_triplet_complexity"),
+    )
+    parser_ref.add_argument(
+        "--keep_alignment_to_reference",
+        dest="remove_alignment_to_reference",
+        action="store_false",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "remove_alignment_to_reference"),
+    )
+    parser_ref.add_argument(
+        "--alignment_to_reference_type",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "alignment_to_reference_type"),
+    )
+    parser_ref.add_argument(
+        "--species",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "species"),
+    )
+    parser_ref.add_argument(
+        "--alignment_to_reference_dna",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "alignment_to_reference_dna"),
+    )
+    parser_ref.add_argument(
+        "--alignment_to_reference_gtf",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "alignment_to_reference_gtf"),
     )
     parser_ref.add_argument(
         "--dlist",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(ref, "dlist"),
-    )
-    parser_ref.add_argument(
-        "--dlist_reference_source",
-        required=False,
-        choices=["grch37", "grch38", "t2t"],
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(ref, "dlist_reference_source"),
-    )
-    parser_ref.add_argument(
-        "--dlist_reference_ensembl_release",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(ref, "dlist_reference_ensembl_release"),
+        help=extract_help_from_doc(build, "dlist"),
     )
     parser_ref.add_argument(
         "--var_column",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(ref, "var_column"),
+        help=extract_help_from_doc(build, "var_column"),
     )
     parser_ref.add_argument(
         "--seq_id_column",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(ref, "seq_id_column"),
+        help=extract_help_from_doc(build, "seq_id_column"),
     )
     parser_ref.add_argument(
         "--var_id_column",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(ref, "var_id_column"),
+        help=extract_help_from_doc(build, "var_id_column"),
     )
     parser_ref.add_argument(
         "-o",
@@ -2766,73 +1991,65 @@ def main():  # noqa: C901
         type=str,
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(ref, "out"),
+        help=extract_help_from_doc(build, "out"),
     )
     parser_ref.add_argument(
         "--reference_out_dir",
         type=str,
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(ref, "reference_out_dir"),
+        help=extract_help_from_doc(build, "reference_out_dir"),
     )
     parser_ref.add_argument(
         "-i",
         "--index_out",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(ref, "index_out"),
+        help=extract_help_from_doc(build, "index_out"),
     )
     parser_ref.add_argument(
         "-g",
         "--t2g_out",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(ref, "t2g_out"),
+        help=extract_help_from_doc(build, "t2g_out"),
     )
     parser_ref.add_argument(
         "--fasta_out",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(ref, "fasta_out"),
+        help=extract_help_from_doc(build, "fasta_out"),
     )
     parser_ref.add_argument(
         "-d",
         "--download",
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(ref, "download"),
+        help=extract_help_from_doc(build, "download"),
     )
     parser_ref.add_argument(
         "--chunksize",
         type=int,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(ref, "chunksize"),
+        help=extract_help_from_doc(build, "chunksize"),
     )
     parser_ref.add_argument(
         "--dry_run",
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(ref, "dry_run"),
+        help=extract_help_from_doc(build, "dry_run"),
     )
     parser_ref.add_argument(
         "--list_downloadable_references",
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(ref, "list_downloadable_references"),
-    )
-    parser_ref.add_argument(
-        "-dmic",
-        "--disable_minimum_info_columns",
-        dest="minimum_info_columns",
-        action="store_false",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(ref, "minimum_info_columns", disable=True),
+        help=extract_help_from_doc(build, "list_downloadable_references"),
     )
     parser_ref.add_argument(
         "--overwrite",
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(ref, "overwrite"),
+        help=extract_help_from_doc(build, "overwrite"),
     )
     parser_ref.add_argument(
         "-t",
@@ -2840,32 +2057,32 @@ def main():  # noqa: C901
         type=int,
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(ref, "threads"),
+        help=extract_help_from_doc(build, "threads"),
     )
     parser_ref.add_argument(
         "--logging_level",
         choices=["NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "0", "10", "20", "30", "40", "50", "60", None],
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(ref, "logging_level"),
+        help=extract_help_from_doc(build, "logging_level"),
     )
     parser_ref.add_argument(
         "--save_logs",
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(ref, "save_logs"),
+        help=extract_help_from_doc(build, "save_logs"),
     )
     parser_ref.add_argument(
         "--log_out_dir",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(ref, "log_out_dir"),
+        help=extract_help_from_doc(build, "log_out_dir"),
     )
     parser_ref.add_argument(
         "--verbose",
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(ref, "verbose"),
+        help=extract_help_from_doc(build, "verbose"),
     )
 
     # NEW PARSER
@@ -3095,7 +2312,7 @@ def main():  # noqa: C901
         help=extract_help_from_doc(count, "parity_kb_count"),
     )
 
-    copy_arguments([parser_build, parser_info, parser_filter], parser_ref)  # allows parser_ref to accept all arguments from parser_build, parser_info, and parser_filter - if parser_ref does not already contain the argument, then it will inherent from the other functions, notably with positional args converted into keyword args, required False (since vk ref will necessarily handle this internally), and no help message displayed
+    copy_arguments([parser_build], parser_ref)  # allows parser_ref to accept all arguments from parser_build - if parser_ref does not already contain the argument, then it will inherent from vk build, notably with positional args converted into keyword args, required False (since vk ref will necessarily handle this internally), and no help message displayed
     copy_arguments([parser_fastqpp, parser_clean, parser_summarize], parser_count)
 
     # kb count args with 1 value - note that because varseek count has the positional fastqs with nargs="+", unknown_args only works with a flag with no following value (if an unknown flag has a following value, then it assumes this refers to the fastqs) - so for varseek ref (all kb args), and for varseek count with kb's store_true args, I don't need to add anything to main (kwargs will handle it)
@@ -3110,6 +2327,13 @@ def main():  # noqa: C901
 
     # $ to continue adding support for future kb ref/count args, simply update the dicts varseek_ref_only_allowable_kb_ref_arguments and varseek_count_only_allowable_kb_count_arguments, and ensure that they follow the current rules (0 args is store_true as handled by kwargs, 1 arg is a single string, 2+ args is a list of strings) - and if anything differs from here, then in addition to adding to the dict, then also add the logic custom here
     # manually add any non-standard flags from kb ref/count to varseek ref/count here (e.g., store_false)
+
+    # Hide the advanced `count` parameters (defined in varseek_count.vk_count_hidden_from_help) from
+    # `vk count --help`. They remain fully parseable — only their help text is suppressed. Matched by
+    # dest, so the --disable_num flag maps to its underlying parameter name.
+    for action in parser_count._actions:
+        if action.dest in vk_count_hidden_from_help:
+            action.help = argparse.SUPPRESS
 
     # * Define return values
     args, unknown_args = parent_parser.parse_known_args()
@@ -3142,13 +2366,7 @@ def main():  # noqa: C901
 
     # Help return
     if args.help:
-        # Retrieve all subparsers from the parent parser
-        subparsers_actions = [action for action in parent_parser._actions if isinstance(action, argparse._SubParsersAction)]
-        for subparsers_action in subparsers_actions:
-            # Get all subparsers and print help
-            for choice, subparser in subparsers_action.choices.items():
-                print("Subparser '{}'".format(choice))
-                print(subparser.format_help())
+        parent_parser.print_help(sys.stderr)
         sys.exit(1)
 
     # Version return
@@ -3165,9 +2383,6 @@ def main():  # noqa: C901
     command_to_parser = {
         "build": parser_build,
         "denovo": parser_denovo,
-        "info": parser_info,
-        "filter": parser_filter,
-        "sim": parser_sim,
         "fastqpp": parser_fastqpp,
         "clean": parser_clean,
         "summarize": parser_summarize,
@@ -3219,8 +2434,9 @@ def main():  # noqa: C901
 
         build_results = build(**params_dict)
 
-        # Print list of mutated sequences if any are returned (this should only happen when out=None)
-        if build_results:
+        # Print list of mutated sequences if any are returned (this should only happen when return_variant_output=True).
+        # Note: build now returns a dict of produced reference file paths in the normal case, which we do not print here.
+        if isinstance(build_results, list):
             for mut_seq in build_results:
                 print(mut_seq)
 
@@ -3233,57 +2449,6 @@ def main():  # noqa: C901
             return params_dict
 
         denovo_results = denovo(**params_dict)
-
-    # * info return
-    if args.command == "info":
-        # * ensure that all keys in params_dict correspond to the python parameters, and the values correspond to the command line values - see the vk build section in main for more details
-
-        # (1) modify variable outside of args
-
-        # combine with kwargs (if both params_dict and kwargs have the same key, params_dict takes precedence)
-        params_dict = {**kwargs, **params_dict}
-
-        # for pytest
-        if os.getenv("TESTING") == "true":
-            return params_dict
-
-        info_results = info(**params_dict)
-
-        # * optionally do something with info_results (e.g., save, or print to console)
-
-    # * filter return
-    if args.command == "filter":
-        # * ensure that all keys in params_dict correspond to the python parameters, and the values correspond to the command line values - see the vk build section in main for more details
-
-        # (1) modify variable outside of args
-
-        # combine with kwargs (if both params_dict and kwargs have the same key, params_dict takes precedence)
-        params_dict = {**kwargs, **params_dict}
-
-        # for pytest
-        if os.getenv("TESTING") == "true":
-            return params_dict
-
-        filter_results = filter(**params_dict)
-
-        # * optionally do something with filter_results (e.g., save, or print to console)
-
-    # * sim return
-    if args.command == "sim":
-        # * ensure that all keys in params_dict correspond to the python parameters, and the values correspond to the command line values - see the vk build section in main for more details
-
-        # (1) modify variable outside of args
-
-        # combine with kwargs (if both params_dict and kwargs have the same key, params_dict takes precedence)
-        params_dict = {**kwargs, **params_dict}
-
-        # for pytest
-        if os.getenv("TESTING") == "true":
-            return params_dict
-
-        simulated_df_dict = sim(**params_dict)
-
-        # * optionally do something with simulated_df_dict (e.g., save, or print to console)
 
     # * fastqpp return
     if args.command == "fastqpp":

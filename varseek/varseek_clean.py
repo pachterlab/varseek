@@ -9,6 +9,7 @@ import subprocess
 import pyfastx
 import time
 from pathlib import Path
+from typing import Optional, Union
 import re
 
 import anndata
@@ -16,8 +17,16 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 from packaging import version
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from varseek.utils import (
+    validate_call,
+    vk_config,
+    PositiveInt,
+    NonNegativeInt,
+    Parity,
+    StrandBiasEnd,
+    Technology,
     adjust_variant_adata_by_normal_gene_matrix,
     check_file_path_is_string_with_valid_extension,
     decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_mode,
@@ -49,228 +58,136 @@ from varseek.utils import (
     load_adata_from_mtx
 )
 
-from .constants import non_single_cell_technologies, technology_valid_values, technology_to_strand_bias_mapping, technology_to_file_index_with_transcripts_mapping, HGVS_pattern_general, mutation_pattern
+from .constants import non_single_cell_technologies, technology_valid_values, technology_info, HGVS_pattern_general, mutation_pattern
+
+from .utils.varseek_clean_utils import prepare_set, _validate_clean_params
 
 logger = logging.getLogger(__name__)
 logger = set_up_logger(logger, logging_level="INFO", save_logs=False, log_dir=None)
 
-def prepare_set(vcrs_id_set_to_exclusively_keep):
-    if vcrs_id_set_to_exclusively_keep is None:
-        return None  # Keep None as None
 
-    elif isinstance(vcrs_id_set_to_exclusively_keep, (list, tuple)):
-        return set(vcrs_id_set_to_exclusively_keep)  # Convert list/tuple to set
+class CleanParams(BaseModel):
+    """Cross-field and filesystem validation for :func:`clean`.
 
-    elif isinstance(vcrs_id_set_to_exclusively_keep, str) and os.path.isfile(vcrs_id_set_to_exclusively_keep) and vcrs_id_set_to_exclusively_keep.endswith(".txt"):
-        # Load lines from text file, stripping whitespace
-        with open(vcrs_id_set_to_exclusively_keep, "r", encoding="utf-8") as f:
-            return set(line.strip() for line in f if line.strip())  # Ignore empty lines
+    Per-parameter type/extension checks are enforced on the ``clean`` signature by
+    ``@validate_call``; the detailed cross-field, file-path, directory, and
+    kwargs-only checks run here via ``_validate_clean_params`` (fed the full params
+    dict, including kwargs, via ``extra="allow"``).
+    """
 
-    elif isinstance(vcrs_id_set_to_exclusively_keep, set):
-        return vcrs_id_set_to_exclusively_keep  # Already a set, return as is
+    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
 
-    else:
-        raise ValueError("Invalid input: must be None, a list, tuple, set, or a path to a text file")
-
-
-scanpy_conditions = ["filter_cells_by_min_counts", "filter_cells_by_min_genes", "filter_genes_by_min_cells", "filter_cells_by_max_mt_content", "doublet_detection"]
-
-
-def validate_input_clean(params_dict):
-    # check if adata_vcrs is of type Anndata
-    adata_vcrs = params_dict["adata_vcrs"]
-    if not isinstance(adata_vcrs, (str, Path, anndata.AnnData)):  # I will enforce that adata_vcrs exists later, as otherwise it will throw an error when I call this through vk count before kb count can run
-        raise ValueError("adata_vcrs must be an AnnData object or a file path to an h5ad object.")
-    if isinstance(adata_vcrs, (str, Path)):
-        check_file_path_is_string_with_valid_extension(adata_vcrs, "adata_vcrs", "h5ad")
-
-    # technology
-    technology = params_dict.get("technology", None)
-    technology_valid_values_lower = {x.lower() for x in technology_valid_values}
-    if technology is None or technology.lower() not in technology_valid_values_lower:
-        raise ValueError(f"Technology must be one of {technology_valid_values_lower}")
-
-    for param_name, min_value, optional_value in [
-        ("min_counts", 1, False),
-        ("read_length", 1, True),
-        ("filter_cells_by_min_genes", 0, True),  # optional True means that it can be None
-        ("filter_genes_by_min_cells", 0, True),
-    ]:
-        param_value = params_dict.get(param_name)
-        if not is_valid_int(param_value, ">=", min_value, optional=optional_value):
-            must_be_value = f"an integer >= {min_value}" if not optional_value else f"an integer >= {min_value} or None"
-            raise ValueError(f"{param_name} must be {must_be_value}. Got {param_value} of type {type(param_value)}.")
-
-    if params_dict.get("cpm_normalization") and (not params_dict.get("adata_reference_genome") and not params_dict.get("kb_count_reference_genome_dir")):
-        raise ValueError("adata_reference_genome or kb_count_reference_genome_dir must be provided if cpm_normalization=True.")
-
-    if technology not in non_single_cell_technologies:
-        if params_dict.get("filter_cells_by_min_counts") is True:
-            try:
-                from kneed import KneeLocator
-            except ImportError:
-                raise ImportError("kneed is required for filter_cells_by_min_counts=True. See pyproject.toml project.optional-dependencies for version recommendation. Install it with:\n" "  pip install kneed")
-        for condition in scanpy_conditions:
-            if params_dict.get(condition):
-                if not params_dict.get("adata_reference_genome") and not params_dict.get("kb_count_reference_genome_dir"):
-                    raise ValueError(f"adata_reference_genome or kb_count_reference_genome_dir must be provided if {condition}=True.")
-                try:
-                    import scanpy as sc
-                except ImportError:
-                    raise ImportError("Scanpy is required for this function. See pyproject.toml project.optional-dependencies for version recommendation. Install it with:\n" "  pip install scanpy")
-
-    # filter_cells_by_min_counts - gets special treatment because it can also be True for automatic calculation
-    filter_cells_by_min_counts = params_dict.get("filter_cells_by_min_counts", None)
-    if filter_cells_by_min_counts is not None and not is_valid_int(filter_cells_by_min_counts, ">=", 1):
-        raise ValueError(f"filter_cells_by_min_counts must be an integer >= 1 (for manual threshold), True (for automatic threshold calculation with kneed's KneeLocator), or None (for no threshold). Got {filter_cells_by_min_counts} of type {type(filter_cells_by_min_counts)}.")
-
-    # filter_cells_by_max_mt_content - special treatment because it is between rather than lower-bounded only
-    if not is_valid_int(params_dict.get("filter_cells_by_max_mt_content"), "between", min_value_inclusive=0, max_value_inclusive=100, optional=True):
-        raise ValueError(f"filter_cells_by_max_mt_content must be an integer between 0 and 100, or None. Got {params_dict.get('filter_cells_by_max_mt_content')}.")
-
-    # boolean
-    for param_name in ["use_binary_matrix", "drop_empty_columns", "apply_dlist_correction", "qc_against_gene_matrix", "doublet_detection", "remove_doublets", "cpm_normalization", "sum_rows", "mm", "save_vcf", "dry_run", "overwrite", "account_for_strand_bias"]:
-        if not isinstance(params_dict.get(param_name), bool):
-            raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
-    if not isinstance(params_dict.get("multiplexed"), bool) and params_dict.get("multiplexed") is not None:
-        raise ValueError(f"multiplexed must be a boolean or None. Got {params_dict.get('multiplexed')} of type {type(params_dict.get('multiplexed'))}.")
-
-    # sets
-    for param_name in ["vcrs_id_set_to_exclusively_keep", "vcrs_id_set_to_exclude", "gene_set_to_exclusively_keep", "gene_set_to_exclude"]:
-        param_value = params_dict.get(param_name, None)
-        if param_value is not None and not isinstance(param_value, (set, list, tuple) and not (isinstance(param_value, str) and param_value.endswith(".txt") and os.path.isfile(param_value))):  # checks if it is (1) None, (2) a set/list/tuple, or (3) a string path to a txt file that exists
-            raise ValueError(f"{param_name} must be a set. Got {param_name} of type {type(param_value)}.")
-
-    # k
-    k = params_dict.get("k", None)
-    if k:
-        if not isinstance(k, (int, str)) or int(k) < 1:
-            raise ValueError(f"k must be a positive integer. Got {k} of type {type(k)}.")
-        if int(k) % 2 == 0 or int(k) > 63:
-            logger.warning("If running a workflow with vk ref or kb ref, k should be an odd number between 1 and 63. Got k=%s.", k)
-
-    parity_valid_values = {"single", "paired"}
-    if params_dict["parity"] not in parity_valid_values:
-        raise ValueError(f"Parity must be one of {parity_valid_values}")
-    
-    strand_bias_end_valid_values = {"5p", "3p", None}
-    if params_dict["strand_bias_end"] not in strand_bias_end_valid_values:
-        raise ValueError(f"strand_bias_end must be one of {strand_bias_end_valid_values}")
-    
-    if params_dict.get("account_for_strand_bias") and not params_dict.get("strand_bias_end"):
-        raise ValueError("strand_bias_end must be provided if account_for_strand_bias=True.")
-
-    # $ type checking of the directory and text file performed earlier by load_in_fastqs
-    fastqs = params_dict["fastqs"]  # tuple
-    if fastqs:
-        for fastq in fastqs:
-            check_file_path_is_string_with_valid_extension(fastq, variable_name=fastq, file_type="fastq")  # ensure that all fastq files have valid extension
-            if not os.path.isfile(fastq):  # ensure that all fastq files exist
-                raise ValueError(f"File {fastq} does not exist")
-
-    # file paths
-    for param_name, file_type in {
-        "config": ["json", "yaml"],
-        "vcrs_index": "index",
-        "vcrs_t2g": "t2g",
-        "vcrs_fasta": "fasta",
-        "dlist_fasta": "fasta",
-        "adata_reference_genome": "h5ad",
-        "adata_vcrs_clean_out": "h5ad",
-        "adata_reference_genome_clean_out": "h5ad",
-        "vcf_out": "vcf",
-    }.items():
-        check_file_path_is_string_with_valid_extension(params_dict.get(param_name), param_name, file_type)
-
-    # directories
-    for param_name in ["vk_ref_dir", "kb_count_vcrs_dir", "kb_count_reference_genome_dir"]:
-        if not isinstance(params_dict.get(param_name), (str, Path)) and params_dict.get(param_name) is not None:
-            raise ValueError(f"Directory {param_name} {params_dict.get(param_name)} is not a string or None")
-        if params_dict.get(param_name) and not params_dict.get("dry_run") and (not os.path.isdir(params_dict.get(param_name)) or len(os.listdir(params_dict.get(param_name))) == 0):  # including the dry_run condition so that vk count dry run does not throw an error
-            raise ValueError(f"Directory {params_dict.get(param_name)} does not exist")
-    if not isinstance(params_dict.get("out"), (str, Path)):
-        raise ValueError(f"Out directory {params_dict.get('out')} is not a string")
-
-    if params_dict.get("qc_against_gene_matrix"):
-        for arg in ["kb_count_vcrs_dir", "kb_count_reference_genome_dir"]:
-            kb_count_normal_dir = params_dict.get(arg)
-            if kb_count_normal_dir and os.path.exists(kb_count_normal_dir):
-                run_info_json = os.path.join(kb_count_normal_dir, "run_info.json")
-                with open(run_info_json, "r") as f:
-                    data = json.load(f)
-                if "--num" not in data["call"]:
-                    raise ValueError(f"--num must be included in the provided value for {arg}. Please run kb count on the normal genome again, or provide a new path for {arg} to allow varseek count to make this file for you.")
-        logger.warning("For the best results with qc_against_gene_matrix=True, try to ensure the reference assembly and release of the genome used with kb_count_reference_genome_dir is as similar as possible to the one used with kb_count_vcrs_dir. This helps ensure that transcript/gene IDs are as stable as possible.")
+    @model_validator(mode="after")
+    def _validate(self):
+        _validate_clean_params(dict(self.model_extra or {}))
+        return self
 
 
 needs_for_normal_genome_matrix = ["filter_cells_by_min_counts", "filter_cells_by_min_genes", "filter_genes_by_min_cells", "filter_cells_by_max_mt_content", "doublet_detection", "cpm_normalization"]
 
+# Advanced `clean` parameters: still accepted on the command line (and in the Python signature,
+# where @validate_call validates them), but hidden from `vk clean --help` to keep it uncluttered.
+# Consumed by main.py, which flips each matching argparse action's help to SUPPRESS. Matched by dest.
+vk_clean_hidden_from_help = {
+    "vcrs_fasta",
+    "id_to_header_csv",
+    "variants_updated_csv",
+    "dlist_fasta",
+    "kallisto",
+    "bustools",
+    "parity_kb_count",
+    "cosmic_tsv",
+    "cosmic_reference_genome_fasta",
+    "cosmic_version",
+    "cosmic_email",
+    "cosmic_password",
+    "forgiveness",
+    "add_hgvs_breakdown_to_adata_var",
+    "skip_transcripts_without_genes",
+}
+
 # @profile
 @report_time_elapsed
+@validate_call(config=vk_config)
 def clean(
-    adata_vcrs,  # required inputs
-    technology,
-    min_counts=2,  # parameters
-    use_binary_matrix=False,
-    drop_empty_columns=False,
-    apply_dlist_correction=False,
-    qc_against_gene_matrix=False,
-    count_reads_that_dont_pseudoalign_to_reference_genome=True,
-    drop_reads_where_the_pairs_mapped_to_different_genes=False,
-    avoid_paired_double_counting=False,
-    mistake_ratio=None,
-    account_for_strand_bias=False,
-    strand_bias_end=None,
-    read_length=None,
-    filter_cells_by_min_counts=None,
-    filter_cells_by_min_genes=None,
-    filter_genes_by_min_cells=None,
-    filter_cells_by_max_mt_content=None,
-    doublet_detection=False,
-    remove_doublets=False,
-    cpm_normalization=False,
-    sum_rows=False,
-    vcrs_id_set_to_exclusively_keep=None,
-    vcrs_id_set_to_exclude=None,
-    gene_set_to_exclusively_keep=None,
-    gene_set_to_exclude=None,
-    k=None,
-    mm=True,
-    parity="single",
-    multiplexed=None,
-    sort_fastqs=True,
-    adata_reference_genome=None,  # optional inputs
-    fastqs=None,
-    vk_ref_dir=None,
-    vcrs_index=None,
-    vcrs_t2g=None,
-    gtf=None,
-    kb_count_vcrs_dir=None,
-    kb_count_reference_genome_dir=None,
-    reference_genome_t2g=None,
-    vcf_data_csv=None,
-    variants=None,
-    sequences=None,
-    variant_source=None,
-    vcrs_metadata_df=None,
-    variants_usecols=None,
-    seq_id_column="seq_ID",
-    var_column="mutation",
-    var_id_column=None,
-    gene_id_column="gene_id",
-    out=".",  # output paths
-    adata_vcrs_clean_out=None,
-    adata_reference_genome_clean_out=None,
-    vcf_out=None,
-    save_vcf=False,  # optional saves
-    save_vcf_samples=False,
-    chunksize=None,
-    dry_run=False,  # general
-    overwrite=False,
-    logging_level=None,
-    save_logs=False,
-    log_out_dir=None,
-    **kwargs,
+    adata_vcrs: object,  # required inputs
+    technology: Optional[Technology],
+    min_counts: PositiveInt = 2,  # parameters
+    use_binary_matrix: bool = False,
+    drop_empty_columns: bool = False,
+    apply_dlist_correction: bool = False,
+    qc_against_gene_matrix: bool = False,
+    count_reads_that_dont_pseudoalign_to_reference_genome: bool = True,
+    drop_reads_where_the_pairs_mapped_to_different_genes: bool = False,
+    avoid_paired_double_counting: bool = False,
+    mistake_ratio: Optional[float] = None,
+    account_for_strand_bias: bool = False,
+    strand_bias_end: Optional[StrandBiasEnd] = None,
+    read_length: Optional[PositiveInt] = None,
+    filter_cells_by_min_counts: Optional[Union[bool, int]] = None,
+    filter_cells_by_min_genes: Optional[NonNegativeInt] = None,
+    filter_genes_by_min_cells: Optional[NonNegativeInt] = None,
+    filter_cells_by_max_mt_content: Optional[int] = None,
+    doublet_detection: bool = False,
+    remove_doublets: bool = False,
+    cpm_normalization: bool = False,
+    sum_rows: bool = False,
+    vcrs_id_set_to_exclusively_keep: object = None,
+    vcrs_id_set_to_exclude: object = None,
+    gene_set_to_exclusively_keep: object = None,
+    gene_set_to_exclude: object = None,
+    k: Optional[Union[int, str]] = None,
+    mm: bool = True,
+    parity: Parity = "single",
+    multiplexed: Optional[bool] = None,
+    sort_fastqs: bool = True,
+    adata_reference_genome: object = None,  # optional inputs
+    fastqs: object = None,
+    vk_ref_dir: Optional[Union[str, Path]] = None,
+    vcrs_index: Optional[Union[str, Path]] = None,
+    vcrs_t2g: Optional[Union[str, Path]] = None,
+    gtf: Optional[Union[bool, str, Path]] = None,
+    kb_count_vcrs_dir: Optional[Union[str, Path]] = None,
+    kb_count_reference_genome_dir: Optional[Union[str, Path]] = None,
+    reference_genome_t2g: Optional[Union[str, Path]] = None,
+    vcf_data_csv: Optional[Union[str, Path]] = None,
+    variants: object = None,
+    sequences: object = None,
+    variant_source: Optional[str] = None,
+    vcrs_metadata_df: object = None,
+    variants_usecols: Optional[Union[str, list]] = None,
+    seq_id_column: str = "seq_ID",
+    var_column: str = "mutation",
+    var_id_column: Optional[str] = None,
+    gene_id_column: str = "gene_id",
+    out: Union[str, Path] = ".",  # output paths
+    adata_vcrs_clean_out: Optional[Union[str, Path]] = None,
+    adata_reference_genome_clean_out: Optional[Union[str, Path]] = None,
+    vcf_out: Optional[Union[str, Path]] = None,
+    save_vcf: bool = False,  # optional saves
+    save_vcf_samples: bool = False,
+    chunksize: Optional[int] = None,
+    dry_run: bool = False,  # general
+    overwrite: bool = False,
+    logging_level: Optional[Union[str, int]] = None,
+    save_logs: bool = False,
+    log_out_dir: Optional[Union[str, Path]] = None,
+    # --- Advanced parameters: part of the Python signature (validated by @validate_call) but hidden from `vk clean --help`. See the "Advanced parameters" docstring section. ---
+    vcrs_fasta: Optional[Union[str, Path]] = None,
+    id_to_header_csv: Optional[Union[str, Path]] = None,
+    variants_updated_csv: Optional[Union[str, Path]] = None,
+    dlist_fasta: Optional[Union[str, Path]] = None,
+    kallisto: Optional[str] = None,
+    bustools: Optional[str] = None,
+    parity_kb_count: Optional[Parity] = None,
+    cosmic_tsv: Optional[Union[str, Path]] = None,
+    cosmic_reference_genome_fasta: Optional[Union[str, Path]] = None,
+    cosmic_version: Union[str, int] = 101,
+    cosmic_email: Optional[str] = None,
+    cosmic_password: Optional[str] = None,
+    forgiveness: int = 100,
+    add_hgvs_breakdown_to_adata_var: bool = True,
+    skip_transcripts_without_genes: bool = False,
 ):
     """
     Apply quality control to the VCRS count matrix (cell/sample x variant) and save the cleaned AnnData object.
@@ -349,7 +266,7 @@ def clean(
     - save_logs                             (True/False) Whether to save logs to a file. Default: False.
     - log_out_dir                           (str) Directory to save logs. Default: `out`/logs
 
-    # Hidden arguments
+    # # Advanced parameters (real `clean` arguments, but hidden from the `vk clean --help` CLI):
     - vcrs_fasta                            (str) Path to the VCRS fasta file. Default: None.
     - id_to_header_csv                      (str) Path to the VCRS id to header csv file. Default: None.
     - variants_updated_csv                  (str) Path to the updated variants csv file. Only used if using downloaded reference files from vk ref and vcf_data_csv does not exist. Default: None.
@@ -377,9 +294,9 @@ def clean(
     if fastqs:
         fastqs = load_in_fastqs(fastqs)  # this will make it in params_dict
 
-    # * 2. Type-checking
+    # * 2. Type-checking (per-parameter types enforced by @validate_call; cross-field + filesystem by CleanParams)
     params_dict = make_function_parameter_to_value_dict(1)
-    validate_input_clean(params_dict)
+    CleanParams(**params_dict)
     params_dict["fastqs"] = fastqs_original  # change back for dry run and config_file
 
     if isinstance(adata_vcrs, (str, Path)) and not os.path.isfile(adata_vcrs) and not dry_run:  # only use os.path.isfile when I require that a directory already exists; checked outside validate_input_clean to avoid raising issue when type-checking within vk count
@@ -400,11 +317,6 @@ def clean(
     # * 5. Set up default folder/file input paths, and make sure the necessary ones exist
     if kb_count_reference_genome_dir and not adata_reference_genome:
         adata_reference_genome = os.path.join(kb_count_reference_genome_dir, "counts_unfiltered", "adata.h5ad")
-
-    vcrs_fasta = kwargs.get("vcrs_fasta", None)
-    id_to_header_csv = kwargs.get("id_to_header_csv", None)
-    variants_updated_csv = kwargs.get("variants_updated_csv", None)
-    dlist_fasta = kwargs.get("dlist_fasta", None)
 
     if vk_ref_dir and os.path.exists(vk_ref_dir):  # make sure all of the defaults below match vk info/filter
         vcrs_index = os.path.join(vk_ref_dir, "vcrs_index.idx") if not vcrs_index else vcrs_index
@@ -444,19 +356,10 @@ def clean(
     os.makedirs(out, exist_ok=True)
     os.makedirs(output_figures_dir, exist_ok=True)
 
-    # * 7. Define kwargs defaults
+    # * 7. Resolve advanced-parameter defaults
     # id_to_header_csv was defined in step 5
-    kallisto = kwargs.get("kallisto", None)
-    bustools = kwargs.get("bustools", None)
-    parity_kb_count = kwargs.get("parity_kb_count", parity)
-    cosmic_tsv = kwargs.get("cosmic_tsv", None)
-    cosmic_reference_genome_fasta = kwargs.get("cosmic_reference_genome_fasta", None)
-    cosmic_version = kwargs.get("cosmic_version", 101)  #!! must match the downloadable version in vk ref
-    cosmic_email = kwargs.get("cosmic_email", None)
-    cosmic_password = kwargs.get("cosmic_password", None)
-    forgiveness = kwargs.get("forgiveness", 100)
-    add_hgvs_breakdown_to_adata_var = kwargs.get("add_hgvs_breakdown_to_adata_var", True)
-    skip_transcripts_without_genes = kwargs.get("skip_transcripts_without_genes", False)
+    if parity_kb_count is None:
+        parity_kb_count = parity  # default parity_kb_count to the value of parity
 
     try:
         with open(f"{kb_count_vcrs_dir}/kb_info.json", 'r') as f:
@@ -491,7 +394,7 @@ def clean(
 
     if account_for_strand_bias:
         if not strand_bias_end:
-            strand_bias_end_possible_values = technology_to_strand_bias_mapping[technology.upper()]
+            strand_bias_end_possible_values = technology_info[technology.upper()]["strand_bias"]
             if strand_bias_end_possible_values is None or len(strand_bias_end_possible_values) != 1:
                 raise ValueError(f"strand_bias_end must be provided if account_for_strand_bias=True and technology is {technology}. Possible values are {strand_bias_end_possible_values}.")
             strand_bias_end = strand_bias_end_possible_values[0]
@@ -499,7 +402,7 @@ def clean(
         if not read_length:
             if not fastqs:
                 raise ValueError("read_length must be provided if account_for_strand_bias=True and fastqs is not provided.")
-            file_index_with_transcripts = technology_to_file_index_with_transcripts_mapping[technology.upper()]
+            file_index_with_transcripts = technology_info[technology.upper()]["transcript_file_index"]
             first_fastq_file_with_transcripts = fastqs[file_index_with_transcripts]
             first_fastq_file_with_transcripts_pyfastx = pyfastx.Fastx(first_fastq_file_with_transcripts)
             for _, seq, _ in first_fastq_file_with_transcripts_pyfastx:

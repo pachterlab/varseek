@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "varseek"
-version = "0.1.2"
+version = "0.2.0"
 description = "Efficient variant screening of RNA-seq and DNA-seq data using k-mer-based alignment against a reference of known variants."
 readme = {file = "README.md", content-type = "text/markdown"}
 license = {file = "LICENSE"}
@@ -40,7 +40,8 @@ dependencies = [
     "scipy>=1.13.1",
     "pyfastx>=2.1.0",
     "pysam>=0.22.1",
-    "pyarrow>=19.0.1"
+    "pyarrow>=19.0.1",
+    "pydantic>=2.0.0"
 ]
 
 [project.optional-dependencies]

@@ -9,13 +9,14 @@ import os
 import subprocess
 import time
 from pathlib import Path
+from typing import Optional, Union
 import pandas as pd
+from pydantic import BaseModel, ConfigDict, model_validator
 
 import varseek as vk
 from varseek.utils import (
     check_file_path_is_string_with_valid_extension,
     check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal,
-    is_valid_int,
     load_in_fastqs,
     correct_adata_barcodes_for_running_paired_data_in_single_mode,
     make_function_parameter_to_value_dict,
@@ -25,7 +26,16 @@ from varseek.utils import (
     set_up_logger,
     sort_fastq_files_for_kb_count,
     set_varseek_logging_level_and_filehandler,
-    load_adata_from_mtx
+    load_adata_from_mtx,
+    validate_call,
+    vk_config,
+    IndexFile,
+    T2GFile,
+    Technology,
+    Parity,
+    Strand,
+    StrandBiasEnd,
+    PositiveInt,
 )
 from varseek.varseek_clean import needs_for_normal_genome_matrix
 
@@ -53,125 +63,154 @@ varseek_count_unallowable_arguments = {
     "varseek_summarize": set(),
 }
 
+# Advanced `count` parameters: still accepted on the command line (and in the Python signature,
+# where @validate_call validates them), but hidden from `vk count --help` to keep it uncluttered.
+# Consumed by main.py, which flips each matching argparse action's help to SUPPRESS. Matched by dest,
+# so the --disable_num flag maps to its underlying parameter name.
+vk_count_hidden_from_help = {
+    "num",
+    "parity_kb_count",
+}
 
-def validate_input_count(params_dict):
-    # $ fastqs, technology will get checked through fastqpp
 
-    # other required files
-    for param_name, file_type in {
-        "index": "index",
-        "t2g": "t2g",
-    }.items():
-        check_file_path_is_string_with_valid_extension(params_dict[param_name], param_name, file_type=file_type, required=False)
-        if not os.path.isfile(params_dict[param_name]) and params_dict[param_name] != "None":  # ensure that all files exist
-            raise ValueError(f"File {params_dict[param_name]} does not exist")
+class CountParams(BaseModel):
+    """Cross-field / kwargs-only validation for :func:`count`.
 
-    # file paths
-    check_file_path_is_string_with_valid_extension(params_dict.get("reference_genome_index", None), "reference_genome_index", "index")
-    check_file_path_is_string_with_valid_extension(params_dict.get("reference_genome_t2g", None), "reference_genome_t2g", "t2g")
-    check_file_path_is_string_with_valid_extension(params_dict.get("adata_reference_genome", None), "adata_reference_genome", "adata")
+    Per-parameter type/extension checks live on the ``count`` signature (validated
+    by ``@validate_call``). ``extra="allow"`` retains the kb-count pass-through
+    kwargs so their types can be checked via ``self.model_extra`` (mirroring
+    ``RefParams``).
+    """
 
-    if not is_valid_int(params_dict.get("threads", None), threshold_type=">=", threshold_value=1):
-        raise ValueError(f"Threads must be a positive integer, got {params_dict.get('threads')}")
+    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
 
-    # out dirs
-    for param_name in ["out", "kb_count_vcrs_out_dir", "kb_count_reference_genome_out_dir", "vk_summarize_out_dir"]:
-        if not isinstance(params_dict.get(param_name, None), (str, Path)) and params_dict.get(param_name) is not None:
-            raise ValueError(f"Invalid value for {param_name}: {params_dict.get(param_name, None)}")
+    index: object = None
+    t2g: object = None
+    reference_genome_index: object = None
+    reference_genome_t2g: object = None
+    adata_reference_genome: object = None
+    parity: object = None
+    technology: object = None
+    parity_kb_count: object = None
+    strand: object = None
+    qc_against_gene_matrix: object = None
+    out: object = "."
+    kb_count_reference_genome_out_dir: object = None
+    kb_count_reference_genome_dir: object = None
 
-    # booleans
-    for param_name in ["dry_run", "overwrite", "sort_fastqs", "disable_fastqpp", "disable_clean", "summarize"]:
-        if not isinstance(params_dict.get(param_name), bool):
-            raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
+    @model_validator(mode="after")
+    def _validate(self):
+        # $ fastqs, technology will get checked through fastqpp
 
-    # strings
-    parity_valid_values = {"single", "paired", None}
-    if params_dict["parity"] not in parity_valid_values:
-        raise ValueError(f"Parity must be one of {parity_valid_values}")
-    if params_dict["technology"] in {"BULK", "SMARTSEQ2"} and params_dict["parity"] is None:
-        raise ValueError("Parity must be set to 'single' or 'paired' for bulk or smartseq2 data")
+        # other required files
+        for param_name, file_type in {
+            "index": "index",
+            "t2g": "t2g",
+        }.items():
+            value = getattr(self, param_name)
+            check_file_path_is_string_with_valid_extension(value, param_name, file_type=file_type, required=False)
+            if not os.path.isfile(value) and value != "None":  # ensure that all files exist
+                raise ValueError(f"File {value} does not exist")
 
-    if params_dict.get("parity_kb_count") is not None and params_dict.get("parity_kb_count") not in parity_valid_values:
-        raise ValueError(f"parity_kb_count must be one of {parity_valid_values}")
+        # adata_reference_genome extension (reference_genome_index/t2g extensions enforced on the signature)
+        check_file_path_is_string_with_valid_extension(self.adata_reference_genome, "adata_reference_genome", "adata")
 
-    if params_dict.get("parity_kb_count") == "paired" and params_dict["parity"] == "single":
-        raise ValueError("If parity_kb_count is 'paired', then parity must be 'paired' as well")
+        # strings
+        parity_valid_values = {"single", "paired", None}
+        if self.parity not in parity_valid_values:
+            raise ValueError(f"Parity must be one of {parity_valid_values}")
+        if self.technology in {"BULK", "SMARTSEQ2"} and self.parity is None:
+            raise ValueError("Parity must be set to 'single' or 'paired' for bulk or smartseq2 data")
 
-    if params_dict.get("parity_kb_count") == "single" and params_dict["parity"] == "paired":
-        logger.info("parity='paired' and parity_kb_count='single'. This means that kb count will run in single-end mode on this paired-end data, which will enable different pairs to be processed independently and thus potentially detect different variants. To turn this feature off, set parity_kb_count='paired'.")
+        if self.parity_kb_count is not None and self.parity_kb_count not in parity_valid_values:
+            raise ValueError(f"parity_kb_count must be one of {parity_valid_values}")
 
-    strand_valid_values = {"unstranded", "forward", "reverse", None}
-    if params_dict["strand"] not in strand_valid_values:
-        raise ValueError(f"Strand must be one of {strand_valid_values}")
+        if self.parity_kb_count == "paired" and self.parity == "single":
+            raise ValueError("If parity_kb_count is 'paired', then parity must be 'paired' as well")
 
-    out = params_dict.get("out", ".")
-    kb_count_reference_genome_out_dir = params_dict.get("kb_count_reference_genome_out_dir") if params_dict.get("kb_count_reference_genome_out_dir") else f"{out}/kb_count_out_reference_genome"
-    if params_dict.get("qc_against_gene_matrix") and not os.path.exists(kb_count_reference_genome_out_dir):  # align to this genome if (1) adata doesn't exist and (2) qc_against_gene_matrix=True (because I need the BUS file for this)  # purposely omitted overwrite because it is reasonable to expect that someone has pre-computed this matrix and doesn't want it recomputed under any circumstances (and if they did, then simply point to a different directory)
-        if not os.path.exists(params_dict.get("reference_genome_index")) or not os.path.exists(params_dict.get("reference_genome_t2g")):
-            raise ValueError(f"Reference genome index {params_dict.get('reference_genome_index')} or t2g {params_dict.get('reference_genome_t2g')} does not exist. Please provide a valid reference genome index and t2g file created with the `kb ref` command (a standard reference genome index/t2g, *not* a variant reference).")
+        if self.parity_kb_count == "single" and self.parity == "paired":
+            logger.info("parity='paired' and parity_kb_count='single'. This means that kb count will run in single-end mode on this paired-end data, which will enable different pairs to be processed independently and thus potentially detect different variants. To turn this feature off, set parity_kb_count='paired'.")
 
-    # kb count stuff
-    for argument_type, argument_set in varseek_count_only_allowable_kb_count_arguments.items():
-        for argument in argument_set:
-            argument = argument[2:]
-            if argument in params_dict:
-                argument_value = params_dict[argument]
-                if argument_type == "zero_arguments":
-                    if not isinstance(argument_value, bool):  # all zero-arguments are bool
-                        raise ValueError(f"{argument} must be a boolean. Got {type(argument_value)}.")
-                elif argument_type == "one_argument":
-                    if not isinstance(argument_value, str):  # all one-arguments are string
-                        raise ValueError(f"{argument} must be a string. Got {type(argument_value)}.")
-                elif argument_type == "multiple_arguments":
-                    pass
+        strand_valid_values = {"unstranded", "forward", "reverse", None}
+        if self.strand not in strand_valid_values:
+            raise ValueError(f"Strand must be one of {strand_valid_values}")
 
-    # --nums required when qc_against_gene_matrix=True
-    if params_dict.get("qc_against_gene_matrix"):
-        for arg in ["kb_count_reference_genome_dir", "kb_count_reference_genome_out_dir"]:
-            kb_count_normal_dir = params_dict.get(arg)
-            if kb_count_normal_dir and os.path.exists(kb_count_normal_dir):
-                run_info_json = os.path.join(kb_count_normal_dir, "run_info.json")
-                with open(run_info_json, "r") as f:
-                    data = json.load(f)
-                if "--num" not in data["call"]:
-                    raise ValueError(f"--num must be included in the provided value for {arg}. Please run kb count on the normal genome again, or provide a new path for {arg} to allow varseek count to make this file for you.")
+        out = self.out if self.out is not None else "."
+        kb_count_reference_genome_out_dir = self.kb_count_reference_genome_out_dir if self.kb_count_reference_genome_out_dir else f"{out}/kb_count_out_reference_genome"
+        if self.qc_against_gene_matrix and not os.path.exists(kb_count_reference_genome_out_dir):  # align to this genome if (1) adata doesn't exist and (2) qc_against_gene_matrix=True (because I need the BUS file for this)  # purposely omitted overwrite because it is reasonable to expect that someone has pre-computed this matrix and doesn't want it recomputed under any circumstances (and if they did, then simply point to a different directory)
+            if not os.path.exists(self.reference_genome_index) or not os.path.exists(self.reference_genome_t2g):
+                raise ValueError(f"Reference genome index {self.reference_genome_index} or t2g {self.reference_genome_t2g} does not exist. Please provide a valid reference genome index and t2g file created with the `kb ref` command (a standard reference genome index/t2g, *not* a variant reference).")
+
+        # kb count stuff
+        extra = self.model_extra or {}
+        for argument_type, argument_set in varseek_count_only_allowable_kb_count_arguments.items():
+            for argument in argument_set:
+                argument = argument[2:]
+                if argument in extra:
+                    argument_value = extra[argument]
+                    if argument_value is None:  # None => not provided (e.g. clean's kallisto/bustools defaults); skip type check
+                        continue
+                    if argument_type == "zero_arguments":
+                        if not isinstance(argument_value, bool):  # all zero-arguments are bool
+                            raise ValueError(f"{argument} must be a boolean. Got {type(argument_value)}.")
+                    elif argument_type == "one_argument":
+                        if not isinstance(argument_value, str):  # all one-arguments are string
+                            raise ValueError(f"{argument} must be a string. Got {type(argument_value)}.")
+                    elif argument_type == "multiple_arguments":
+                        pass
+
+        # --nums required when qc_against_gene_matrix=True
+        if self.qc_against_gene_matrix:
+            for arg in ["kb_count_reference_genome_dir", "kb_count_reference_genome_out_dir"]:
+                kb_count_normal_dir = getattr(self, arg)
+                if kb_count_normal_dir and os.path.exists(kb_count_normal_dir):
+                    run_info_json = os.path.join(kb_count_normal_dir, "run_info.json")
+                    with open(run_info_json, "r") as f:
+                        data = json.load(f)
+                    if "--num" not in data["call"]:
+                        raise ValueError(f"--num must be included in the provided value for {arg}. Please run kb count on the normal genome again, or provide a new path for {arg} to allow varseek count to make this file for you.")
+        return self
 
 
 # don't worry if it says an argument is unused, as they will all get put in params_dict for each respective function and passed to the child functions
 @report_time_elapsed
+@validate_call(config=vk_config)
 def count(
-    fastqs,
-    index,
-    technology,
-    t2g="None",
-    k=59,  # params
-    run_kb_count_against_reference_genome=False,
-    qc_against_gene_matrix=False,
-    account_for_strand_bias=False,
-    strand_bias_end=None,
-    read_length=None,
-    strand=None,
-    mm=True,
-    union=True,
-    parity="single",
-    reference_genome_index=None,  # optional inputs
-    reference_genome_t2g=None,
-    gtf=None,
-    out=".",  # optional outputs
-    kb_count_vcrs_out_dir=None,
-    kb_count_reference_genome_out_dir=None,
-    vk_summarize_out_dir=None,
-    disable_fastqpp=False,  # general
-    disable_clean=False,
-    summarize=False,
-    chunksize=None,
-    dry_run=False,
-    overwrite=False,
-    sort_fastqs=True,
-    threads=2,
-    logging_level=None,
-    save_logs=False,
-    log_out_dir=None,
+    fastqs: object,
+    index: str,
+    technology: Optional[Technology],
+    t2g: str = "None",
+    k: PositiveInt = 59,  # params
+    run_kb_count_against_reference_genome: bool = False,
+    qc_against_gene_matrix: bool = False,
+    account_for_strand_bias: bool = False,
+    strand_bias_end: Optional[StrandBiasEnd] = None,
+    read_length: Optional[Union[int, str]] = None,
+    strand: Optional[Strand] = None,
+    mm: bool = True,
+    union: bool = True,
+    parity: Optional[Parity] = "single",
+    reference_genome_index: Optional[IndexFile] = None,  # optional inputs
+    reference_genome_t2g: Optional[T2GFile] = None,
+    gtf: Optional[Union[bool, str, Path]] = None,
+    out: Union[str, Path] = ".",  # optional outputs
+    kb_count_vcrs_out_dir: Optional[Union[str, Path]] = None,
+    kb_count_reference_genome_out_dir: Optional[Union[str, Path]] = None,
+    vk_summarize_out_dir: Optional[Union[str, Path]] = None,
+    disable_fastqpp: bool = False,  # general
+    disable_clean: bool = False,
+    summarize: bool = False,
+    chunksize: Optional[int] = None,
+    dry_run: bool = False,
+    overwrite: bool = False,
+    sort_fastqs: bool = True,
+    threads: PositiveInt = 2,
+    logging_level: Optional[Union[str, int]] = None,
+    save_logs: bool = False,
+    log_out_dir: Optional[Union[str, Path]] = None,
+    # --- Advanced parameters: part of the Python signature (validated by @validate_call) but hidden from `vk count --help`. See the "Advanced parameters" docstring section. ---
+    num: bool = True,
+    parity_kb_count: Optional[Parity] = "single",
     **kwargs,  # * including all arguments for vk fastqpp, clean, summarize, and kb count
 ):
     """
@@ -219,7 +258,7 @@ def count(
     - save_logs                             (True/False) Whether to save logs to a file. Default: False.
     - log_out_dir                           (str) Directory to save logs. Default: None (do not save logs).
 
-    # Hidden arguments (part of kwargs):
+    # # Advanced parameters (real `count` arguments, but hidden from the `vk count --help` CLI):
     - num                                  (bool) If True, use the --num argument in kb count. Default: True.
     - parity_kb_count                      (str) The parity of the reads for kb count. Always recommended to run in single. Default: "single".
 
@@ -256,10 +295,10 @@ def count(
             if key not in params_dict and key not in count_signature.parameters.keys():
                 params_dict[key] = signature.parameters[key].default
 
-    vk.varseek_fastqpp.validate_input_fastqpp(params_dict)  # this passes all vk count parameters to the function - I could only pass in the vk fastqpp parameters here if desired (and likewise below), but there should be no naming conflicts anyways
-    vk.varseek_clean.validate_input_clean(params_dict)
-    vk.varseek_summarize.validate_input_summarize(params_dict)
-    validate_input_count(params_dict)
+    vk.varseek_fastqpp.FastqppParams(**params_dict)  # this passes all vk count parameters to the function - I could only pass in the vk fastqpp parameters here if desired (and likewise below), but there should be no naming conflicts anyways
+    vk.varseek_clean.CleanParams(**params_dict)
+    vk.varseek_summarize.SummarizeParams(**params_dict)
+    CountParams(**params_dict)
 
     # * 3. Dry-run
     # handled within child functions
@@ -322,10 +361,6 @@ def count(
     file_signifying_successful_kb_count_reference_genome_completion = adata_reference_genome
     file_signifying_successful_vk_clean_completion = adata_vcrs_clean_out
     file_signifying_successful_vk_summarize_completion = stats_file
-
-    # * 7. Define kwargs defaults
-    kwargs["parity_kb_count"] = kwargs.get("parity_kb_count", "single")
-    kwargs["num"] = kwargs.get("num", True)
 
     # * 7.5 make sure ints are ints
     k, threads = int(k), int(threads)
@@ -427,12 +462,12 @@ def count(
         if strand:
             kb_count_command.extend(["--strand", strand])
         if technology in {"BULK", "SMARTSEQ2"}:
-            parity_vcrs = "single" if kwargs.get("concatenate_paired_fastqs") else kwargs["parity_kb_count"]  # I set the default value earlier, so I don't need to use the .get method
+            parity_vcrs = "single" if kwargs.get("concatenate_paired_fastqs") else parity_kb_count
             kb_count_command.extend(["--parity", parity_vcrs])
 
         if qc_against_gene_matrix:
             kb_count_command.extend(["--union",])  # don't need mm here, as mm does not affect the BUS file (only the count matrix)
-        if qc_against_gene_matrix or kwargs.get("apply_split_reads_by_Ns_correction") or kwargs.get("apply_dlist_correction") or kwargs.get("num"):
+        if qc_against_gene_matrix or kwargs.get("apply_split_reads_by_Ns_correction") or kwargs.get("apply_dlist_correction") or num:
             kb_count_command.extend(["--num"])
 
         if mm and "--mm" not in kb_count_command:
@@ -470,7 +505,7 @@ def count(
                 if os.path.isfile(mtx_file):
                     _ = load_adata_from_mtx(mtx_file, adata_out = adata_vcrs)
 
-            if os.path.exists(adata_vcrs) and parity == "paired" and kwargs["parity_kb_count"] == "single" and technology in {"BULK", "SMARTSEQ2"}:
+            if os.path.exists(adata_vcrs) and parity == "paired" and parity_kb_count == "single" and technology in {"BULK", "SMARTSEQ2"}:
                 _ = correct_adata_barcodes_for_running_paired_data_in_single_mode(kb_count_vcrs_out_dir, adata_out=adata_vcrs)  # will check if the correction has already occurred internally
     else:
         logger.info(f"Skipping kb count because file {file_signifying_successful_kb_count_vcrs_completion} already exists and overwrite=False")
@@ -512,7 +547,7 @@ def count(
 
         if strand:
             kb_count_standard_index_command.extend(["--strand", strand])
-        if qc_against_gene_matrix or kwargs.get("num"):
+        if qc_against_gene_matrix or num:
             kb_count_standard_index_command.extend(["--num"])
         if technology in {"BULK", "SMARTSEQ2"}:
             kb_count_standard_index_command.extend(["--parity", parity])
@@ -556,7 +591,7 @@ def count(
             # eg kwargs_vk_clean['mykwarg'] = mykwarg
 
             logger.info("Running vk clean")
-            _ = vk.clean(adata_vcrs=adata_vcrs, vcrs_index=index, vcrs_t2g=t2g, technology=technology, fastqs=fastqs, reference_genome_t2g=reference_genome_t2g, k=k, qc_against_gene_matrix=qc_against_gene_matrix, account_for_strand_bias=account_for_strand_bias, strand_bias_end=strand_bias_end, read_length=read_length, gtf=gtf, mm=mm, parity=parity, out=out, chunksize=chunksize, dry_run=dry_run, overwrite=True, sort_fastqs=sort_fastqs, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir, **kwargs_vk_clean)  # kb_count_reference_genome_dir is passed in via kwargs, as is adata_reference_genome
+            _ = vk.clean(adata_vcrs=adata_vcrs, vcrs_index=index, vcrs_t2g=t2g, technology=technology, fastqs=fastqs, reference_genome_t2g=reference_genome_t2g, k=k, qc_against_gene_matrix=qc_against_gene_matrix, account_for_strand_bias=account_for_strand_bias, strand_bias_end=strand_bias_end, read_length=read_length, gtf=gtf, mm=mm, parity=parity, parity_kb_count=parity_kb_count, out=out, chunksize=chunksize, dry_run=dry_run, overwrite=True, sort_fastqs=sort_fastqs, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir, **kwargs_vk_clean)  # kb_count_reference_genome_dir is passed in via kwargs, as is adata_reference_genome
         else:
             logger.info(f"Skipping vk clean because file {file_signifying_successful_vk_clean_completion} already exists and overwrite=False")
         adata = adata_vcrs_clean_out  # for vk summarize

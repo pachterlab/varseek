@@ -12,7 +12,7 @@ import logging
 
 from varseek.utils.logger_utils import set_up_logger
 from varseek.utils.seq_utils import add_variant_type
-from ..constants import technology_valid_values, technology_to_strand_bias_mapping
+from ..constants import technology_valid_values, technology_info
 
 logger = logging.getLogger(__name__)
 logger = set_up_logger(logger, logging_level="INFO", save_logs=False, log_dir=None)
@@ -906,7 +906,7 @@ def plot_cdna_locations(df, start_variant_position_cdna_column=None, end_variant
     if sequence_side not in {"5p", "3p", "both", "auto"}:
         raise ValueError("sequence_side must be '5p', '3p', 'both', or 'auto'.")
     if sequence_side == "auto":
-        strand_bias_end_possible_values = technology_to_strand_bias_mapping.get([technology.upper()], None)
+        strand_bias_end_possible_values = technology_info.get(technology.upper(), {}).get("strand_bias")
         if strand_bias_end_possible_values is None or len(strand_bias_end_possible_values) != 1:
             sequence_side = "both"
         else:

@@ -5,13 +5,14 @@ import logging
 import os
 import time
 from pathlib import Path
+from typing import Optional, Union
 
-from .constants import technology_valid_values
+from pydantic import BaseModel, ConfigDict, model_validator
+
 from .utils import (
     check_file_path_is_string_with_valid_extension,
     concatenate_fastqs,
     is_program_installed,
-    is_valid_int,
     load_in_fastqs,
     make_function_parameter_to_value_dict,
     perform_fastp_trimming_and_filtering,
@@ -26,116 +27,117 @@ from .utils import (
     set_varseek_logging_level_and_filehandler,
     split_reads_by_N_list,
     trim_edges_off_reads_fastq_list,
+    validate_call,
+    vk_config,
+    int_range,
+    Parity,
+    Technology,
 )
 
 logger = logging.getLogger(__name__)
 logger = set_up_logger(logger, logging_level="INFO", save_logs=False, log_dir=None)
 
+# Advanced `fastqpp` parameters: still accepted on the command line (and in the Python signature,
+# where @validate_call validates them), but hidden from `vk fastqpp --help` to keep it uncluttered.
+# Consumed by main.py, which flips each matching argparse action's help to SUPPRESS. Matched by dest.
+vk_fastqpp_hidden_from_help = {
+    "seqtk_path",
+    "quality_control_fastqs_out_dir",
+    "replace_low_quality_bases_with_N_out_dir",
+    "split_by_Ns_and_low_quality_bases_out_dir",
+    "concatenate_paired_fastqs_out_dir",
+    "delete_intermediate_files",
+}
 
-def validate_input_fastqpp(params_dict):
-    fastqs = params_dict["fastqs"]  # tuple
-    parity = params_dict["parity"]  # str
 
-    # fastqs
-    if len(fastqs) == 0:
-        raise ValueError("No fastq files provided")
+class FastqppParams(BaseModel):
+    """Cross-field / filesystem validation for :func:`fastqpp`.
 
-    # $ type checking of the directory and text file performed earlier by load_in_fastqs
+    Per-parameter type, range, and literal checks live on the ``fastqpp`` signature
+    (validated by ``@validate_call``). This model captures what those annotations
+    cannot: the loaded-fastq existence/extension/count checks (``fastqs`` is loaded
+    from a dir/txt/list *inside* the function, so it cannot be typed on the
+    signature) and the paired split⇒concatenate relationship. Instantiate with the
+    full params dict (extra keys ignored).
+    """
 
-    if parity == "paired" and len(fastqs) % 2 != 0:  # if fastqs parity is paired, then ensure an even number of files
-        raise ValueError("Number of fastq files must be even when parity == paired")
-    for fastq in fastqs:
-        check_file_path_is_string_with_valid_extension(fastq, variable_name=fastq, file_type="fastq")  # ensure that all fastq files have valid extension
-        if not os.path.isfile(fastq):  # ensure that all fastq files exist
-            raise ValueError(f"File {fastq} does not exist")
+    model_config = ConfigDict(extra="ignore", arbitrary_types_allowed=True)
 
-    # technology
-    technology = params_dict.get("technology", None)
-    technology_valid_values_lower = {x.lower() for x in technology_valid_values}
-    if technology is not None:
-        if technology.lower() not in technology_valid_values_lower:
-            raise ValueError(f"Technology must be None or one of {technology_valid_values_lower}")
+    fastqs: object = None  # already loaded into a tuple of paths by load_in_fastqs
+    parity: object = None
+    split_reads_by_Ns_and_low_quality_bases: object = None
+    concatenate_paired_fastqs: object = None
+    length_required: object = None
 
-    parity_valid_values = {"single", "paired"}
-    if params_dict["parity"] not in parity_valid_values:
-        raise ValueError(f"Parity must be one of {parity_valid_values}")
+    @model_validator(mode="after")
+    def _validate(self):
+        fastqs = self.fastqs
+        parity = self.parity
 
-    # directories
-    if not isinstance(params_dict.get("out", None), (str, Path)):
-        raise ValueError(f"Invalid value for out: {params_dict.get('out', None)}")
+        # fastqs
+        if len(fastqs) == 0:
+            raise ValueError("No fastq files provided")
 
-    # optional str
-    for file_name_suffix in ["split_by_Ns_and_low_quality_bases_out_suffix", "concatenate_paired_fastqs_out_suffix"]:
-        if params_dict.get(file_name_suffix) is not None and not isinstance(params_dict.get(file_name_suffix), str):
-            raise ValueError(f"Invalid suffix: {params_dict.get(file_name_suffix)}")
+        # $ type checking of the directory and text file performed earlier by load_in_fastqs
 
-    # integers - optional just means that it's in kwargs
-    for param_name, min_value, max_value, optional_value in [
-        ("cut_window_size", 1, 1000, False),
-        ("cut_mean_quality", 1, 36, False),
-        ("qualified_quality_phred", 1, 40, False),
-        ("unqualified_percent_limit", 0, 100, False),
-        ("average_qual", 0, 40, False),
-        ("n_base_limit", 1, 50, False),
-        ("length_required", 0, 9999, False),
-        ("threads", 1, 100, False),
-        ("min_base_quality_for_splitting", 0, 93, False),
-    ]:
-        param_value = params_dict.get(param_name)
-        if not is_valid_int(param_value, "between", min_value_inclusive=min_value, max_value_inclusive=max_value, optional=optional_value):
-            raise ValueError(f"{param_name} must be an integer between {min_value} and {max_value}. Got {params_dict.get(param_name)}.")
+        if parity == "paired" and len(fastqs) % 2 != 0:  # if fastqs parity is paired, then ensure an even number of files
+            raise ValueError("Number of fastq files must be even when parity == paired")
+        for fastq in fastqs:
+            check_file_path_is_string_with_valid_extension(fastq, variable_name=fastq, file_type="fastq")  # ensure that all fastq files have valid extension
+            if not os.path.isfile(fastq):  # ensure that all fastq files exist
+                raise ValueError(f"File {fastq} does not exist")
 
-    if not is_valid_int(params_dict["length_required"], ">=", 1, optional=False) and params_dict["length_required"] is not None:
-        raise ValueError(f"length_required must be an integer >= 1 or None. Got {params_dict.get('length_required')}.")
+        # length_required must be >= 1 (the signature bounds it to [0, 9999])
+        if self.length_required is not None and self.length_required < 1:
+            raise ValueError(f"length_required must be an integer >= 1 or None. Got {self.length_required}.")
 
-    # boolean
-    for param_name in ["quality_control_fastqs", "split_reads_by_Ns_and_low_quality_bases", "concatenate_paired_fastqs", "cut_front", "cut_tail", "disable_adapter_trimming", "disable_quality_filtering", "disable_length_filtering", "dont_eval_duplication", "disable_trim_poly_g", "dry_run", "overwrite", "sort_fastqs"]:
-        if not isinstance(params_dict.get(param_name), bool):
-            raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
+        if parity == "paired" and self.split_reads_by_Ns_and_low_quality_bases and not self.concatenate_paired_fastqs:
+            raise ValueError("When parity==paired, if split_reads_by_Ns_and_low_quality_bases==True, then concatenate_paired_fastqs must also be True (split_reads_by_Ns_and_low_quality_bases messes up the paired nature of the fastqs).")
 
-    if parity == "paired" and params_dict["split_reads_by_Ns_and_low_quality_bases"] and not params_dict["concatenate_paired_fastqs"]:
-        raise ValueError("When parity==paired, if split_reads_by_Ns_and_low_quality_bases==True, then concatenate_paired_fastqs must also be True (split_reads_by_Ns_and_low_quality_bases messes up the paired nature of the fastqs).")
+        return self
 
-    if not isinstance(params_dict.get("multiplexed"), bool) and params_dict.get("multiplexed") is not None:
-        raise ValueError(f"multiplexed must be a boolean or None. Got {params_dict.get('multiplexed')} of type {type(params_dict.get('multiplexed'))}.")
-
-    if not isinstance(params_dict.get("failed_out"), (bool, str)):
-        raise ValueError(f"failed_out must be a boolean or string. Got {params_dict.get('failed_out')} of type {type(params_dict.get('failed_out'))}.")
 
 @report_time_elapsed
+@validate_call(config=vk_config)
 def fastqpp(
-    fastqs,
-    technology,
-    multiplexed=None,
-    parity="single",
-    quality_control_fastqs=False,
-    cut_front=False,
-    cut_tail=False,
-    cut_window_size=4,
-    cut_mean_quality=15,
-    disable_adapter_trimming=False,
-    qualified_quality_phred=15,
-    unqualified_percent_limit=40,
-    average_qual=15,
-    n_base_limit=10,
-    disable_quality_filtering=False,
-    length_required=31,
-    disable_length_filtering=False,
-    dont_eval_duplication=False,
-    disable_trim_poly_g=False,
-    failed_out=False,
-    split_reads_by_Ns_and_low_quality_bases=False,
-    min_base_quality_for_splitting=5,
-    concatenate_paired_fastqs=False,
-    out=".",
-    dry_run=False,
-    overwrite=False,
-    sort_fastqs=True,
-    threads=2,
-    logging_level=None,
-    save_logs=False,
-    log_out_dir=None,
-    **kwargs,
+    fastqs: object,
+    technology: Optional[Technology],
+    multiplexed: Optional[bool] = None,
+    parity: Parity = "single",
+    quality_control_fastqs: bool = False,
+    cut_front: bool = False,
+    cut_tail: bool = False,
+    cut_window_size: int_range(1, 1000) = 4,
+    cut_mean_quality: int_range(1, 36) = 15,
+    disable_adapter_trimming: bool = False,
+    qualified_quality_phred: int_range(1, 40) = 15,
+    unqualified_percent_limit: int_range(0, 100) = 40,
+    average_qual: int_range(0, 40) = 15,
+    n_base_limit: int_range(1, 50) = 10,
+    disable_quality_filtering: bool = False,
+    length_required: int_range(0, 9999) = 31,
+    disable_length_filtering: bool = False,
+    dont_eval_duplication: bool = False,
+    disable_trim_poly_g: bool = False,
+    failed_out: Union[bool, str] = False,
+    split_reads_by_Ns_and_low_quality_bases: bool = False,
+    min_base_quality_for_splitting: int_range(0, 93) = 5,
+    concatenate_paired_fastqs: bool = False,
+    out: Union[str, Path] = ".",
+    dry_run: bool = False,
+    overwrite: bool = False,
+    sort_fastqs: bool = True,
+    threads: int_range(1, 100) = 2,
+    logging_level: Optional[Union[str, int]] = None,
+    save_logs: bool = False,
+    log_out_dir: Optional[Union[str, Path]] = None,
+    # --- Advanced parameters: part of the Python signature (validated by @validate_call) but hidden from `vk fastqpp --help`. See the "Advanced parameters" docstring section. ---
+    seqtk_path: str = "seqtk",
+    quality_control_fastqs_out_dir: Optional[Union[str, Path]] = None,
+    replace_low_quality_bases_with_N_out_dir: Optional[Union[str, Path]] = None,
+    split_by_Ns_and_low_quality_bases_out_dir: Optional[Union[str, Path]] = None,
+    concatenate_paired_fastqs_out_dir: Optional[Union[str, Path]] = None,
+    delete_intermediate_files: bool = True,
 ):
     """
     Apply quality control to fastq files. This includes trimming edges off reads, running FastQC and MultiQC, replacing low quality bases with N, splitting reads by Ns, and concatenating paired fastq files.
@@ -175,7 +177,7 @@ def fastqpp(
     - save_logs                         (True/False) Whether to save logs to a file. Default: False.
     - log_out_dir                       (str) Directory to save logs. Default: `out`/logs
 
-    # Hidden arguments (part of kwargs)
+    # # Advanced parameters (real `fastqpp` arguments, but hidden from the `vk fastqpp --help` CLI):
     - seqtk_path                       (str) Path to seqtk. Default: "seqtk"
     - quality_control_fastqs_out_dir       (str) Directory to save quality controlled fastq files. Default: `out`/fastqs_quality_controlled
     - replace_low_quality_bases_with_N_out_dir   (str) Directory to save fastq files with low quality bases replaced with N. Default: `out`/fastqs_replaced_low_quality_with_N
@@ -200,9 +202,9 @@ def fastqpp(
     fastqs_original = fastqs
     fastqs = load_in_fastqs(fastqs)  # this will make it in params_dict
 
-    # * 2. Type-checking
+    # * 2. Type-checking (per-parameter types enforced by @validate_call; cross-field/filesystem by FastqppParams)
     params_dict = make_function_parameter_to_value_dict(1)
-    validate_input_fastqpp(params_dict)
+    FastqppParams(**params_dict)
     params_dict["fastqs"] = fastqs_original  # change back for dry run and config_file
 
     sig = inspect.signature(fastqpp)
@@ -228,10 +230,10 @@ def fastqpp(
     # all input files for vk fastqpp are required in the varseek workflow, so this is skipped
 
     # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
-    quality_control_fastqs_out_dir = kwargs.get("quality_control_fastqs_out_dir", os.path.join(out, "fastqs_quality_controlled"))
-    replace_low_quality_bases_with_N_out_dir = kwargs.get("replace_low_quality_bases_with_N_out_dir", os.path.join(out, "fastqs_replaced_low_quality_with_N"))
-    split_by_Ns_and_low_quality_bases_out_dir = kwargs.get("split_by_Ns_and_low_quality_bases_out_dir", os.path.join(out, "fastqs_split_by_Ns_and_low_quality_bases"))
-    concatenate_paired_fastqs_out_dir = kwargs.get("concatenate_paired_fastqs_out_dir", os.path.join(out, "fastqs_concatenated_paired"))
+    quality_control_fastqs_out_dir = quality_control_fastqs_out_dir or os.path.join(out, "fastqs_quality_controlled")
+    replace_low_quality_bases_with_N_out_dir = replace_low_quality_bases_with_N_out_dir or os.path.join(out, "fastqs_replaced_low_quality_with_N")
+    split_by_Ns_and_low_quality_bases_out_dir = split_by_Ns_and_low_quality_bases_out_dir or os.path.join(out, "fastqs_split_by_Ns_and_low_quality_bases")
+    concatenate_paired_fastqs_out_dir = concatenate_paired_fastqs_out_dir or os.path.join(out, "fastqs_concatenated_paired")
 
     if len({quality_control_fastqs_out_dir, replace_low_quality_bases_with_N_out_dir, split_by_Ns_and_low_quality_bases_out_dir, concatenate_paired_fastqs_out_dir}) < 4:
         raise ValueError("Output directories must be unique.")
@@ -243,9 +245,8 @@ def fastqpp(
 
     os.makedirs(out, exist_ok=True)
 
-    # * 7. Define kwargs defaults
-    seqtk = kwargs.get("seqtk_path", "seqtk")
-    delete_intermediate_files = kwargs.get("delete_intermediate_files", True)
+    # * 7. Resolve advanced-parameter aliases
+    seqtk = seqtk_path
 
     # * 7.5 make sure ints are ints
     length_required, threads = int(length_required), int(threads)

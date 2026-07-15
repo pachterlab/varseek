@@ -3,6 +3,7 @@ import re
 import subprocess
 from pathlib import Path
 
+import anndata
 import anndata as ad
 import numpy as np
 import sys
@@ -20,12 +21,11 @@ import hashlib
 from varseek.constants import (
     complement,
     fastq_extensions,
-    technology_barcode_and_umi_dict,
+    technology_info,
     mutation_pattern,
-    technology_to_file_index_with_transcripts_mapping,
-    technology_to_number_of_files_mapping,
-    technology_to_file_index_with_barcode_and_barcode_start_and_end_position_mapping,
-    HGVS_pattern_general
+    HGVS_pattern_general,
+    technology_valid_values,
+    non_single_cell_technologies
 )
 from varseek.utils.seq_utils import (
     add_variant_type,
@@ -41,9 +41,8 @@ from varseek.utils.seq_utils import (
     get_ensembl_gene_id_from_transcript_id_bulk,
     make_good_barcodes_and_file_index_tuples
 )
-from varseek.utils.logger_utils import set_up_logger, count_chunks, determine_write_mode
+from varseek.utils.logger_utils import set_up_logger, count_chunks, determine_write_mode, check_file_path_is_string_with_valid_extension, is_valid_int
 from varseek.utils.visualization_utils import plot_cdna_locations
-from varseek.utils.varseek_info_utils import identify_variant_source
 
 logger = logging.getLogger(__name__)
 logger = set_up_logger(logger, logging_level="INFO", save_logs=False, log_dir=None)
@@ -177,10 +176,10 @@ def make_bus_df(kb_count_out, fastq_file_list=None, technology=None, t2g_file=No
         logger.info("loading in t2g df")
         t2g_dict = make_t2g_dict(t2g_file)
 
-    number_of_files = technology_to_number_of_files_mapping[technology.upper()]
+    number_of_files = technology_info[technology.upper()]["num_files"]
     if isinstance(number_of_files, dict):
         number_of_files = number_of_files[vcrs_parity]
-    barcode_file_index_tuple = technology_to_file_index_with_barcode_and_barcode_start_and_end_position_mapping[technology.upper()]
+    barcode_file_index_tuple = technology_info[technology.upper()]["barcode_position"]
     if barcode_file_index_tuple is None:
         barcode_file_index = None
     else:
@@ -194,7 +193,7 @@ def make_bus_df(kb_count_out, fastq_file_list=None, technology=None, t2g_file=No
             barcode_file_index = barcode_file_index_tuple[0]
             barcode_start_positions_list = [barcode_file_index_tuple[1]]  # if only one group, then use the start position
             barcode_end_positions_list = [barcode_file_index_tuple[2]]
-    transcript_file_index = technology_to_file_index_with_transcripts_mapping[technology.upper()]
+    transcript_file_index = technology_info[technology.upper()]["transcript_file_index"]
 
     technology = technology.lower()
     if technology not in {"bulk", "smartseq2"}:
@@ -1060,13 +1059,15 @@ def make_bus_df_original(kallisto_out, fastq_file_list, t2g_file, mm=False, unio
         if technology == "bulk" and ignore_barcodes:
             raise ValueError("ignore_barcodes is only supported for bulk RNA-seq data")
 
-        try:
-            barcode_start = technology_barcode_and_umi_dict[technology]["barcode_start"]
-            barcode_end = technology_barcode_and_umi_dict[technology]["barcode_end"]
-            umi_start = technology_barcode_and_umi_dict[technology]["umi_start"]
-            umi_end = technology_barcode_and_umi_dict[technology]["umi_end"]
-        except KeyError:
-            print(f"technology {technology} currently not supported. Supported are {list(technology_barcode_and_umi_dict.keys())}")
+        info = technology_info.get(technology.upper())
+        barcode_umi = info["barcode_umi"] if info is not None else None
+        if barcode_umi is None:
+            print(f"technology {technology} currently not supported. Supported are {[t for t, i in technology_info.items() if i['barcode_umi'] is not None]}")
+        else:
+            barcode_start = barcode_umi["barcode_start"]
+            barcode_end = barcode_umi["barcode_end"]
+            umi_start = barcode_umi["umi_start"]
+            umi_end = barcode_umi["umi_end"]
 
         pass  # TODO: write this (will involve technology parameter to get barcode from read)
 
@@ -2398,3 +2399,161 @@ def add_information_from_variant_header_to_adata_var_exploded(adata_var_exploded
 
     return adata_var_exploded
 
+
+def identify_variant_source(mutation_metadata_df_exploded, variant_column="variant_used_for_vcrs", variant_source_column="variant_source", choices=("cdna", "genome")):
+    conditions = [
+        mutation_metadata_df_exploded[variant_column].str.startswith("c.", na=False),
+        mutation_metadata_df_exploded[variant_column].str.startswith("g.", na=False),
+    ]  # if it finds ":c.", make it "cdna"; if it finds ":g.", make it "genome"; if it finds both or neither, make it "unknown"
+
+    mutation_metadata_df_exploded[variant_source_column] = np.select(conditions, choices, default="unknown")
+
+
+
+def prepare_set(vcrs_id_set_to_exclusively_keep):
+    if vcrs_id_set_to_exclusively_keep is None:
+        return None  # Keep None as None
+
+    elif isinstance(vcrs_id_set_to_exclusively_keep, (list, tuple)):
+        return set(vcrs_id_set_to_exclusively_keep)  # Convert list/tuple to set
+
+    elif isinstance(vcrs_id_set_to_exclusively_keep, str) and os.path.isfile(vcrs_id_set_to_exclusively_keep) and vcrs_id_set_to_exclusively_keep.endswith(".txt"):
+        # Load lines from text file, stripping whitespace
+        with open(vcrs_id_set_to_exclusively_keep, "r", encoding="utf-8") as f:
+            return set(line.strip() for line in f if line.strip())  # Ignore empty lines
+
+    elif isinstance(vcrs_id_set_to_exclusively_keep, set):
+        return vcrs_id_set_to_exclusively_keep  # Already a set, return as is
+
+    else:
+        raise ValueError("Invalid input: must be None, a list, tuple, set, or a path to a text file")
+
+
+scanpy_conditions = ["filter_cells_by_min_counts", "filter_cells_by_min_genes", "filter_genes_by_min_cells", "filter_cells_by_max_mt_content", "doublet_detection"]
+
+
+def _validate_clean_params(params_dict):
+    # check if adata_vcrs is of type Anndata
+    adata_vcrs = params_dict["adata_vcrs"]
+    if not isinstance(adata_vcrs, (str, Path, anndata.AnnData)):  # I will enforce that adata_vcrs exists later, as otherwise it will throw an error when I call this through vk count before kb count can run
+        raise ValueError("adata_vcrs must be an AnnData object or a file path to an h5ad object.")
+    if isinstance(adata_vcrs, (str, Path)):
+        check_file_path_is_string_with_valid_extension(adata_vcrs, "adata_vcrs", "h5ad")
+
+    # technology
+    technology = params_dict.get("technology", None)
+    technology_valid_values_lower = {x.lower() for x in technology_valid_values}
+    if technology is None or technology.lower() not in technology_valid_values_lower:
+        raise ValueError(f"Technology must be one of {technology_valid_values_lower}")
+
+    for param_name, min_value, optional_value in [
+        ("min_counts", 1, False),
+        ("read_length", 1, True),
+        ("filter_cells_by_min_genes", 0, True),  # optional True means that it can be None
+        ("filter_genes_by_min_cells", 0, True),
+    ]:
+        param_value = params_dict.get(param_name)
+        if not is_valid_int(param_value, ">=", min_value, optional=optional_value):
+            must_be_value = f"an integer >= {min_value}" if not optional_value else f"an integer >= {min_value} or None"
+            raise ValueError(f"{param_name} must be {must_be_value}. Got {param_value} of type {type(param_value)}.")
+
+    if params_dict.get("cpm_normalization") and (not params_dict.get("adata_reference_genome") and not params_dict.get("kb_count_reference_genome_dir")):
+        raise ValueError("adata_reference_genome or kb_count_reference_genome_dir must be provided if cpm_normalization=True.")
+
+    if technology not in non_single_cell_technologies:
+        if params_dict.get("filter_cells_by_min_counts") is True:
+            try:
+                from kneed import KneeLocator
+            except ImportError:
+                raise ImportError("kneed is required for filter_cells_by_min_counts=True. See pyproject.toml project.optional-dependencies for version recommendation. Install it with:\n" "  pip install kneed")
+        for condition in scanpy_conditions:
+            if params_dict.get(condition):
+                if not params_dict.get("adata_reference_genome") and not params_dict.get("kb_count_reference_genome_dir"):
+                    raise ValueError(f"adata_reference_genome or kb_count_reference_genome_dir must be provided if {condition}=True.")
+                try:
+                    import scanpy as sc
+                except ImportError:
+                    raise ImportError("Scanpy is required for this function. See pyproject.toml project.optional-dependencies for version recommendation. Install it with:\n" "  pip install scanpy")
+
+    # filter_cells_by_min_counts - gets special treatment because it can also be True for automatic calculation
+    filter_cells_by_min_counts = params_dict.get("filter_cells_by_min_counts", None)
+    if filter_cells_by_min_counts is not None and not is_valid_int(filter_cells_by_min_counts, ">=", 1):
+        raise ValueError(f"filter_cells_by_min_counts must be an integer >= 1 (for manual threshold), True (for automatic threshold calculation with kneed's KneeLocator), or None (for no threshold). Got {filter_cells_by_min_counts} of type {type(filter_cells_by_min_counts)}.")
+
+    # filter_cells_by_max_mt_content - special treatment because it is between rather than lower-bounded only
+    if not is_valid_int(params_dict.get("filter_cells_by_max_mt_content"), "between", min_value_inclusive=0, max_value_inclusive=100, optional=True):
+        raise ValueError(f"filter_cells_by_max_mt_content must be an integer between 0 and 100, or None. Got {params_dict.get('filter_cells_by_max_mt_content')}.")
+
+    # boolean
+    for param_name in ["use_binary_matrix", "drop_empty_columns", "apply_dlist_correction", "qc_against_gene_matrix", "doublet_detection", "remove_doublets", "cpm_normalization", "sum_rows", "mm", "save_vcf", "dry_run", "overwrite", "account_for_strand_bias"]:
+        if not isinstance(params_dict.get(param_name), bool):
+            raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
+    if not isinstance(params_dict.get("multiplexed"), bool) and params_dict.get("multiplexed") is not None:
+        raise ValueError(f"multiplexed must be a boolean or None. Got {params_dict.get('multiplexed')} of type {type(params_dict.get('multiplexed'))}.")
+
+    # sets
+    for param_name in ["vcrs_id_set_to_exclusively_keep", "vcrs_id_set_to_exclude", "gene_set_to_exclusively_keep", "gene_set_to_exclude"]:
+        param_value = params_dict.get(param_name, None)
+        if param_value is not None and not isinstance(param_value, (set, list, tuple) and not (isinstance(param_value, str) and param_value.endswith(".txt") and os.path.isfile(param_value))):  # checks if it is (1) None, (2) a set/list/tuple, or (3) a string path to a txt file that exists
+            raise ValueError(f"{param_name} must be a set. Got {param_name} of type {type(param_value)}.")
+
+    # k
+    k = params_dict.get("k", None)
+    if k:
+        if not isinstance(k, (int, str)) or int(k) < 1:
+            raise ValueError(f"k must be a positive integer. Got {k} of type {type(k)}.")
+        if int(k) % 2 == 0 or int(k) > 63:
+            logger.warning("If running a workflow with vk ref or kb ref, k should be an odd number between 1 and 63. Got k=%s.", k)
+
+    parity_valid_values = {"single", "paired"}
+    if params_dict["parity"] not in parity_valid_values:
+        raise ValueError(f"Parity must be one of {parity_valid_values}")
+    
+    strand_bias_end_valid_values = {"5p", "3p", None}
+    if params_dict["strand_bias_end"] not in strand_bias_end_valid_values:
+        raise ValueError(f"strand_bias_end must be one of {strand_bias_end_valid_values}")
+    
+    if params_dict.get("account_for_strand_bias") and not params_dict.get("strand_bias_end"):
+        raise ValueError("strand_bias_end must be provided if account_for_strand_bias=True.")
+
+    # $ type checking of the directory and text file performed earlier by load_in_fastqs
+    fastqs = params_dict["fastqs"]  # tuple
+    if fastqs:
+        for fastq in fastqs:
+            check_file_path_is_string_with_valid_extension(fastq, variable_name=fastq, file_type="fastq")  # ensure that all fastq files have valid extension
+            if not os.path.isfile(fastq):  # ensure that all fastq files exist
+                raise ValueError(f"File {fastq} does not exist")
+
+    # file paths
+    for param_name, file_type in {
+        "config": ["json", "yaml"],
+        "vcrs_index": "index",
+        "vcrs_t2g": "t2g",
+        "vcrs_fasta": "fasta",
+        "dlist_fasta": "fasta",
+        "adata_reference_genome": "h5ad",
+        "adata_vcrs_clean_out": "h5ad",
+        "adata_reference_genome_clean_out": "h5ad",
+        "vcf_out": "vcf",
+    }.items():
+        check_file_path_is_string_with_valid_extension(params_dict.get(param_name), param_name, file_type)
+
+    # directories
+    for param_name in ["vk_ref_dir", "kb_count_vcrs_dir", "kb_count_reference_genome_dir"]:
+        if not isinstance(params_dict.get(param_name), (str, Path)) and params_dict.get(param_name) is not None:
+            raise ValueError(f"Directory {param_name} {params_dict.get(param_name)} is not a string or None")
+        if params_dict.get(param_name) and not params_dict.get("dry_run") and (not os.path.isdir(params_dict.get(param_name)) or len(os.listdir(params_dict.get(param_name))) == 0):  # including the dry_run condition so that vk count dry run does not throw an error
+            raise ValueError(f"Directory {params_dict.get(param_name)} does not exist")
+    if not isinstance(params_dict.get("out"), (str, Path)):
+        raise ValueError(f"Out directory {params_dict.get('out')} is not a string")
+
+    if params_dict.get("qc_against_gene_matrix"):
+        for arg in ["kb_count_vcrs_dir", "kb_count_reference_genome_dir"]:
+            kb_count_normal_dir = params_dict.get(arg)
+            if kb_count_normal_dir and os.path.exists(kb_count_normal_dir):
+                run_info_json = os.path.join(kb_count_normal_dir, "run_info.json")
+                with open(run_info_json, "r") as f:
+                    data = json.load(f)
+                if "--num" not in data["call"]:
+                    raise ValueError(f"--num must be included in the provided value for {arg}. Please run kb count on the normal genome again, or provide a new path for {arg} to allow varseek count to make this file for you.")
+        logger.warning("For the best results with qc_against_gene_matrix=True, try to ensure the reference assembly and release of the genome used with kb_count_reference_genome_dir is as similar as possible to the one used with kb_count_vcrs_dir. This helps ensure that transcript/gene IDs are as stable as possible.")

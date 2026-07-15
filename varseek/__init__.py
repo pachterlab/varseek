@@ -8,10 +8,7 @@ from .varseek_clean import clean
 from .varseek_count import count
 from .varseek_denovo import denovo
 from .varseek_fastqpp import fastqpp
-from .varseek_filter import filter
-from .varseek_info import info
 from .varseek_ref import ref
-from .varseek_sim import sim
 from .varseek_summarize import summarize
 
 # # a possible alternative to avoid running imports from each function - but I already run all imports from utils functions, so it doesn't really matter
@@ -22,6 +19,6 @@ from .varseek_summarize import summarize
 # Mute numexpr threads info
 logging.getLogger("numexpr").setLevel(logging.WARNING)
 
-__version__ = "0.1.2"
+__version__ = "0.2.0"
 __author__ = "Joseph Rich"
 __email__ = "josephrich98@gmail.com"
