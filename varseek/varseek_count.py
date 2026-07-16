@@ -29,19 +29,17 @@ from varseek.utils import (
     load_adata_from_mtx,
     validate_call,
     vk_config,
-    IndexFile,
-    T2GFile,
     Technology,
     Parity,
     Strand,
     StrandBiasEnd,
     PositiveInt,
+    NonNegativeInt,
+    int_range,
 )
-from varseek.varseek_clean import needs_for_normal_genome_matrix
 
 from .constants import (
     non_single_cell_technologies,
-    supported_downloadable_normal_reference_genomes_with_kb_ref,
     varseek_count_only_allowable_kb_count_arguments,
 )
 
@@ -72,6 +70,18 @@ vk_count_hidden_from_help = {
     "parity_kb_count",
 }
 
+# Documentation for the advanced `count` parameters. These are real, fully typed
+# arguments on the `count` signature (validated by @validate_call like every other
+# parameter), but they are deliberately kept out of the public `count` docstring
+# (and therefore out of help(vk.count) / the Sphinx site) and out of `vk count --help`
+# (via vk_count_hidden_from_help) to keep the common interface uncluttered. The text
+# lives here so maintainers still have it close to the definition.
+COUNT_ADVANCED_PARAMS_DOC = """
+# # Advanced parameters (real `count` arguments, but hidden from the `vk count --help` CLI):
+- num                                  (bool) If True, use the --num argument in kb count. Default: True.
+- parity_kb_count                      (str) The parity of the reads for kb count. Always recommended to run in single. Default: "single".
+"""
+
 
 class CountParams(BaseModel):
     """Cross-field / kwargs-only validation for :func:`count`.
@@ -86,17 +96,13 @@ class CountParams(BaseModel):
 
     index: object = None
     t2g: object = None
-    reference_genome_index: object = None
-    reference_genome_t2g: object = None
     adata_reference_genome: object = None
     parity: object = None
     technology: object = None
     parity_kb_count: object = None
     strand: object = None
-    qc_against_gene_matrix: object = None
     out: object = "."
-    kb_count_reference_genome_out_dir: object = None
-    kb_count_reference_genome_dir: object = None
+    kallisto_quant_reference_genome_dir: object = None
 
     @model_validator(mode="after")
     def _validate(self):
@@ -112,7 +118,7 @@ class CountParams(BaseModel):
             if not os.path.isfile(value) and value != "None":  # ensure that all files exist
                 raise ValueError(f"File {value} does not exist")
 
-        # adata_reference_genome extension (reference_genome_index/t2g extensions enforced on the signature)
+        # adata_reference_genome extension
         check_file_path_is_string_with_valid_extension(self.adata_reference_genome, "adata_reference_genome", "adata")
 
         # strings
@@ -135,12 +141,6 @@ class CountParams(BaseModel):
         if self.strand not in strand_valid_values:
             raise ValueError(f"Strand must be one of {strand_valid_values}")
 
-        out = self.out if self.out is not None else "."
-        kb_count_reference_genome_out_dir = self.kb_count_reference_genome_out_dir if self.kb_count_reference_genome_out_dir else f"{out}/kb_count_out_reference_genome"
-        if self.qc_against_gene_matrix and not os.path.exists(kb_count_reference_genome_out_dir):  # align to this genome if (1) adata doesn't exist and (2) qc_against_gene_matrix=True (because I need the BUS file for this)  # purposely omitted overwrite because it is reasonable to expect that someone has pre-computed this matrix and doesn't want it recomputed under any circumstances (and if they did, then simply point to a different directory)
-            if not os.path.exists(self.reference_genome_index) or not os.path.exists(self.reference_genome_t2g):
-                raise ValueError(f"Reference genome index {self.reference_genome_index} or t2g {self.reference_genome_t2g} does not exist. Please provide a valid reference genome index and t2g file created with the `kb ref` command (a standard reference genome index/t2g, *not* a variant reference).")
-
         # kb count stuff
         extra = self.model_extra or {}
         for argument_type, argument_set in varseek_count_only_allowable_kb_count_arguments.items():
@@ -159,21 +159,10 @@ class CountParams(BaseModel):
                     elif argument_type == "multiple_arguments":
                         pass
 
-        # --nums required when qc_against_gene_matrix=True
-        if self.qc_against_gene_matrix:
-            for arg in ["kb_count_reference_genome_dir", "kb_count_reference_genome_out_dir"]:
-                kb_count_normal_dir = getattr(self, arg)
-                if kb_count_normal_dir and os.path.exists(kb_count_normal_dir):
-                    run_info_json = os.path.join(kb_count_normal_dir, "run_info.json")
-                    with open(run_info_json, "r") as f:
-                        data = json.load(f)
-                    if "--num" not in data["call"]:
-                        raise ValueError(f"--num must be included in the provided value for {arg}. Please run kb count on the normal genome again, or provide a new path for {arg} to allow varseek count to make this file for you.")
         return self
 
 
 # don't worry if it says an argument is unused, as they will all get put in params_dict for each respective function and passed to the child functions
-@report_time_elapsed
 @validate_call(config=vk_config)
 def count(
     fastqs: object,
@@ -181,8 +170,7 @@ def count(
     technology: Optional[Technology],
     t2g: str = "None",
     k: PositiveInt = 59,  # params
-    run_kb_count_against_reference_genome: bool = False,
-    qc_against_gene_matrix: bool = False,
+    pseudobam_validation: bool = False,
     account_for_strand_bias: bool = False,
     strand_bias_end: Optional[StrandBiasEnd] = None,
     read_length: Optional[Union[int, str]] = None,
@@ -190,12 +178,9 @@ def count(
     mm: bool = True,
     union: bool = True,
     parity: Optional[Parity] = "single",
-    reference_genome_index: Optional[IndexFile] = None,  # optional inputs
-    reference_genome_t2g: Optional[T2GFile] = None,
     gtf: Optional[Union[bool, str, Path]] = None,
     out: Union[str, Path] = ".",  # optional outputs
     kb_count_vcrs_out_dir: Optional[Union[str, Path]] = None,
-    kb_count_reference_genome_out_dir: Optional[Union[str, Path]] = None,
     vk_summarize_out_dir: Optional[Union[str, Path]] = None,
     disable_fastqpp: bool = False,  # general
     disable_clean: bool = False,
@@ -223,8 +208,7 @@ def count(
 
     # Additional parameters
     - k                                     (int) The length of each k-mer in the kallisto reference index construction. Corresponds to `k` used in the earlier varseek commands (i.e., varseek ref). If using a downloaded index from varseek ref -d, then check the description for the k value used to construct this index with varseek ref --list_downloadable_references. Default: 59.
-    - run_kb_count_against_reference_genome (bool) Whether to run kb count against the normal reference genome. This is only needed if you want to use the normal reference genome for downstream analysis. Default: False.
-    - qc_against_gene_matrix                (bool) Whether to apply correction for qc against gene matrix. If a read maps to 2+ VCRSs that belong to different genes, then cross-reference with the reference genome to determine which gene the read belongs to, and set all VCRSs that do not correspond to this gene to 0 for that read. Also, cross-reference all reads that map to 1 VCRS and ensure that the reads maps to the gene corresponding to this VCRS, or else set this value to 0 in the count matrix. Default: False.
+    - pseudobam_validation                  (bool) Whether to validate the VCRS count matrix against the reference genome via the pseudobam method in vk clean. The reads are re-aligned with `kallisto quant --pseudobam` (or `--genomebam` for DNA-sequence references), and each read's true alignment coordinate is compared to the HGVS locus of its assigned VCRS; reads that aligned somewhere inconsistent with the variant are dropped. Requires a standard reference-genome kallisto index (pass `reference_genome_index`, forwarded to vk clean). Default: False.
     - account_for_strand_bias               (bool) Whether to account for strand bias from stranded single-cell technologies. Default: False.
     - strand_bias_end                       (str) The end of the read to use for strand bias correction. Either "5p" or "3p". Must be provided if and only if account_for_strand_bias=True. Default: None.
     - read_length                           (int) The read length used in the experiment. Must be provided if and only if account_for_strand_bias=True. Default: None.
@@ -235,14 +219,11 @@ def count(
 
     # Optional input arguments
     - t2g                                   (str) Path to t2g file generated by varseek ref. Default: "None" (will be created if not provided).
-    - reference_genome_index                (str) Path to index file for the "normal" reference genome. Created if not provided. Only used if qc_against_gene_matrix=True (see vk clean --help). Default: None.
-    - reference_genome_t2g                  (str) Path to t2g file for the "normal" reference genome. Created if not provided. Only used if qc_against_gene_matrix=True (see vk clean --help). Default: None.
     - gtf                                   (str) Path to the GTF file. Only used when account_for_strand_bias=True and either (1) strand_bias_end='3p' and/or (2) some VCRSs are derived from genome sequences. Default: None.
 
     # Optional output file paths: (only needed if changing/customizing file names or locations):
     - out                                   (str) Output directory. Default: ".".
     - kb_count_vcrs_out_dir                 (str) Output directory for kb count. Default: `out`/kb_count_out_vcrs
-    - kb_count_reference_genome_out_dir     (str) Output directory for kb count on "normal" reference genome. Default: `out`/kb_count_out_reference_genome
     - vk_summarize_out_dir                  (str) Output directory for vk summarize. Default: `out`/vk_summarize
 
     # General arguments:
@@ -258,12 +239,13 @@ def count(
     - save_logs                             (True/False) Whether to save logs to a file. Default: False.
     - log_out_dir                           (str) Directory to save logs. Default: None (do not save logs).
 
-    # # Advanced parameters (real `count` arguments, but hidden from the `vk count --help` CLI):
-    - num                                  (bool) If True, use the --num argument in kb count. Default: True.
-    - parity_kb_count                      (str) The parity of the reads for kb count. Always recommended to run in single. Default: "single".
+    NOTE: `count` also accepts several advanced/niche parameters that are intentionally omitted here (and from
+    `vk count --help`). They are fully typed and validated like any other argument; see COUNT_ADVANCED_PARAMS_DOC
+    in varseek/varseek_count.py for their documentation.
 
     For a complete list of supported parameters, see the documentation for varseek fastqpp, kb count, varseek clean, and varseek summarize. Note that any shared parameter names between functions are meant to have identical purposes.
     """
+    start_time = time.perf_counter()
 
     # * 0. Informational arguments that exit early
     # Nothing here
@@ -285,7 +267,7 @@ def count(
     params_dict = make_function_parameter_to_value_dict(1)
     params_dict["adata_vcrs"] = "placeholder/adata.h5ad"  # this is just a placeholder, but it is needed for type checking
     params_dict["adata"] = "placeholder/adata_cleaned.h5ad"  # this is just a placeholder, but it is needed for type checking
-    params_dict["kb_count_reference_genome_dir"] = None  # this is just a placeholder, but it is needed for type checking
+    params_dict["kallisto_quant_reference_genome_dir"] = None  # this is just a placeholder, but it is needed for type checking
 
     # Set params_dict_for_type_checking to default values of children functions - important so type checking works properly
     count_signature = inspect.signature(count)
@@ -332,8 +314,6 @@ def count(
     # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
     if not kb_count_vcrs_out_dir:
         kb_count_vcrs_out_dir = os.path.join(out, "kb_count_out_vcrs") if not kwargs.get("kb_count_vcrs_dir") else kwargs["kb_count_vcrs_dir"]
-    if not kb_count_reference_genome_out_dir:
-        kb_count_reference_genome_out_dir = os.path.join(out, "kb_count_out_reference_genome") if not kwargs.get("kb_count_reference_genome_dir") else kwargs["kb_count_reference_genome_dir"]
     if not vk_summarize_out_dir:
         vk_summarize_out_dir = os.path.join(out, "vk_summarize")
 
@@ -343,22 +323,23 @@ def count(
 
     # for kb count --> vk clean
     kb_count_vcrs_out_dir, kwargs["kb_count_vcrs_dir"] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(kb_count_vcrs_out_dir, kwargs.get("kb_count_vcrs_dir"))  # check that, if kb_count_vcrs_dir and kb_count_vcrs_out_dir are both provided, they are the same directory; otherwise, if only one is provided, then make them equal to each other
-    kb_count_reference_genome_out_dir, kwargs["kb_count_reference_genome_dir"] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(kb_count_reference_genome_out_dir, kwargs.get("kb_count_reference_genome_dir"))  # same story as above but for kb_count_reference_genome and kb_count_reference_genome_out_dir
 
     adata_vcrs = f"{kb_count_vcrs_out_dir}/counts_unfiltered/adata.h5ad" if not kwargs.get("adata_vcrs") else kwargs.get("adata_vcrs")  # from vk clean
-    adata_reference_genome = f"{kb_count_reference_genome_out_dir}/counts_unfiltered/adata.h5ad" if not kwargs.get("adata_reference_genome") else kwargs.get("adata_reference_genome")  # from vk clean
+    # adata_reference_genome (only present if the user supplies a pre-computed reference-genome kb count for the gene-matrix-based scanpy QC in vk clean)
+    adata_reference_genome = kwargs.get("adata_reference_genome")
+    if not adata_reference_genome and kwargs.get("kallisto_quant_reference_genome_dir"):
+        adata_reference_genome = f"{kwargs['kallisto_quant_reference_genome_dir']}/counts_unfiltered/adata.h5ad"
     adata_vcrs_clean_out = f"{out}/adata_cleaned.h5ad" if not kwargs.get("adata_vcrs_clean_out") else kwargs.get("adata_vcrs_clean_out")  # from vk clean
     adata_reference_genome_clean_out = f"{out}/adata_cleaned.h5ad" if not kwargs.get("adata_reference_genome_clean_out") else kwargs.get("adata_reference_genome_clean_out")  # from vk clean
     vcf_out = os.path.join(out, "variants.vcf") if not kwargs.get("vcf_out") else kwargs["vcf_out"]  # from vk clean
     stats_file = os.path.join(vk_summarize_out_dir, "varseek_summarize_stats.txt") if not kwargs.get("stats_file") else kwargs["stats_file"]  # from vk summarize
 
-    for file in [stats_file]:  # purposely excluded adata_reference_genome because it is fine if someone provides this as input even if overwrite=False; and purposely excluded adata_vcrs, adata_vcrs_clean_out, adata_reference_genome_clean_out, kb_count_vcrs_out_dir, kb_count_reference_genome_out_dir for the reasons provided in vk ref
+    for file in [stats_file]:  # purposely excluded adata_reference_genome because it is fine if someone provides this as input even if overwrite=False; and purposely excluded adata_vcrs, adata_vcrs_clean_out, adata_reference_genome_clean_out, kb_count_vcrs_out_dir for the reasons provided in vk ref
         if os.path.isfile(file) and not overwrite:
             raise FileExistsError(f"Output file {file} already exists. Please delete it or specify a different output directory or set overwrite=True.")
 
     # no need for file_signifying_successful_vk_fastqpp_completion because overwrite=False just gives warning rather than error in fastqpp
     file_signifying_successful_kb_count_vcrs_completion = adata_vcrs
-    file_signifying_successful_kb_count_reference_genome_completion = adata_reference_genome
     file_signifying_successful_vk_clean_completion = adata_vcrs_clean_out
     file_signifying_successful_vk_summarize_completion = stats_file
 
@@ -392,7 +373,7 @@ def count(
     kwargs["concatenate_paired_fastqs"] = concatenate_paired_fastqs
 
     if disable_clean:
-        qc_against_gene_matrix = False  # disable_clean gets priority
+        pseudobam_validation = False  # disable_clean gets priority (pseudobam validation happens inside vk clean)
 
     if not kwargs.get("length_required"):
         logger.info("Setting length_required to %s if fastqpp is run", k)
@@ -465,9 +446,9 @@ def count(
             parity_vcrs = "single" if kwargs.get("concatenate_paired_fastqs") else parity_kb_count
             kb_count_command.extend(["--parity", parity_vcrs])
 
-        if qc_against_gene_matrix:
+        if pseudobam_validation:
             kb_count_command.extend(["--union",])  # don't need mm here, as mm does not affect the BUS file (only the count matrix)
-        if qc_against_gene_matrix or kwargs.get("apply_split_reads_by_Ns_correction") or kwargs.get("apply_dlist_correction") or num:
+        if pseudobam_validation or kwargs.get("apply_split_reads_by_Ns_correction") or num:
             kb_count_command.extend(["--num"])
 
         if mm and "--mm" not in kb_count_command:
@@ -510,78 +491,12 @@ def count(
     else:
         logger.info(f"Skipping kb count because file {file_signifying_successful_kb_count_vcrs_completion} already exists and overwrite=False")
 
-    # # kb count, reference genome
-    if ((not os.path.exists(file_signifying_successful_kb_count_reference_genome_completion)) and any(kwargs.get(value, False) for value in needs_for_normal_genome_matrix)) or (qc_against_gene_matrix and (not os.path.exists(kb_count_reference_genome_out_dir) or len(os.listdir(kb_count_reference_genome_out_dir)) == 0)):  # align to this genome if either (1) adata doesn't exist and I do downstream analysis with the normal gene count matrix for scRNA-seq data (ie not bulk) or (2) [qc_against_gene_matrix=True and kb_count_reference_genome_out_dir is nonexistent/empty (because I need the BUS file for this)]  # purposely omitted overwrite because it is reasonable to expect that someone has pre-computed this matrix and doesn't want it recomputed under any circumstances (and if they did, then simply point to a different directory)
-        run_kb_count_against_reference_genome = True
-    
-    if run_kb_count_against_reference_genome:
-        reference_genome_index = reference_genome_index if reference_genome_index else os.path.join(out, "reference_genome_index.idx")
-        reference_genome_t2g = reference_genome_t2g if reference_genome_t2g else os.path.join(out, "reference_genome_t2g.t2g")
-
-        if not os.path.exists(reference_genome_index) or not os.path.exists(reference_genome_t2g):  # download reference if does not exist
-            raise ValueError(f"Reference genome index {reference_genome_index} or t2g {reference_genome_t2g} does not exist. Please provide a valid reference genome index and t2g file created with the `kb ref` command (a standard reference genome index/t2g, *not* a variant reference).")
-
-        os.makedirs(kb_count_reference_genome_out_dir, exist_ok=True)
-
-        #!!! WT vcrs alignment, copied from previous notebook 1_2 (still not implemented in here correctly)
-        # if os.path.exists(wt_vcrs_index) and (not os.path.exists(kb_count_out_wt_vcrs) or len(os.listdir(kb_count_out_wt_vcrs)) == 0):
-        #     kb_count_command = ["kb", "count", "-t", str(threads), "-k", str(k), "-i", wt_vcrs_index, "-g", wt_vcrs_t2g, "-x", technology, "--num", "--h5ad", "--parity", "single", "--strand", strand, "-o", kb_count_out_wt_vcrs] + rnaseq_fastq_files_final
-        #     subprocess.run(kb_count_command, check=True)
-
-        # kb count, reference genome
-        kb_count_standard_index_command = [
-            "kb",
-            "count",
-            "-t",
-            str(threads),
-            "-i",
-            reference_genome_index,
-            "-g",
-            reference_genome_t2g,
-            "-x",
-            technology,
-            "--h5ad",
-            "-o",
-            kb_count_reference_genome_out_dir,
-        ]
-
-        if strand:
-            kb_count_standard_index_command.extend(["--strand", strand])
-        if qc_against_gene_matrix or num:
-            kb_count_standard_index_command.extend(["--num"])
-        if technology in {"BULK", "SMARTSEQ2"}:
-            kb_count_standard_index_command.extend(["--parity", parity])
-
-        # assumes any argument in varseek count matches kb count identically, except dashes replaced with underscores
-        params_dict_kb_count_standard = make_function_parameter_to_value_dict(1)  # will reflect any updated values to variables found in vk count signature and anything in kwargs
-        for dict_key, arguments in varseek_count_only_allowable_kb_count_arguments.items():
-            for argument in list(arguments):
-                dash_count = len(argument) - len(argument.lstrip("-"))
-                leading_dashes = "-" * dash_count
-                argument = argument.lstrip("-").replace("-", "_")
-                if argument in params_dict_kb_count_standard:
-                    value = params_dict_kb_count_standard[argument]
-                    if dict_key == "zero_arguments":
-                        if value:  # only add if value is True
-                            kb_count_standard_index_command.append(f"{leading_dashes}{argument}")
-                    elif dict_key == "one_argument":
-                        kb_count_standard_index_command.extend([f"{leading_dashes}{argument}", value])
-                    else:  # multiple_arguments or something else
-                        pass
-
-        kb_count_standard_index_command += fastqs_reference_genome  # the ones unprocessed by fastqpp
-
-        if dry_run:
-            print(" ".join(kb_count_standard_index_command))
-        else:
-            logger.info(f"Running kb count for reference genome with command: {' '.join(kb_count_standard_index_command)}")
-            subprocess.run(kb_count_standard_index_command, check=True)
-
-    else:
-        logger.info(f"Skipping kb count for reference genome because the reference genome adata object was not needed and/or the file '{file_signifying_successful_kb_count_reference_genome_completion}' already exists. Note that even setting overwrite=True will still not overwrite this particular file.")
-
-    if not os.path.exists(kb_count_reference_genome_out_dir) or len(os.listdir(kb_count_reference_genome_out_dir)) == 0:
-        kb_count_reference_genome_out_dir, kwargs["kb_count_reference_genome_dir"] = None, None  # don't pass anything into clean if they're empty
+    # note: vk count no longer runs kb count against a reference genome. The pseudobam validation (pseudobam_validation=True)
+    # re-aligns the reads with `kallisto quant` inside vk clean, so no separate reference-genome kb count is needed. If a user
+    # wants the gene-matrix-based scanpy QC (filter_cells_by_min_counts, doublet_detection, cpm_normalization, ...), they should
+    # run kb count against the reference genome themselves and pass kallisto_quant_reference_genome_dir / adata_reference_genome to vk clean.
+    if kwargs.get("kallisto_quant_reference_genome_dir") and (not os.path.exists(kwargs["kallisto_quant_reference_genome_dir"]) or len(os.listdir(kwargs["kallisto_quant_reference_genome_dir"])) == 0):
+        kwargs["kallisto_quant_reference_genome_dir"] = None  # don't pass anything into clean if it's empty
 
     # vk clean
     if not disable_clean:
@@ -591,7 +506,7 @@ def count(
             # eg kwargs_vk_clean['mykwarg'] = mykwarg
 
             logger.info("Running vk clean")
-            _ = vk.clean(adata_vcrs=adata_vcrs, vcrs_index=index, vcrs_t2g=t2g, technology=technology, fastqs=fastqs, reference_genome_t2g=reference_genome_t2g, k=k, qc_against_gene_matrix=qc_against_gene_matrix, account_for_strand_bias=account_for_strand_bias, strand_bias_end=strand_bias_end, read_length=read_length, gtf=gtf, mm=mm, parity=parity, parity_kb_count=parity_kb_count, out=out, chunksize=chunksize, dry_run=dry_run, overwrite=True, sort_fastqs=sort_fastqs, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir, **kwargs_vk_clean)  # kb_count_reference_genome_dir is passed in via kwargs, as is adata_reference_genome
+            _ = vk.clean(adata_vcrs=adata_vcrs, vcrs_index=index, vcrs_t2g=t2g, technology=technology, fastqs=fastqs, threads=threads, k=k, pseudobam_validation=pseudobam_validation, account_for_strand_bias=account_for_strand_bias, strand_bias_end=strand_bias_end, read_length=read_length, gtf=gtf, mm=mm, parity=parity, parity_kb_count=parity_kb_count, out=out, chunksize=chunksize, dry_run=dry_run, overwrite=True, sort_fastqs=sort_fastqs, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir, **kwargs_vk_clean)  # reference_genome_index/reference_genome_t2g, kallisto_quant_reference_genome_dir, and adata_reference_genome are passed in via kwargs
         else:
             logger.info(f"Skipping vk clean because file {file_signifying_successful_vk_clean_completion} already exists and overwrite=False")
         adata = adata_vcrs_clean_out  # for vk summarize
@@ -621,11 +536,12 @@ def count(
 
     vk_count_output_dict = {}
     vk_count_output_dict["adata_path_unprocessed"] = os.path.abspath(adata_vcrs) if os.path.isfile(os.path.abspath(adata_vcrs)) else None
-    vk_count_output_dict["adata_path_reference_genome_unprocessed"] = os.path.abspath(adata_reference_genome) if os.path.isfile(os.path.abspath(adata_reference_genome)) else None
+    vk_count_output_dict["adata_path_reference_genome_unprocessed"] = os.path.abspath(adata_reference_genome) if (adata_reference_genome and os.path.isfile(os.path.abspath(adata_reference_genome))) else None
     vk_count_output_dict["adata_path"] = os.path.abspath(adata_vcrs_clean_out) if os.path.isfile(os.path.abspath(adata_vcrs_clean_out)) else None
     vk_count_output_dict["adata_path_reference_genome"] = os.path.abspath(adata_reference_genome_clean_out) if os.path.isfile(os.path.abspath(adata_reference_genome_clean_out)) else None
 
     vk_count_output_dict["vcf"] = os.path.abspath(vcf_out) if os.path.isfile(os.path.abspath(vcf_out)) else None
     vk_count_output_dict["vk_summarize_output_dir"] = os.path.abspath(vk_summarize_out_dir) if os.path.exists(os.path.abspath(vk_summarize_out_dir)) else None
 
+    report_time_elapsed(start_time, "count")
     return vk_count_output_dict

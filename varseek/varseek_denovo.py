@@ -15,8 +15,20 @@ from tqdm import tqdm
 import pandas as pd
 import matplotlib.pyplot as plt
 import re
+from typing import Literal, Optional, Union
+
+from pydantic import BaseModel, ConfigDict, model_validator
 
 logger = logging.getLogger(__name__)
+
+from .utils import (
+    make_function_parameter_to_value_dict,
+    validate_call,
+    vk_config,
+    Parity,
+    PositiveInt,
+    NonNegativeInt,
+)
 
 from .utils.varseek_denovo_utils import (
     infer_hgvs_prefix,
@@ -30,41 +42,108 @@ from .utils.varseek_denovo_utils import (
 )
 
 
+class DenovoParams(BaseModel):
+    """Cross-field / filesystem validation for :func:`denovo`.
+
+    Per-parameter type checks live on the ``denovo`` signature (validated by
+    ``@validate_call``). This model captures the checks a single-value annotation
+    cannot express: file-extension + existence of ``sequences``/``gtf``/``regions``,
+    the ``output``/``output_tsv`` extension and overwrite-collision rules, and the
+    ``tsv_reference_type`` prefix validity. Checks that *mutate* or *derive* state the
+    body depends on (``min_counts`` reset, ``inputs`` normalization + input-type
+    detection, and the aligner-vs-biology check) intentionally remain in ``denovo``.
+    Instantiate it with the full params dict (extra keys are ignored)::
+
+        DenovoParams(**make_function_parameter_to_value_dict(1))
+    """
+
+    model_config = ConfigDict(extra="ignore", arbitrary_types_allowed=True)
+
+    sequences: object = None
+    gtf: object = None
+    regions: object = None
+    output: object = "out.vcf.gz"
+    output_tsv: object = None
+    tsv_reference_type: object = "auto"
+    overwrite: object = False
+
+    @model_validator(mode="after")
+    def _validate(self):
+        if not self.output.endswith(".vcf") and not self.output.endswith(".vcf.gz"):
+            raise ValueError("--output must end with .vcf or .vcf.gz")
+
+        if self.sequences:
+            valid_fasta_extensions = [".fa", ".fasta", ".fa.gz", ".fasta.gz", ".fna", ".fna.gz"]
+            if not any(self.sequences.endswith(ext) for ext in valid_fasta_extensions):
+                raise ValueError(f"-s/--sequences must be a FASTA file ending with {', '.join(valid_fasta_extensions)}")
+            if not os.path.isfile(self.sequences):
+                fasta_dir = os.path.dirname(self.sequences) or "."
+                recommended_command = f"gget ref -r 111 -d -od {fasta_dir} -w dna human && gunzip {self.sequences}.gz"
+                raise ValueError(f"FASTA reference '{self.sequences}' not found. Recommended command to download: {recommended_command}")
+
+        if self.gtf:
+            if not self.gtf.endswith(".gtf"):
+                raise ValueError("--gtf must be a GTF file ending with .gtf")
+            if not os.path.isfile(self.gtf):
+                gtf_dir = os.path.dirname(self.gtf) or "."
+                recommended_command = f"gget ref -r 111 -d -od {gtf_dir} -w gtf human && gunzip {self.gtf}.gz"
+                raise ValueError(f"GTF file '{self.gtf}' not found. Recommended command to download: {recommended_command}")
+
+        if self.regions:
+            if not self.regions.endswith(".bed"):
+                raise ValueError("--regions must be a BED file ending with .bed")
+            if not os.path.isfile(self.regions):
+                raise ValueError(f"regions BED file '{self.regions}' not found.")
+
+        if os.path.exists(self.output) and not self.overwrite:
+            raise ValueError(f"output file '{self.output}' already exists. Use --overwrite to overwrite.")
+
+        if self.output_tsv:
+            if not self.output_tsv.endswith(".tsv"):
+                raise ValueError("--output-tsv must end with .tsv")
+            if os.path.exists(self.output_tsv) and not self.overwrite:
+                raise ValueError(f"TSV output file '{self.output_tsv}' already exists. Use --overwrite to overwrite.")
+            infer_hgvs_prefix("chr1", reference_type=self.tsv_reference_type)
+
+        return self
+
+
+@validate_call(config=vk_config)
 def denovo(
-    inputs,
-    sequences,
-    parity="single",
-    gtf=None,
-    star_genome_index_dir="genome_index",
-    bowtie2_genome_index_prefix="bowtie2_index",
-    star_alignment_prefix="star_",
-    bowtie2_alignment_dir="bowtie2_alignments",
-    regions=None,
-    out_bam_dir=None,
-    output="out.vcf.gz",
-    output_tsv=None,
-    tsv_reference_type="auto",
-    read_length=None,
-    min_counts=3,
-    aligner="bowtie2",
-    reads_type=None,
-    reference_type="auto",
-    variant_caller="bcftools",
-    bowtie2_seed_length=None,
-    bowtie2_score_min=None,
-    include=None,
-    skip_indels=False,
-    disable_baq=False,
-    split_bam_by_n=False,
-    disable_bcftools_norm=False,
-    bcftools_call_prior=None,
-    merge_bam_files=False,
-    strip_version_numbers=False,
-    tmp_dir=None,
-    threads=1,
-    overwrite=False,
-    verbose=0,
-    quiet=False,
+    inputs: Union[str, list[str]],
+    sequences: str,
+    parity: Parity = "single",
+    gtf: Optional[str] = None,
+    star_genome_index_dir: str = "genome_index",
+    bowtie2_genome_index_prefix: str = "bowtie2_index",
+    star_alignment_prefix: str = "star_",
+    bowtie2_alignment_dir: str = "bowtie2_alignments",
+    regions: Optional[str] = None,
+    out_bam_dir: Optional[str] = None,
+    output: str = "out.vcf.gz",
+    output_tsv: Optional[str] = None,
+    tsv_reference_type: str = "auto",
+    read_length: Optional[PositiveInt] = None,
+    min_counts: int = 3,
+    aligner: Literal["STAR", "bowtie2"] = "bowtie2",
+    reads_type: Optional[str] = None,  # not a strict Literal: the body lowercases and accepts synonyms ('genomic', 'g', 'cdna', 'transcriptomic', 'c')
+    reference_type: Optional[str] = "auto",  # not a strict Literal: the body lowercases before validating
+    variant_caller: Literal["bcftools", "cigar"] = "bcftools",
+    bowtie2_seed_length: Optional[PositiveInt] = None,
+    bowtie2_score_min: Optional[str] = None,
+    include: Optional[str] = None,
+    skip_indels: bool = False,
+    disable_baq: bool = False,
+    split_bam_by_n: bool = False,
+    disable_bcftools_norm: bool = False,
+    bcftools_call_prior: Optional[str] = None,
+    merge_bam_files: bool = False,
+    strip_version_numbers: bool = False,
+    tmp_dir: Optional[str] = None,
+    threads: PositiveInt = 1,
+    overwrite: bool = False,
+    verbose: NonNegativeInt = 0,
+    quiet: bool = False,
 ):
     """
     Call de novo variants from FASTQ or BAM inputs.
@@ -114,48 +193,15 @@ def denovo(
     for tool in ["bcftools"]:
         check_tool(tool)
 
-    #* Validate flagged arguments
-    if not output.endswith(".vcf") and not output.endswith(".vcf.gz"):
-        raise ValueError("--output must end with .vcf or .vcf.gz")
-    if sequences:
-        valid_fasta_extensions = [".fa", ".fasta", ".fa.gz", ".fasta.gz", ".fna", ".fna.gz"]
-        if not any(sequences.endswith(ext) for ext in valid_fasta_extensions):
-            raise ValueError(f"-s/--sequences must be a FASTA file ending with {', '.join(valid_fasta_extensions)}")
-        if not os.path.isfile(sequences):
-            fasta_dir = os.path.dirname(sequences) or "."
-            recommended_command = f"gget ref -r 111 -d -od {fasta_dir} -w dna human && gunzip {sequences}.gz"
-            raise ValueError(f"FASTA reference '{sequences}' not found. Recommended command to download: {recommended_command}")
-    if gtf:
-        if not gtf.endswith(".gtf"):
-            raise ValueError("--gtf must be a GTF file ending with .gtf")
-        if not os.path.isfile(gtf):
-            gtf_dir = os.path.dirname(gtf) or "."
-            recommended_command = f"gget ref -r 111 -d -od {gtf_dir} -w gtf human && gunzip {gtf}.gz"
-            raise ValueError(f"GTF file '{gtf}' not found. Recommended command to download: {recommended_command}")
-    if regions:
-        if not regions.endswith(".bed"):
-            raise ValueError("--regions must be a BED file ending with .bed")
-        if not os.path.isfile(regions):
-            # recommended_command = f"awk '$3 == \"gene\" {{print $1, $4-1, $5, $10}}' OFS='\\t' {gtf} | sort -k1,1V -k2,2n -o {regions}"
-            raise ValueError(f"regions BED file '{regions}' not found.")
+    #* Validate arguments (per-parameter types on the signature via @validate_call;
+    #  cross-field / filesystem checks in DenovoParams). aligner/variant_caller/parity
+    #  are enforced by their signature types, so they need no re-check here.
+    DenovoParams(**make_function_parameter_to_value_dict(1))
+
     if min_counts < 2:
         min_counts = 0
         logger.warning("Filtering by a minimum count threshold is highly recommended. Additionally, indels observed once will not be output regardless of settings (bcftools mpileup behavior).")
-    if not aligner in ["STAR", "bowtie2"]:
-        raise ValueError("--aligner must be either 'STAR' or 'bowtie2'")
-    if not variant_caller in ["bcftools", "cigar"]:
-        raise ValueError("--variant-caller must be either 'bcftools' or 'cigar'")
-    if parity not in ["single", "paired"]:
-        raise ValueError("parity must be either 'single' or 'paired'")
-    if os.path.exists(output) and not overwrite:
-        raise ValueError(f"output file '{output}' already exists. Use --overwrite to overwrite.")
-    if output_tsv:
-        if not output_tsv.endswith(".tsv"):
-            raise ValueError("--output-tsv must end with .tsv")
-        if os.path.exists(output_tsv) and not overwrite:
-            raise ValueError(f"TSV output file '{output_tsv}' already exists. Use --overwrite to overwrite.")
-        infer_hgvs_prefix("chr1", reference_type=tsv_reference_type)
-    
+
     #* Validate inputs
     if isinstance(inputs, str):
         inputs = [inputs]

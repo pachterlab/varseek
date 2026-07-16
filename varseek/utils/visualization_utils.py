@@ -1002,7 +1002,7 @@ def plot_cdna_locations(df, start_variant_position_cdna_column=None, end_variant
             plt.show()
         plt.close()
 
-def plot_variant_types(df, variant_header_column="vcrs_header", variant_type_column = "variant_type", count_column="vcrs_count", output_file=None, show=False):
+def plot_variant_types(df, variant_header_column="vcrs_id", variant_type_column = "variant_type", count_column="vcrs_count", output_file=None, show=False):
     import seaborn as sns
     df = df.copy()
     
@@ -1038,7 +1038,7 @@ def plot_variant_types(df, variant_header_column="vcrs_header", variant_type_col
         plt.show()
     plt.close()
 
-def plot_substitution_heatmap(df, variant_header_column="vcrs_header", ref_base_column="ref_base", alt_base_column="alt_base", count_column="vcrs_count", output_file=None, show=False, plot_type="heatmap"):
+def plot_substitution_heatmap(df, variant_header_column="vcrs_id", ref_base_column="ref_base", alt_base_column="alt_base", count_column="vcrs_count", output_file=None, show=False, plot_type="heatmap"):
     import seaborn as sns
     df = df.copy()
 

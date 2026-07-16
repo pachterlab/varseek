@@ -25,7 +25,7 @@ make_new_gt = False
 store_out_in_permanent_paths = False
 threads = 2
 quality_control_fastqs = True
-qc_against_gene_matrix = False
+pseudobam_validation = False
 save_vcf = True
 chunksize = None  # None or int>0
 
@@ -76,7 +76,7 @@ def apply_file_comparison(test_path, ground_truth_path, file_type):
 # run pytest -vs tests/test_varseek_count.py::test_vk_count
 #* note: temp files will be deleted upon completion of the test or running into an error - to debug with a temp file, place a breakpoint before the error occurs
 def test_vk_count(out_dir):
-    # global ground_truth_folder, reference_folder_parent, make_new_gt, ensembl_grch37_release93_folder, vk_ref_folder, fastq_file, kb_ref_standard_workflow_folder, quality_control_fastqs, qc_against_gene_matrix
+    # global ground_truth_folder, reference_folder_parent, make_new_gt, ensembl_grch37_release93_folder, vk_ref_folder, fastq_file, kb_ref_standard_workflow_folder, quality_control_fastqs, pseudobam_validation
 
     vcrs_index = os.path.join(vk_ref_folder, "vcrs_index.idx")
     vcrs_t2g = os.path.join(vk_ref_folder, "vcrs_t2g_filtered.txt")
@@ -97,8 +97,8 @@ def test_vk_count(out_dir):
     reference_genome_index = os.path.join(kb_ref_standard_workflow_folder, "index.idx")
     reference_genome_t2g = os.path.join(kb_ref_standard_workflow_folder, "t2g.txt")
     reference_genome_f1 = os.path.join(kb_ref_standard_workflow_folder, "f1.fa")
-    if qc_against_gene_matrix and (not os.path.exists(reference_genome_index) or not os.path.exists(reference_genome_t2g)):
-        pytest.skip("qc_against_gene_matrix is True, but reference_genome_index and/or reference_genome_t2g is missing. Please make them to continue (see comments below)")
+    if pseudobam_validation and not os.path.exists(reference_genome_index):
+        pytest.skip("pseudobam_validation is True, but reference_genome_index is missing. Please make it to continue (see comments below)")
         # reference_genome_fasta = os.path.join(ensembl_grch37_release93_folder, "Homo_sapiens.GRCh37.dna.primary_assembly.fa")
         # reference_genome_gtf = os.path.join(ensembl_grch37_release93_folder, "Homo_sapiens.GRCh37.87.gtf")
         # !gget ref -w dna,gtf -r 93 --out_dir {ensembl_grch37_release93_folder} -d human_grch37 && gunzip {reference_genome_fasta}.gz && gunzip {reference_genome_gtf}.gz
@@ -119,8 +119,6 @@ def test_vk_count(out_dir):
     if make_new_gt:
         os.makedirs(ground_truth_folder, exist_ok=True)
 
-    kb_count_reference_genome_dir = out_dir / "kb_count_reference_genome_dir"
-
     vk.count(
         fastq_file,
         index=vcrs_index,
@@ -128,12 +126,11 @@ def test_vk_count(out_dir):
         technology="bulk",
         parity="single",
         out=out_dir,
-        kb_count_reference_genome_dir=kb_count_reference_genome_dir,
         k=51,
         threads=threads,
         quality_control_fastqs=quality_control_fastqs, cut_front=True, cut_tail=True,
-        reference_genome_index=reference_genome_index, reference_genome_t2g=reference_genome_t2g,
-        qc_against_gene_matrix=qc_against_gene_matrix,
+        reference_genome_index=reference_genome_index,  # forwarded to vk clean (only used when pseudobam_validation=True)
+        pseudobam_validation=pseudobam_validation,
         save_vcf=save_vcf,
         vcf_data_dataframe=vcf_data_dataframe
     )

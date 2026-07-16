@@ -670,6 +670,12 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "id_to_header_csv_out"),
     )
     parser_build.add_argument(
+        "--id_to_header_unfiltered_csv_out",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "id_to_header_unfiltered_csv_out"),
+    )
+    parser_build.add_argument(
         "--vcrs_t2g_out",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
@@ -698,34 +704,6 @@ def main():  # noqa: C901
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(build, "save_variants_updated_dataframe"),
-    )
-    parser_build.add_argument(
-        "--store_full_sequences",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "store_full_sequences"),
-    )
-    parser_build.add_argument(
-        "--translate",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "translate"),
-    )
-    parser_build.add_argument(
-        "-ts",
-        "--translate_start",
-        type=int_or_str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "translate_start"),
-    )
-    parser_build.add_argument(
-        "-te",
-        "--translate_end",
-        type=int_or_str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "translate_end"),
     )
     parser_build.add_argument(
         "--chunksize",
@@ -805,13 +783,6 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "remove_seqs_with_wt_kmers", disable=True),
     )
     parser_build.add_argument(
-        "--required_insertion_overlap_length",
-        type=int_or_str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "required_insertion_overlap_length"),
-    )
-    parser_build.add_argument(
         "--disable_merge_identical",
         dest="merge_identical",
         action="store_false",
@@ -833,11 +804,11 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "vcrs_strandedness"),
     )
     parser_build.add_argument(
-        "--disable_use_IDs",
+        "--use_IDs",
         dest="use_IDs",
-        action="store_false",
+        action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "use_IDs", disable=True),
+        help=extract_help_from_doc(build, "use_IDs"),
     )
     parser_build.add_argument(
         "--cosmic_version",
@@ -852,16 +823,17 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "cosmic_grch"),
     )
     parser_build.add_argument(
-        "--cosmic_email",
-        required=False,
+        "--disable_original_order",
+        dest="original_order",
+        action="store_false",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "cosmic_email"),
+        help=extract_help_from_doc(build, "original_order", disable=True),
     )
     parser_build.add_argument(
-        "--cosmic_password",
-        required=False,
+        "--cdna_derived_vcf",
+        action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "cosmic_password"),
+        help=extract_help_from_doc(build, "cdna_derived_vcf"),
     )
 
     # index-creation / reference arguments (kb ref is now run by vk build; formerly vk ref)
@@ -1115,12 +1087,12 @@ def main():  # noqa: C901
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(fastqpp, "failed_out"),
     )
-    # parser_fastqpp.add_argument(
-    #     "--split_reads_by_Ns_and_low_quality_bases",
-    #     action="store_true",
-    #     default=argparse.SUPPRESS,  # Remove from args if not provided
-    #     help=extract_help_from_doc(fastqpp, "split_reads_by_Ns_and_low_quality_bases"),
-    # )
+    parser_fastqpp.add_argument(
+        "--split_reads_by_Ns_and_low_quality_bases",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(fastqpp, "split_reads_by_Ns_and_low_quality_bases"),
+    )
     parser_fastqpp.add_argument(
         "--min_base_quality_for_splitting",
         type=int,
@@ -1273,24 +1245,39 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "drop_empty_columns"),
     )
     parser_clean.add_argument(
-        "--apply_dlist_correction",
+        "--pseudobam_validation",
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "apply_dlist_correction"),
+        help=extract_help_from_doc(clean, "pseudobam_validation"),
     )
     parser_clean.add_argument(
-        "--qc_against_gene_matrix",
+        "--reference_genome_index",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "reference_genome_index"),
+    )
+    parser_clean.add_argument(
+        "--check_alignment_position",
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "qc_against_gene_matrix"),
+        help=extract_help_from_doc(clean, "check_alignment_position"),
     )
-    # parser_clean.add_argument(
-    #     "--disable_qc_against_gene_matrix",
-    #     dest="qc_against_gene_matrix",
-    #     action="store_false",
-    #     default=argparse.SUPPRESS,  # Remove from args if not provided
-    #     help=extract_help_from_doc(clean, "qc_against_gene_matrix", disable=True),
-    # )
+    parser_clean.add_argument(
+        "--alignment_position_tolerance",
+        type=int,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "alignment_position_tolerance"),
+    )
+    parser_clean.add_argument(
+        "--reference_sequences_type",
+        choices=["rna", "dna"],
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "reference_sequences_type"),
+    )
+    parser_clean.add_argument(
+        "--kallisto",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "kallisto"),
+    )
     parser_clean.add_argument(
         "--disable_count_reads_that_dont_pseudoalign_to_reference_genome",
         dest="count_reads_that_dont_pseudoalign_to_reference_genome",
@@ -1299,22 +1286,10 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "count_reads_that_dont_pseudoalign_to_reference_genome", disable=True),
     )
     parser_clean.add_argument(
-        "--drop_reads_where_the_pairs_mapped_to_different_genes",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "drop_reads_where_the_pairs_mapped_to_different_genes"),
-    )
-    parser_clean.add_argument(
         "--avoid_paired_double_counting",
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(clean, "avoid_paired_double_counting"),
-    )
-    parser_clean.add_argument(
-        "--mistake_ratio",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "mistake_ratio"),
     )
     parser_clean.add_argument(
         "--account_for_strand_bias",
@@ -1426,14 +1401,6 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "gene_set_to_exclude"),
     )
     parser_clean.add_argument(
-        "-k",
-        "--k",
-        type=int,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "k"),
-    )
-    parser_clean.add_argument(
         "--disable_mm",
         dest="mm",
         action="store_false",
@@ -1504,10 +1471,10 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "kb_count_vcrs_dir"),
     )
     parser_clean.add_argument(
-        "--kb_count_reference_genome_dir",
+        "--kallisto_quant_reference_genome_dir",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "kb_count_reference_genome_dir"),
+        help=extract_help_from_doc(clean, "kallisto_quant_reference_genome_dir"),
     )
     parser_clean.add_argument(
         "--reference_genome_t2g",
@@ -1651,34 +1618,10 @@ def main():  # noqa: C901
     )
     # kwargs
     parser_clean.add_argument(
-        "--vcrs_fasta",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "vcrs_fasta"),
-    )
-    parser_clean.add_argument(
-        "--id_to_header_dataframe",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "id_to_header_dataframe"),
-    )
-    parser_clean.add_argument(
         "--variants_updated_dataframe",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(clean, "variants_updated_dataframe"),
-    )
-    parser_clean.add_argument(
-        "--dlist_fasta",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "dlist_fasta"),
-    )
-    parser_clean.add_argument(
-        "--kallisto",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "kallisto"),
     )
     parser_clean.add_argument(
         "--bustools",
@@ -1713,18 +1656,6 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "cosmic_version"),
     )
     parser_clean.add_argument(
-        "--cosmic_email",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "cosmic_email"),
-    )
-    parser_clean.add_argument(
-        "--cosmic_password",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "cosmic_password"),
-    )
-    parser_clean.add_argument(
         "--forgiveness",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
@@ -1736,12 +1667,6 @@ def main():  # noqa: C901
         action="store_false",
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(clean, "add_hgvs_breakdown_to_adata_var", disable=True),
-    )
-    parser_clean.add_argument(
-        "--skip_transcripts_without_genes",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "skip_transcripts_without_genes"),
     )
 
     # Hide the advanced `clean` parameters (defined in varseek_clean.vk_clean_hidden_from_help) from
@@ -2148,16 +2073,33 @@ def main():  # noqa: C901
         help=extract_help_from_doc(count, "k"),
     )
     parser_count.add_argument(
-        "--run_kb_count_against_reference_genome",
+        "--pseudobam_validation",
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(count, "run_kb_count_against_reference_genome"),
+        help=extract_help_from_doc(count, "pseudobam_validation"),
     )
     parser_count.add_argument(
-        "--qc_against_gene_matrix",
+        "--reference_sequences_type",
+        choices=["rna", "dna"],
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "reference_sequences_type"),
+    )
+    parser_count.add_argument(
+        "--alignment_position_tolerance",
+        type=int,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "alignment_position_tolerance"),
+    )
+    parser_count.add_argument(
+        "--check_alignment_position",
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(count, "qc_against_gene_matrix"),
+        help=extract_help_from_doc(clean, "check_alignment_position"),
+    )
+    parser_count.add_argument(
+        "--kallisto",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "kallisto"),
     )
     parser_count.add_argument(
         "--account_for_strand_bias",
@@ -2212,13 +2154,7 @@ def main():  # noqa: C901
         "--reference_genome_index",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(count, "reference_genome_index"),
-    )
-    parser_count.add_argument(
-        "--reference_genome_t2g",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(count, "reference_genome_t2g"),
+        help=extract_help_from_doc(clean, "reference_genome_index"),  # forwarded to vk clean (used by pseudobam_validation)
     )
     parser_count.add_argument(
         "--gtf",
@@ -2239,12 +2175,6 @@ def main():  # noqa: C901
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(count, "kb_count_vcrs_out_dir"),
-    )
-    parser_count.add_argument(
-        "--kb_count_reference_genome_out_dir",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(count, "kb_count_reference_genome_out_dir"),
     )
     parser_count.add_argument(
         "--vk_summarize_out_dir",

@@ -1439,7 +1439,7 @@ def vcf_to_dataframe(vcf_file, additional_columns=True, explode_alt=True, filter
 
                 if additional_columns:
                     vcf_row["QUAL"] = record.qual
-                    vcf_row["FILTER"] = (";".join(record.filter.keys()) if record.filter else None,)  # FILTER keys
+                    vcf_row["FILTER"] = ";".join(record.filter.keys()) if record.filter else None  # FILTER keys
 
                     # Add INFO fields
                     for key, value in record.info.items():
@@ -1454,6 +1454,11 @@ def vcf_to_dataframe(vcf_file, additional_columns=True, explode_alt=True, filter
 
         # Create DataFrame from the generator
         df = pd.DataFrame(generate_vcf_rows(iterator, additional_columns=additional_columns))
+        if df.empty:
+            # No records (e.g. header-only VCF): return an empty frame with the expected columns so
+            # downstream column access doesn't raise a cryptic KeyError.
+            base_cols = ["CHROM", "POS", "ID", "REF", "ALT"] + (["QUAL", "FILTER"] if additional_columns else [])
+            return pd.DataFrame(columns=base_cols)
         df['CHROM'] = df['CHROM'].astype('category')
         # df['POS'] = df['POS'].astype('Int64')  # leave commented out - I do this later when I add the variant column
 
@@ -1539,13 +1544,22 @@ def add_variant_column_to_vcf_derived_df(sample_vcf_df, var_column="variant", cd
     sample_vcf_df["ALT_first_base_trimmed"] = sample_vcf_df["ALT"].str[1:]
     # sample_vcf_df["ALT_last_base_trimmed"] = sample_vcf_df["ALT"].str[:-1]
 
+    # A deletion at POS 1 can be encoded two ways in VCF: left-anchored (ALT == REF[0]; the kept base
+    # is the FIRST base, so positions 2..REF_len are deleted) or right-anchored (ALT == REF[-1]; the kept
+    # base is the LAST base, so positions 1..REF_len-1 are deleted). At POS != 1 standard VCF is always
+    # left-anchored (handled by the start=POS+1 branches). Only POS 1 needs the anchor to be detected.
+    sample_vcf_df["deletion_left_anchored_at_1"] = sample_vcf_df["ALT"] == sample_vcf_df["REF"].str[0]
+    sample_vcf_df["end_POS_for_multibase_deletion_left_anchored_at_1"] = sample_vcf_df["REF_len"].astype(str)
+
     # Define conditions
     conditions = [
         sample_vcf_df["variant_type"] == "substitution",  # Substitution
         (sample_vcf_df["variant_type"] == "deletion") & (sample_vcf_df["REF_len"] == 2) & (sample_vcf_df["POS"] != 1),  # Single base deletion
         (sample_vcf_df["variant_type"] == "deletion") & (sample_vcf_df["REF_len"] > 2) & (sample_vcf_df["POS"] != 1),  # Multi base deletion
-        (sample_vcf_df["variant_type"] == "deletion") & (sample_vcf_df["REF_len"] == 2) & (sample_vcf_df["POS"] == 1),  # Single base deletion starting at 1
-        (sample_vcf_df["variant_type"] == "deletion") & (sample_vcf_df["REF_len"] > 2) & (sample_vcf_df["POS"] == 1),  # Multi base deletion starting at 1
+        (sample_vcf_df["variant_type"] == "deletion") & (sample_vcf_df["REF_len"] == 2) & (sample_vcf_df["POS"] == 1) & (~sample_vcf_df["deletion_left_anchored_at_1"]),  # Single base right-anchored deletion at POS 1
+        (sample_vcf_df["variant_type"] == "deletion") & (sample_vcf_df["REF_len"] > 2) & (sample_vcf_df["POS"] == 1) & (~sample_vcf_df["deletion_left_anchored_at_1"]),  # Multi base right-anchored deletion at POS 1
+        (sample_vcf_df["variant_type"] == "deletion") & (sample_vcf_df["REF_len"] == 2) & (sample_vcf_df["POS"] == 1) & (sample_vcf_df["deletion_left_anchored_at_1"]),  # Single base left-anchored deletion at POS 1
+        (sample_vcf_df["variant_type"] == "deletion") & (sample_vcf_df["REF_len"] > 2) & (sample_vcf_df["POS"] == 1) & (sample_vcf_df["deletion_left_anchored_at_1"]),  # Multi base left-anchored deletion at POS 1
         (sample_vcf_df["variant_type"] == "insertion") & (sample_vcf_df["POS"] != 1),  # Insertion
         (sample_vcf_df["variant_type"] == "insertion") & (sample_vcf_df["POS"] == 1),  # Insertion starting at 1
         sample_vcf_df["variant_type"] == "delins",  # Delins
@@ -1561,8 +1575,10 @@ def add_variant_column_to_vcf_derived_df(sample_vcf_df, var_column="variant", cd
         "g." + sample_vcf_df["POS"] + sample_vcf_df["REF"] + ">" + sample_vcf_df["ALT"],  # Substitution
         "g." + sample_vcf_df["start_POS_deletion"] + "del",  # Single base deletion
         "g." + sample_vcf_df["start_POS_deletion"] + "_" + sample_vcf_df["end_POS_for_multibase_deletion_and_delins_and_inversion"] + "del",  # Multi base deletion
-        "g.1del",  # Single base deletion starting at 1
-        "g.1_" + sample_vcf_df["end_POS_for_multibase_deletion_starting_at_1"] + "del",  # Multi base deletion starting at 1
+        "g.1del",  # Single base right-anchored deletion at POS 1 (delete position 1)
+        "g.1_" + sample_vcf_df["end_POS_for_multibase_deletion_starting_at_1"] + "del",  # Multi base right-anchored deletion at POS 1 (delete positions 1..REF_len-1)
+        "g.2del",  # Single base left-anchored deletion at POS 1 (delete position 2)
+        "g.2_" + sample_vcf_df["end_POS_for_multibase_deletion_left_anchored_at_1"] + "del",  # Multi base left-anchored deletion at POS 1 (delete positions 2..REF_len)
         "g." + sample_vcf_df["POS"] + "_" + sample_vcf_df["end_POS_for_insertion"] + "ins" + sample_vcf_df["ALT_first_base_trimmed"],  # Insertion
         "g.unknown",  # Insertion starting at 1  # "g.0_1ins" + sample_vcf_df["ALT_last_base_trimmed"],
         "g." + sample_vcf_df["POS"] + "_" + sample_vcf_df["end_POS_for_multibase_deletion_and_delins_and_inversion"] + "delins" + sample_vcf_df["ALT"],  # Delins
@@ -1572,7 +1588,7 @@ def add_variant_column_to_vcf_derived_df(sample_vcf_df, var_column="variant", cd
 
     # Apply np.select
     sample_vcf_df[var_column] = np.select(conditions, choices, default="g.unknown")  # Default to None if no match
-    sample_vcf_df.drop(columns=["REF_len", "ALT_len", "ALT_RC", "start_POS_deletion", "start_POS_deletion_starting_at_1", "end_POS_for_multibase_deletion_and_delins_and_inversion", "end_POS_for_multibase_deletion_starting_at_1", "end_POS_for_insertion", "ALT_first_base_trimmed", "ALT_last_base_trimmed"], inplace=True, errors="ignore")
+    sample_vcf_df.drop(columns=["REF_len", "ALT_len", "ALT_RC", "start_POS_deletion", "start_POS_deletion_starting_at_1", "end_POS_for_multibase_deletion_and_delins_and_inversion", "end_POS_for_multibase_deletion_starting_at_1", "end_POS_for_insertion", "ALT_first_base_trimmed", "ALT_last_base_trimmed", "deletion_left_anchored_at_1", "end_POS_for_multibase_deletion_left_anchored_at_1"], inplace=True, errors="ignore")
 
     sample_vcf_df["POS"] = sample_vcf_df["POS"].astype('Int64')
 
@@ -1589,6 +1605,11 @@ def update_vcf_derived_df_with_multibase_duplication(mutations, seq_dict, seq_id
 
     # Step 2: Compute the start position for comparison (only for masked rows)
     mutations.loc[mask, "start_pos"] = mutations.loc[mask, "POS"].astype(int) - mutations.loc[mask, "ALT_len"] + 2
+
+    # A duplicated region cannot begin before position 1; when start_pos < 1 (insertion too close to the
+    # sequence start) the back-reference slice below would use a negative index that silently wraps to the
+    # end of the sequence, so exclude those rows from the duplication reclassification.
+    mask = mask & (mutations["start_pos"] >= 1)
 
     # Step 3: Extract sequence slice only for masked rows
     mutations.loc[mask, "seq_slice"] = mutations.loc[mask].apply(

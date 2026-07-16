@@ -116,7 +116,7 @@ def test_cleaned_adata_to_vcf_with_samples(out_dir):
         "REF": ["A", "A", "A"],
         "ALT": ["C", "G", "C"],
         "QUAL": [None, None, None],
-        "FILTER": [("PASS",), ("PASS",), ("PASS",)],
+        "FILTER": ["PASS", "PASS", "PASS"],
         "INFO_AO": [1, 4, 99],
         "INFO_NS": [1, 2, 3],
         "sample_1_AO": [0, 1, 1],

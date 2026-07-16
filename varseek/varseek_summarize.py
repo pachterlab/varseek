@@ -63,6 +63,19 @@ vk_summarize_hidden_from_help = {
     "plots_folder",
 }
 
+# Documentation for the advanced `summarize` parameters. These are real, fully typed
+# arguments on the `summarize` signature (validated by @validate_call like every other
+# parameter), but they are deliberately kept out of the public `summarize` docstring
+# (and therefore out of help(vk.summarize) / the Sphinx site) and out of `vk summarize --help`
+# (via vk_summarize_hidden_from_help) to keep the common interface uncluttered. The text
+# lives here so maintainers still have it close to the definition.
+SUMMARIZE_ADVANCED_PARAMS_DOC = """
+# # Advanced parameters (real `summarize` arguments, but hidden from the `vk summarize --help` CLI):
+- stats_file                        (str) Path to the stats file. Default: `out`/varseek_summarize_stats.txt
+- specific_stats_folder             (str) Path to the specific stats folder. Default: `out`/specific_stats
+- plots_folder                      (str) Path to the plots folder. Default: `out`/plots
+"""
+
 
 class SummarizeParams(BaseModel):
     """Validation for :func:`summarize` not covered by the typed signature.
@@ -90,7 +103,6 @@ class SummarizeParams(BaseModel):
         return self
 
 
-@report_time_elapsed
 @validate_call(config=vk_config)
 def summarize(
     adata: object,
@@ -148,11 +160,12 @@ def summarize(
     - read_length                      (int) Read length for the FASTQ data. Only used to mark a vertical line on the plot. Default: None
 
 
-    # # Advanced parameters (real `summarize` arguments, but hidden from the `vk summarize --help` CLI):
-    - stats_file                        (str) Path to the stats file. Default: `out`/varseek_summarize_stats.txt
-    - specific_stats_folder             (str) Path to the specific stats folder. Default: `out`/specific_stats
-    - plots_folder                      (str) Path to the plots folder. Default: `out`/plots
+    NOTE: `summarize` also accepts several advanced/niche parameters that are intentionally omitted here (and from
+    `vk summarize --help`). They are fully typed and validated like any other argument; see SUMMARIZE_ADVANCED_PARAMS_DOC
+    in varseek/varseek_summarize.py for their documentation.
     """
+    start_time = time.perf_counter()
+
     # * 1. logger
     if save_logs and not log_out_dir:
         log_out_dir = os.path.join(out, "logs")
@@ -168,6 +181,7 @@ def summarize(
     # * 3. Dry-run
     if dry_run:
         print(get_varseek_dry_run(params_dict, function_name="summarize"))
+        report_time_elapsed(start_time, "summarize")
         return
 
     # * 4. Save params to config file and run info file
@@ -208,22 +222,27 @@ def summarize(
     else:
         raise ValueError("adata must be a string (file path) or an AnnData object.")
 
-    # * 9. Normalize/derive the var-level columns we rely on (works even if vk clean wasn't run)
-    if "vcrs_count" not in adata.var.columns:
-        adata.var["vcrs_count"] = _as_1d(adata.X.sum(axis=0))
-    adata.var["vcrs_count"] = adata.var["vcrs_count"].astype(float)
-    if "vcrs_detected" not in adata.var.columns:
-        adata.var["vcrs_detected"] = adata.var["vcrs_count"] > 0
+    # * 9. Normalize/derive the var-level columns we rely on (works even if vk clean wasn't run,
+    #      and whether or not vk clean's rename_vcrs_to_variant renamed vcrs_* -> variant_*)
+    count_col = "variant_count" if "variant_count" in adata.var.columns else "vcrs_count"
+    detected_col = "variant_detected" if "variant_detected" in adata.var.columns else "vcrs_detected"
+    if count_col not in adata.var.columns:
+        adata.var[count_col] = _as_1d(adata.X.sum(axis=0))
+    adata.var[count_col] = adata.var[count_col].astype(float)
+    if detected_col not in adata.var.columns:
+        adata.var[detected_col] = adata.var[count_col] > 0
     else:
-        adata.var["vcrs_detected"] = adata.var["vcrs_detected"].astype(bool)
+        adata.var[detected_col] = adata.var[detected_col].astype(bool)
     # number of observations in which each variant is detected (recompute to be safe)
     adata.var["number_obs"] = _detected_per_var(adata.X).astype(int)
 
     # display name for each variant (prefer gene-annotated header, then HGVS header, then id/index)
     if "vcrs_header_with_gene_name" in adata.var.columns:
         adata.var["_display_name"] = adata.var["vcrs_header_with_gene_name"].astype(str)
-    elif "vcrs_header" in adata.var.columns:
-        adata.var["_display_name"] = adata.var["vcrs_header"].astype(str)
+    elif "variant_header_with_gene_name" in adata.var.columns:
+        adata.var["_display_name"] = adata.var["variant_header_with_gene_name"].astype(str)
+    elif "vcrs_id" in adata.var.columns:
+        adata.var["_display_name"] = adata.var["vcrs_id"].astype(str)
     else:
         adata.var["_display_name"] = adata.var.index.astype(str)
 
@@ -249,7 +268,7 @@ def summarize(
     variants_per_obs = _variants_detected_per_obs(adata.X)
 
     n_variants_panel = int(adata.n_vars)
-    n_variants_detected = int((adata.var["vcrs_count"] > 0).sum())
+    n_variants_detected = int((adata.var[count_col] > 0).sum())
     n_obs = int(adata.n_obs)
     total_counts = float(counts_per_obs.sum())
     pct_variants_detected = (100.0 * n_variants_detected / n_variants_panel) if n_variants_panel else 0.0
@@ -286,27 +305,27 @@ def summarize(
     report_lines.append(f"  {_distribution_line(counts_per_obs)}")
 
     # Top variants by cumulative counts
-    var_sorted_by_count = adata.var.sort_values(["vcrs_count", "number_obs"], ascending=False)
-    var_detected = var_sorted_by_count.loc[var_sorted_by_count["vcrs_count"] > 0]
+    var_sorted_by_count = adata.var.sort_values([count_col, "number_obs"], ascending=False)
+    var_detected = var_sorted_by_count.loc[var_sorted_by_count[count_col] > 0]
     top_by_count = var_detected.head(top_values)
     report_lines.append("")
     report_lines.append(f"Top {min(top_values, len(var_detected))} variants by total counts")
     report_lines.append(
         _top_table(
-            [(row["_display_name"], _fmt_int(row["vcrs_count"]), _fmt_int(row["number_obs"])) for _, row in top_by_count.iterrows()],
+            [(row["_display_name"], _fmt_int(row[count_col]), _fmt_int(row["number_obs"])) for _, row in top_by_count.iterrows()],
             ["variant", "counts", obs_label_plural],
         )
     )
 
     # Top variants by prevalence (number of cells/samples detected)
-    var_sorted_by_prev = adata.var.sort_values(["number_obs", "vcrs_count"], ascending=False)
+    var_sorted_by_prev = adata.var.sort_values(["number_obs", count_col], ascending=False)
     var_prev_detected = var_sorted_by_prev.loc[var_sorted_by_prev["number_obs"] > 0]
     top_by_prev = var_prev_detected.head(top_values)
     report_lines.append("")
     report_lines.append(f"Top {min(top_values, len(var_prev_detected))} variants by prevalence (# {obs_label_plural} detected)")
     report_lines.append(
         _top_table(
-            [(row["_display_name"], _fmt_int(row["number_obs"]), _fmt_int(row["vcrs_count"])) for _, row in top_by_prev.iterrows()],
+            [(row["_display_name"], _fmt_int(row["number_obs"]), _fmt_int(row[count_col])) for _, row in top_by_prev.iterrows()],
             ["variant", obs_label_plural, "counts"],
         )
     )
@@ -314,7 +333,7 @@ def summarize(
     # Gene-level stats
     genes_df = pd.DataFrame(columns=["n_variants_detected", "total_counts"])
     if gene_column is not None:
-        genes_df = _explode_gene_stats(var_detected, gene_column, count_column="vcrs_count")
+        genes_df = _explode_gene_stats(var_detected, gene_column, count_column=count_col)
         report_lines.append("")
         report_lines.append(f"Genes with detected variants: {_fmt_int(len(genes_df))}")
         report_lines.append(f"Top {min(top_values, len(genes_df))} genes by number of detected variants")
@@ -363,12 +382,12 @@ def summarize(
         f.write(report + "\n")
 
     # * 12. Write detailed per-item TSV tables
-    var_detected[["_display_name", "vcrs_count", "number_obs"]].rename(
-        columns={"_display_name": "variant", "vcrs_count": "total_counts", "number_obs": f"n_{obs_label_plural}_detected"}
+    var_detected[["_display_name", count_col, "number_obs"]].rename(
+        columns={"_display_name": "variant", count_col: "total_counts", "number_obs": f"n_{obs_label_plural}_detected"}
     ).to_csv(os.path.join(specific_stats_folder, "variants_by_count.tsv"), sep="\t", index=True, index_label="vcrs_id")
 
-    var_prev_detected[["_display_name", "number_obs", "vcrs_count"]].rename(
-        columns={"_display_name": "variant", "number_obs": f"n_{obs_label_plural}_detected", "vcrs_count": "total_counts"}
+    var_prev_detected[["_display_name", "number_obs", count_col]].rename(
+        columns={"_display_name": "variant", "number_obs": f"n_{obs_label_plural}_detected", count_col: "total_counts"}
     ).to_csv(os.path.join(specific_stats_folder, "variants_by_prevalence.tsv"), sep="\t", index=True, index_label="vcrs_id")
 
     adata.obs[["n_variants_detected", "total_variant_counts"]].to_csv(
@@ -385,37 +404,38 @@ def summarize(
     plot_histogram_with_zero_value(adata.obs, col="total_variant_counts", save_path=os.path.join(plots_folder, f"counts_per_{obs_label}_histogram.png"))
     # top variants by counts (with and without names) - only meaningful if something was detected
     if n_variants_detected > 0:
-        plot_items_descending_order(adata.var, x_column="_display_name", y_column="vcrs_count", item_range=(0, top_values), show_names=True, xlabel="Variant", title=f"Top {top_values} Variants by Counts across All {obs_label_plural.capitalize()}", figsize=(15, 7), show=False, save_path=os.path.join(plots_folder, f"top_{top_values}_variants_descending_plot.png"))
-        plot_items_descending_order(adata.var, x_column="_display_name", y_column="vcrs_count", show_names=False, xlabel="Variant Index", title=f"Variants by Counts across All {obs_label_plural.capitalize()}", figsize=(15, 7), show=False, save_path=os.path.join(plots_folder, "variants_descending_plot.png"))
-    plot_histogram_with_zero_value(adata.var, col="vcrs_count", save_path=os.path.join(plots_folder, "variants_histogram.png"))
+        plot_items_descending_order(adata.var, x_column="_display_name", y_column=count_col, item_range=(0, top_values), show_names=True, xlabel="Variant", title=f"Top {top_values} Variants by Counts across All {obs_label_plural.capitalize()}", figsize=(15, 7), show=False, save_path=os.path.join(plots_folder, f"top_{top_values}_variants_descending_plot.png"))
+        plot_items_descending_order(adata.var, x_column="_display_name", y_column=count_col, show_names=False, xlabel="Variant Index", title=f"Variants by Counts across All {obs_label_plural.capitalize()}", figsize=(15, 7), show=False, save_path=os.path.join(plots_folder, "variants_descending_plot.png"))
+    plot_histogram_with_zero_value(adata.var, col=count_col, save_path=os.path.join(plots_folder, "variants_histogram.png"))
     # top genes by number of detected variants
     if gene_column is not None and not genes_df.empty:
         genes_plot_df = genes_df.reset_index()
         plot_items_descending_order(genes_plot_df, x_column="gene", y_column="n_variants_detected", item_range=(0, top_values), show_names=True, xlabel="Gene", title=f"Top {top_values} Genes by Number of Detected Variants", figsize=(15, 7), show=False, save_path=os.path.join(plots_folder, f"top_{top_values}_genes_by_variant_count.png"))
 
-    # * 14. Specialized plots (require HGVS-format vcrs_header, e.g. after vk clean)
+    # * 14. Specialized plots (require HGVS-format vcrs_id, e.g. after vk clean)
     skip_plots = False
-    if "vcrs_header" not in adata.var.columns:
+    if "vcrs_id" not in adata.var.columns:
         skip_plots = True
     else:
-        first_vcrs_header = str(adata.var["vcrs_header"].iloc[0]).split(";")[0]
+        first_vcrs_header = str(adata.var["vcrs_id"].iloc[0]).split(";")[0]
         if not re.fullmatch(HGVS_pattern_general, first_vcrs_header):
-            logger.warning("Please run vk clean, or add a column vcrs_header to adata.var with the variant headers in HGVS format to make the specialized plots.")
+            logger.warning("Please run vk clean, or add a column vcrs_id to adata.var with the variant headers in HGVS format to make the specialized plots.")
             skip_plots = True
 
     if not skip_plots:
-        adata_var_with_alignment = adata.var.loc[adata.var["vcrs_count"] > 0].copy()
+        adata_var_with_alignment = adata.var.loc[adata.var[count_col] > 0].copy()
         if plot_strand_bias:
             if seq_id_cdna_column not in adata_var_with_alignment.columns or start_variant_position_cdna_column not in adata_var_with_alignment.columns or end_variant_position_cdna_column not in adata_var_with_alignment.columns:
                 logger.info("Adding information from variant header to a copy of adata.var. Note: this assumes vcrs_header transcripts and positions are accurate for cDNA")
-                adata_var_with_alignment = add_information_from_variant_header_to_adata_var_exploded(adata_var_with_alignment, vcrs_header_individual_column="vcrs_header", seq_id_column=seq_id_cdna_column, var_column="variant", variant_source="placeholder", include_position_information=True, include_gene_information=False)
+                adata_var_with_alignment = add_information_from_variant_header_to_adata_var_exploded(adata_var_with_alignment, vcrs_header_individual_column="vcrs_id", seq_id_column=seq_id_cdna_column, var_column="variant", variant_source="placeholder", include_position_information=True, include_gene_information=False)
                 adata_var_with_alignment.rename(columns={"start_variant_position": start_variant_position_cdna_column, "end_variant_position": end_variant_position_cdna_column}, inplace=True)
 
             plot_cdna_locations(adata_var_with_alignment, cdna_fasta=cdna_fasta, seq_id_column=seq_id_cdna_column, start_variant_position_cdna_column=start_variant_position_cdna_column, end_variant_position_cdna_column=end_variant_position_cdna_column, sequence_side=strand_bias_end, log_x=True, log_y=True, read_length_cutoff=read_length, save_path=os.path.join(plots_folder, f"strand_bias_{strand_bias_end}.png"))
 
-        plot_substitution_heatmap(adata_var_with_alignment, variant_header_column="vcrs_header", count_column="vcrs_count", output_file=os.path.join(plots_folder, "substitutions_with_vcrs_count.png"), show=False, plot_type="bar")
-        plot_substitution_heatmap(adata_var_with_alignment, variant_header_column="vcrs_header", count_column="vcrs_detected", output_file=os.path.join(plots_folder, "substitutions_with_vcrs_detected.png"), show=False, plot_type="bar")
-        plot_variant_types(adata_var_with_alignment, variant_header_column="vcrs_header", variant_type_column="variant_type", count_column="vcrs_count", output_file=os.path.join(plots_folder, "variant_type_with_vcrs_count.png"), show=False)
-        plot_variant_types(adata_var_with_alignment, variant_header_column="vcrs_header", variant_type_column="variant_type", count_column="vcrs_detected", output_file=os.path.join(plots_folder, "variant_type_with_vcrs_detected.png"), show=False)
+        plot_substitution_heatmap(adata_var_with_alignment, variant_header_column="vcrs_id", count_column=count_col, output_file=os.path.join(plots_folder, "substitutions_with_vcrs_count.png"), show=False, plot_type="bar")
+        plot_substitution_heatmap(adata_var_with_alignment, variant_header_column="vcrs_id", count_column=detected_col, output_file=os.path.join(plots_folder, "substitutions_with_vcrs_detected.png"), show=False, plot_type="bar")
+        plot_variant_types(adata_var_with_alignment, variant_header_column="vcrs_id", variant_type_column="variant_type", count_column=count_col, output_file=os.path.join(plots_folder, "variant_type_with_vcrs_count.png"), show=False)
+        plot_variant_types(adata_var_with_alignment, variant_header_column="vcrs_id", variant_type_column="variant_type", count_column=detected_col, output_file=os.path.join(plots_folder, "variant_type_with_vcrs_detected.png"), show=False)
 
+    report_time_elapsed(start_time, "summarize")
     return adata

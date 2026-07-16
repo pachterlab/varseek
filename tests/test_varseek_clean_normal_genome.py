@@ -12,7 +12,9 @@ from pathlib import Path
 import sys
 
 from varseek.utils import (
-    adjust_variant_adata_by_normal_gene_matrix
+    adjust_variant_adata_by_normal_gene_matrix,
+    adjust_variant_adata_by_pseudobam,
+    correct_adata_barcodes_for_running_paired_data_in_single_mode,
 )
 
 from .conftest import (
@@ -47,6 +49,12 @@ def bustools():
     bustools_binary_path_command = "kb info | grep 'bustools:' | awk '{print $3}' | sed 's/[()]//g'"
     bustools = subprocess.run(bustools_binary_path_command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, text=True, check=True).stdout.strip()
     return bustools
+
+@pytest.fixture
+def kallisto():
+    kallisto_binary_path_command = "kb info | grep 'kallisto:' | awk '{print $3}' | sed 's/[()]//g'"
+    kallisto = subprocess.run(kallisto_binary_path_command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, text=True, check=True).stdout.strip()
+    return kallisto
 
 @pytest.fixture
 def NG_vcrs_reference_fasta(tmp_path):
@@ -234,7 +242,7 @@ def test_adjust_variant_adata_by_normal_gene_matrix_bulk_single(out_dir, NG_vcrs
         kb_count_command_normal.insert(2, "--parity")
     subprocess.run(kb_count_command_normal, check=True)
 
-    adata = adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir=kb_count_out_vcrs, kb_count_reference_genome_dir=kb_count_out_normal, fastq_file_list=fastqs, technology=technology, t2g_standard=NG_normal_reference_t2g, adata_output_path=None, mm=mm, parity=parity, bustools=bustools, fastq_sorting_check_only=True, save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=count_reads_that_dont_pseudoalign_to_reference_genome, variant_source="transcriptome", add_fastq_headers=True)
+    adata = adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir=kb_count_out_vcrs, kallisto_quant_reference_genome_dir=kb_count_out_normal, fastq_file_list=fastqs, technology=technology, t2g_standard=NG_normal_reference_t2g, adata_output_path=None, mm=mm, parity=parity, bustools=bustools, fastq_sorting_check_only=True, save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=count_reads_that_dont_pseudoalign_to_reference_genome, variant_source="transcriptome", add_fastq_headers=True)
 
     # Convert adata.X to a DataFrame (if not already)
     matrix_df = pd.DataFrame(adata.X.toarray() if hasattr(adata.X, "toarray") else adata.X, 
@@ -320,7 +328,7 @@ def test_adjust_variant_adata_by_normal_gene_matrix_bulk_paired_but_run_as_singl
         kb_count_command_normal.insert(2, "--parity")
     subprocess.run(kb_count_command_normal, check=True)
 
-    adata = adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir=kb_count_out_vcrs, kb_count_reference_genome_dir=kb_count_out_normal, fastq_file_list=fastqs, technology=technology, t2g_standard=NG_normal_reference_t2g, adata_output_path=None, mm=mm, parity=parity, bustools=bustools, fastq_sorting_check_only=True, save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=count_reads_that_dont_pseudoalign_to_reference_genome, variant_source="transcriptome", add_fastq_headers=True)
+    adata = adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir=kb_count_out_vcrs, kallisto_quant_reference_genome_dir=kb_count_out_normal, fastq_file_list=fastqs, technology=technology, t2g_standard=NG_normal_reference_t2g, adata_output_path=None, mm=mm, parity=parity, bustools=bustools, fastq_sorting_check_only=True, save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=count_reads_that_dont_pseudoalign_to_reference_genome, variant_source="transcriptome", add_fastq_headers=True)
 
     # Convert adata.X to a DataFrame (if not already)
     matrix_df = pd.DataFrame(adata.X.toarray() if hasattr(adata.X, "toarray") else adata.X, 
@@ -421,7 +429,7 @@ def test_adjust_variant_adata_by_normal_gene_matrix_bulk_mm(out_dir, NG_vcrs_ref
         kb_count_command_normal.insert(2, "--parity")
     subprocess.run(kb_count_command_normal, check=True)
 
-    adata = adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir=kb_count_out_vcrs, kb_count_reference_genome_dir=kb_count_out_normal, fastq_file_list=fastqs, technology=technology, t2g_standard=NG_normal_reference_t2g, adata_output_path=None, mm=mm, parity=parity, bustools=bustools, fastq_sorting_check_only=True, save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=count_reads_that_dont_pseudoalign_to_reference_genome, variant_source="transcriptome", add_fastq_headers=True)
+    adata = adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir=kb_count_out_vcrs, kallisto_quant_reference_genome_dir=kb_count_out_normal, fastq_file_list=fastqs, technology=technology, t2g_standard=NG_normal_reference_t2g, adata_output_path=None, mm=mm, parity=parity, bustools=bustools, fastq_sorting_check_only=True, save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=count_reads_that_dont_pseudoalign_to_reference_genome, variant_source="transcriptome", add_fastq_headers=True)
 
     # Convert adata.X to a DataFrame (if not already)
     matrix_df = pd.DataFrame(adata.X.toarray() if hasattr(adata.X, "toarray") else adata.X, 
@@ -522,7 +530,7 @@ def test_adjust_variant_adata_by_normal_gene_matrix_bulk_toss_empty(out_dir, NG_
         kb_count_command_normal.insert(2, "--parity")
     subprocess.run(kb_count_command_normal, check=True)
 
-    adata = adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir=kb_count_out_vcrs, kb_count_reference_genome_dir=kb_count_out_normal, fastq_file_list=fastqs, technology=technology, t2g_standard=NG_normal_reference_t2g, adata_output_path=None, mm=mm, parity=parity, bustools=bustools, fastq_sorting_check_only=True, save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=count_reads_that_dont_pseudoalign_to_reference_genome, variant_source="transcriptome", add_fastq_headers=True)
+    adata = adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir=kb_count_out_vcrs, kallisto_quant_reference_genome_dir=kb_count_out_normal, fastq_file_list=fastqs, technology=technology, t2g_standard=NG_normal_reference_t2g, adata_output_path=None, mm=mm, parity=parity, bustools=bustools, fastq_sorting_check_only=True, save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=count_reads_that_dont_pseudoalign_to_reference_genome, variant_source="transcriptome", add_fastq_headers=True)
 
     # Convert adata.X to a DataFrame (if not already)
     matrix_df = pd.DataFrame(adata.X.toarray() if hasattr(adata.X, "toarray") else adata.X, 
@@ -834,7 +842,7 @@ def test_adjust_variant_adata_by_normal_gene_matrix_10x(out_dir, NG_vcrs_referen
         kb_count_command_normal.insert(2, "--parity")
     subprocess.run(kb_count_command_normal, check=True)
 
-    adata = adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir=kb_count_out_vcrs, kb_count_reference_genome_dir=kb_count_out_normal, fastq_file_list=fastqs, technology=technology, t2g_standard=NG_normal_reference_t2g_sc, adata_output_path=None, mm=mm, parity=parity, bustools=bustools, fastq_sorting_check_only=True, save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=count_reads_that_dont_pseudoalign_to_reference_genome, variant_source="transcriptome", add_fastq_headers=True)
+    adata = adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir=kb_count_out_vcrs, kallisto_quant_reference_genome_dir=kb_count_out_normal, fastq_file_list=fastqs, technology=technology, t2g_standard=NG_normal_reference_t2g_sc, adata_output_path=None, mm=mm, parity=parity, bustools=bustools, fastq_sorting_check_only=True, save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=count_reads_that_dont_pseudoalign_to_reference_genome, variant_source="transcriptome", add_fastq_headers=True)
 
     # Convert adata.X to a DataFrame (if not already)
     matrix_df = pd.DataFrame(adata.X.toarray() if hasattr(adata.X, "toarray") else adata.X, 
@@ -893,3 +901,145 @@ def test_adjust_variant_adata_by_normal_gene_matrix_10x(out_dir, NG_vcrs_referen
 
     assert read_to_ref_dict_vcrs == read_to_ref_dict_vcrs_gt  # from BUS file
     assert matrix_df.equals(matrix_df_gt)  # from adata
+
+def test_adjust_variant_adata_by_pseudobam_bulk_single(out_dir, NG_vcrs_reference_fasta, NG_vcrs_reference_t2g, NG_vcrs_reference_index, NG_normal_reference_fasta, NG_normal_reference_t2g, NG_normal_reference_index, NG_fastq_bulk_1, bustools, kallisto):
+    """The pseudobam QC (kallisto quant --pseudobam) should reproduce the gene-matrix result on the
+    bulk single-end case: reads are kept only where their true alignment to the normal reference is
+    consistent with their assigned VCRS, and multi-VCRS reads have their EC narrowed to the
+    consistent variant(s)."""
+    technology = "BULK"
+    mm = False
+    parity = "single"
+    count_reads_that_dont_pseudoalign_to_reference_genome = True
+
+    fastqs = [str(NG_fastq_bulk_1)]
+
+    kb_count_out_vcrs = out_dir / "kb_count_vcrs"
+    kb_count_command_vcrs = ["kb", "count", "-t", "2", "-k", "31", "-i", str(NG_vcrs_reference_index), "-g", str(NG_vcrs_reference_t2g), "-x", technology, "--num", "--h5ad", "--parity", parity, "-o", str(kb_count_out_vcrs)] + fastqs
+    subprocess.run(kb_count_command_vcrs, check=True)
+
+    adata_vcrs_path = kb_count_out_vcrs / "counts_unfiltered" / "adata.h5ad"
+
+    adata = adjust_variant_adata_by_pseudobam(
+        kb_count_vcrs_dir=str(kb_count_out_vcrs),
+        reference_genome_index=str(NG_normal_reference_index),
+        technology=technology,
+        adata=str(adata_vcrs_path),
+        fastq_file_list=fastqs,
+        parity=parity,
+        mm=mm,
+        bustools=bustools,
+        kallisto=kallisto,
+        variant_source="transcriptome",
+        reference_sequences_type="rna",
+        vcrs_t2g=str(NG_vcrs_reference_t2g),
+        count_reads_that_dont_pseudoalign_to_reference_genome=count_reads_that_dont_pseudoalign_to_reference_genome,
+        check_alignment_position=False,
+    )
+
+    matrix_df = pd.DataFrame(adata.X.toarray() if hasattr(adata.X, "toarray") else adata.X,
+                             index=adata.obs.index, columns=adata.var.index)
+
+    # same ground truth as the gene-matrix bulk-single test:
+    #  read0 (VCRS ENST1, aligns ENST1)  -> ENST1 +1
+    #  read1 (VCRS ENST3, aligns ENST4)  -> dropped (inconsistent)
+    #  read2 (VCRS ENST1, aligns ENST1/2)-> ENST1 +1
+    #  read3 (VCRS ENST5+ENST6, aligns both) -> kept but 2-gene EC, tossed under mm=False
+    #  read4 (VCRS ENST7+ENST8, aligns ENST7 only) -> EC narrowed to ENST7 -> ENST7 +1
+    #  read5 (VCRS ENST9, aligns nowhere) -> kept (count_reads_that_dont_pseudoalign) -> ENST9 +1
+    count_matrix_data_gt = {
+        "AAAAAAAAAAAAAAAA": {"ENST1:c.1mut": 2, "ENST2:c.1mut": 0, "ENST3:c.1mut": 0, "ENST4:c.1mut": 0, "ENST5:c.1mut": 0, "ENST6:c.1mut": 0, "ENST7:c.1mut": 1, "ENST8:c.1mut": 0, "ENST9:c.1mut": 1},
+    }
+    matrix_df_gt = pd.DataFrame(count_matrix_data_gt).T.astype("float64")
+
+    # align column order and compare
+    matrix_df = matrix_df.reindex(columns=matrix_df_gt.columns).round(3)
+    matrix_df_gt = matrix_df_gt.round(3)
+
+    assert matrix_df.equals(matrix_df_gt)
+
+
+def test_adjust_variant_adata_by_pseudobam_drop_reads_that_dont_pseudoalign(out_dir, NG_vcrs_reference_fasta, NG_vcrs_reference_t2g, NG_vcrs_reference_index, NG_normal_reference_index, NG_fastq_bulk_1, bustools, kallisto):
+    """With count_reads_that_dont_pseudoalign_to_reference_genome=False, read5 (which aligns nowhere
+    in the normal reference) should be dropped, so ENST9 goes to 0."""
+    technology = "BULK"
+    fastqs = [str(NG_fastq_bulk_1)]
+
+    kb_count_out_vcrs = out_dir / "kb_count_vcrs"
+    subprocess.run(["kb", "count", "-t", "2", "-k", "31", "-i", str(NG_vcrs_reference_index), "-g", str(NG_vcrs_reference_t2g), "-x", technology, "--num", "--h5ad", "--parity", "single", "-o", str(kb_count_out_vcrs)] + fastqs, check=True)
+
+    adata = adjust_variant_adata_by_pseudobam(
+        kb_count_vcrs_dir=str(kb_count_out_vcrs),
+        reference_genome_index=str(NG_normal_reference_index),
+        technology=technology,
+        adata=str(kb_count_out_vcrs / "counts_unfiltered" / "adata.h5ad"),
+        fastq_file_list=fastqs,
+        parity="single",
+        mm=False,
+        bustools=bustools,
+        kallisto=kallisto,
+        variant_source="transcriptome",
+        reference_sequences_type="rna",
+        vcrs_t2g=str(NG_vcrs_reference_t2g),
+        count_reads_that_dont_pseudoalign_to_reference_genome=False,
+    )
+
+    matrix_df = pd.DataFrame(adata.X.toarray() if hasattr(adata.X, "toarray") else adata.X,
+                             index=adata.obs.index, columns=adata.var.index)
+    assert matrix_df.loc["AAAAAAAAAAAAAAAA", "ENST9:c.1mut"] == 0
+    assert matrix_df.loc["AAAAAAAAAAAAAAAA", "ENST1:c.1mut"] == 2
+    assert matrix_df.loc["AAAAAAAAAAAAAAAA", "ENST7:c.1mut"] == 1
+
+
+def test_adjust_variant_adata_by_pseudobam_bulk_paired_but_run_as_single(out_dir, NG_vcrs_reference_fasta, NG_vcrs_reference_t2g, NG_vcrs_reference_index, NG_normal_reference_index, NG_fastq_bulk_1, NG_fastq_bulk_2, bustools, kallisto):
+    """Paired-end BULK data run through kb count in single-end mode: the pseudobam QC must collapse the
+    two per-file sample barcodes back onto the single sample barcode so BOTH files' reads are counted.
+    The ENST4 count comes exclusively from a pair (file 2) read (read1_pair -> VCRS ENST4, aligns nowhere
+    in the normal reference so it is kept), which the file-1-only result never produces -- so its presence
+    proves the second file's reads survived the collapse rather than being silently dropped. Because no
+    fragment has both mates surviving on the same VCRS, avoid_paired_double_counting must not change the
+    result here (it just exercises the dedup path without wrongly dropping non-overlapping mates)."""
+    technology = "BULK"
+    fastqs = [str(NG_fastq_bulk_1), str(NG_fastq_bulk_2)]
+
+    kb_count_out_vcrs = out_dir / "kb_count_vcrs"
+    subprocess.run(["kb", "count", "-t", "2", "-k", "31", "-i", str(NG_vcrs_reference_index), "-g", str(NG_vcrs_reference_t2g), "-x", technology, "--num", "--h5ad", "--parity", "single", "-o", str(kb_count_out_vcrs)] + fastqs, check=True)
+
+    # mirror vk clean: collapse the two per-file sample barcodes onto the single sample barcode before QC
+    adata_template = correct_adata_barcodes_for_running_paired_data_in_single_mode(
+        str(kb_count_out_vcrs), adata=str(kb_count_out_vcrs / "counts_unfiltered" / "adata.h5ad"), save_adata=False
+    )
+
+    # file 1 alone (pseudobam single) gives ENST1:2, ENST7:1, ENST9:1; file 2 (the pairs) adds ENST4:1
+    # via read1_pair. read2_pair (multimapped ENST2+ENST4) is not emitted to the BUS without --union, so
+    # ENST2 stays 0. ENST4 being nonzero is what proves the second file's reads survived the collapse.
+    count_matrix_data_gt = {
+        "AAAAAAAAAAAAAAAA": {"ENST1:c.1mut": 2, "ENST2:c.1mut": 0, "ENST3:c.1mut": 0, "ENST4:c.1mut": 1, "ENST5:c.1mut": 0, "ENST6:c.1mut": 0, "ENST7:c.1mut": 1, "ENST8:c.1mut": 0, "ENST9:c.1mut": 1},
+    }
+    matrix_df_gt = pd.DataFrame(count_matrix_data_gt).T.astype("float64").round(3)
+
+    for avoid_paired_double_counting in (False, True):
+        adata = adjust_variant_adata_by_pseudobam(
+            kb_count_vcrs_dir=str(kb_count_out_vcrs),
+            reference_genome_index=str(NG_normal_reference_index),
+            technology=technology,
+            adata=adata_template.copy(),
+            fastq_file_list=fastqs,
+            parity="paired",
+            mm=False,
+            bustools=bustools,
+            kallisto=kallisto,
+            variant_source="transcriptome",
+            reference_sequences_type="rna",
+            vcrs_t2g=str(NG_vcrs_reference_t2g),
+            count_reads_that_dont_pseudoalign_to_reference_genome=True,
+            avoid_paired_double_counting=avoid_paired_double_counting,
+            check_alignment_position=False,
+            overwrite=True,
+        )
+
+        assert list(adata.obs.index) == ["AAAAAAAAAAAAAAAA"]  # the two per-file barcodes collapsed to one sample
+        matrix_df = pd.DataFrame(adata.X.toarray() if hasattr(adata.X, "toarray") else adata.X,
+                                 index=adata.obs.index, columns=adata.var.index)
+        matrix_df = matrix_df.reindex(columns=matrix_df_gt.columns).round(3)
+        assert matrix_df.equals(matrix_df_gt), f"avoid_paired_double_counting={avoid_paired_double_counting}: {matrix_df.to_dict()} != {matrix_df_gt.to_dict()}"

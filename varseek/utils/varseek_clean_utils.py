@@ -39,7 +39,12 @@ from varseek.utils.seq_utils import (
     parquet_column_list_to_tuple,
     parquet_column_tuple_to_list,
     get_ensembl_gene_id_from_transcript_id_bulk,
-    make_good_barcodes_and_file_index_tuples
+    make_good_barcodes_and_file_index_tuples,
+    load_adata_from_mtx,
+)
+from varseek.utils.coordinate_conversion import (
+    build_transcript_exon_model,
+    convert_variants_transcript_to_genome,
 )
 from varseek.utils.logger_utils import set_up_logger, count_chunks, determine_write_mode, check_file_path_is_string_with_valid_extension, is_valid_int
 from varseek.utils.visualization_utils import plot_cdna_locations
@@ -345,7 +350,7 @@ def make_bus_df(kb_count_out, fastq_file_list=None, technology=None, t2g_file=No
     return bus_df
         
 # @profile
-def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_reference_genome_dir, technology, t2g_standard, adata=None, fastq_file_list=None, adata_output_path=None, mm=False, parity="single", bustools="bustools", fastq_sorting_check_only=False, save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=True, drop_reads_where_the_pairs_mapped_to_different_genes=False, avoid_paired_double_counting=False, add_fastq_headers=False, seq_id_column="seq_ID", gene_id_column="gene_id", variant_source=None, gtf=None, skip_transcripts_without_genes=False, mistake_ratio=None):
+def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kallisto_quant_reference_genome_dir, technology, t2g_standard, adata=None, fastq_file_list=None, adata_output_path=None, mm=False, parity="single", bustools="bustools", fastq_sorting_check_only=False, save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=True, drop_reads_where_the_pairs_mapped_to_different_genes=False, avoid_paired_double_counting=False, add_fastq_headers=False, seq_id_column="seq_ID", gene_id_column="gene_id", variant_source=None, gtf=None, skip_transcripts_without_genes=False, mistake_ratio=None):
     if not adata:
         adata = f"{kb_count_vcrs_dir}/counts_unfiltered/adata.h5ad"
     if isinstance(adata, str):
@@ -409,11 +414,11 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
         first_vcrs_name = bus_df_mutation.loc[0, "vcrs_names"][0]
 
     #* create a dataframe of the BUS file for normal reference genome
-    bus_df_standard_path = f"{kb_count_reference_genome_dir}/bus_df.{save_type}"
+    bus_df_standard_path = f"{kallisto_quant_reference_genome_dir}/bus_df.{save_type}"
     if not os.path.exists(bus_df_standard_path):
         logger.info("Making standard reference genome BUS df")
         bus_df_standard = make_bus_df(
-            kb_count_out=kb_count_reference_genome_dir,
+            kb_count_out=kallisto_quant_reference_genome_dir,
             fastq_file_list=fastq_file_list,
             technology=technology,
             t2g_file=t2g_standard,
@@ -470,7 +475,7 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
     else:
         vcrs_parity = "single"
 
-    with open(f"{kb_count_reference_genome_dir}/kb_info.json", 'r') as f:
+    with open(f"{kallisto_quant_reference_genome_dir}/kb_info.json", 'r') as f:
         kb_info_data_normal = json.load(f)
     if "--parity paired" in kb_info_data_normal.get("call", ""):
         normal_parity = "paired"
@@ -672,6 +677,630 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kb_count_refer
     return adata_new
 
 
+# ======================================================================================
+# pseudobam-based normal-genome QC (replacement for adjust_variant_adata_by_normal_gene_matrix)
+#
+# Instead of running a full second `kb count` against the reference genome and comparing
+# read->gene assignments, this aligns the reads directly with `kallisto quant --pseudobam`
+# (or `--genomebam` when the VCRS reference is genomic DNA but the headers are transcript
+# HGVSc) and compares each read's actual alignment coordinate to the HGVS coordinate of the
+# VCRS it was assigned to. Reads whose true alignment is inconsistent with their assigned
+# variant's locus are dropped from the VCRS BUS file, and the count matrix is regenerated
+# with `bustools count`.
+# ======================================================================================
+
+_FASTA_EXTS = (".fa", ".fasta", ".fna", ".fa.gz", ".fasta.gz", ".fna.gz")
+
+
+def _resolve_kb_binary(binary, name):
+    """Return `binary` if provided, else resolve the path bundled with kb-python via `kb info`."""
+    if binary:
+        return binary
+    cmd = f"kb info | grep '{name}:' | awk '{{print $3}}' | sed 's/[()]//g'"
+    try:
+        resolved = subprocess.run(cmd, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, text=True, check=True).stdout.strip()
+    except subprocess.CalledProcessError:
+        resolved = ""
+    return resolved or name
+
+
+def _infer_reference_sequences_type(sequences):
+    """Best-effort guess of whether the VCRS was built from RNA (transcriptome) or DNA (genome).
+
+    Returns 'rna', 'dna', or None (unknown). Used only to disambiguate the HGVSc case, where an
+    RNA reference means transcript-space --pseudobam and a DNA reference means genome-space
+    --genomebam. Callers may pass an explicit value to override this heuristic.
+    """
+    if not isinstance(sequences, (str, Path)):
+        return None
+    s = str(sequences).lower()
+    if any(k in s for k in ("cdna", "cds", "transcript", "_rna", "rna.")):
+        return "rna"
+    if any(k in s for k in ("genome", "dna", "primary_assembly", "toplevel")):
+        return "dna"
+    return None
+
+
+def _determine_pseudobam_mode(adata_var, variant_source=None, reference_sequences_type=None, sequences=None):
+    """Resolve (header_type, mode) for the pseudobam QC.
+
+    header_type is 'hgvsc' or 'hgvsg'. mode is one of:
+      - 'transcriptome_pseudobam' : RNA sequences + HGVSc  -> --pseudobam, compare in transcript space
+      - 'genome_pseudobam'        : DNA sequences + HGVSg  -> --pseudobam, compare in genome space
+      - 'genome_genomebam'        : DNA sequences + HGVSc  -> --genomebam, compare in genome space
+    """
+    # header type
+    if variant_source in ("transcriptome", "cdna", "c", "hgvsc"):
+        header_type = "hgvsc"
+    elif variant_source in ("genome", "g", "hgvsg"):
+        header_type = "hgvsg"
+    else:
+        sample = adata_var.index.to_series().astype(str).head(2000).str.split(";").explode()
+        has_c = sample.str.contains(r":c\.", regex=True, na=False).any()
+        has_g = sample.str.contains(r":g\.", regex=True, na=False).any()
+        if has_c and has_g:
+            raise ValueError("The VCRS headers contain a mix of HGVSc (c.) and HGVSg (g.) variants. Please split them and run the pseudobam QC separately per coordinate system, or pass variant_source explicitly.")
+        header_type = "hgvsg" if has_g else "hgvsc"
+
+    seq_type = reference_sequences_type or _infer_reference_sequences_type(sequences)
+
+    if header_type == "hgvsg":
+        # genomic headers -> genome reference -> straight pseudobam in genome space
+        return header_type, "genome_pseudobam"
+    # header_type == "hgvsc"
+    if seq_type == "dna":
+        return header_type, "genome_genomebam"
+    # default / seq_type == "rna": transcript-space pseudobam
+    return header_type, "transcriptome_pseudobam"
+
+
+def _generate_chromosomes_file(out_path, sequences=None, gtf=None):
+    """Write a tab-separated <chromosome>\t<length> file (needed by kallisto --genomebam).
+
+    Lengths come from the genome FASTA (`sequences`) when available (exact), otherwise from the
+    maximum coordinate per seqname in the GTF (an upper-bound approximation that is sufficient
+    for projecting alignments).
+    """
+    sizes = {}
+    if sequences is not None and isinstance(sequences, (str, Path)) and os.path.isfile(str(sequences)) and str(sequences).endswith(_FASTA_EXTS):
+        fa = pyfastx.Fasta(str(sequences), build_index=True)
+        for name in fa.keys():
+            sizes[str(name).split()[0].split(".")[0]] = len(fa[name])
+    elif gtf is not None and os.path.isfile(str(gtf)):
+        gdf = pd.read_csv(str(gtf), sep="\t", comment="#", header=None, usecols=[0, 4], names=["seqname", "end"], dtype={"seqname": str})
+        gdf["seqname"] = gdf["seqname"].str.split(".").str[0]
+        sizes = gdf.groupby("seqname")["end"].max().to_dict()
+    else:
+        raise ValueError("A genome FASTA (`sequences`) or a `gtf` is required to generate the chromosomes file for --genomebam.")
+    with open(out_path, "w", encoding="utf-8") as f:
+        for name, length in sizes.items():
+            f.write(f"{name}\t{int(length)}\n")
+    return out_path
+
+
+def _group_fastqs_for_quant(fastq_file_list, technology, parity, barcodes):
+    """Yield (group_barcode_or_None, [fastq files for this quant run], is_single_end).
+
+    For bulk / smart-seq (barcode == sample) each sample is quantified separately so alignments
+    can be attributed to a barcode unambiguously and read-name collisions across samples cannot
+    over-validate. For barcoded single-cell technologies the cDNA-read files are quantified in a
+    single run and each read's barcode is taken from the BUS file downstream (group barcode None).
+    """
+    tech = technology.upper()
+    info = technology_info[tech]
+    num_files = info["num_files"]
+    if isinstance(num_files, dict):
+        num_files = num_files[parity]
+    transcript_file_index = info["transcript_file_index"]
+    barcode_position = info["barcode_position"]
+
+    groups = []
+    if barcode_position is None:  # bulk / smart-seq2 -> one sample per barcode
+        n_samples = len(fastq_file_list) // num_files
+        for s in range(n_samples):
+            files = [str(fastq_file_list[s * num_files + j]) for j in range(num_files)]
+            bc = barcodes[s] if barcodes is not None and s < len(barcodes) else None
+            groups.append((bc, files, num_files == 1))
+    else:  # barcoded single-cell -> quant the cDNA reads only, in one pooled run
+        cdna_files = [str(fastq_file_list[i]) for i in range(len(fastq_file_list)) if i % num_files == transcript_file_index]
+        groups.append((None, cdna_files, True))
+    return groups
+
+
+def _run_kallisto_quant_group(kallisto, reference_genome_index, out_dir, fastq_files, is_single_end, mode, threads=2, fragment_length=51, fragment_sd=5, gtf=None, chromosomes=None, overwrite=False):
+    """Run `kallisto quant` for one fastq group and return the path to pseudoalignments.bam."""
+    os.makedirs(out_dir, exist_ok=True)
+    bam_path = os.path.join(out_dir, "pseudoalignments.bam")
+    if os.path.exists(bam_path) and not overwrite:
+        logger.info(f"Reusing existing pseudoalignments.bam at {bam_path}")
+        return bam_path
+
+    command = [kallisto, "quant", "-i", str(reference_genome_index), "-o", out_dir, "-t", str(threads)]
+    if is_single_end:
+        command += ["--single", "-l", str(fragment_length), "-s", str(fragment_sd)]
+    if mode == "genome_genomebam":
+        if not gtf:
+            raise ValueError("--genomebam requires a `gtf` (DNA sequences with HGVSc headers).")
+        command += ["--genomebam", "--gtf", str(gtf), "--chromosomes", str(chromosomes)]
+    else:
+        command += ["--pseudobam"]
+    command += [str(f) for f in fastq_files]
+
+    logger.info(f"Running kallisto quant: {' '.join(command)}")
+    subprocess.run(command, check=True)
+    if not os.path.exists(bam_path):
+        raise FileNotFoundError(f"kallisto quant did not produce {bam_path}. Check that this kallisto build supports --pseudobam/--genomebam.")
+    return bam_path
+
+
+def _parse_pseudobam(bam_path):
+    """Return {read_name: {'refs': set(ref), 'pos_by_ref': {ref: [1-based positions]}}}.
+
+    Aggregates over all (primary + secondary) alignment records for each read so multimapping
+    reads contribute the union of their alignment loci. Reference-name version suffixes are
+    stripped so `ENST0001.3` and `ENST0001` compare equal.
+    """
+    read_to_aln = {}
+    with pysam.AlignmentFile(bam_path, "rb") as bam:
+        for read in bam.fetch(until_eof=True):
+            if read.is_unmapped or read.reference_name is None:
+                continue
+            qname = read.query_name
+            ref = read.reference_name.split(".")[0]
+            pos = read.reference_start + 1  # pysam is 0-based; HGVS is 1-based
+            entry = read_to_aln.get(qname)
+            if entry is None:
+                entry = {"refs": set(), "pos_by_ref": {}}
+                read_to_aln[qname] = entry
+            entry["refs"].add(ref)
+            entry["pos_by_ref"].setdefault(ref, []).append(pos)
+    return read_to_aln
+
+
+def _vcrs_individual_headers_frame(adata_var):
+    """Return a long DataFrame [vcrs_id, header] with one row per individual (semicolon-split) HGVS header."""
+    df = pd.DataFrame(index=adata_var.index.copy())
+    df["vcrs_id"] = adata_var.index.astype(str)
+    first = str(adata_var.index[0]).split(";")[0]
+    if re.search(r":[cg]\.", first):  # looks like an HGVS header (robust to version dots the strict pattern rejects)
+        header_source = df["vcrs_id"]
+    elif "vcrs_header" in adata_var.columns:
+        header_source = adata_var["vcrs_header"].astype(str).values
+    else:
+        raise ValueError("Cannot recover HGVS headers: adata.var index is not HGVS-formatted and there is no 'vcrs_header' column.")
+    out = pd.DataFrame({"vcrs_id": df["vcrs_id"].values, "header": pd.Series(header_source, index=df.index).str.split(";").values})
+    out = out.explode("header", ignore_index=True)
+    out["header"] = out["header"].astype(str)
+    return out
+
+
+def _build_vcrs_locus_map(adata_var, mode, gtf=None, seq_id_column="seq_ID", var_column="mutation"):
+    """Map each vcrs_id to the reference locus/loci where a genuine read should align.
+
+    Returns {vcrs_id: {'refs': set(seq_id/chrom), 'intervals': {ref: [(lo, hi), ...]}}}, all in the
+    same coordinate space as the pseudoalignments.bam (transcript space for --pseudobam HGVSc,
+    genome space for HGVSg or the --genomebam HGVSc case).
+    """
+    frame = _vcrs_individual_headers_frame(adata_var)
+    parts = frame["header"].str.split(":", n=1, expand=True)
+    frame["seq_id"] = parts[0].str.split(".").str[0]
+    frame["mutation"] = parts[1] if parts.shape[1] > 1 else None
+
+    if mode == "genome_genomebam":
+        model = build_transcript_exon_model(str(gtf))
+        conv_in = pd.DataFrame({"vcrs_id": frame["vcrs_id"].values, seq_id_column: frame["seq_id"].values, var_column: frame["mutation"].values})
+        converted, _ = convert_variants_transcript_to_genome(conv_in, seq_id_column, var_column, model)
+        frame = pd.DataFrame({"vcrs_id": converted["vcrs_id"].values, "seq_id": converted[seq_id_column].astype(str).str.split(".").str[0].values, "mutation": converted[var_column].values})
+
+    extracted = frame["mutation"].str.extract(mutation_pattern)
+    pos_split = extracted[0].astype(str).str.split("_", expand=True)
+    start = pd.to_numeric(pos_split[0].str.replace(r"[^0-9]", "", regex=True).replace("", np.nan), errors="coerce")
+    if pos_split.shape[1] > 1:
+        end = pd.to_numeric(pos_split[1].str.replace(r"[^0-9]", "", regex=True).replace("", np.nan), errors="coerce").fillna(start)
+    else:
+        end = start
+
+    locus_map = {}
+    for vcrs_id, seq_id, lo, hi in zip(frame["vcrs_id"], frame["seq_id"], start, end):
+        if not isinstance(seq_id, str) or not seq_id:
+            continue
+        entry = locus_map.setdefault(vcrs_id, {"refs": set(), "intervals": {}})
+        entry["refs"].add(seq_id)
+        if pd.notna(lo):
+            lo_i, hi_i = int(min(lo, hi)), int(max(lo, hi))
+            entry["intervals"].setdefault(seq_id, []).append((lo_i, hi_i))
+    return locus_map
+
+
+def _read_alignment_is_consistent(aln, vcrs_locus, check_position, position_tolerance):
+    """True if the read's actual alignment `aln` is consistent with `vcrs_locus` (same ref, and
+    optionally within `position_tolerance` of a variant interval on that ref)."""
+    shared_refs = aln["refs"] & vcrs_locus["refs"]
+    if not shared_refs:
+        return False
+    if not check_position:
+        return True
+    for ref in shared_refs:
+        intervals = vcrs_locus["intervals"].get(ref)
+        if not intervals:
+            return True  # no position annotation for this ref -> name match is all we can verify
+        for pos in aln["pos_by_ref"].get(ref, ()):
+            for lo, hi in intervals:
+                if lo - position_tolerance <= pos <= hi + position_tolerance:
+                    return True
+    return False
+
+
+def _recount_from_filtered_bus(kb_count_vcrs_dir, kept_records, new_ec_records, bustools, kallisto_threads, vcrs_t2g, new_counts_dir, mm):
+    """Write the kept BUS records to a new BUS file and regenerate the count matrix via bustools.
+
+    `kept_records` is a DataFrame with columns [barcode, UMI, EC]; `new_ec_records` is a list of
+    (ec_id, [transcript indices]) equivalence classes to append to matrix.ec (for reads whose EC was
+    narrowed to a consistent subset). Returns the path to the produced cells_x_genes.mtx.
+    """
+    os.makedirs(new_counts_dir, exist_ok=True)
+    filtered_txt = os.path.join(new_counts_dir, "output_filtered_bus.txt")
+    filtered_bus = os.path.join(new_counts_dir, "output_filtered.bus")
+    sorted_bus = os.path.join(new_counts_dir, "output_filtered.sorted.bus")
+
+    out = kept_records[["barcode", "UMI", "EC"]].copy()
+    out["count"] = 1
+    out.to_csv(filtered_txt, sep="\t", header=False, index=False)
+
+    subprocess.run([bustools, "fromtext", "-o", filtered_bus, filtered_txt], check=True)
+    subprocess.run([bustools, "sort", "-t", str(kallisto_threads), "-o", sorted_bus, filtered_bus], check=True)
+
+    # augment matrix.ec with any newly-created equivalence classes
+    transcripts_txt = os.path.join(kb_count_vcrs_dir, "transcripts.txt")
+    if new_ec_records:
+        ec = os.path.join(new_counts_dir, "matrix.ec")
+        with open(os.path.join(kb_count_vcrs_dir, "matrix.ec"), encoding="utf-8") as src, open(ec, "w", encoding="utf-8") as dst:
+            dst.write(src.read())
+            for ec_id, idxs in new_ec_records:
+                dst.write(f"{ec_id}\t{','.join(str(i) for i in idxs)}\n")
+    else:
+        ec = os.path.join(kb_count_vcrs_dir, "matrix.ec")
+    count_prefix = os.path.join(new_counts_dir, "cells_x_genes")
+
+    # Prefer reusing the exact bustools count invocation kb recorded, swapping input bus, matrix.ec and -o.
+    count_cmd = _extract_bustools_count_command(kb_count_vcrs_dir, bustools, count_prefix, sorted_bus, vcrs_t2g, ec, transcripts_txt, mm)
+    logger.info(f"Regenerating count matrix: {' '.join(count_cmd)}")
+    subprocess.run(count_cmd, check=True)
+    return f"{count_prefix}.mtx"
+
+
+def _extract_bustools_count_command(kb_count_vcrs_dir, bustools, count_prefix, sorted_bus, vcrs_t2g, ec, transcripts_txt, mm):
+    """Build the `bustools count` command, reusing kb_info's recorded flags when available."""
+    kb_info_path = os.path.join(kb_count_vcrs_dir, "kb_info.json")
+    recorded = None
+    try:
+        with open(kb_info_path, "r", encoding="utf-8") as f:
+            kb_info = json.load(f)
+        for c in kb_info.get("commands", []):
+            tokens = c.split() if isinstance(c, str) else list(c)
+            if any("bustools" in str(t) for t in tokens) and "count" in tokens:
+                recorded = tokens
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        recorded = None
+
+    if recorded:
+        cmd = list(recorded)
+        cmd[0] = bustools  # normalize the binary path
+        # swap the -o prefix
+        if "-o" in cmd:
+            cmd[cmd.index("-o") + 1] = count_prefix
+        # swap the -e equivalence-class matrix (may have been augmented with new ECs)
+        if "-e" in cmd:
+            cmd[cmd.index("-e") + 1] = ec
+        # the trailing positional argument is the input .bus file
+        for i in range(len(cmd) - 1, 0, -1):
+            if str(cmd[i]).endswith(".bus"):
+                cmd[i] = sorted_bus
+                break
+        else:
+            cmd.append(sorted_bus)
+        return cmd
+
+    # Fallback: construct from known paths (mirrors kb count's bustools count call).
+    if not vcrs_t2g:
+        raise ValueError("Could not find a recorded bustools count command in kb_info.json and no vcrs_t2g was provided; cannot regenerate the count matrix. Pass vcrs_t2g explicitly.")
+    cmd = [bustools, "count", "--genecounts", "-o", count_prefix, "-g", str(vcrs_t2g), "-e", ec, "-t", transcripts_txt]
+    if mm:
+        cmd.insert(2, "--multimapping")
+    cmd.append(sorted_bus)
+    return cmd
+
+
+def _load_and_align_recounted_adata(mtx_file, adata_template):
+    """Load the regenerated mtx and reindex it onto the template's obs/var (same shape)."""
+    adata_new = load_adata_from_mtx(mtx_file)
+
+    # load_adata_from_mtx keeps the VCRS ids / barcodes as columns (gene_id / cell_barcode), not the index
+    true_barcode_length = len(str(adata_template.obs.index[0]))
+    obs_source = adata_new.obs["cell_barcode"] if "cell_barcode" in adata_new.obs.columns else adata_new.obs.index.to_series()
+    var_source = adata_new.var["gene_id"] if "gene_id" in adata_new.var.columns else adata_new.var.index.to_series()
+    new_obs_names = pd.Index(obs_source.astype(str)).str[-true_barcode_length:].to_numpy()
+    new_var_names = var_source.astype(str).to_numpy()
+
+    obs_map = {bc: i for i, bc in enumerate(adata_template.obs.index.astype(str))}
+    var_map = {v: i for i, v in enumerate(adata_template.var.index.astype(str))}
+
+    # vectorized reindex over the nonzeros: map each new row/col onto the template position (-1 if absent)
+    row_target = np.array([obs_map.get(bc, -1) for bc in new_obs_names], dtype=np.int64)
+    col_target = np.array([var_map.get(v, -1) for v in new_var_names], dtype=np.int64)
+
+    coo = adata_new.X.tocoo()
+    rows = row_target[coo.row]
+    cols = col_target[coo.col]
+    keep = (rows >= 0) & (cols >= 0)
+    final = csr_matrix((coo.data[keep].astype(np.float64), (rows[keep], cols[keep])), shape=adata_template.shape)
+    return ad.AnnData(X=final, obs=adata_template.obs.copy(), var=adata_template.var.copy(), uns=adata_template.uns.copy())
+
+
+def adjust_variant_adata_by_pseudobam(
+    kb_count_vcrs_dir,
+    reference_genome_index,
+    technology,
+    kallisto_quant_reference_genome_dir=None,
+    adata=None,
+    fastq_file_list=None,
+    adata_output_path=None,
+    parity="single",
+    mm=False,
+    bustools="bustools",
+    kallisto="kallisto",
+    threads=2,
+    variant_source=None,
+    reference_sequences_type=None,
+    sequences=None,
+    gtf=None,
+    chromosomes=None,
+    vcrs_t2g=None,
+    check_alignment_position=False,
+    alignment_position_tolerance=50,
+    count_reads_that_dont_pseudoalign_to_reference_genome=True,
+    avoid_paired_double_counting=False,
+    fragment_length=51,
+    fragment_sd=5,
+    seq_id_column="seq_ID",
+    var_column="mutation",
+    fastq_sorting_check_only=False,
+    save_type="parquet",
+    overwrite=False,
+):
+    """Faster/more-accurate replacement for adjust_variant_adata_by_normal_gene_matrix.
+
+    Aligns the reads with `kallisto quant --pseudobam` (or `--genomebam` for DNA-sequence /
+    HGVSc-header references), compares each read's true alignment coordinate to the HGVS locus of
+    its assigned VCRS, drops reads that aligned somewhere inconsistent with the variant, and
+    regenerates the VCRS count matrix with `bustools count`.
+    """
+    if kallisto_quant_reference_genome_dir is None:
+        kallisto_quant_reference_genome_dir = os.path.join(kb_count_vcrs_dir, "pseudobam_qc")
+
+    if not adata:
+        adata = f"{kb_count_vcrs_dir}/counts_unfiltered/adata.h5ad"
+    if isinstance(adata, str):
+        adata = ad.read_h5ad(adata)
+    adata = adata.copy()
+
+    bustools = _resolve_kb_binary(bustools, "bustools")
+    kallisto = _resolve_kb_binary(kallisto, "kallisto")
+
+    header_type, mode = _determine_pseudobam_mode(adata.var, variant_source=variant_source, reference_sequences_type=reference_sequences_type, sequences=sequences)
+    logger.info(f"pseudobam QC mode: {mode} (header_type={header_type})")
+
+    if fastq_file_list is None:
+        raise ValueError("fastq_file_list is required for the pseudobam QC (the reads must be re-aligned with kallisto quant).")
+    fastq_file_list = load_in_fastqs(fastq_file_list)
+    fastq_file_list = sort_fastq_files_for_kb_count(fastq_file_list, technology=technology, check_only=fastq_sorting_check_only)
+
+    if vcrs_t2g is None:
+        try:
+            with open(f"{kb_count_vcrs_dir}/kb_info.json", "r", encoding="utf-8") as f:
+                call = json.load(f).get("call", "")
+            m = re.search(r"-g (\S+)", call)
+            vcrs_t2g = m.group(1) if m else None
+        except (FileNotFoundError, json.JSONDecodeError):
+            vcrs_t2g = None
+
+    # ---- parity of the VCRS kb count run (needed for consistent BUS/barcode handling) ----
+    with open(f"{kb_count_vcrs_dir}/kb_info.json", "r", encoding="utf-8") as f:
+        kb_info_data_vcrs = json.load(f)
+    vcrs_parity = "paired" if "--parity paired" in kb_info_data_vcrs.get("call", "") else "single"
+    if technology.upper() not in {"BULK", "SMARTSEQ2"}:
+        vcrs_parity = "single"
+
+    # ---- generate chromosomes file for --genomebam if needed ----
+    if mode == "genome_genomebam" and not chromosomes:
+        chromosomes = os.path.join(kallisto_quant_reference_genome_dir, "chromosomes.txt")
+        os.makedirs(kallisto_quant_reference_genome_dir, exist_ok=True)
+        if not os.path.exists(chromosomes) or overwrite:
+            _generate_chromosomes_file(chromosomes, sequences=sequences, gtf=gtf)
+
+    # ---- run kallisto quant per fastq group and parse the pseudoalignments ----
+    barcodes = None
+    if os.path.exists(f"{kb_count_vcrs_dir}/matrix.sample.barcodes"):
+        with open(f"{kb_count_vcrs_dir}/matrix.sample.barcodes", encoding="utf-8") as f:
+            barcodes = f.read().splitlines()
+    groups = _group_fastqs_for_quant(fastq_file_list, technology, vcrs_parity, barcodes)
+
+    align_by_group = {}
+    for gi, (group_barcode, group_files, is_single_end) in enumerate(groups):
+        group_out = os.path.join(kallisto_quant_reference_genome_dir, f"quant_group_{gi}")
+        bam_path = _run_kallisto_quant_group(
+            kallisto, reference_genome_index, group_out, group_files, is_single_end, mode,
+            threads=threads, fragment_length=fragment_length, fragment_sd=fragment_sd,
+            gtf=gtf, chromosomes=chromosomes, overwrite=overwrite,
+        )
+        align_by_group[group_barcode] = _parse_pseudobam(bam_path)
+
+    single_cell = groups[0][0] is None  # barcode comes from the BUS file rather than the group
+
+    # For paired-end BULK/SMARTSEQ2 data run through kb count in single mode, each fastq of a pair
+    # became its own pseudo-sample/barcode. The per-read alignment lookup below is keyed by that raw
+    # per-file barcode, so we only collapse pairs back to their shared "good" barcode when writing the
+    # kept records for the recount (so the recounted matrix lines up with the barcode-corrected adata
+    # template; mirrors correct_adata_barcodes_for_running_paired_data_in_single_mode and the
+    # gene_matrix path). Cost is one dict lookup per kept read.
+    bad_to_good_barcode_dict = None
+    if parity == "paired" and vcrs_parity == "single" and technology.upper() in {"BULK", "SMARTSEQ2"} and barcodes:
+        bad_to_good_barcode_dict = make_good_barcodes_and_file_index_tuples(barcodes, include_file_index=False)
+
+    # ---- build the per-read VCRS BUS df (one row per read) with fastq headers to match the BAM ----
+    logger.info("Making VCRS BUS df (with fastq headers)")
+    bus_df = make_bus_df(
+        kb_count_out=kb_count_vcrs_dir,
+        fastq_file_list=fastq_file_list,
+        technology=technology,
+        t2g_file=None,
+        mm=mm,
+        parity=vcrs_parity,
+        bustools=bustools,
+        fastq_sorting_check_only=True,
+        chunksize=None,
+        correct_barcodes_of_hamming_distance_one=False,
+        save_type=save_type,
+        add_fastq_headers=True,
+        add_counted_in_count_matrix=False,
+        save_transcript_names=True,
+        strip_version_number_from_genes=False,
+    )
+    bus_df = bus_df[["barcode", "UMI", "EC", "read_index", "fastq_header", "gene_names"]].copy()
+    bus_df.rename(columns={"gene_names": "vcrs_names"}, inplace=True)
+
+    n_missing_header = int(bus_df["fastq_header"].isna().sum())
+    if n_missing_header:
+        logger.warning(
+            f"{n_missing_header} / {len(bus_df)} reads could not be matched to a FASTQ header (e.g. barcode-corrected "
+            "single-cell reads whose corrected barcode differs from the raw barcode). These reads cannot be checked "
+            "against the pseudobam and are treated as non-aligning (kept iff count_reads_that_dont_pseudoalign_to_reference_genome=True)."
+        )
+
+    # ---- build the VCRS -> reference-locus map ----
+    logger.info("Building VCRS locus map from HGVS headers")
+    locus_map = _build_vcrs_locus_map(adata.var, mode, gtf=gtf, seq_id_column=seq_id_column, var_column=var_column)
+
+    # ---- compare each read's alignment to its assigned VCRS loci ----
+    # A read is dropped only if NONE of its assigned VCRS are consistent with where the read truly
+    # aligned. If only SOME of a multi-VCRS read's variants are consistent, the read is kept but its
+    # equivalence class (EC) is rewritten to the consistent subset (so, e.g., a read mapping to a
+    # gene's true variant but also spuriously k-mer-matching a decoy variant keeps the true one).
+    logger.info("Comparing read alignments to assigned VCRS loci")
+    with open(f"{kb_count_vcrs_dir}/transcripts.txt", encoding="utf-8") as f:
+        transcripts_list = f.read().splitlines()
+    name_to_idx = {name: i for i, name in enumerate(transcripts_list)}
+
+    # existing equivalence classes: frozenset(transcript indices) -> EC id
+    ec_index_map = {}
+    max_ec = -1
+    with open(f"{kb_count_vcrs_dir}/matrix.ec", encoding="utf-8") as f:
+        for line in f:
+            ec_id_str, ids_str = line.rstrip("\n").split("\t")
+            ec_id = int(ec_id_str)
+            ec_index_map[frozenset(int(x) for x in ids_str.split(","))] = ec_id
+            max_ec = max(max_ec, ec_id)
+    new_ec_records = []  # (ec_id, [sorted transcript indices]) to append to matrix.ec
+
+    # Collect one entry per surviving read as [corrected_barcode, umi, read_index, frozenset(consistent transcript idx)].
+    # The alignment lookup below is keyed by the *raw* per-file barcode, but we store the collapsed
+    # ("good") barcode for the recount. The collapse is applied exactly once here -- note it is NOT
+    # idempotent, since a good barcode (e.g. "AAC") can also be a raw key, so it must not be re-mapped
+    # downstream. EC ids are assigned only after the optional double-counting dedup below (which can
+    # further narrow a read's transcript set).
+    per_read = []
+    n_dropped = n_rewritten = n_no_align = 0
+    for barcode, umi, read_index, header, vcrs_names in zip(bus_df["barcode"].astype(str), bus_df["UMI"].astype(str), bus_df["read_index"], bus_df["fastq_header"].astype(str), bus_df["vcrs_names"]):
+        vcrs_list = list(vcrs_names) if isinstance(vcrs_names, (list, tuple)) else [vcrs_names]
+        group_lookup = align_by_group[None] if single_cell else align_by_group.get(barcode, {})
+        aln = group_lookup.get(header)
+
+        if aln is None:  # read did not pseudoalign to the reference at all
+            n_no_align += 1
+            if not count_reads_that_dont_pseudoalign_to_reference_genome:
+                n_dropped += 1
+                continue
+            consistent = [v for v in vcrs_list if v != "dlist"]  # cannot verify -> keep all
+        else:
+            consistent = []
+            for vcrs_name in vcrs_list:
+                if vcrs_name == "dlist":
+                    continue
+                vcrs_locus = locus_map.get(vcrs_name)
+                if vcrs_locus is None or _read_alignment_is_consistent(aln, vcrs_locus, check_alignment_position, alignment_position_tolerance):
+                    consistent.append(vcrs_name)  # locus None -> cannot verify -> keep
+
+        if not consistent:
+            n_dropped += 1
+            continue
+
+        consistent_idx = frozenset(name_to_idx[v] for v in consistent if v in name_to_idx)
+        if not consistent_idx:
+            n_dropped += 1
+            continue
+        if len(consistent) != len([v for v in vcrs_list if v != "dlist"]):
+            n_rewritten += 1
+        corrected_barcode = bad_to_good_barcode_dict.get(barcode, barcode) if bad_to_good_barcode_dict else barcode
+        per_read.append([corrected_barcode, umi, read_index, consistent_idx])
+
+    # ---- optional paired double-counting removal (paired-end BULK/SMARTSEQ2 run in single mode) ----
+    # Both mates of a fragment now share (corrected_barcode, read_index). Count each consistent VCRS at
+    # most once per fragment: the first mate to carry a given transcript keeps it; later mates have it
+    # removed from their equivalence class (and are dropped entirely if nothing unique remains). Mirrors
+    # the gene_matrix path's "assign to the first read of the pair, give the second read nothing".
+    n_double_counted = n_dedup_narrowed = 0
+    if avoid_paired_double_counting and bad_to_good_barcode_dict:
+        seen_by_fragment = {}  # (corrected_barcode, read_index) -> set of transcript idx already counted for this fragment
+        deduped = []
+        for corrected_barcode, umi, read_index, consistent_idx in per_read:
+            already = seen_by_fragment.setdefault((corrected_barcode, read_index), set())
+            new_idx = consistent_idx - already
+            if not new_idx:  # every VCRS on this mate was already counted by its pair -> drop
+                n_double_counted += 1
+                continue
+            if new_idx != consistent_idx:
+                n_dedup_narrowed += 1
+            already |= new_idx
+            deduped.append([corrected_barcode, umi, frozenset(new_idx)])
+        per_read = deduped
+    else:
+        per_read = [[bc, umi, consistent_idx] for bc, umi, _read_index, consistent_idx in per_read]
+
+    # ---- assign (possibly new) equivalence-class ids to each kept read ----
+    kept_barcodes, kept_umis, kept_ecs = [], [], []
+    for corrected_barcode, umi, consistent_idx in per_read:
+        ec_id = ec_index_map.get(consistent_idx)
+        if ec_id is None:  # need a new EC for this consistent subset
+            max_ec += 1
+            ec_id = max_ec
+            ec_index_map[consistent_idx] = ec_id
+            new_ec_records.append((ec_id, sorted(consistent_idx)))
+        kept_barcodes.append(corrected_barcode)
+        kept_umis.append(umi)
+        kept_ecs.append(ec_id)
+
+    logger.info(f"pseudobam QC: {n_dropped} / {len(bus_df)} reads dropped as inconsistent with their assigned VCRS; "
+                f"{n_rewritten} reads had their equivalence class narrowed to the consistent variant(s); "
+                f"{n_double_counted} paired mates dropped and {n_dedup_narrowed} narrowed to avoid double counting; "
+                f"{n_no_align} reads did not pseudoalign to the reference.")
+
+    if n_dropped == 0 and n_rewritten == 0 and n_double_counted == 0 and n_dedup_narrowed == 0:
+        logger.info("No inconsistent reads found; returning the original AnnData object.")
+        return adata
+
+    # ---- regenerate the count matrix from the filtered/rewritten BUS ----
+    new_counts_dir = os.path.join(kb_count_vcrs_dir, "counts_unfiltered_pseudobam")
+    kept_records = pd.DataFrame({"barcode": kept_barcodes, "UMI": kept_umis, "EC": kept_ecs})
+    mtx_file = _recount_from_filtered_bus(kb_count_vcrs_dir, kept_records, new_ec_records, bustools, threads, vcrs_t2g, new_counts_dir, mm)
+    adata_new = _load_and_align_recounted_adata(mtx_file, adata)
+
+    if adata_output_path:
+        logger.info(f"Saving adjusted AnnData object to {adata_output_path}")
+        adata_new.write(adata_output_path)
+
+    return adata_new
+
+
 def merge_bus_df_and_adata_var(bus_df, adata_var, vcrs_column_bus="vcrs_names", vcrs_column_adata="vcrs_id", gene_id_column="gene_id", variant_source=None, seq_id_column="seq_ID", var_column="mutation", reference_genome_t2g=None, gtf=None, columns_to_merge="all"):
     bus_df_columns_original = bus_df.columns.tolist()
     bus_df_columns_original.remove(vcrs_column_bus)
@@ -845,97 +1474,6 @@ def normal_genome_validation_tallying(vcrs_names_list_final, vcrs_names_list, nu
 
 
 
-
-
-def check_if_read_dlisted_by_one_of_its_respective_dlist_sequences(vcrs_header, vcrs_header_to_seq_dict, dlist_header_to_seq_dict, k):
-    # do a bowtie (or manual) alignment of breaking the vcrs seq into k-mers and aligning to the dlist seqs dervied from the same vcrs header
-    dlist_header_to_seq_dict_filtered = {key: value for key, value in dlist_header_to_seq_dict.items() if vcrs_header == key.rsplit("_", 1)[0]}
-    vcrs_sequence = vcrs_header_to_seq_dict[vcrs_header]
-    for i in range(len(vcrs_sequence) - k + 1):
-        kmer = vcrs_sequence[i : (i + k)]
-        for dlist_sequence in dlist_header_to_seq_dict_filtered.values():
-            if kmer in dlist_sequence:
-                return True
-    return False
-
-
-def increment_adata_based_on_dlist_fns(adata, vcrs_fasta, dlist_fasta, kb_count_out, index, t2g, fastq, newer_kallisto, k=31, mm=False, technology="bulk", bustools="bustools", ignore_barcodes=False):
-    run_kb_count_dry_run(
-        index=index,
-        t2g=t2g,
-        fastq=fastq,
-        kb_count_out=kb_count_out,
-        newer_kallisto=newer_kallisto,
-        k=k,
-        threads=1,
-    )
-
-    if not os.path.exists(f"{kb_count_out}/bus_df.csv"):
-        bus_df = make_bus_df(kb_count_out, fastq, t2g_file=t2g, mm=mm, union=False, technology=technology, bustools=bustools, ignore_barcodes=ignore_barcodes)
-    else:
-        bus_df = pd.read_csv(f"{kb_count_out}/bus_df.csv")
-
-    # with open(f"{kb_count_out}/transcripts.txt", encoding="utf-8") as f:
-    #     dlist_index = str(sum(1 for line in file))
-
-    n_rows, n_cols = adata.X.shape
-    increment_matrix = csr_matrix((n_rows, n_cols))
-
-    vcrs_header_to_seq_dict = create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(vcrs_fasta)
-    dlist_header_to_seq_dict = create_header_to_sequence_ordered_dict_from_fasta_WITHOUT_semicolon_splitting(dlist_fasta)
-    var_names_to_idx_in_adata_dict = {name: idx for idx, name in enumerate(adata.var_names)}
-
-    # Apply to the whole column at once
-    bus_df["gene_names_final"] = bus_df["gene_names_final"].apply(safe_literal_eval)  # TODO: consider looking through gene_names_final_set rather than gene_names_final for possible speedup (but make sure safe_literal_eval supports this)
-
-    # iterate through bus_df rows
-    for _, row in bus_df.iterrows():
-        if "dlist" in row["gene_names_final"] and (mm or len(row["gene_names_final"]) == 2):  # don't replace with row['counted_in_count_matrix'] because this is the bus from when I ran union
-            read_dlisted_by_one_of_its_respective_dlist_sequences = False
-            for vcrs_header in row["gene_names_final"]:
-                if vcrs_header != "dlist":
-                    read_dlisted_by_one_of_its_respective_dlist_sequences = check_if_read_dlisted_by_one_of_its_respective_dlist_sequences(
-                        vcrs_header=vcrs_header,
-                        vcrs_header_to_seq_dict=vcrs_header_to_seq_dict,
-                        dlist_header_to_seq_dict=dlist_header_to_seq_dict,
-                        k=k,
-                    )
-                    if read_dlisted_by_one_of_its_respective_dlist_sequences:
-                        break
-            if not read_dlisted_by_one_of_its_respective_dlist_sequences:
-                # barcode_idx = [i for i, name in enumerate(adata.obs_names) if barcode.endswith(name)][0]  # if I did not remove the padding
-                barcode_idx = np.where(adata.obs_names == row["barcode"])[0][0]  # if I previously removed the padding
-                vcrs_idxs = [var_names_to_idx_in_adata_dict[header] for header in row["gene_names_final"] if header in var_names_to_idx_in_adata_dict]
-
-                increment_matrix[barcode_idx, vcrs_idxs] += row["count"]
-
-    # print("Gene list:", list(adata.var.index))
-    # print(
-    #     "Increment matrix",
-    #     (increment_matrix.toarray() if hasattr(increment_matrix, "toarray") else increment_matrix),
-    # )
-    # print(
-    #     "Adata matrix original",
-    #     adata.X.toarray() if hasattr(adata.X, "toarray") else adata.X,
-    # )
-
-    if not isinstance(adata.X, csr_matrix):
-        adata.X = adata.X.tocsr()
-
-    if not isinstance(increment_matrix, csr_matrix):
-        increment_matrix = increment_matrix.tocsr()
-
-    # Add the two sparse matrices
-    adata.X = adata.X + increment_matrix
-
-    adata.X = csr_matrix(adata.X)
-
-    # print(
-    #     "Adata matrix final",
-    #     adata.X.toarray() if hasattr(adata.X, "toarray") else adata.X,
-    # )
-
-    return adata
 
 
 # to be clear, this removes double counting of the same VCRS on each paired end, which is valid when fragment length < 2*read length OR for long insertions that make VCRS very long (such that the VCRS spans across both ends even when considering the region between the ends)
@@ -1307,7 +1845,7 @@ def match_paired_ends_after_single_end_run(bus_df_path, gene_name_type="vcrs_id"
 
 
 # TODO: unsure if this works for sc
-def adjust_variant_adata_by_normal_gene_matrix_original(adata, kb_count_vcrs_dir, kb_count_reference_genome_dir, id_to_header_dataframe=None, adata_output_path=None, vcrs_t2g=None, t2g_standard=None, fastq_file_list=None, mm=False, technology="bulk", parity="single", bustools="bustools", ignore_barcodes=False, check_only=False, chunksize=None):
+def adjust_variant_adata_by_normal_gene_matrix_original(adata, kb_count_vcrs_dir, kallisto_quant_reference_genome_dir, id_to_header_dataframe=None, adata_output_path=None, vcrs_t2g=None, t2g_standard=None, fastq_file_list=None, mm=False, technology="bulk", parity="single", bustools="bustools", ignore_barcodes=False, check_only=False, chunksize=None):
     if not adata:
         adata = f"{kb_count_vcrs_dir}/counts_unfiltered/adata.h5ad"
     if isinstance(adata, str):
@@ -1317,7 +1855,7 @@ def adjust_variant_adata_by_normal_gene_matrix_original(adata, kb_count_vcrs_dir
     fastq_file_list = sort_fastq_files_for_kb_count(fastq_file_list, technology=technology, check_only=check_only)
 
     bus_df_mutation_path = f"{kb_count_vcrs_dir}/bus_df.csv"
-    bus_df_standard_path = f"{kb_count_reference_genome_dir}/bus_df.csv"
+    bus_df_standard_path = f"{kallisto_quant_reference_genome_dir}/bus_df.csv"
 
     if not os.path.exists(bus_df_mutation_path):
         bus_df_mutation = make_bus_df(
@@ -1346,7 +1884,7 @@ def adjust_variant_adata_by_normal_gene_matrix_original(adata, kb_count_vcrs_dir
 
     if not os.path.exists(bus_df_standard_path):
         bus_df_standard = make_bus_df(
-            kallisto_out=kb_count_reference_genome_dir,
+            kallisto_out=kallisto_quant_reference_genome_dir,
             fastq_file_list=fastq_file_list,  # make sure this is in the same order as passed into kb count - [sample1, sample2, etc] OR [sample1_pair1, sample1_pair2, sample2_pair1, sample2_pair2, etc]
             t2g_file=t2g_standard,
             mm=mm,
@@ -1643,9 +2181,9 @@ def write_to_vcf(adata_var, output_file, save_vcf_samples=False, adata=None, buf
     """
     if save_vcf_samples:
         filtered_VCRSs = adata_var['ID'].astype(str).tolist()
-        adata_filtered = adata[:, adata.var['vcrs_header'].isin(set(filtered_VCRSs))].copy()  # Subset adata to keep only the variables in filtered_ids
-        if adata_var['ID'].tolist() != adata_filtered.var['vcrs_header'].tolist():  # different orders
-            correct_order = adata_filtered.var.set_index('vcrs_header').loc[adata_var['ID']].index  # Get the correct order of indices based on adata_var['ID']
+        adata_filtered = adata[:, adata.var['vcrs_id'].isin(set(filtered_VCRSs))].copy()  # Subset adata to keep only the variables in filtered_ids
+        if adata_var['ID'].tolist() != adata_filtered.var['vcrs_id'].tolist():  # different orders
+            correct_order = adata_filtered.var.set_index('vcrs_id').loc[adata_var['ID']].index  # Get the correct order of indices based on adata_var['ID']
             adata_filtered = adata_filtered[:, correct_order].copy()  # Reorder adata_filtered.var and adata_filtered.X
     
     # Open VCF file for writing
@@ -1730,21 +2268,21 @@ def cleaned_adata_to_vcf(variant_data, vcf_data_df, output_vcf = "variants.vcf",
     
     if any(col not in vcf_data_df.columns for col in ["ID", "CHROM", "POS", "REF", "ALT"]):
         raise ValueError("vcf_data_df must contain columns ID, CHROM, POS, REF, ALT")
-    if any(col not in adata_var.columns for col in ["vcrs_header", "vcrs_count", "number_obs"]):
-        raise ValueError("adata_var must contain columns vcrs_header, vcrs_count, number_obs")
+    if any(col not in adata_var.columns for col in ["vcrs_id", "vcrs_count", "number_obs"]):
+        raise ValueError("adata_var must contain columns vcrs_id, vcrs_count, number_obs")
     if save_vcf_samples and not isinstance(adata, ad.AnnData):
         raise ValueError("adata must be provided as an anndata object or path to an anndata object if save_vcf_samples is True")
-    
+
     output_vcf = str(output_vcf)  # for Path
-    
+
     # only keep the VCRSs that have a count > 0, and only keep relevant columns
-    adata_var_temp = adata_var[["vcrs_header", "vcrs_count", "number_obs"]].loc[adata_var["vcrs_count"] > 0].copy()
+    adata_var_temp = adata_var[["vcrs_id", "vcrs_count", "number_obs"]].loc[adata_var["vcrs_count"] > 0].copy()
 
     # make copy column that won't be exploded so that I know how to groupby later
-    adata_var_temp["vcrs_header_copy"] = adata_var_temp["vcrs_header"]
+    adata_var_temp["vcrs_id_copy"] = adata_var_temp["vcrs_id"]
 
     # rename to have VCF-like column names
-    adata_var_temp.rename(columns={"vcrs_count": "AO", "number_obs": "NS", "vcrs_header": "ID"}, inplace=True)
+    adata_var_temp.rename(columns={"vcrs_count": "AO", "number_obs": "NS", "vcrs_id": "ID"}, inplace=True)
 
     # explode across semicolons so that I can merge in vcf_data_df
     adata_var_temp = adata_var_temp.assign(
@@ -1757,7 +2295,7 @@ def cleaned_adata_to_vcf(variant_data, vcf_data_df, output_vcf = "variants.vcf",
     # collapse across semicolons so that I get my VCRSs back
     adata_var_temp = (
         adata_var_temp
-        .groupby("vcrs_header_copy", sort=False)  # Group by vcrs_header_copy while preserving order
+        .groupby("vcrs_id_copy", sort=False)  # Group by vcrs_id_copy while preserving order
         .agg({
             "ID": lambda x: ";".join(x),  # Reconstruct ID as a single string
             "CHROM": set,  # Collect CHROM values in the same order as rows
@@ -1768,7 +2306,7 @@ def cleaned_adata_to_vcf(variant_data, vcf_data_df, output_vcf = "variants.vcf",
             "NS": "first",
         })
         .reset_index()  # Reset index for cleaner result
-        .drop(columns=["vcrs_header_copy"])
+        .drop(columns=["vcrs_id_copy"])
     )
 
     # only keep the VCRSs that have a single value for CHROM, POS, REF, ALT - there could be some merged headers that have identical VCF information (eg same genomic mutation but for different splice variants), so I can't just drop all merged headers
@@ -1974,7 +2512,7 @@ def get_variant_sources_normal_genome(vcr_list):
     return result, unique_value
 
 
-def remove_variants_from_adata_for_stranded_technologies(adata, strand_bias_end, read_length, header_column="vcrs_header", variant_position_annotations=None, variant_source=None, gtf=None, forgiveness=100, seq_id_column="seq_ID", var_column="mutation", plot_histogram=True, out="."):
+def remove_variants_from_adata_for_stranded_technologies(adata, strand_bias_end, read_length, header_column="vcrs_id", variant_position_annotations=None, variant_source=None, gtf=None, forgiveness=100, seq_id_column="seq_ID", var_column="mutation", plot_histogram=True, out="."):
     #* Type-checking
     if isinstance(adata, str):  # adata is anndata object or path to h5ad
         adata = ad.read_h5ad(adata)
@@ -2457,8 +2995,8 @@ def _validate_clean_params(params_dict):
             must_be_value = f"an integer >= {min_value}" if not optional_value else f"an integer >= {min_value} or None"
             raise ValueError(f"{param_name} must be {must_be_value}. Got {param_value} of type {type(param_value)}.")
 
-    if params_dict.get("cpm_normalization") and (not params_dict.get("adata_reference_genome") and not params_dict.get("kb_count_reference_genome_dir")):
-        raise ValueError("adata_reference_genome or kb_count_reference_genome_dir must be provided if cpm_normalization=True.")
+    if params_dict.get("cpm_normalization") and (not params_dict.get("adata_reference_genome") and not params_dict.get("kallisto_quant_reference_genome_dir")):
+        raise ValueError("adata_reference_genome or kallisto_quant_reference_genome_dir must be provided if cpm_normalization=True.")
 
     if technology not in non_single_cell_technologies:
         if params_dict.get("filter_cells_by_min_counts") is True:
@@ -2468,8 +3006,8 @@ def _validate_clean_params(params_dict):
                 raise ImportError("kneed is required for filter_cells_by_min_counts=True. See pyproject.toml project.optional-dependencies for version recommendation. Install it with:\n" "  pip install kneed")
         for condition in scanpy_conditions:
             if params_dict.get(condition):
-                if not params_dict.get("adata_reference_genome") and not params_dict.get("kb_count_reference_genome_dir"):
-                    raise ValueError(f"adata_reference_genome or kb_count_reference_genome_dir must be provided if {condition}=True.")
+                if not params_dict.get("adata_reference_genome") and not params_dict.get("kallisto_quant_reference_genome_dir"):
+                    raise ValueError(f"adata_reference_genome or kallisto_quant_reference_genome_dir must be provided if {condition}=True.")
                 try:
                     import scanpy as sc
                 except ImportError:
@@ -2485,7 +3023,7 @@ def _validate_clean_params(params_dict):
         raise ValueError(f"filter_cells_by_max_mt_content must be an integer between 0 and 100, or None. Got {params_dict.get('filter_cells_by_max_mt_content')}.")
 
     # boolean
-    for param_name in ["use_binary_matrix", "drop_empty_columns", "apply_dlist_correction", "qc_against_gene_matrix", "doublet_detection", "remove_doublets", "cpm_normalization", "sum_rows", "drop_multi_variant_vcrs", "rename_vcrs_to_variant", "mm", "save_vcf", "dry_run", "overwrite", "account_for_strand_bias"]:
+    for param_name in ["use_binary_matrix", "drop_empty_columns", "pseudobam_validation", "doublet_detection", "remove_doublets", "cpm_normalization", "sum_rows", "drop_multi_variant_vcrs", "rename_vcrs_to_variant", "mm", "save_vcf", "dry_run", "overwrite", "account_for_strand_bias"]:
         if not isinstance(params_dict.get(param_name), bool):
             raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
     if not isinstance(params_dict.get("multiplexed"), bool) and params_dict.get("multiplexed") is not None:
@@ -2496,14 +3034,6 @@ def _validate_clean_params(params_dict):
         param_value = params_dict.get(param_name, None)
         if param_value is not None and not isinstance(param_value, (set, list, tuple) and not (isinstance(param_value, str) and param_value.endswith(".txt") and os.path.isfile(param_value))):  # checks if it is (1) None, (2) a set/list/tuple, or (3) a string path to a txt file that exists
             raise ValueError(f"{param_name} must be a set. Got {param_name} of type {type(param_value)}.")
-
-    # k
-    k = params_dict.get("k", None)
-    if k:
-        if not isinstance(k, (int, str)) or int(k) < 1:
-            raise ValueError(f"k must be a positive integer. Got {k} of type {type(k)}.")
-        if int(k) % 2 == 0 or int(k) > 63:
-            logger.warning("If running a workflow with vk ref or kb ref, k should be an odd number between 1 and 63. Got k=%s.", k)
 
     parity_valid_values = {"single", "paired"}
     if params_dict["parity"] not in parity_valid_values:
@@ -2529,8 +3059,6 @@ def _validate_clean_params(params_dict):
         "config": ["json", "yaml"],
         "vcrs_index": "index",
         "vcrs_t2g": "t2g",
-        "vcrs_fasta": "fasta",
-        "dlist_fasta": "fasta",
         "adata_reference_genome": "h5ad",
         "adata_vcrs_clean_out": "h5ad",
         "adata_reference_genome_clean_out": "h5ad",
@@ -2539,7 +3067,7 @@ def _validate_clean_params(params_dict):
         check_file_path_is_string_with_valid_extension(params_dict.get(param_name), param_name, file_type)
 
     # directories
-    for param_name in ["vk_ref_dir", "kb_count_vcrs_dir", "kb_count_reference_genome_dir"]:
+    for param_name in ["vk_ref_dir", "kb_count_vcrs_dir", "kallisto_quant_reference_genome_dir"]:
         if not isinstance(params_dict.get(param_name), (str, Path)) and params_dict.get(param_name) is not None:
             raise ValueError(f"Directory {param_name} {params_dict.get(param_name)} is not a string or None")
         if params_dict.get(param_name) and not params_dict.get("dry_run") and (not os.path.isdir(params_dict.get(param_name)) or len(os.listdir(params_dict.get(param_name))) == 0):  # including the dry_run condition so that vk count dry run does not throw an error
@@ -2547,13 +3075,12 @@ def _validate_clean_params(params_dict):
     if not isinstance(params_dict.get("out"), (str, Path)):
         raise ValueError(f"Out directory {params_dict.get('out')} is not a string")
 
-    if params_dict.get("qc_against_gene_matrix"):
-        for arg in ["kb_count_vcrs_dir", "kb_count_reference_genome_dir"]:
-            kb_count_normal_dir = params_dict.get(arg)
-            if kb_count_normal_dir and os.path.exists(kb_count_normal_dir):
-                run_info_json = os.path.join(kb_count_normal_dir, "run_info.json")
+    if params_dict.get("pseudobam_validation"):
+        kb_count_vcrs_dir = params_dict.get("kb_count_vcrs_dir")
+        if kb_count_vcrs_dir and os.path.exists(kb_count_vcrs_dir):
+            run_info_json = os.path.join(kb_count_vcrs_dir, "run_info.json")
+            if os.path.exists(run_info_json):
                 with open(run_info_json, "r") as f:
                     data = json.load(f)
                 if "--num" not in data["call"]:
-                    raise ValueError(f"--num must be included in the provided value for {arg}. Please run kb count on the normal genome again, or provide a new path for {arg} to allow varseek count to make this file for you.")
-        logger.warning("For the best results with qc_against_gene_matrix=True, try to ensure the reference assembly and release of the genome used with kb_count_reference_genome_dir is as similar as possible to the one used with kb_count_vcrs_dir. This helps ensure that transcript/gene IDs are as stable as possible.")
+                    raise ValueError("--num must be included in the kb count run used to produce kb_count_vcrs_dir when pseudobam_validation=True. Please re-run kb count (vk count adds --num automatically), or point kb_count_vcrs_dir to such a run.")

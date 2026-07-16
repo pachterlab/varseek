@@ -1440,8 +1440,8 @@ def kmer_match_bowtie2(
         logger.info("Running bowtie2 alignment")
         bowtie2_alignment_command = [
             bowtie2,
-            "-a",  # report all alignments
-            # "-k", "1",  # stop after the first valid alignment (we only need boolean occurrence)
+            # "-a",  # report all alignments
+            "-k", "1",  # stop after the first valid alignment (we only need boolean occurrence)
             "-f",  # input reads are FASTA
             "--threads",
             str(threads),
@@ -1639,7 +1639,7 @@ def _download_bowtie2_indices(species, reference_type, out_dir):
     return references
 
 
-def pseudoalign_bowtie2(vcrs_fasta, reference_type, out_dir="bowtie2_out", dna_fasta=None, gtf=None, k=None, threads=None, bowtie2="bowtie2", bowtie2_build="bowtie2-build", overwrite=False, species=None, vcrs_strandedness=False):
+def pseudoalign_bowtie2(vcrs_fasta, reference_type, out_dir="bowtie2_out", index_dir=None, dna_fasta=None, gtf=None, k=None, threads=None, bowtie2="bowtie2", bowtie2_build="bowtie2-build", overwrite=False, species=None, vcrs_strandedness=False):
     """Bowtie2 analogue of :func:`pseudoalign`.
 
     Returns the positional read-ids (as strings ``"0"``, ``"1"``, ...) in ``vcrs_fasta`` that share
@@ -1647,19 +1647,32 @@ def pseudoalign_bowtie2(vcrs_fasta, reference_type, out_dir="bowtie2_out", dna_f
     genomic DNA fasta (plus a gtf for cdna/nascent) via :func:`_reference_fastas_for_bowtie2`, or
     downloaded for a supported ``species``. When ``reference_type`` maps to multiple references
     (e.g. ``transcriptome`` -> cdna + nascent), the aligned read-ids are unioned across them.
+
+    Prebuilt indices (downloaded for a supported ``species``) are stored in ``index_dir`` so they
+    persist alongside the other reference files; the transient per-run alignment work (SAM output,
+    locally built cdna/nascent fastas) stays under ``out_dir``. ``index_dir`` defaults to ``out_dir``.
     """
     os.makedirs(out_dir, exist_ok=True)
+    if index_dir is None:
+        index_dir = out_dir
+    else:
+        os.makedirs(index_dir, exist_ok=True)
     k = k or 31
 
     if species is not None:
-        references = _download_bowtie2_indices(species, reference_type, out_dir)
+        references = _download_bowtie2_indices(species, reference_type, index_dir)
     else:
         references = [(ref, False) for ref in _reference_fastas_for_bowtie2(reference_type, dna_fasta, gtf, out_dir, overwrite=overwrite)]
+
+    # Name each per-reference work dir after its component (e.g. "ref_genome", "ref_cdna") so the
+    # scratch layout is self-describing. `references` is built in `_BOWTIE2_COMPONENTS` order.
+    components = _BOWTIE2_COMPONENTS.get(reference_type, [])
 
     aligned_positions = set()
     n_reads = None
     for i, (ref, is_prebuilt) in enumerate(references):
-        work_dir = os.path.join(out_dir, f"ref_{i}")
+        component = components[i] if i < len(components) else str(i)
+        work_dir = os.path.join(out_dir, f"ref_{component}")
         if overwrite and os.path.isdir(work_dir):
             shutil.rmtree(work_dir, ignore_errors=True)
         matched, read_match_counts = kmer_match_bowtie2(
@@ -1675,7 +1688,7 @@ def pseudoalign_bowtie2(vcrs_fasta, reference_type, out_dir="bowtie2_out", dna_f
         )
         aligned_positions.update(matched)
         n_reads = len(read_match_counts)
-        logger.info(f"reference_type: {reference_type} (bowtie2, ref {i + 1}/{len(references)} = {ref}): {len(matched)} / {n_reads} VCRSs matched a k-mer.")
+        logger.info(f"reference_type: {reference_type} (bowtie2, ref {i + 1}/{len(references)} = {component}: {ref}): {len(matched)} / {n_reads} VCRSs matched a k-mer.")
 
     aligned_headers = [str(p) for p in sorted(aligned_positions)]
     if n_reads:
@@ -1725,6 +1738,7 @@ def run_pseudoalign_on_vcrs_df(df, reference_type, index_dir, out_dir, dna_fasta
                 aligned_headers = pseudoalign_bowtie2(
                     reference_type=reference_type,
                     out_dir=out_dir,
+                    index_dir=index_dir,
                     vcrs_fasta=vcrs_fasta,
                     dna_fasta=dna_fasta,
                     gtf=gtf,

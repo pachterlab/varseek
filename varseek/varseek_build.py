@@ -1,6 +1,5 @@
 """varseek build and specific helper functions."""
 
-import json
 import logging
 import os
 import re
@@ -47,7 +46,6 @@ from .utils import (
     save_params_to_config_file,
     save_run_info,
     set_up_logger,
-    translate_sequence,
     vcf_to_dataframe,
     wt_fragment_and_mutant_fragment_share_kmer,
     merge_fasta_file_headers,
@@ -123,16 +121,37 @@ vk_build_hidden_from_help = {
     "min_seq_len",
     "optimize_flanking_regions",
     "remove_seqs_with_wt_kmers",
-    "required_insertion_overlap_length",
     "merge_identical",
     "merge_subsequences",
     "vcrs_strandedness",
     "use_IDs",
     "cosmic_version",
     "cosmic_grch",
-    "cosmic_email",
-    "cosmic_password",
 }
+
+# Documentation for the advanced `build` parameters. These are real, fully typed
+# arguments on the `build` signature (validated by @validate_call like every other
+# parameter), but they are deliberately kept out of the public `build` docstring
+# (and therefore out of help(vk.build) / the Sphinx site) and out of `vk build --help`
+# (via vk_build_hidden_from_help) to keep the common interface uncluttered. The text
+# lives here so maintainers still have it close to the definition.
+BUILD_ADVANCED_PARAMS_DOC = """
+# # Advanced parameters (real `build` arguments; several are hidden from the `vk build --help` CLI via vk_build_hidden_from_help) - for niche use cases, specific databases, or debugging:
+- dont_create_index                  (True/False) If True, skip the kb ref index-creation step and only produce the VCRS fasta/t2g (i.e., the classic vk build behavior). By default the index is created. Default: False.
+- merge_subsequences                 (True/False) Whether to also merge VCRSs whose sequence is a subsequence (substring) of another VCRS's sequence (also considering
+                                     reverse complements unless vcrs_strandedness=True). The shorter VCRS is folded into the longer (supersequence) VCRS: the longer
+                                     sequence is kept and the shorter VCRS's header is concatenated with a semicolon. Only effective when merge_identical is also True. Default: True
+- vcrs_strandedness                  (True/False) Whether to consider the forward and reverse-complement mutant sequences as distinct if merging identical sequences. Only effective when merge_identical is also True. Default: False (ie consider forward and reverse-complement sequences to be equivalent).
+- use_IDs                            (True/False) If True, replace the VCRS fasta headers with unique IDs of the form 'vcrs_<int>' (some tools that work with FASTA files struggle with long
+                                     headers or headers containing '>'), and write an additional file at <id_to_header_csv_out> mapping each 'vcrs_<int>' id back to the original header.
+                                     If False (default), keep the original headers verbatim (the vcrs_id column equals the vcrs_header, and no id_to_header mapping is written). Default: False.
+- original_order                     (True/False) Whether to keep the original order of the sequences in the output fasta file. Default: True.
+- cdna_derived_vcf                   (True/False) Whether the input VCF variants were derived from cDNA sequences (so the emitted HGVS uses 'c.' instead of 'g.'). Only relevant for VCF input. Default: False.
+- cosmic_version                     (str) COSMIC release version to download. Default: "101".
+- cosmic_grch                        (str) COSMIC genome reference version to download. Default: None (choose the largest value from all internally supported values).
+
+NOTE: COSMIC download credentials are read only from the COSMIC_EMAIL and COSMIC_PASSWORD environment variables (so they are never written to the on-disk run config); there are no cosmic_email/cosmic_password arguments.
+"""
 
 
 class BuildParams(BaseModel):
@@ -159,7 +178,7 @@ class BuildParams(BaseModel):
     convert_variant_coordinates: object = None
 
     # Every per-parameter check (including the value-semantics of gtf, dlist,
-    # required_insertion_overlap_length, min_triplet_complexity, and
+    # min_triplet_complexity, and
     # alignment_to_reference_type) is now expressed as a type annotation on the
     # `build` signature and validated by @validate_call. Only genuinely cross-field
     # constraints — ones a single-value annotation cannot see — remain below.
@@ -222,14 +241,27 @@ class BuildParams(BaseModel):
 
         return self
 
-@report_time_elapsed
 @validate_call(config=vk_config)
 def build(
-    variants: object,
+    variants: object,  # inputs
     sequences: object,
-    w: PositiveInt = 47,
+    w: PositiveInt = 47,  # parameters
     k: OddInt3To63 = 51,
-    max_ambiguous: NonNegativeInt = 0,
+    optimize_flanking_regions: bool = True,
+    merge_identical: bool = True,
+    dlist: Optional[Union[Literal["None", "intergenic_dna", "cdna"], ExistingFasta]] = None,
+    max_ambiguous: NonNegativeInt = 0,  # filters
+    min_seq_len: Optional[Union[PositiveInt, Literal["k"]]] = "k",  # "k" sentinel = "use the k value" (default); None = no length filter; int = that minimum
+    insertion_size_limit: Optional[PositiveInt] = None,
+    remove_seqs_with_wt_kmers: bool = True,
+    max_homopolymer_length: Optional[PositiveInt] = None,
+    min_triplet_complexity: Optional[Ratio] = None,
+    remove_alignment_to_reference: bool = True,
+    alignment_to_reference_type: ReferenceType = "genome_or_transcriptome",
+    alignment_to_reference_aligner: Literal["bowtie2", "kallisto"] = "bowtie2",
+    species: Optional[str] = None,
+    alignment_to_reference_dna: Optional[str] = None,
+    alignment_to_reference_gtf: Optional[str] = None,
     var_column: str = "mutation",
     seq_id_column: str = "seq_ID",
     var_id_column: Optional[str] = None,
@@ -250,16 +282,11 @@ def build(
     filtering_report_text_out: Optional[TxtFile] = None,
     return_variant_output: bool = False,
     save_variants_updated_dataframe: bool = False,
-    store_full_sequences: bool = False,
-    translate: bool = False,
-    translate_start: Optional[Union[int, str]] = None,
-    translate_end: Optional[Union[int, str]] = None,
     download: bool = False,
     chunksize: Optional[int] = None,
     dry_run: bool = False,
     list_internally_supported_indices: bool = False,
     list_downloadable_references: bool = False,
-    dlist: Optional[Union[Literal["None", "intergenic_dna", "cdna"], ExistingFasta]] = None,
     overwrite: bool = False,
     threads: PositiveInt = 2,
     logging_level: Optional[Union[str, int]] = None,
@@ -267,30 +294,13 @@ def build(
     log_out_dir: Optional[Union[str, Path]] = None,
     verbose: bool = False,
     dont_create_index: bool = False,
-    insertion_size_limit: Optional[PositiveInt] = None,
-    min_seq_len: Optional[Union[PositiveInt, Literal["k"]]] = "k",  # "k" sentinel = "use the k value" (default); None = no length filter; int = that minimum
-    optimize_flanking_regions: bool = True,
-    remove_seqs_with_wt_kmers: bool = True,
-    max_homopolymer_length: Optional[PositiveInt] = None,
-    min_triplet_complexity: Optional[Ratio] = None,
-    remove_alignment_to_reference: bool = True,
-    alignment_to_reference_type: ReferenceType = "genome_or_transcriptome",
-    alignment_to_reference_aligner: Literal["bowtie2", "kallisto"] = "bowtie2",
-    species: Optional[str] = None,
-    alignment_to_reference_dna: Optional[str] = None,
-    alignment_to_reference_gtf: Optional[str] = None,
-    required_insertion_overlap_length: Optional[Union[PositiveInt, Literal["all"]]] = None,
-    merge_identical: bool = True,
     merge_subsequences: bool = True,
     vcrs_strandedness: bool = False,
-    use_IDs: bool = True,
+    use_IDs: bool = False,
     original_order: bool = True,
     cdna_derived_vcf: bool = False,
-    save_column_names_json_path: Optional[str] = None,
     cosmic_version: str = "101",  #! if I change this value, make sure to change vk clean's VCF df download accordingly
     cosmic_grch: Optional[str] = None,
-    cosmic_email: Optional[str] = None,
-    cosmic_password: Optional[str] = None,
     **kwargs,
 ):
     """
@@ -336,7 +346,31 @@ def build(
     - k                                  (int) Length of the k-mers to be considered in remove_seqs_with_wt_kmers, and the default minimum value for the minimum sequence length (which can be changed with 'min_seq_len').
                                          If using kallisto in a later workflow, then this should correspond to kallisto k.
                                          Must be greater than the value passed in for w. Default: 51.
+    - optimize_flanking_regions          (True/False) Whether to remove nucleotides from either end of the mutant sequence to ensure (when possible)
+                                         that the mutant sequence does not contain any (w+1)-mers (where a (w+1)-mer is a subsequence of length w+1, with w defined by the 'w' argument) also found in the wildtype/input sequence. Default: True
+    - merge_identical                    (True/False) Whether to merge sequence-identical VCRSs in the output (identical VCRSs will be merged by concatenating the sequence
+                                         headers for all identical sequences with semicolons). Default: True
+    - dlist                              (str) The d-list (distinguishing list) passed to `kb ref` when creating the VCRS index, used to mask k-mers shared with a normal reference. One of:
+                                         None (no d-list; default), 'intergenic_dna' (build a d-list fasta of intergenic genomic regions from the reference DNA + GTF via make_intergenic_fasta),
+                                         'cdna' (build a spliced-transcript/cDNA d-list fasta from the reference DNA + GTF via make_transcriptome_fasta), or a path to an existing fasta file to use directly.
+                                         For 'intergenic_dna'/'cdna', the reference DNA fasta and GTF are taken from `alignment_to_reference_dna`/`alignment_to_reference_gtf`, falling back to the build `sequences`/`gtf`. Default: None.
+
+    # Filters (applied to the built VCRSs)
     - max_ambiguous                      (int) Maximum number of 'N' (or 'n') characters allowed in a VCRS. None means no 'N' filter will be applied. Default: 0.
+    - min_seq_len                        (int) Minimum length of the variant output sequence. Mutant sequences smaller than this will be dropped. None means no length filter will be applied. Default: k (from the "k" parameter)
+    - insertion_size_limit               (int) Maximum number of nucleotides allowed in an insertion-type variant. Variants with insertions larger than this will be dropped.
+                                         Default: None (no insertion size limit will be applied)
+    - remove_seqs_with_wt_kmers          (True/False) Removes output sequences where at least one k-mer is also present in the wildtype/input sequence in the same region.
+                                         If optimize_flanking_regions=True, only sequences for which a wildtype k-mer (with k defined by the 'k' argument) is still present after optimization will be removed.
+                                         Default: True
+    - max_homopolymer_length             (int) Drop any VCRS whose longest single-nucleotide homopolymer run is longer than this value. None disables the filter. Default: None.
+    - min_triplet_complexity             (float) Drop any VCRS whose triplet complexity (distinct 3-mers / total 3-mers, in (0, 1]) is below this value. None disables the filter. Default: None.
+    - remove_alignment_to_reference      (True/False) Remove VCRSs that pseudoalign to a normal reference (they would be false positives). Requires a reference DNA fasta (see `alignment_to_reference_dna`/`species`). Default: True.
+    - alignment_to_reference_type        (str) Which normal reference to pseudoalign against when remove_alignment_to_reference=True: one of 'genome', 'cdna', 'transcriptome', 'genome_or_transcriptome'. Default: 'genome_or_transcriptome'.
+    - alignment_to_reference_aligner     (str) Aligner backend for the pseudoalignment filter: 'bowtie2' (default; falls back to 'kallisto' if bowtie2 is not installed) or 'kallisto'. Default: 'bowtie2'.
+    - species                            (str) If a supported species (e.g. 'human'), download a prebuilt reference index (from the chosen aligner) for the pseudoalignment filter instead of building one. Default: None.
+    - alignment_to_reference_dna         (str) Path to the reference DNA (genome) fasta used to build the pseudoalignment index. Required when remove_alignment_to_reference=True and no downloadable `species` is given (falls back to `sequences` if it looks like a genome fasta). Default: None.
+    - alignment_to_reference_gtf         (str) Path to the reference GTF used to build the pseudoalignment index for cdna/transcriptome/genome_or_transcriptome types. Falls back to the build `gtf` if not given. Default: None.
 
     # Additional input files and associated parameters
     - var_column                         (str) Name of the column containing the variants to be introduced in 'variants'. Important for CSV/TSV/DataFrame input with pre-defined columns. Default: 'mutation'.
@@ -359,8 +393,8 @@ def build(
     - vcrs_unfiltered_fasta_out          (str) Path to output fasta file containing the unfiltered, unmerged VCRSs, written before the quality filters and before merging identical VCRSs.
                                          Headers are the per-variant `<seq_ID>:<variant>` (or var_id_column) values. Only written when an explicit path is provided. Default: None (not saved).
     - vcrs_fasta_out                     (str) Path to output fasta file containing the filtered VCRSs. This is the file the (kallisto) index and t2g are built from.
-                                         If use_IDs=False, then the fasta headers will be the variant IDs (semicolon-joined if merge_identical=True).
-                                         Otherwise, if use_IDs=True (default), then the fasta headers will be of the form 'vcrs_<int>' where <int> is a unique integer. Default: "<out>/vcrs.fa"
+                                         If use_IDs=False (default), then the fasta headers will be the variant IDs (semicolon-joined if merge_identical=True).
+                                         Otherwise, if use_IDs=True, then the fasta headers will be of the form 'vcrs_<int>' where <int> is a unique integer. Default: "<out>/vcrs.fa"
     - variants_updated_csv_out          (str) Path to output csv file containing the updated DataFrame. Only valid if save_variants_updated_dataframe=True. Default: "<out>/variants_updated.csv"
     - id_to_header_csv_out               (str) File name of csv file containing the mapping of unique IDs to the original sequence headers (for the filtered VCRSs) if use_IDs=True. Default: "<out>/id_to_header_mapping.csv"
     - id_to_header_unfiltered_csv_out     (str) Path to output csv file mapping unique IDs to the original sequence headers for the UNFILTERED VCRSs (one row per built variant, before the quality filters). Useful for tracing which variants survived the build vs. the filter step. Only written when an explicit path is provided. Default: None (not saved).
@@ -375,16 +409,6 @@ def build(
     - return_variant_output             (True/False) Whether to return the variant output saved in the fasta file. Default: False.
     - save_variants_updated_dataframe         (True/False) Whether to update the input 'variants' DataFrame to include additional columns with the variant type,
                                          wildtype nucleotide sequence, and mutant nucleotide sequence (only valid if 'variants' is a csv or tsv file). Default: False
-    - store_full_sequences               (True/False) Whether to also include the complete wildtype and mutant sequences in the updated 'variants' DataFrame (not just the sub-sequence with
-                                         w-length flanks). Only valid if save_variants_updated_dataframe=True. Default: False
-    - translate                          (True/False) Add additional columns to the 'variants' DataFrame containing the wildtype and mutant amino acid sequences.
-                                         Only valid if store_full_sequences=True. Default: False
-    - translate_start                    (int | str | None) The position in the input nucleotide sequence to start translating. If a string is provided, it should correspond
-                                         to a column name in 'variants' containing the open reading frame start positions for each sequence/variant.
-                                         Only valid if translate=True. Default: None (translate from the beginning of the sequence)
-    - translate_end                      (int | str | None) The position in the input nucleotide sequence to end translating. If a string is provided, it should correspond
-                                         to a column name in 'variants' containing the open reading frame end positions for each sequence/variant.
-                                         Only valid if translate=True. Default: None (translate to the end of the sequence)
 
     # General arguments:
     - download                           (True/False) If True, download prebuilt reference files (index, t2g, vcrs fasta) into `out` (or the paths specified by index_out, vcrs_t2g_out, and vcrs_fasta_out, respectively) instead of building them. Default: False.
@@ -399,67 +423,28 @@ def build(
     - log_out_dir                        (str) Directory to save logs. Default: `out`/logs
     - verbose                            (True/False) Whether to print additional information e.g., progress bars. Does not affect logging. Default: False.
 
-    # # Advanced parameters (real `build` arguments, but hidden from the `vk build --help` CLI) - for niche use cases, specific databases, or debugging:
-    # # niche use cases
-    - dont_create_index                  (True/False) If True, skip the kb ref index-creation step and only produce the VCRS fasta/t2g (i.e., the classic vk build behavior). By default the index is created. Default: False.
-    - insertion_size_limit               (int) Maximum number of nucleotides allowed in an insertion-type variant. Variants with insertions larger than this will be dropped.
-                                         Default: None (no insertion size limit will be applied)
-    - min_seq_len                        (int) Minimum length of the variant output sequence. Mutant sequences smaller than this will be dropped. None means no length filter will be applied. Default: k (from the "k" parameter)
-    - optimize_flanking_regions          (True/False) Whether to remove nucleotides from either end of the mutant sequence to ensure (when possible)
-                                         that the mutant sequence does not contain any (w+1)-mers (where a (w+1)-mer is a subsequence of length w+1, with w defined by the 'w' argument) also found in the wildtype/input sequence. Default: True
-    - remove_seqs_with_wt_kmers          (True/False) Removes output sequences where at least one k-mer is also present in the wildtype/input sequence in the same region.
-                                         If optimize_flanking_regions=True, only sequences for which a wildtype k-mer (with k defined by the 'k' argument) is still present after optimization will be removed.
-                                         Default: True
-    - max_homopolymer_length             (int) Drop any VCRS whose longest single-nucleotide homopolymer run is longer than this value. None disables the filter. Default: None.
-    - min_triplet_complexity             (float) Drop any VCRS whose triplet complexity (distinct 3-mers / total 3-mers, in (0, 1]) is below this value. None disables the filter. Default: None.
-    - remove_alignment_to_reference      (True/False) Remove VCRSs that pseudoalign to a normal reference (they would be false positives). Requires a reference DNA fasta (see `alignment_to_reference_dna`/`species`). Default: True.
-    - alignment_to_reference_type        (str) Which normal reference to pseudoalign against when remove_alignment_to_reference=True: one of 'genome', 'cdna', 'transcriptome', 'genome_or_transcriptome'. Default: 'genome_or_transcriptome'.
-    - alignment_to_reference_aligner     (str) Aligner backend for the pseudoalignment filter: 'bowtie2' (default; falls back to 'kallisto' if bowtie2 is not installed) or 'kallisto'. Default: 'bowtie2'.
-    - species                            (str) If a supported species (e.g. 'human'), download a prebuilt reference index (from the chosen aligner) for the pseudoalignment filter instead of building one. Default: None.
-    - alignment_to_reference_dna         (str) Path to the reference DNA (genome) fasta used to build the pseudoalignment index. Required when remove_alignment_to_reference=True and no downloadable `species` is given (falls back to `sequences` if it looks like a genome fasta). Default: None.
-    - alignment_to_reference_gtf         (str) Path to the reference GTF used to build the pseudoalignment index for cdna/transcriptome/genome_or_transcriptome types. Falls back to the build `gtf` if not given. Default: None.
-    - dlist                              (str) The d-list (distinguishing list) passed to `kb ref` when creating the VCRS index, used to mask k-mers shared with a normal reference. One of:
-                                         None (no d-list; default), 'intergenic_dna' (build a d-list fasta of intergenic genomic regions from the reference DNA + GTF via make_intergenic_fasta),
-                                         'cdna' (build a spliced-transcript/cDNA d-list fasta from the reference DNA + GTF via make_transcriptome_fasta), or a path to an existing fasta file to use directly.
-                                         For 'intergenic_dna'/'cdna', the reference DNA fasta and GTF are taken from `alignment_to_reference_dna`/`alignment_to_reference_gtf`, falling back to the build `sequences`/`gtf`. Default: None.
-
-    - required_insertion_overlap_length  (int | str | None) Enforces the minimum number of bases included in the inserted region for all (w+1)-mers (where a (w+1)-mer is a subsequence of length w+1, with w defined by the 'w' argument),
-                                         or that all (w+1)-mers contain the entire inserted sequence (whatever is smaller). Only effective when optimize_flanking_regions is also True. None or 1 (minimum value) means that flank optimization occurs only until there is no shared k-mer in the VCRS and the reference sequence (i.e., as little as 1 base from the insertion could be required). If "all", then require the entire insertion and the following nucleotide (and filter out insertions of length >= 2*w). Experimental - does not work quite properly with values > 1 when there is overlap between the mutated regions and flanks. Default: None
-    - merge_identical                    (True/False) Whether to merge sequence-identical VCRSs in the output (identical VCRSs will be merged by concatenating the sequence
-                                         headers for all identical sequences with semicolons). Default: True
-    - merge_subsequences                 (True/False) Whether to also merge VCRSs whose sequence is a subsequence (substring) of another VCRS's sequence (also considering
-                                         reverse complements unless vcrs_strandedness=True). The shorter VCRS is folded into the longer (supersequence) VCRS: the longer
-                                         sequence is kept and the shorter VCRS's header is concatenated with a semicolon. Only effective when merge_identical is also True. Default: True
-    - vcrs_strandedness                  (True/False) Whether to consider the forward and reverse-complement mutant sequences as distinct if merging identical sequences. Only effective when merge_identical is also True. Default: False (ie consider forward and reverse-complement sequences to be equivalent).
-    - use_IDs                            (True/False) Whether to keep the original sequence headers in the output fasta file, or to replace them with unique IDs of the form 'vcrs_<int>.
-                                         If False, then an additional file at the path <id_to_header_csv_out> will be formed that maps sequence IDs from the fasta file to the <var_id_column>. Default: True.
-    - original_order                     (True/False) Whether to keep the original order of the sequences in the output fasta file. Default: True.
-    - cdna_derived_vcf                   (True/False) Whether the input VCF variants were derived from cDNA sequences.
-
-    # # specific databases
-    - cosmic_version                     (str) COSMIC release version to download. Default: "101".
-    - cosmic_grch                        (str) COSMIC genome reference version to download. Default: None (choose the largest value from all internally supported values).
-    - cosmic_email                       (str) Email address for COSMIC download. Default: None.
-    - cosmic_password                    (str) Password for COSMIC download. Default: None.
-
-    # other
-    - save_column_names_json_path        (str) Whether to save the column names in their own json file. Utilized internally by vk ref. Default: None.
-
+    NOTE: `build` also accepts several advanced/niche parameters that are intentionally omitted here (and from
+    `vk build --help`). They are fully typed and validated like any other argument; see BUILD_ADVANCED_PARAMS_DOC
+    in varseek/varseek_build.py for their documentation.
 
     Saves mutated sequences in fasta format (or returns a list containing the mutated sequences if return_variant_output=True).
     """
 
     global intronic_mutations, posttranslational_region_mutations, unknown_mutations, uncertain_mutations, ambiguous_position_mutations, variants_incorrect_wt_base, mut_idx_outside_seq
 
+    start_time = time.perf_counter()
+
     # * 0. Informational arguments that exit early
     if list_internally_supported_indices:
         print_valid_values_for_variants_and_sequences_in_varseek_build()
+        report_time_elapsed(start_time, "build", running_within_chunk_iteration=kwargs.get("running_within_chunk_iteration", False))
         return None
 
     if list_downloadable_references:
         print("All varseek build arguments are defaults unless otherwise specified.\n")
         for downloadable_reference in downloadable_references:
             print(f"Description: {downloadable_reference['description']}\nDownload command: {downloadable_reference['download_command']}\n")
+        report_time_elapsed(start_time, "build", running_within_chunk_iteration=kwargs.get("running_within_chunk_iteration", False))
         return None
 
     # * 0.5. fasta_out / t2g_out are backwards-compatible aliases (from vk ref) for vcrs_fasta_out / vcrs_t2g_out.
@@ -526,6 +511,7 @@ def build(
                             kb_ref_kwargs=kwargs,
                             dlist=dlist_value,
                         )
+                    report_time_elapsed(start_time, "build", running_within_chunk_iteration=kwargs.get("running_within_chunk_iteration", False))
                     return
         elif variants.endswith(".vcf") or variants.endswith(".vcf.gz"):
             iterate_through_vcf_in_chunks(variants, params_dict, chunksize, merge_identical=merge_identical)
@@ -573,6 +559,7 @@ def build(
                 kb_ref_kwargs=kwargs,
                 dlist=dlist_value,
             )
+        report_time_elapsed(start_time, "build", running_within_chunk_iteration=kwargs.get("running_within_chunk_iteration", False))
         return None
 
     # * 4. Save params to config file and run info file
@@ -629,6 +616,7 @@ def build(
                 os.rename(vk_ref_output_dict[key], destination)
                 vk_ref_output_dict[key] = destination
         logger.info(f"Downloaded files: {vk_ref_output_dict}")
+        report_time_elapsed(start_time, "build", running_within_chunk_iteration=kwargs.get("running_within_chunk_iteration", False))
         return vk_ref_output_dict
 
     # make sure directories of all output files exist (skip the opt-in unfiltered outputs when not requested)
@@ -649,17 +637,13 @@ def build(
     if min_seq_len == "k":
         min_seq_len = k
 
-    # get COSMIC info
+    # get COSMIC info (credentials come only from the COSMIC_EMAIL / COSMIC_PASSWORD environment variables,
+    # so they are never written to the run config/params files on disk)
+    cosmic_email = os.getenv("COSMIC_EMAIL")
+    cosmic_password = os.getenv("COSMIC_PASSWORD")
     if cosmic_email:
-        logger.info(f"Using COSMIC email from arguments: {cosmic_email}")
-    elif os.getenv("COSMIC_EMAIL"):
-        cosmic_email = os.getenv("COSMIC_EMAIL")
-        logger.info(f"Using COSMIC email from COSMIC_EMAIL environment variable: {cosmic_email}")
-
+        logger.info("Using COSMIC email from COSMIC_EMAIL environment variable")
     if cosmic_password:
-        logger.info("Using COSMIC password from arguments")
-    elif os.getenv("COSMIC_PASSWORD"):
-        cosmic_password = os.getenv("COSMIC_PASSWORD")
         logger.info("Using COSMIC password from COSMIC_PASSWORD environment variable")
 
     mutations = variants
@@ -685,8 +669,7 @@ def build(
         sequences = str(sequences)
 
     merge_identical_rc = not vcrs_strandedness
-    
-    column_name_dict = {}
+
     columns_to_keep = [
         "header",
         seq_id_column,
@@ -756,20 +739,6 @@ def build(
         if "cosmic" in mutations:
             mutations, mutations_path, seq_id_column, var_column, var_id_column, columns_to_keep = download_cosmic_mutations(gtf, gtf_transcript_id_column, reference_out_dir, cosmic_version, cosmic_email, cosmic_password, columns_to_keep, grch, mutations, sequences, cds_file, cdna_file, var_id_column, verbose)
 
-        if save_column_names_json_path:
-            # save seq_id_column, var_column, var_id_column in temp json for vk ref
-            column_name_dict["seq_id_column"] = seq_id_column
-            column_name_dict["var_column"] = var_column
-            column_name_dict["var_id_column"] = var_id_column
-
-            column_name_dict["gtf"] = gtf if os.path.exists(gtf) else None
-            column_name_dict["reference_genome_fasta"] = genome_file if os.path.exists(genome_file) else None
-            column_name_dict["reference_cds_fasta"] = cds_file if os.path.exists(cds_file) else None
-            column_name_dict["reference_cdna_fasta"] = cdna_file if os.path.exists(cdna_file) else None
-
-            with open(save_column_names_json_path, "w") as f:
-                json.dump(column_name_dict, f, indent=4)
-
     # Read in 'mutations' if passed as filepath to comma-separated csv
     if isinstance(mutations, str) and (mutations.endswith(".csv") or mutations.endswith(".tsv") or mutations.endswith(".parquet")):
         if mutations.endswith(".csv"):
@@ -792,9 +761,9 @@ def build(
             var_id_column = None
         add_variant_type_column_to_vcf_derived_df(mutations)
         add_variant_column_to_vcf_derived_df(mutations, var_column=var_column, cdna_derived_vcf=cdna_derived_vcf)
-        if any(s.startswith("chr") for s in mutations['seq_ID'].unique()) and all(not t.startswith("chr") for t in titles):
+        if any(str(s).startswith("chr") for s in mutations[seq_id_column].unique()) and all(not t.startswith("chr") for t in titles):
             logger.info("Chromosome numbers in the VCF file start with 'chr', but the input sequences do not. Removing 'chr' from the chromosome numbers in the variants dataframe.")
-            mutations['seq_ID'] = mutations['seq_ID'].str.replace('^chr', '', regex=True)
+            mutations[seq_id_column] = mutations[seq_id_column].astype(str).str.replace('^chr', '', regex=True)
 
     # Handle mutations passed as a list
     elif isinstance(mutations, list):
@@ -859,6 +828,7 @@ def build(
         mutations, _conversion_report = converter(mutations, seq_id_column, var_column, exon_model)
         if mutations.empty:
             logger.warning("No variants remained after coordinate conversion (%s).", convert_variant_coordinates)
+            report_time_elapsed(start_time, "build", running_within_chunk_iteration=kwargs.get("running_within_chunk_iteration", False))
             return [] if return_variant_output else None
         if "variant_type" in mutations.columns:
             mutations = mutations.drop(columns=["variant_type"])  # positions/prefixes changed; recomputed downstream
@@ -928,12 +898,10 @@ def build(
     mutations['variant_type'] = mutations['variant_type'].astype(pd.CategoricalDtype(categories=variant_types))  # new as of 3/2025
 
     # Link sequences to their mutations using the sequence identifiers
-    if store_full_sequences or ".vcf" in mutations_path:
+    if ".vcf" in mutations_path:  # look for long duplications - needed seq_dict
         mutations["wt_sequence_full"] = mutations[seq_id_column].map(seq_dict)
-        if ".vcf" in mutations_path:  # look for long duplications - needed seq_dict
-            update_vcf_derived_df_with_multibase_duplication(mutations, seq_dict, seq_id_column=seq_id_column, var_column=var_column, cdna_derived_vcf=cdna_derived_vcf)
-            if not store_full_sequences:
-                mutations.drop(columns=["wt_sequence_full"], inplace=True)
+        update_vcf_derived_df_with_multibase_duplication(mutations, seq_dict, seq_id_column=seq_id_column, var_column=var_column, cdna_derived_vcf=cdna_derived_vcf)
+        mutations.drop(columns=["wt_sequence_full"], inplace=True)
 
     # Handle sequences that were not found based on their sequence IDs
     mutations[seq_id_column] = mutations[seq_id_column].str.split(".").str[0]  #$ new 2026
@@ -987,6 +955,7 @@ def build(
 
     if mutations.empty:
         logger.warning("No valid variants found in the input.")
+        report_time_elapsed(start_time, "build", running_within_chunk_iteration=kwargs.get("running_within_chunk_iteration", False))
         return [] if return_variant_output else None
 
     # Split nucleotide positions into start and end positions
@@ -1018,6 +987,7 @@ def build(
 
     if mutations.empty:
         logger.warning("No valid variants found in the input.")
+        report_time_elapsed(start_time, "build", running_within_chunk_iteration=kwargs.get("running_within_chunk_iteration", False))
         return [] if return_variant_output else None
 
     # Create masks for each type of mutation
@@ -1061,6 +1031,7 @@ def build(
 
     if mutations.empty:
         logger.warning("No valid variants found in the input.")
+        report_time_elapsed(start_time, "build", running_within_chunk_iteration=kwargs.get("running_within_chunk_iteration", False))
         return [] if return_variant_output else None
 
     # Adjust the start and end positions for insertions
@@ -1111,24 +1082,6 @@ def build(
 
     mut_apply = (lambda *args, **kwargs: mutations.progress_apply(*args, **kwargs)) if verbose else mutations.apply
 
-    if save_variants_updated_dataframe and store_full_sequences:
-        # Extract flank sequences
-        if verbose:
-            tqdm.pandas(desc="Extracting full left flank sequences")
-
-        mutations["left_flank_region_full"] = mut_apply(
-            lambda row: seq_dict[row[seq_id_column]][0 : row["start_variant_position"]],  # noqa: F821
-            axis=1,
-        )  # ? vectorize
-
-        if verbose:
-            tqdm.pandas(desc="Extracting full right flank sequences")
-
-        mutations["right_flank_region_full"] = mut_apply(
-            lambda row: seq_dict[row[seq_id_column]][row["end_variant_position"] + 1 : row["sequence_length"]],  # noqa: F821
-            axis=1,
-        )  # ? vectorize
-
     if verbose:
         tqdm.pandas(desc="Extracting VCRS left flank sequences")
 
@@ -1178,25 +1131,6 @@ def build(
 
         # Apply the function for end of mut_nucleotides with left_flank_region
         mutations.loc[non_substitution_mask, "end_mutation_overlap_with_left_flank"] = mutations.loc[non_substitution_mask].apply(calculate_end_mutation_overlap_with_left_flank, axis=1)
-
-        # for insertions and delins, make sure I see at bare minimum the full insertion context and the subseqeuent nucleotide - eg if I have c.2_3insA to become ACGTT to ACAGTT, if I only check for ACAG, then I can't distinguosh between ACAGTT, ACAGGTT, ACAGGGTT, etc. (and there are more complex examples)
-        # TODO: for duplications, required_insertion_overlap_length=None works fine; but required_insertion_overlap_length="all" or some number >1 causes issues (ruins symmetry)
-        if required_insertion_overlap_length and required_insertion_overlap_length != 1 and insertion_and_delins_and_dup_and_inversion_mask.any():  # * new as of 11/20/24
-            if required_insertion_overlap_length == "all":
-                required_insertion_overlap_length = np.inf
-
-            if required_insertion_overlap_length >= 2 * w:
-                mutations = mutations[(mutations["inserted_nucleotide_length"].isna()) | (mutations["inserted_nucleotide_length"] < 2 * w)]  # Keep rows where it is None/NaN  # Keep rows where it's < 2*w
-
-            mutations.loc[insertion_and_delins_and_dup_and_inversion_mask, "beginning_mutation_overlap_with_right_flank"] = np.maximum(
-                mutations.loc[insertion_and_delins_and_dup_and_inversion_mask, "beginning_mutation_overlap_with_right_flank"],
-                np.minimum(mutations.loc[insertion_and_delins_and_dup_and_inversion_mask, "inserted_nucleotide_length"], required_insertion_overlap_length - 1),  # Feb 2025: the -1 was added empirically
-            )
-
-            mutations.loc[insertion_and_delins_and_dup_and_inversion_mask, "end_mutation_overlap_with_left_flank"] = np.maximum(
-                mutations.loc[insertion_and_delins_and_dup_and_inversion_mask, "end_mutation_overlap_with_left_flank"],
-                np.minimum(mutations.loc[insertion_and_delins_and_dup_and_inversion_mask, "inserted_nucleotide_length"], required_insertion_overlap_length - 1),
-            )
 
         # Calculate w-len(flank) (see above instructions)
         mutations.loc[non_substitution_mask, "k_minus_left_flank_length"] = w - mutations.loc[non_substitution_mask, "left_flank_region"].apply(len)
@@ -1279,12 +1213,6 @@ def build(
     else:
         mutations_overlapping_with_wt = 0
 
-    if save_variants_updated_dataframe and store_full_sequences:
-        columns_to_keep.extend(["wt_sequence_full", "vcrs_sequence_full"])
-
-        # Create full sequences (substitution and non-substitution)
-        mutations["vcrs_sequence_full"] = mutations["left_flank_region_full"] + mutations["mut_nucleotides"] + mutations["right_flank_region_full"]
-
     if min_seq_len:
         # Calculate k-mer lengths (where k=w) and report the distribution
         mutations["vcrs_sequence_kmer_length"] = mutations["vcrs_sequence"].apply(lambda x: len(x) if pd.notna(x) else 0)
@@ -1365,7 +1293,7 @@ def build(
             mutations,
             reference_type=alignment_to_reference_type,
             index_dir=reference_out_dir,
-            out_dir=os.path.join(out, "pseudoalignment_tmp"),
+            out_dir=os.path.join(out, "kmer_alignment_tmp"),
             dna_fasta=dna_ref,
             gtf=gtf_ref,
             k=k,
@@ -1423,7 +1351,7 @@ def build(
         """
 
     if remove_alignment_to_reference:
-        report += f"""  {num_rows_pseudoaligned} variants removed for pseudoaligning to the reference ({num_rows_pseudoaligned/total_mutations*100:.3f}%)
+        report += f"""  {num_rows_pseudoaligned} variants removed for sharing a k-mer with the reference ({num_rows_pseudoaligned/total_mutations*100:.3f}%)
         """
 
     if good_mutations != total_mutations:
@@ -1434,39 +1362,6 @@ def build(
     # Save the report string to the specified path
     with open(filtering_report_text_out, determine_write_mode(filtering_report_text_out, overwrite=overwrite, first_chunk=first_chunk), encoding="utf-8") as file:
         file.write(report)
-
-    if translate and save_variants_updated_dataframe and store_full_sequences:
-        columns_to_keep.extend(["wt_sequence_aa_full", "vcrs_sequence_aa_full"])
-
-        if not translate_start:
-            translate_start = "translate_start"
-        if not translate_end:
-            translate_end = "translate_end"
-
-        if translate_start not in mutations.columns:
-            mutations["translate_start"] = 0
-        if translate_end not in mutations.columns:
-            mutations["translate_end"] = None
-
-        if verbose:
-            tqdm.pandas(desc="Translating WT amino acid sequences")
-
-        mutations["wt_sequence_aa_full"] = mutations.apply(
-            lambda row: translate_sequence(row["wt_sequence_full"], row["translate_start"], row["translate_end"]),
-            axis=1,
-        )
-
-        if verbose:
-            tqdm.pandas(desc="Translating mutant amino acid sequences")
-
-        mutations["vcrs_sequence_aa_full"] = mutations.apply(
-            lambda row: translate_sequence(
-                row["vcrs_sequence_full"],
-                row[translate_start],
-                row[translate_end],
-            ),
-            axis=1,
-        )
 
     mutations = mutations[columns_to_keep]
 
@@ -1642,6 +1537,7 @@ def build(
         while "" in all_mut_seqs:
             all_mut_seqs.remove("")
 
+        report_time_elapsed(start_time, "build", running_within_chunk_iteration=kwargs.get("running_within_chunk_iteration", False))
         return all_mut_seqs if len(all_mut_seqs) > 0 else None
 
     # * Create the VCRS (kallisto) index via kb ref (on by default; disable with the hidden dont_create_index flag).
@@ -1677,4 +1573,5 @@ def build(
             "fasta": os.path.abspath(vcrs_fasta_out) if (isinstance(vcrs_fasta_out, str) and os.path.isfile(vcrs_fasta_out)) else None,
         }
         logger.info(f"Produced files: {vk_ref_output_dict}")
+        report_time_elapsed(start_time, "build", running_within_chunk_iteration=kwargs.get("running_within_chunk_iteration", False))
         return vk_ref_output_dict

@@ -49,6 +49,22 @@ vk_fastqpp_hidden_from_help = {
     "delete_intermediate_files",
 }
 
+# Documentation for the advanced `fastqpp` parameters. These are real, fully typed
+# arguments on the `fastqpp` signature (validated by @validate_call like every other
+# parameter), but they are deliberately kept out of the public `fastqpp` docstring
+# (and therefore out of help(vk.fastqpp) / the Sphinx site) and out of `vk fastqpp --help`
+# (via vk_fastqpp_hidden_from_help) to keep the common interface uncluttered. The text
+# lives here so maintainers still have it close to the definition.
+FASTQPP_ADVANCED_PARAMS_DOC = """
+# # Advanced parameters (real `fastqpp` arguments, but hidden from the `vk fastqpp --help` CLI):
+- seqtk_path                       (str) Path to seqtk. Default: "seqtk"
+- quality_control_fastqs_out_dir       (str) Directory to save quality controlled fastq files. Default: `out`/fastqs_quality_controlled
+- replace_low_quality_bases_with_N_out_dir   (str) Directory to save fastq files with low quality bases replaced with N. Default: `out`/fastqs_replaced_low_quality_with_N
+- split_by_Ns_and_low_quality_bases_out_dir   (str) Directory to save fastq files with reads split by Ns and low quality bases. Default: `out`/fastqs_split_by_Ns_and_low_quality_bases
+- concatenate_paired_fastqs_out_dir    (str) Directory to save concatenated paired fastq files. Default: `out`/fastqs_concatenated_paired
+- delete_intermediate_files        (bool) If True, delete intermediate files. Default: True
+"""
+
 
 class FastqppParams(BaseModel):
     """Cross-field / filesystem validation for :func:`fastqpp`.
@@ -97,7 +113,6 @@ class FastqppParams(BaseModel):
         return self
 
 
-@report_time_elapsed
 @validate_call(config=vk_config)
 def fastqpp(
     fastqs: object,
@@ -177,14 +192,11 @@ def fastqpp(
     - save_logs                         (True/False) Whether to save logs to a file. Default: False.
     - log_out_dir                       (str) Directory to save logs. Default: `out`/logs
 
-    # # Advanced parameters (real `fastqpp` arguments, but hidden from the `vk fastqpp --help` CLI):
-    - seqtk_path                       (str) Path to seqtk. Default: "seqtk"
-    - quality_control_fastqs_out_dir       (str) Directory to save quality controlled fastq files. Default: `out`/fastqs_quality_controlled
-    - replace_low_quality_bases_with_N_out_dir   (str) Directory to save fastq files with low quality bases replaced with N. Default: `out`/fastqs_replaced_low_quality_with_N
-    - split_by_Ns_and_low_quality_bases_out_dir   (str) Directory to save fastq files with reads split by Ns and low quality bases. Default: `out`/fastqs_split_by_Ns_and_low_quality_bases
-    - concatenate_paired_fastqs_out_dir    (str) Directory to save concatenated paired fastq files. Default: `out`/fastqs_concatenated_paired
-    - delete_intermediate_files        (bool) If True, delete intermediate files. Default: True
+    NOTE: `fastqpp` also accepts several advanced/niche parameters that are intentionally omitted here (and from
+    `vk fastqpp --help`). They are fully typed and validated like any other argument; see FASTQPP_ADVANCED_PARAMS_DOC
+    in varseek/varseek_fastqpp.py for their documentation.
     """
+    start_time = time.perf_counter()
 
     # * 0. Informational arguments that exit early
     # Not in this function
@@ -217,6 +229,7 @@ def fastqpp(
     if dry_run:
         print(get_varseek_dry_run(params_dict, function_name="fastqpp"))
         fastqpp_dict = {"original": fastqs, "final": fastqs}
+        report_time_elapsed(start_time, "fastqpp")
         return fastqpp_dict
 
     # * 4. Save params to config file and run info file
@@ -360,4 +373,5 @@ def fastqpp(
 
     logger.info("Returning a dictionary with keys describing the fastq files and values pointing to their file paths")
 
+    report_time_elapsed(start_time, "fastqpp")
     return fastqpp_dict

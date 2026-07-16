@@ -16,7 +16,6 @@ import anndata
 import anndata as ad
 import numpy as np
 import pandas as pd
-from packaging import version
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from varseek.utils import (
@@ -27,12 +26,12 @@ from varseek.utils import (
     Parity,
     StrandBiasEnd,
     Technology,
-    adjust_variant_adata_by_normal_gene_matrix,
+    adjust_variant_adata_by_pseudobam,
     check_file_path_is_string_with_valid_extension,
     decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_mode,
-    increment_adata_based_on_dlist_fns,
     is_valid_int,
     load_in_fastqs,
+    load_adata_from_mtx,
     add_vcf_info_to_cosmic_tsv,
     make_function_parameter_to_value_dict,
     plot_knee_plot,
@@ -89,25 +88,36 @@ needs_for_normal_genome_matrix = ["filter_cells_by_min_counts", "filter_cells_by
 # where @validate_call validates them), but hidden from `vk clean --help` to keep it uncluttered.
 # Consumed by main.py, which flips each matching argparse action's help to SUPPRESS. Matched by dest.
 vk_clean_hidden_from_help = {
-    "vcrs_fasta",
-    "id_to_header_dataframe",
     "variants_updated_dataframe",
-    "dlist_fasta",
-    "kallisto",
     "bustools",
     "parity_kb_count",
     "cosmic_tsv",
     "cosmic_reference_genome_fasta",
     "cosmic_version",
-    "cosmic_email",
-    "cosmic_password",
     "forgiveness",
     "add_hgvs_breakdown_to_adata_var",
-    "skip_transcripts_without_genes",
 }
 
+# Documentation for the advanced `clean` parameters. These are real, fully typed
+# arguments on the `clean` signature (validated by @validate_call like every other
+# parameter), but they are deliberately kept out of the public `clean` docstring
+# (and therefore out of help(vk.clean) / the Sphinx site) and out of `vk clean --help`
+# (via vk_clean_hidden_from_help) to keep the common interface uncluttered. The text
+# lives here so maintainers still have it close to the definition.
+CLEAN_ADVANCED_PARAMS_DOC = """
+# # Advanced parameters (real `clean` arguments, but hidden from the `vk clean --help` CLI):
+- variants_updated_dataframe                  (str) Path to the updated variants csv file. Only used if using downloaded reference files from vk ref and vcf_data_dataframe does not exist. Default: None.
+- bustools                              (str) Path to the bustools binary. Default: None.
+- parity_kb_count                       (str) The parity of the reads used in kb count when generating adata_vcrs. Default: `parity`.
+- cosmic_tsv                            (str) Path to the cosmic tsv file. Only used if creating a VCF file and using a downloaded reference from vk ref and vcf_data_dataframe does not exist. Default: None.
+- cosmic_reference_genome_fasta         (str) Path to the reference genome fasta file. Only used if creating a VCF file and using a downloaded reference from vk ref and vcf_data_dataframe does not exist. Default: None.
+- cosmic_version                        (str) Version of the cosmic tsv file. Only used if creating a VCF file and using a downloaded reference from vk ref and vcf_data_dataframe does not exist. Default: 101.
+                                        NOTE: COSMIC download credentials are read only from the COSMIC_EMAIL and COSMIC_PASSWORD environment variables (never written to the on-disk run config); there are no cosmic_email/cosmic_password arguments.
+- forgiveness                           (int) Number of bases allowed to be off when account_for_strand_bias=True. E.g., if I am using a 5' technology with a read length of 91 and a forgiveness of 100, then I will keep only variants that fall within the last 191 bases of each respective transcript. Default: 100.
+- add_hgvs_breakdown_to_adata_var       (bool) Whether to add the HGVS breakdown of the variants in separate columns of adata.var including nucleotide positions, variant, variant start position, variant end position, and gene name. Default: True.
+"""
+
 # @profile
-@report_time_elapsed
 @validate_call(config=vk_config)
 def clean(
     adata_vcrs: object,  # required inputs
@@ -115,12 +125,15 @@ def clean(
     min_counts: PositiveInt = 2,  # parameters
     use_binary_matrix: bool = False,
     drop_empty_columns: bool = False,
-    apply_dlist_correction: bool = False,
-    qc_against_gene_matrix: bool = False,
+    pseudobam_validation: bool = False,
+    reference_genome_index: Optional[Union[str, Path]] = None,
+    check_alignment_position: bool = False,
+    alignment_position_tolerance: int = 50,
+    reference_sequences_type: Optional[str] = None,
+    kallisto: Optional[str] = None,
+    threads: int = 2,
     count_reads_that_dont_pseudoalign_to_reference_genome: bool = True,
-    drop_reads_where_the_pairs_mapped_to_different_genes: bool = False,
     avoid_paired_double_counting: bool = False,
-    mistake_ratio: Optional[float] = None,
     account_for_strand_bias: bool = False,
     strand_bias_end: Optional[StrandBiasEnd] = None,
     read_length: Optional[PositiveInt] = None,
@@ -138,7 +151,6 @@ def clean(
     vcrs_id_set_to_exclude: object = None,
     gene_set_to_exclusively_keep: object = None,
     gene_set_to_exclude: object = None,
-    k: Optional[Union[int, str]] = None,
     mm: bool = True,
     parity: Parity = "single",
     multiplexed: Optional[bool] = None,
@@ -150,7 +162,7 @@ def clean(
     vcrs_t2g: Optional[Union[str, Path]] = None,
     gtf: Optional[Union[bool, str, Path]] = None,
     kb_count_vcrs_dir: Optional[Union[str, Path]] = None,
-    kb_count_reference_genome_dir: Optional[Union[str, Path]] = None,
+    kallisto_quant_reference_genome_dir: Optional[Union[str, Path]] = None,
     reference_genome_t2g: Optional[Union[str, Path]] = None,
     vcf_data_dataframe: Optional[Union[str, Path]] = None,
     variants: object = None,
@@ -175,21 +187,14 @@ def clean(
     save_logs: bool = False,
     log_out_dir: Optional[Union[str, Path]] = None,
     # --- Advanced parameters: part of the Python signature (validated by @validate_call) but hidden from `vk clean --help`. See the "Advanced parameters" docstring section. ---
-    vcrs_fasta: Optional[Union[str, Path]] = None,
-    id_to_header_dataframe: Optional[Union[str, Path]] = None,
     variants_updated_dataframe: Optional[Union[str, Path]] = None,
-    dlist_fasta: Optional[Union[str, Path]] = None,
-    kallisto: Optional[str] = None,
     bustools: Optional[str] = None,
     parity_kb_count: Optional[Parity] = None,
     cosmic_tsv: Optional[Union[str, Path]] = None,
     cosmic_reference_genome_fasta: Optional[Union[str, Path]] = None,
     cosmic_version: Union[str, int] = 101,
-    cosmic_email: Optional[str] = None,
-    cosmic_password: Optional[str] = None,
     forgiveness: int = 100,
     add_hgvs_breakdown_to_adata_var: bool = True,
-    skip_transcripts_without_genes: bool = False,
 ):
     """
     Apply quality control to the VCRS count matrix (cell/sample x variant) and save the cleaned AnnData object.
@@ -202,12 +207,15 @@ def clean(
     - min_counts                            (int) Minimum counts to consider valid in the VCRS count matrix - everything below this number gets set to 0. Default: 2.
     - use_binary_matrix                     (bool) Whether to binarize the matrix (i.e., set all values >=1 to 1). Default: False.
     - drop_empty_columns                    (bool) Whether to drop columns (variants) that are empty across all samples. Default: False.
-    - apply_dlist_correction                (bool) Whether to apply correction for dlist. If a read mapping(s) is tossed due to a d-list entry that is derived from an unrelated gene, then count this entry in the count matrix. Only relevant if a d-list was used during the reference construction (the default: no d-list unless otherwise specified in vk ref/kb ref - see vk ref --list_downloadable_references). Requires `dlist_fasta` to be a valid path as generated by vk ref/info/filter. Default: False.
-    - qc_against_gene_matrix                (bool) Whether to apply correction for qc against gene matrix. If a read maps to 2+ VCRSs that belong to different genes, then cross-reference with the reference genome to determine which gene the read belongs to, and set all VCRSs that do not correspond to this gene to 0 for that read. Also, cross-reference all reads that map to 1 VCRS and ensure that the reads maps to the gene corresponding to this VCRS, or else set this value to 0 in the count matrix. Default: False.
-    - count_reads_that_dont_pseudoalign_to_reference_genome (bool) Whether to count reads that don't pseudoalign to the reference genome. Only used when qc_against_gene_matrix=True. Default: True.
-    - drop_reads_where_the_pairs_mapped_to_different_genes (bool) Whether to drop reads where the pairs mapped to different genes. Only used when qc_against_gene_matrix=True. Default: False.
-    - avoid_paired_double_counting          (bool) Whether to avoid double counting of paired reads. Only used when qc_against_gene_matrix=True. Default: False.
-    - mistake_ratio                         (float) The mistake ratio for the reference genome correction. Default: None (no threshold)
+    - pseudobam_validation                  (bool) Whether to validate the VCRS count matrix against the reference genome via the pseudobam method. The reads are re-aligned with `kallisto quant --pseudobam` (or `--genomebam` for DNA-sequence references with HGVSc headers), and each read's true alignment coordinate is compared against the HGVS locus of its assigned VCRS; reads that aligned somewhere inconsistent with the variant are dropped and the VCRS count matrix is regenerated. Requires `reference_genome_index` and `fastqs`. Default: False.
+    - reference_genome_index                (str) Path to a standard reference-genome kallisto index (transcriptome for RNA/HGVSc, genome for DNA/HGVSg). Required when pseudobam_validation=True. Default: None.
+    - check_alignment_position              (bool) When pseudobam_validation=True, also require each read's alignment position to fall within `alignment_position_tolerance` of its assigned variant's position (in addition to matching the sequence/reference name). Heavier but more accurate. Default: False.
+    - alignment_position_tolerance          (int) Position tolerance (bp) used when check_alignment_position=True. Default: 50.
+    - reference_sequences_type              (str) "rna" or "dna": whether the VCRS reference was built from transcriptome (RNA) or genome (DNA) sequences. Only needed to disambiguate the HGVSc pseudobam case; inferred from `sequences` when not provided. Default: None.
+    - kallisto                              (str) Path to the kallisto binary (must support --pseudobam/--genomebam). Resolved from `kb info` when not provided. Only used for pseudobam_validation=True. Default: None.
+    - threads                               (int) Number of threads for kallisto quant / bustools. Only used for pseudobam_validation=True. Default: 2.
+    - count_reads_that_dont_pseudoalign_to_reference_genome (bool) Whether to count reads that don't pseudoalign to the reference genome. Only used when pseudobam_validation=True. Default: True.
+    - avoid_paired_double_counting          (bool) For paired-end BULK/SMARTSEQ2 data run through kb count in single-end mode, count each VCRS at most once per fragment instead of once per mate (the first mate to carry a variant keeps it; the second mate has it removed). Only used when pseudobam_validation=True and the data is paired-end run in single mode. Default: False.
     - account_for_strand_bias               (bool) Whether to account for strand bias from stranded single-cell technologies. Default: False.
     - strand_bias_end                       (str) The end of the read to use for strand bias correction. Either "5p" or "3p". Must be provided if and only if account_for_strand_bias=True. Default: None.
     - read_length                           (int) The read length used in the experiment. Must be provided if and only if account_for_strand_bias=True. Default: None.
@@ -220,28 +228,27 @@ def clean(
     - cpm_normalization                     (bool) Part of the QC performed on the **gene** count matrix with which to adjust the **variant** count matrix. Whether to run cpm normalization. Default: False.
     - sum_rows                              (bool) Whether to sum across barcodes (rows) in the VCRS count matrix. Default: False.
     - drop_multi_variant_vcrs               (bool) Whether to drop merged VCRS entries that represent multiple variants (i.e., those whose vcrs_id contains a semicolon) from the cleaned AnnData object. Default: False.
-    - rename_vcrs_to_variant                (bool) Whether to rename all "vcrs" var columns to "variant" (e.g. vcrs_header -> variant_header, vcrs_count -> variant_count) in the cleaned AnnData object. The raw vcrs_id column is left unchanged. Default: True.
+    - rename_vcrs_to_variant                (bool) Whether to rename all "vcrs" var columns to "variant" (e.g. vcrs_count -> variant_count, vcrs_detected -> variant_detected) in the cleaned AnnData object. The raw vcrs_id column is left unchanged. Default: True.
     - vcrs_id_set_to_exclusively_keep       (str or Set(str) or None) If a set, will keep only the VCRSs in this set. If a list/tuple, will convert to a set and then keep only the VCRSs in this set. If a string, will load the text file and keep only the VCRSs in this set. Default: None.
     - vcrs_id_set_to_exclude                (str or Set(str) or None) If a set, will exclude the VCRSs in this set. If a list/tuple, will convert to a set and then exclude the VCRSs in this set. If a string, will load the text file and exclude the VCRSs in this set. Default: None.
     - gene_set_to_exclusively_keep          (str or Set(str) or None) If a set, will keep only the genes in this set. If a list/tuple, will convert to a set and then keep only the genes in this set. If a string, will load the text file and keep only the genes in this set. Default: None.
     - gene_set_to_exclude                   (str or Set(str) or None) If a set, will exclude the genes in this set. If a list/tuple, will convert to a set and then exclude the genes in this set. If a string, will load the text file and exclude the genes in this set. Default: None.
-    - k                                     (int) K-mer length used for the k-mer index. Used only when apply_dlist_correction=True. Default: None.
-    - mm                                    (bool) Whether to count multimapped reads in the adata count matrix. Only used when apply_dlist_correction or qc_against_gene_matrix is True. Default: True.
+    - mm                                    (bool) Whether to count multimapped reads in the adata count matrix. Only used when pseudobam_validation is True. Default: True.
     - parity                                (str) "single" or "paired". Only relevant if technology is bulk or a smart-seq. Default: "single"
     - multiplexed                           (bool) Indicates that the fastq files are multiplexed. Only used if sort_fastqs=True and technology is a smartseq technology. Default: None
     - sort_fastqs                           (bool) Whether to sort the fastqs. Default: True.
 
     # Optional input arguments:
-    - adata_reference_genome                (str) Path to the reference genome AnnData object. Default: `kb_count_reference_genome_dir`/counts_unfiltered/adata.h5ad.
-    - fastqs                                (str or list[str]) List of fastq files to be processed. If paired end, the list should contains paths such as [file1_R1, file1_R2, file2_R1, file2_R2, ...]. Only used when `apply_dlist_correction` or `qc_against_gene_matrix` is True. Default: None
+    - adata_reference_genome                (str) Path to the reference genome AnnData object. Default: `kallisto_quant_reference_genome_dir`/counts_unfiltered/adata.h5ad.
+    - fastqs                                (str or list[str]) List of fastq files to be processed. If paired end, the list should contains paths such as [file1_R1, file1_R2, file2_R1, file2_R2, ...]. Only used when `pseudobam_validation` is True. Default: None
     - vk_ref_dir                            (str) Directory containing the VCRS reference files. Same as `out` as specified in vk ref. Default: None.
     - vcrs_index                            (str) Path to the VCRS index file. Default: None.
     - vcrs_t2g                              (str) Path to the VCRS t2g file. Default: None.
     - gtf                                   (str) Path to the GTF file. Only used when account_for_strand_bias=True and either (1) strand_bias_end='3p' and/or (2) some VCRSs are derived from genome sequences. Default: None.
     - kb_count_vcrs_dir                     (str) Path to the kb count output directory for the VCRS reference. Default: None.
-    - kb_count_reference_genome_dir         (str) Path to the kb count output directory for the reference genome. Default: None.
-    - reference_genome_t2g                  (str) Path to the t2g file for the standard reference genome. Only used when qc_against_gene_matrix=True. Default: None.
-    - vcf_data_dataframe                          (str) Path to the VCF data csv file. It needs columns ID (corresponding to vcrs_header from adata.var), CHROM, POS, REF, ALT. If using downloaded reference files from vk ref, then simply provide the `variants` and `sequences` arguments entered at vk ref for this file to be created internally. Default: None.
+    - kallisto_quant_reference_genome_dir         (str) Path to the kb count output directory for the reference genome. Default: None.
+    - reference_genome_t2g                  (str) Path to the t2g file for the standard reference genome. Only used for the optional HGVS breakdown of variant headers (add_hgvs_breakdown_to_adata_var=True). Default: None.
+    - vcf_data_dataframe                          (str) Path to the VCF data csv file. It needs columns ID (corresponding to vcrs_id from adata.var), CHROM, POS, REF, ALT. If using downloaded reference files from vk ref, then simply provide the `variants` and `sequences` arguments entered at vk ref for this file to be created internally. Default: None.
     - variants                              (str) The variants parameter from vk ref/build. Merged into adata.var with columns variants_usecols. Only strictly needed if using downloaded reference files from vk ref and wanting to save an output VCF file. Default: None.
     - sequences                             (str) The sequences parameter from vk ref/build. Only needed if using downloaded reference files from vk ref and wanting to save an output VCF file. Default: None.
     - variant_source                        (str) The source of the variants. If not provided, it will be inferred from the `variants` parameter. Can be "genome" or "transcriptome". Default: None
@@ -270,23 +277,12 @@ def clean(
     - save_logs                             (True/False) Whether to save logs to a file. Default: False.
     - log_out_dir                           (str) Directory to save logs. Default: `out`/logs
 
-    # # Advanced parameters (real `clean` arguments, but hidden from the `vk clean --help` CLI):
-    - vcrs_fasta                            (str) Path to the VCRS fasta file. Default: None.
-    - id_to_header_dataframe                      (str) Path to the VCRS id to header csv file. Default: None.
-    - variants_updated_dataframe                  (str) Path to the updated variants csv file. Only used if using downloaded reference files from vk ref and vcf_data_dataframe does not exist. Default: None.
-    - dlist_fasta                           (str) Path to the dlist fasta file. Default: None.
-    - kallisto                              (str) Path to the kallisto binary. Default: None.
-    - bustools                              (str) Path to the bustools binary. Default: None.
-    - parity_kb_count                       (str) The parity of the reads used in kb count when generating adata_vcrs. Default: `parity`.
-    - cosmic_tsv                            (str) Path to the cosmic tsv file. Only used if creating a VCF file and using a downloaded reference from vk ref and vcf_data_dataframe does not exist. Default: None.
-    - cosmic_reference_genome_fasta         (str) Path to the reference genome fasta file. Only used if creating a VCF file and using a downloaded reference from vk ref and vcf_data_dataframe does not exist. Default: None.
-    - cosmic_version                        (str) Version of the cosmic tsv file. Only used if creating a VCF file and using a downloaded reference from vk ref and vcf_data_dataframe does not exist. Default: 101.
-    - cosmic_email                          (str) Email address for cosmic. Only used if creating a VCF file and using a downloaded reference from vk ref and vcf_data_dataframe does not exist. Default: None.
-    - cosmic_password                       (str) Password for cosmic. Only used if creating a VCF file and using a downloaded reference from vk ref and vcf_data_dataframe does not exist. Default: None.
-    - forgiveness                           (int) Number of bases allowed to be off when account_for_strand_bias=True. E.g., if I am using a 5' technology with a read length of 91 and a forgiveness of 100, then I will keep only variants that fall within the last 191 bases of each respective transcript. Default: 100.
-    - add_hgvs_breakdown_to_adata_var       (bool) Whether to add the HGVS breakdown of the variants in separate columns of adata.var including nucleotide positions, variant, variant start position, variant end position, and gene name. Default: True.
-    - skip_transcripts_without_genes        (bool) Whether to skip transcripts without genes in normal genome validation (ie if a VCRS can't find the corresponding gene, they don't check this within the function). Default: False (any read mapping to a VCRS with an invalid gene name will be tossed if the read aligns anywhere to the reference genome)
+    NOTE: `clean` also accepts several advanced/niche parameters that are intentionally omitted here (and from
+    `vk clean --help`). They are fully typed and validated like any other argument; see CLEAN_ADVANCED_PARAMS_DOC
+    in varseek/varseek_clean.py for their documentation.
     """
+    start_time = time.perf_counter()
+
     # * 1. logger
     if save_logs and not log_out_dir:
         log_out_dir = os.path.join(out, "logs")
@@ -309,6 +305,7 @@ def clean(
     # * 3. Dry-run and set out folder (must to it up here or else config will save in the wrong place)
     if dry_run:
         print(get_varseek_dry_run(params_dict, function_name="clean"))
+        report_time_elapsed(start_time, "clean")
         return None
 
     # * 4. Save params to config file and run info file
@@ -319,26 +316,23 @@ def clean(
     save_run_info(run_info_file, params_dict=params_dict, function_name="clean")
 
     # * 5. Set up default folder/file input paths, and make sure the necessary ones exist
-    if kb_count_reference_genome_dir and not adata_reference_genome:
-        adata_reference_genome = os.path.join(kb_count_reference_genome_dir, "counts_unfiltered", "adata.h5ad")
+    if kallisto_quant_reference_genome_dir and not adata_reference_genome:
+        adata_reference_genome = os.path.join(kallisto_quant_reference_genome_dir, "counts_unfiltered", "adata.h5ad")
 
     if vk_ref_dir and os.path.exists(vk_ref_dir):  # make sure all of the defaults below match vk info/filter
         vcrs_index = os.path.join(vk_ref_dir, "vcrs_index.idx") if not vcrs_index else vcrs_index
         if not vcrs_t2g:
             vcrs_t2g = os.path.join(vk_ref_dir, "vcrs_t2g_filtered.txt") if os.path.isfile(os.path.join(vk_ref_dir, "vcrs_t2g_filtered.txt")) else os.path.join(vk_ref_dir, "vcrs_t2g.txt")
-        if not vcrs_fasta:
-            vcrs_fasta = os.path.join(vk_ref_dir, "vcrs_filtered.fa") if os.path.isfile(os.path.join(vk_ref_dir, "vcrs_filtered.fa")) else os.path.join(vk_ref_dir, "vcrs.fa")
-        if not id_to_header_dataframe:
-            id_to_header_dataframe = os.path.join(vk_ref_dir, "id_to_header_mapping_filtered.csv") if os.path.isfile(os.path.join(vk_ref_dir, "id_to_header_mapping_filtered.csv")) else os.path.join(vk_ref_dir, "id_to_header_mapping.csv")
         if not variants_updated_dataframe:
             variants_updated_dataframe = os.path.join(vk_ref_dir, "variants_updated_filtered.csv") if os.path.isfile(os.path.join(vk_ref_dir, "variants_updated_filtered.csv")) else os.path.join(vk_ref_dir, "variants_updated.csv")
-        if not dlist_fasta:
-            dlist_fasta = os.path.join(vk_ref_dir, "dlist_filtered.fa") if os.path.isfile(os.path.join(vk_ref_dir, "dlist_filtered.fa")) else os.path.join(vk_ref_dir, "dlist.fa")
 
-    if (apply_dlist_correction or qc_against_gene_matrix) and (not kb_count_vcrs_dir or not os.path.exists(kb_count_vcrs_dir) or len(os.listdir(kb_count_vcrs_dir)) == 0):
-        raise ValueError("kb_count_vcrs_dir must be provided as the output from kb count out to the VCRS reference if apply_dlist_correction or qc_against_gene_matrix is True.")
-    if qc_against_gene_matrix and (not kb_count_reference_genome_dir or not os.path.exists(kb_count_reference_genome_dir) or len(os.listdir(kb_count_reference_genome_dir)) == 0):
-        raise ValueError("kb_count_reference_genome_dir must be provided as the output from kb count out to the reference genome if qc_against_gene_matrix is True.")
+    if pseudobam_validation:
+        if not kb_count_vcrs_dir or not os.path.exists(kb_count_vcrs_dir) or len(os.listdir(kb_count_vcrs_dir)) == 0:
+            raise ValueError("kb_count_vcrs_dir must be provided as the output from kb count out to the VCRS reference if pseudobam_validation is True.")
+        if not reference_genome_index or not os.path.exists(reference_genome_index):
+            raise ValueError("reference_genome_index must point to an existing kallisto index when pseudobam_validation=True (the reads are re-aligned with kallisto quant --pseudobam/--genomebam).")
+        if not fastqs:
+            raise ValueError("fastqs must be provided when pseudobam_validation=True (the reads must be re-aligned with kallisto quant).")
 
     # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
     # if someone specifies an output path, then it should be saved
@@ -361,7 +355,6 @@ def clean(
     os.makedirs(output_figures_dir, exist_ok=True)
 
     # * 7. Resolve advanced-parameter defaults
-    # id_to_header_dataframe was defined in step 5
     if parity_kb_count is None:
         parity_kb_count = parity  # default parity_kb_count to the value of parity
 
@@ -414,23 +407,9 @@ def clean(
                 break
             logger.info(f"Determined read_length to be {read_length} based on the fastq file {first_fastq_file_with_transcripts}.")
 
-    if apply_dlist_correction and not dlist_fasta:
-        raise ValueError("dlist_fasta must be provided if apply_dlist_correction is True.")
-
-    if not kallisto:
-        kallisto_binary_path_command = "kb info | grep 'kallisto:' | awk '{print $3}' | sed 's/[()]//g'"
-        kallisto = subprocess.run(kallisto_binary_path_command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, text=True, check=True).stdout.strip()
     if not bustools:
         bustools_binary_path_command = "kb info | grep 'bustools:' | awk '{print $3}' | sed 's/[()]//g'"
         bustools = subprocess.run(bustools_binary_path_command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, text=True, check=True).stdout.strip()
-
-    if apply_dlist_correction:  # and anything else that requires new kallisto
-        kallisto_version_command = rf"{kallisto} 2>&1 | grep -oP 'kallisto \K[0-9]+\.[0-9]+\.[0-9]+'"
-        kallisto_version_installed = subprocess.run(kallisto_version_command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, text=True, check=True).stdout.strip()
-        kallisto_version_required = "0.51.1"
-
-        if version.parse(kallisto_version_installed) < kallisto_version_required:
-            raise ValueError(f"Please install kallisto version {kallisto_version_required} or higher.")
 
     vcrs_id_set_to_exclusively_keep = prepare_set(vcrs_id_set_to_exclusively_keep)
     vcrs_id_set_to_exclude = prepare_set(vcrs_id_set_to_exclude)
@@ -445,27 +424,11 @@ def clean(
         elif adata.endswith(".mtx"):                
             adata = load_adata_from_mtx(adata)
 
-    #$ As far as naming convention goes: (1) vcrs_header is the HGVS format name, (2) vcrs_id is the name in the actual index file (and thus in the BUS file and custom t2g etc), (3) vcrs_id_from_vk_ref is the ID if I used my custom ID_to_header_csv
-    if adata.var.index[0].startswith("vcrs_"):
-        adata.var["vcrs_id_from_vk_ref"] = adata.var.index
-        if id_to_header_dataframe and isinstance(id_to_header_dataframe, str) and os.path.exists(id_to_header_dataframe):
-            id_to_header_df = pd.read_csv(id_to_header_dataframe, index_col=0)
-            adata.var = adata.var.merge(id_to_header_df, left_on="vcrs_id_from_vk_ref", right_on="vcrs_id", how="left")  # will add vcrs_header
-            adata.var.set_index("vcrs_header", inplace=True)
-        else:
-            adata.var["vcrs_header"] = adata.var.index
-    else:
-        adata.var["vcrs_header"] = adata.var.index
-
+    #$ vcrs_id is the concatenated HGVS-format header (semicolon-separated for merged VCRSs), taken directly from the adata var index. There is no longer a separate vcrs_header / vcrs_id_from_vk_ref column - the index IS both the id and the header.
+    adata.var["vcrs_id"] = adata.var.index
     adata.var.index.name = "variant"
     original_var_names = adata.var_names.copy()
-
-    adata.var.rename(columns={"vcrs_header": "vcrs_id"}, inplace=True)
     first_vcrs_header = adata.var["vcrs_id"].iloc[0].split(';')[0]
-    if not re.fullmatch(HGVS_pattern_general, first_vcrs_header):
-        pass  # deal with this later
-    else:
-        adata.var["vcrs_header"] = adata.var["vcrs_id"]
 
     if add_hgvs_breakdown_to_adata_var or variants is not None:
         #* work with column names
@@ -484,19 +447,14 @@ def clean(
         
         adata.var['vcrs_id_individual'] = adata.var['vcrs_id'].str.split(';')  # don't let the naming be confusing - it will only be original AFTER exploding; before, it will be a list
         adata_var_exploded = adata.var.copy().explode('vcrs_id_individual', ignore_index=True)
-        if not re.fullmatch(HGVS_pattern_general, first_vcrs_header):
-            if variants is None:
-                raise ValueError(f"The first vcrs_header '{first_vcrs_header}' does not match the expected HGVS format. Please provide variants as an input.")
-        else:
-            adata_var_exploded["vcrs_header_individual"] = adata_var_exploded["vcrs_id_individual"]
-        
+        if not re.fullmatch(HGVS_pattern_general, first_vcrs_header) and variants is None:
+            raise ValueError(f"The first vcrs_id '{first_vcrs_header}' does not match the expected HGVS format. Please provide variants as an input.")
+
         if variants is not None:
             adata_var_exploded = merge_variants_with_adata(variants, adata_var_exploded, seq_id_column, var_column, var_id_column, variants_usecols=variants_usecols)
-            first_vcrs_header = adata.var["vcrs_header"].iloc[0].split(';')[0]
-            if "vcrs_header_individual" not in adata_var_exploded.columns:
-                adata_var_exploded['vcrs_header_individual'] = adata_var_exploded['vcrs_header'].str.split(';')
+            adata_var_exploded.drop(columns=["vcrs_header"], inplace=True, errors='ignore')  # merge_variants_with_adata joins on a synthesized vcrs_header - it is redundant with vcrs_id_individual now that the id is the HGVS header
 
-        # TODO: tldr: ALL I NEED TO DO TO FIX THIS IS JUST SET variant_source = None AND ERASE THIS CHECK (I set up everything else below to work - the checks will take extra time, which is why I don't do it now, but it will be easy later) - I am assuming that the first vcrs_header_individual is representative of the variant source - but in cases where I combine genome and transcriptome, I should keep variant_source = None, do the identify_variant_source check below, and then evaluate my strand bias function and normal genome function to ensure they work correctly
+        # TODO: tldr: ALL I NEED TO DO TO FIX THIS IS JUST SET variant_source = None AND ERASE THIS CHECK (I set up everything else below to work - the checks will take extra time, which is why I don't do it now, but it will be easy later) - I am assuming that the first vcrs_id_individual is representative of the variant source - but in cases where I combine genome and transcriptome, I should keep variant_source = None, do the identify_variant_source check below, and then evaluate my strand bias function and normal genome function to ensure they work correctly
         if ":c." in first_vcrs_header:
             variant_source = "transcriptome"
         elif ":g." in first_vcrs_header:
@@ -505,15 +463,15 @@ def clean(
             variant_source = None
 
         if add_hgvs_breakdown_to_adata_var:
-            adata_var_exploded = add_information_from_variant_header_to_adata_var_exploded(adata_var_exploded, seq_id_column=seq_id_column, var_column=var_column, gene_id_column=gene_id_column, variant_source=variant_source, t2g_file=reference_genome_t2g)
+            adata_var_exploded = add_information_from_variant_header_to_adata_var_exploded(adata_var_exploded, vcrs_header_individual_column="vcrs_id_individual", seq_id_column=seq_id_column, var_column=var_column, gene_id_column=gene_id_column, variant_source=variant_source, t2g_file=reference_genome_t2g)
 
         #* drop duplicates (will mess up merges below otherwise)
         adata_var_exploded = adata_var_exploded.drop_duplicates(subset=["vcrs_id_individual"], keep="first")
 
-        #* for unmerged instances of vcrs_header (which should be most of them), merge these into adata.var directly
-        exclude_cols = {"vcrs_id_individual", "vcrs_header_individual"}
-        columns_to_list = [col for col in adata_var_exploded.columns if (col not in adata_var_original_columns + ["vcrs_header", "vcrs_id"]) and col not in exclude_cols]
-        columns_to_first = [col for col in adata_var_exploded.columns if (col in adata_var_original_columns + ["vcrs_header", "vcrs_id"]) and col not in exclude_cols]
+        #* for unmerged instances of vcrs_id (which should be most of them), merge these into adata.var directly
+        exclude_cols = {"vcrs_id_individual"}
+        columns_to_list = [col for col in adata_var_exploded.columns if (col not in adata_var_original_columns + ["vcrs_id"]) and col not in exclude_cols]
+        columns_to_first = [col for col in adata_var_exploded.columns if (col in adata_var_original_columns + ["vcrs_id"]) and col not in exclude_cols]
 
         nonmerged_headers_mask = adata_var_exploded["vcrs_id"] == adata_var_exploded["vcrs_id_individual"]
         cols_to_use = [col for col in adata_var_exploded.columns if col not in exclude_cols]
@@ -536,12 +494,12 @@ def clean(
             )
         adata.var = adata.var.merge(grouped_var, on='vcrs_id', how='left', suffixes=('', '_merged_tmp'))
         for col in adata.var.columns:
-            if col in adata.var.columns and f"{col}_merged_tmp" in adata.var.columns and col != "vcrs_header":
+            if col in adata.var.columns and f"{col}_merged_tmp" in adata.var.columns:
                 adata.var[col] = adata.var[col].combine_first(adata.var[f"{col}_merged_tmp"])  # fill na of that column with the merged values
                 adata.var.drop(columns=[f"{col}_merged_tmp"], inplace=True)  # remove the merged column
         adata.var.drop(columns=[col for col in adata.var.columns if col.endswith('_merged_tmp')], inplace=True)  # ensure these columns are dropped
         del adata_var_exploded, grouped_var
-    adata.var.drop(columns=["vcrs_header_individual", "vcrs_id_individual"], inplace=True, errors='ignore')
+    adata.var.drop(columns=["vcrs_id_individual"], inplace=True, errors='ignore')
 
     if vcrs_metadata_df is not None:
         if isinstance(vcrs_metadata_df, pd.DataFrame) or (isinstance(vcrs_metadata_df, (str, Path)) and os.path.exists(vcrs_metadata_df)):
@@ -602,31 +560,15 @@ def clean(
     #         keep_only_insertions=True,
     #     )
 
-    if dlist_fasta and apply_dlist_correction:
-        # TODO: test this; also add union
-        adata = increment_adata_based_on_dlist_fns(
-            adata=adata,
-            vcrs_fasta=vcrs_fasta,
-            dlist_fasta=dlist_fasta,
-            kb_count_out=kb_count_vcrs_dir,
-            index=vcrs_index,
-            t2g=vcrs_t2g,
-            fastq=fastqs,
-            newer_kallisto=kallisto,
-            k=k,
-            mm=mm,
-            bustools=bustools,
-        )
-
-    if qc_against_gene_matrix:
-        adata = adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir=kb_count_vcrs_dir, kb_count_reference_genome_dir=kb_count_reference_genome_dir, technology=technology, t2g_standard=reference_genome_t2g, adata=adata, fastq_file_list=fastqs, adata_output_path=None, mm=mm, parity=parity, bustools=bustools, fastq_sorting_check_only=(not sort_fastqs), save_type="parquet", count_reads_that_dont_pseudoalign_to_reference_genome=count_reads_that_dont_pseudoalign_to_reference_genome, drop_reads_where_the_pairs_mapped_to_different_genes=drop_reads_where_the_pairs_mapped_to_different_genes, avoid_paired_double_counting=avoid_paired_double_counting, add_fastq_headers=False, seq_id_column=seq_id_column, gene_id_column=gene_id_column, variant_source=variant_source, gtf=gtf, skip_transcripts_without_genes=skip_transcripts_without_genes, mistake_ratio=mistake_ratio)
+    if pseudobam_validation:
+        adata = adjust_variant_adata_by_pseudobam(kb_count_vcrs_dir=kb_count_vcrs_dir, reference_genome_index=reference_genome_index, technology=technology, kallisto_quant_reference_genome_dir=kallisto_quant_reference_genome_dir, adata=adata, fastq_file_list=fastqs, adata_output_path=None, parity=parity, mm=mm, bustools=bustools, kallisto=kallisto, threads=threads, variant_source=variant_source, reference_sequences_type=reference_sequences_type, sequences=sequences, gtf=gtf, vcrs_t2g=vcrs_t2g, check_alignment_position=check_alignment_position, alignment_position_tolerance=alignment_position_tolerance, count_reads_that_dont_pseudoalign_to_reference_genome=count_reads_that_dont_pseudoalign_to_reference_genome, avoid_paired_double_counting=avoid_paired_double_counting, seq_id_column=seq_id_column, var_column=var_column, fastq_sorting_check_only=(not sort_fastqs), save_type="parquet", overwrite=overwrite)
     
     # set all count values below min_counts to 0
     if min_counts is not None:  # important I do BEFORE CPM normalization
         adata.X = adata.X.multiply(adata.X >= min_counts)
 
     if account_for_strand_bias:
-        adata = remove_variants_from_adata_for_stranded_technologies(adata=adata, strand_bias_end=strand_bias_end, read_length=read_length, header_column="vcrs_header", seq_id_column=seq_id_column, var_column=var_column, variant_source=variant_source, gtf=gtf, forgiveness=forgiveness, out=out)
+        adata = remove_variants_from_adata_for_stranded_technologies(adata=adata, strand_bias_end=strand_bias_end, read_length=read_length, header_column="vcrs_id", seq_id_column=seq_id_column, var_column=var_column, variant_source=variant_source, gtf=gtf, forgiveness=forgiveness, out=out)
 
     if sum_rows and adata.shape[0] > 1:
         # Sum across barcodes (rows)
@@ -836,6 +778,9 @@ def clean(
     if save_vcf:
         if not vcf_data_dataframe or not os.path.exists(vcf_data_dataframe):
             if variants == "cosmic_cmc":
+                # COSMIC credentials come only from the environment (never from arguments/config on disk)
+                cosmic_email = os.getenv("COSMIC_EMAIL")
+                cosmic_password = os.getenv("COSMIC_PASSWORD")
                 vcf_data_dataframe = add_vcf_info_to_cosmic_tsv(cosmic_tsv=cosmic_tsv, reference_genome_fasta=cosmic_reference_genome_fasta, cosmic_df_out=vcf_data_dataframe, sequences=sequences, cosmic_version=cosmic_version, cosmic_email=cosmic_email, cosmic_password=cosmic_password)
             # insert other supported databases here
             else:
@@ -855,5 +800,6 @@ def clean(
     # adata_dtypes_file_base = adata_vcrs_clean_out.replace(".h5ad", "_dtypes")
     # save_df_types_adata(adata, out_file_base=adata_dtypes_file_base)
 
+    report_time_elapsed(start_time, "clean")
     return adata
 

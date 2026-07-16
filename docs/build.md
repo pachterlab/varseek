@@ -50,7 +50,7 @@ Main input:
 - mutation information as a `variants` CSV (by having `seq_id_column` contain chromosome information, and `var_column` contain mutation information with respect to genome coordinates)  
 - the genome as the `sequences` file  
 
-Since we are passing the path to a gtf file to the `gtf` argument, transcript boundaries will be respected (the genome will be split into transcripts). `gtf_transcript_id_column` specifies the name of the column in `variants` containing the transcript IDs corresponding to the transcript IDs in the `gtf` file.  
+Since we are passing the path to a gtf file to the `gtf` argument, transcript boundaries will be respected (the genome will be split into transcripts). `variants_transcript_id_column` specifies the name of the column in `variants` containing the transcript IDs corresponding to the transcript IDs in the `gtf` file.  
 
 The `optimize_flanking_regions` argument maximizes the length of the resulting mutation-containing sequences while maintaining specificity (no wildtype k-mer will be retained).
 
@@ -84,7 +84,7 @@ varseek.build(
   seq_id_column="chromosome",
   var_column="mutation",
   gtf="genome_annotation.gtf",
-  gtf_transcript_id_column="Ensembl_Transcript_ID",
+  variants_transcript_id_column="Ensembl_Transcript_ID",
   optimize_flanking_regions=True,
   save_variants_updated_csv=True,
   variants_updated_csv_out="variants_updated.csv",

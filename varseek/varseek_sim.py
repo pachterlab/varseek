@@ -142,7 +142,6 @@ class SimParams(BaseModel):
         return self
 
 
-@report_time_elapsed
 @validate_call(config=vk_config)
 def sim(
     variants: object,
@@ -259,6 +258,8 @@ def sim(
     - make_dataframes                   (bool) Whether to make dataframes. Turn off when only wanting to make the fastq file (saves a lot of memory). Default: True
     All kwargs get passed into vk build
     """
+    start_time = time.perf_counter()
+
     # * 1. logger
     if save_logs and not log_out_dir:
         log_out_dir = os.path.join(out, "logs")
@@ -279,6 +280,7 @@ def sim(
     # * 3. Dry-run
     if dry_run:
         print(get_varseek_dry_run(params_dict, function_name="sim"))
+        report_time_elapsed(start_time, "sim")
         return None
 
     # * 4. Save params to config file and run info file
@@ -355,11 +357,11 @@ def sim(
         if sequences_cdna is not None and sequences_genome is not None:
             update_df_out_cdna = update_df_out.replace(".csv", "_cdna.csv")
             if not os.path.exists(update_df_out_cdna):
-                varseek.build(sequences=sequences_cdna, variants=variants, out=vk_build_out_dir, w=read_w, k=read_k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, required_insertion_overlap_length=None, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, save_variants_updated_dataframe=True, variants_updated_csv_out=update_df_out_cdna, seq_id_column=seq_id_column_cdna, var_column=var_column_cdna, overwrite=True, dont_create_index=True, **kwargs)
+                varseek.build(sequences=sequences_cdna, variants=variants, out=vk_build_out_dir, w=read_w, k=read_k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, save_variants_updated_dataframe=True, variants_updated_csv_out=update_df_out_cdna, seq_id_column=seq_id_column_cdna, var_column=var_column_cdna, overwrite=True, dont_create_index=True, **kwargs)
 
             update_df_out_genome = update_df_out.replace(".csv", "_genome.csv")
             if not os.path.exists(update_df_out_genome):
-                varseek.build(sequences=sequences_genome, variants=variants, out=vk_build_out_dir, w=read_w, k=read_k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, required_insertion_overlap_length=None, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, save_variants_updated_dataframe=True, variants_updated_csv_out=update_df_out_genome, seq_id_column=seq_id_column_genome, var_column=var_column_genome, overwrite=True, dont_create_index=True, **kwargs)
+                varseek.build(sequences=sequences_genome, variants=variants, out=vk_build_out_dir, w=read_w, k=read_k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, save_variants_updated_dataframe=True, variants_updated_csv_out=update_df_out_genome, seq_id_column=seq_id_column_genome, var_column=var_column_genome, overwrite=True, dont_create_index=True, **kwargs)
 
             # Load the CSV files
             df_cdna = pd.read_csv(update_df_out_cdna)
@@ -372,7 +374,7 @@ def sim(
         else:
             if not os.path.exists(update_df_out):
                 logger.info("running varseek build")
-                varseek.build(sequences=sequences, variants=variants, out=vk_build_out_dir, w=read_w, k=read_k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, required_insertion_overlap_length=None, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, save_variants_updated_dataframe=True, variants_updated_csv_out=update_df_out, seq_id_column=seq_id_column, var_column=var_column, var_id_column=var_id_column, overwrite=True, dont_create_index=True, **kwargs)
+                varseek.build(sequences=sequences, variants=variants, out=vk_build_out_dir, w=read_w, k=read_k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, save_variants_updated_dataframe=True, variants_updated_csv_out=update_df_out, seq_id_column=seq_id_column, var_column=var_column, var_id_column=var_id_column, overwrite=True, dont_create_index=True, **kwargs)
 
             sim_data_df = pd.read_csv(update_df_out)
         
@@ -484,6 +486,7 @@ def sim(
     if sampled_reference_df.empty:
         logger.warning("No variants to sample")
         # return dict with empty values
+        report_time_elapsed(start_time, "sim")
         return {
             "read_df": pd.DataFrame(),
             "variants": pd.DataFrame(),
@@ -764,6 +767,7 @@ def sim(
             "read_df": None,
             "variants": None,
         }
+        report_time_elapsed(start_time, "sim")
         return simulated_df_dict
 
     for key in new_column_dict:
@@ -820,4 +824,5 @@ def sim(
     if variants_updated_csv_out is not None:
         variants.to_csv(variants_updated_csv_out, index=False)
 
+    report_time_elapsed(start_time, "sim")
     return simulated_df_dict

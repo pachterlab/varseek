@@ -109,7 +109,6 @@ def test_single_substitution(long_sequence, out_dir):
         optimize_flanking_regions = True,
         variants="c.35G>A",
         return_variant_output=True,
-        required_insertion_overlap_length=None,
         w=30,
         k=31,
         out=out_dir
@@ -126,7 +125,6 @@ def test_single_substitution_near_right_end(long_sequence, out_dir):
         optimize_flanking_regions = True,
         variants="c.65G>A",
         return_variant_output=True,
-        required_insertion_overlap_length=None,
         w=30,
         k=31,
         out=out_dir
@@ -144,7 +142,6 @@ def test_single_substitution_near_left_end(long_sequence, out_dir):
         optimize_flanking_regions = True,
         variants="c.5G>A",
         return_variant_output=True,
-        required_insertion_overlap_length=None,
         w=30,
         k=31,
         out=out_dir
@@ -162,7 +159,6 @@ def test_single_deletion(long_sequence, out_dir):
         optimize_flanking_regions = True,
         variants="c.35del",  # del the G
         return_variant_output=True,
-        required_insertion_overlap_length=None,
         w=30,
         k=31,
         out=out_dir
@@ -180,7 +176,6 @@ def test_multi_deletion(long_sequence, out_dir):
         optimize_flanking_regions = True,
         variants="c.35_40del",
         return_variant_output=True,
-        required_insertion_overlap_length=None,
         w=30,
         k=31,
         out=out_dir
@@ -197,7 +192,6 @@ def test_single_deletion_with_right_repeats(long_sequence, out_dir):
         optimize_flanking_regions = True,
         variants="c.31del",
         return_variant_output=True,
-        required_insertion_overlap_length=None,
         w=30,
         k=31,
         out=out_dir
@@ -214,7 +208,6 @@ def test_single_deletion_with_left_repeats(long_sequence, out_dir):
         optimize_flanking_regions = True,
         variants="c.34del",
         return_variant_output=True,
-        required_insertion_overlap_length=None,
         w=30,
         k=31,
         out=out_dir
@@ -231,7 +224,6 @@ def test_multi_deletion_with_right_repeats(long_sequence, out_dir):
         optimize_flanking_regions = True,
         variants="c.31_32del",
         return_variant_output=True,
-        required_insertion_overlap_length=None,
         w=30,
         k=31,
         out=out_dir
@@ -248,7 +240,6 @@ def test_single_insertion(long_sequence, out_dir):
         optimize_flanking_regions = True,
         variants="c.4_5insT",
         return_variant_output=True,
-        required_insertion_overlap_length=None,
         w=30,
         k=31,
         out=out_dir
@@ -266,7 +257,6 @@ def test_single_insertion_mid_sequence_small_w(long_sequence, out_dir):
         variants="c.20_21insA", # --> 19_20 (index 0) --> start at 15, end at 24 (0-index positions, inclusive, from original sequence)
         w=5,
         return_variant_output=True,
-        required_insertion_overlap_length=None,
         k=7,
         out=out_dir
     )
@@ -285,7 +275,6 @@ def test_multi_insertion(long_sequence, out_dir):
         optimize_flanking_regions = True,
         variants="c.65_66insTTTTT",
         return_variant_output=True,
-        required_insertion_overlap_length=None,
         w=30,
         k=31,
         out=out_dir
@@ -303,7 +292,6 @@ def test_multi_insertion_with_left_repeats(long_sequence, out_dir):
         optimize_flanking_regions = True,
         variants="c.20_21insCCAAA",
         return_variant_output=True,
-        required_insertion_overlap_length=None,
         w=30,
         k=31,
         out=out_dir
@@ -321,7 +309,6 @@ def test_single_delins(long_sequence, out_dir):
         optimize_flanking_regions = True,
         variants="c.38delinsAAA",
         return_variant_output=True,
-        required_insertion_overlap_length=None,
         w=30,
         k=31,
         out=out_dir
@@ -339,7 +326,6 @@ def test_multi_delins(long_sequence, out_dir):
         optimize_flanking_regions = True,
         variants="c.38_40delinsAAA",
         return_variant_output=True,
-        required_insertion_overlap_length=None,
         w=30,
         k=31,
         out=out_dir
@@ -357,7 +343,6 @@ def test_multi_delins_with_psuedo_left_repeats(long_sequence, out_dir):
         optimize_flanking_regions = True,
         variants="c.36_37delinsAG",
         return_variant_output=True,
-        required_insertion_overlap_length=None,
         w=30,
         k=31,
         out=out_dir
@@ -374,7 +359,6 @@ def test_multi_delins_with_true_left_repeats(long_sequence, out_dir):
         optimize_flanking_regions = True,
         variants="c.36_37delinsAC",
         return_variant_output=True,
-        required_insertion_overlap_length=None,
         w=30,
         k=31,
         out=out_dir
@@ -392,7 +376,6 @@ def test_multi_delins_with_true_right_repeats(long_sequence, out_dir):
         optimize_flanking_regions = True,
         variants="c.36_37delinsCA",
         return_variant_output=True,
-        required_insertion_overlap_length=None,
         w=30,
         k=31,
         out=out_dir
@@ -409,7 +392,6 @@ def test_single_dup(long_sequence, out_dir):
         optimize_flanking_regions = True,
         variants="c.35dup",
         return_variant_output=True,
-        required_insertion_overlap_length=None,
         w=30,
         k=31,
         out=out_dir
@@ -426,7 +408,6 @@ def test_multi_dup(long_sequence, out_dir):
         optimize_flanking_regions = True,
         variants="c.35_37dup",
         return_variant_output=True,
-        required_insertion_overlap_length=None,
         w=30,
         k=31,
         out=out_dir
@@ -443,7 +424,6 @@ def test_inversion_with_overlaps(long_sequence, out_dir):
         optimize_flanking_regions = True,
         variants="c.35_38inv",
         return_variant_output=True,
-        required_insertion_overlap_length=None,
         w=30,
         k=31,
         out=out_dir
@@ -465,7 +445,6 @@ def test_list_of_mutations(long_sequence, out_dir):
         sequences=sequence_list,
         variants=mutation_list,
         return_variant_output=True,
-        required_insertion_overlap_length=None,
         w=30,
         k=31,
         out=out_dir
@@ -484,7 +463,6 @@ def test_csv_of_mutations(create_temp_files, out_dir):
         sequences=sequence_temp_fasta_path,
         variants=mutation_temp_csv_file,
         return_variant_output=True,
-        required_insertion_overlap_length=None,
         w=30,
         k=31,
         out=out_dir
@@ -501,7 +479,6 @@ def test_csv_of_mutations_with_chunks(create_temp_files, out_dir):
         dont_create_index=True,
         sequences=sequence_temp_fasta_path,
         variants=mutation_temp_csv_file,
-        required_insertion_overlap_length=None,
         w=30,
         k=31,
         out=out_dir,
@@ -607,7 +584,6 @@ def test_large_w(extra_long_sequence, out_dir):
         variants="c.40T>G",
         w=54,
         return_variant_output=True,
-        required_insertion_overlap_length=None,
         k=55,
         out=out_dir
     )
@@ -625,7 +601,6 @@ def test_large_min_seq_length(long_sequence, out_dir):
         variants="c.35G>A",
         min_seq_len=100,
         return_variant_output=True,
-        required_insertion_overlap_length=None,
         w=30,
         k=31,
         out=out_dir
@@ -642,7 +617,6 @@ def test_single_deletion_with_right_repeats_and_unoptimized_flanks(long_sequence
         remove_seqs_with_wt_kmers = False,
         variants="c.31del",
         return_variant_output=True,
-        required_insertion_overlap_length=None,
         w=30,
         k=31,
         out=out_dir
@@ -659,7 +633,6 @@ def test_single_deletion_with_right_repeats_and_removing_seqs_with_wt_kmers(long
         variants="c.31del",
         remove_seqs_with_wt_kmers = True,
         return_variant_output=True,
-        required_insertion_overlap_length=None,
         w=30,
         k=31,
         out=out_dir
@@ -676,7 +649,6 @@ def test_sequence_with_N(long_sequence_with_N, out_dir):
         variants="c.35G>A",
         max_ambiguous = 0,
         return_variant_output=True,
-        required_insertion_overlap_length=None,
         w=30,
         k=31,
         out=out_dir
@@ -696,7 +668,6 @@ def test_semicolon_merging(long_sequence, out_dir):
         variants=mutation_list,
         merge_identical=True,
         return_variant_output=True,
-        required_insertion_overlap_length=None,
         w=30,
         k=31,
         out=out_dir
@@ -707,25 +678,6 @@ def test_semicolon_merging(long_sequence, out_dir):
     assert_global_variables_zero()
 
 
-# def test_translation(long_sequence_with_N, out_dir):
-#     result = vk.build(
-dont_create_index=True,
-#         sequences=long_sequence_with_N,
-#         optimize_flanking_regions = True,
-#         variants="c.35G>A",
-#         translate = True,
-#         save_variants_updated_dataframe = True,
-#         store_full_sequences=True,
-#         return_variant_output=True,
-#         required_insertion_overlap_length=None,
-#         w=30,
-#         k=31,
-#         out=out_dir
-#     )
-
-#     assert result[0] == "APPRPSPPHPTPPRPTPPLP"  #* translate is not returned by vk build; only stored in update_df
-
-#     assert_global_variables_zero()
 
 def test_parameter_values(toy_sequences_fasta_for_vk_ref, toy_variants_csv_for_vk_ref, out_dir):
     good_parameter_values_list_of_dicts = [
@@ -806,6 +758,49 @@ def test_vcf_chunks(vcf_file_and_corresponding_sequences, out_dir):
     assert_global_variables_zero()
 
 
+def test_vcf_helper_derivation_edge_cases(tmp_path):
+    """Unit-level checks on the VCF->HGVS helpers for edge cases not covered by the oracle fixture."""
+    from varseek.utils.seq_utils import (
+        add_variant_type_column_to_vcf_derived_df,
+        add_variant_column_to_vcf_derived_df,
+        vcf_to_dataframe,
+    )
+
+    # A POS==1 deletion can be left-anchored (ALT==REF[0], keep the first base, delete positions 2..N)
+    # or right-anchored (ALT==REF[-1], keep the last base, delete positions 1..N-1). Both must be derived
+    # correctly; previously every POS==1 deletion was treated as right-anchored.
+    df = pd.DataFrame({
+        "POS":  [1,         1,         1,     1,     40,    40],
+        "REF":  ["TCATC",   "TCATC",   "TC",  "TC",  "AG",  "AGCAT"],
+        "ALT":  ["T",       "C",       "T",   "C",   "A",   "A"],
+    })
+    add_variant_type_column_to_vcf_derived_df(df)
+    add_variant_column_to_vcf_derived_df(df, var_column="mutation")
+    expected = ["g.2_5del", "g.1_4del", "g.2del", "g.1del", "g.41del", "g.41_44del"]
+    assert list(df["mutation"]) == expected
+
+    # FILTER must be a plain string (regression: it was wrapped in a 1-tuple).
+    vcf_text = (
+        '##fileformat=VCFv4.0\n'
+        '##FILTER=<ID=q10,Description="x">\n'
+        '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n'
+        '19\t11\tv1\tA\tC\t30\tPASS\t.\n'
+    )
+    vcf_path = tmp_path / "one.vcf"
+    vcf_path.write_text(vcf_text)
+    d = vcf_to_dataframe(str(vcf_path), additional_columns=True)
+    assert isinstance(d["FILTER"].iloc[0], str) and d["FILTER"].iloc[0] == "PASS"
+
+    # A header-only VCF must not crash; it returns an empty frame with the expected columns.
+    empty_path = tmp_path / "empty.vcf"
+    empty_path.write_text(
+        '##fileformat=VCFv4.0\n'
+        '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n'
+    )
+    d_empty = vcf_to_dataframe(str(empty_path), additional_columns=True)
+    assert d_empty.empty and {"CHROM", "POS", "REF", "ALT"}.issubset(d_empty.columns)
+
+
 
 
 @pytest.fixture
@@ -873,7 +868,6 @@ def test_convert_variant_coordinates_genome_to_transcript(long_sequence, tmp_pat
         gtf=str(gtf),
         convert_variant_coordinates="genome_to_transcript",
         return_variant_output=True,
-        required_insertion_overlap_length=None,
         w=30,
         k=31,
         out=out_dir,
