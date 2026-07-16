@@ -61,6 +61,22 @@ varseek_count_unallowable_arguments = {
     "varseek_summarize": set(),
 }
 
+# count's own (native) arguments. Every OTHER parameter in count()'s signature is a verbatim passthrough
+# copied from vk fastqpp / clean / summarize (see the "passthrough to vk ..." blocks in the signature) and
+# is forwarded to the relevant child using the child's own default. Native args, by contrast, are either
+# count-only or are forwarded to the children explicitly (by name) in the vk.fastqpp/clean/summarize calls,
+# so they must NOT be broad-forwarded again. KEEP IN SYNC with count()'s signature: when you add a
+# NON-passthrough argument to count(), add it here too. (To (re)derive the passthrough block itself, copy
+# each child's parameter lines whose name is not already native and not in {vcrs_index, vcrs_t2g, adata,
+# adata_vcrs}.)
+count_native_parameters = frozenset({
+    "fastqs", "index", "technology", "t2g", "k", "pseudobam_validation", "account_for_strand_bias",
+    "strand_bias_end", "read_length", "strand", "mm", "union", "parity", "gtf", "out",
+    "kb_count_vcrs_out_dir", "vk_summarize_out_dir", "disable_fastqpp", "disable_clean", "summarize",
+    "chunksize", "dry_run", "overwrite", "sort_fastqs", "threads", "logging_level", "save_logs",
+    "log_out_dir", "num", "parity_kb_count",
+})
+
 # Advanced `count` parameters: still accepted on the command line (and in the Python signature,
 # where @validate_call validates them), but hidden from `vk count --help` to keep it uncluttered.
 # Consumed by main.py, which flips each matching argparse action's help to SUPPRESS. Matched by dest,
@@ -193,10 +209,106 @@ def count(
     logging_level: Optional[Union[str, int]] = None,
     save_logs: bool = False,
     log_out_dir: Optional[Union[str, Path]] = None,
+    # === Passthrough parameters ===
+    # Every argument of vk fastqpp / clean / summarize is copied here verbatim (name, type, and default)
+    # so that it is a first-class `count` argument rather than an anonymous **kwargs entry. They are hidden
+    # from `vk count --help` (see main.py) but fully validated by @validate_call. Each is forwarded to the
+    # relevant child using the child's own default (see count_native_parameters). Regenerate with the helper
+    # noted next to count_native_parameters if a child signature changes.
+    # ---- passthrough to vk fastqpp ----
+    multiplexed: Optional[bool] = None,
+    quality_control_fastqs: bool = False,
+    cut_front: bool = False,
+    cut_tail: bool = False,
+    cut_window_size: int_range(1, 1000) = 4,
+    cut_mean_quality: int_range(1, 36) = 15,
+    disable_adapter_trimming: bool = False,
+    qualified_quality_phred: int_range(1, 40) = 15,
+    unqualified_percent_limit: int_range(0, 100) = 40,
+    average_qual: int_range(0, 40) = 15,
+    n_base_limit: int_range(1, 50) = 10,
+    disable_quality_filtering: bool = False,
+    length_required: Optional[int_range(0, 9999)] = None,  # None => default to k (see body); vk fastqpp's own default is 31
+    disable_length_filtering: bool = False,
+    dont_eval_duplication: bool = False,
+    disable_trim_poly_g: bool = False,
+    failed_out: Union[bool, str] = False,
+    split_reads_by_Ns_and_low_quality_bases: bool = False,
+    min_base_quality_for_splitting: int_range(0, 93) = 5,
+    concatenate_paired_fastqs: bool = False,
+    seqtk_path: str = "seqtk",
+    quality_control_fastqs_out_dir: Optional[Union[str, Path]] = None,
+    replace_low_quality_bases_with_N_out_dir: Optional[Union[str, Path]] = None,
+    split_by_Ns_and_low_quality_bases_out_dir: Optional[Union[str, Path]] = None,
+    concatenate_paired_fastqs_out_dir: Optional[Union[str, Path]] = None,
+    delete_intermediate_files: bool = True,
+    # ---- passthrough to vk clean ----
+    min_counts: PositiveInt = 2,
+    use_binary_matrix: bool = False,
+    drop_empty_columns: bool = False,
+    reference_genome_index: Optional[Union[str, Path]] = None,
+    check_alignment_position: bool = False,
+    alignment_position_tolerance: int = 50,
+    reference_sequences_type: Optional[str] = None,
+    kallisto: Optional[str] = None,
+    count_reads_that_dont_pseudoalign_to_reference_genome: bool = True,
+    avoid_paired_double_counting: bool = False,
+    filter_cells_by_min_counts: Optional[Union[bool, int]] = None,
+    filter_cells_by_min_genes: Optional[NonNegativeInt] = None,
+    filter_genes_by_min_cells: Optional[NonNegativeInt] = None,
+    filter_cells_by_max_mt_content: Optional[int] = None,
+    doublet_detection: bool = False,
+    remove_doublets: bool = False,
+    cpm_normalization: bool = False,
+    sum_rows: bool = False,
+    drop_multi_variant_vcrs: bool = False,
+    rename_vcrs_to_variant: bool = True,
+    vcrs_id_set_to_exclusively_keep: object = None,
+    vcrs_id_set_to_exclude: object = None,
+    gene_set_to_exclusively_keep: object = None,
+    gene_set_to_exclude: object = None,
+    adata_reference_genome: object = None,
+    vk_ref_dir: Optional[Union[str, Path]] = None,
+    kb_count_vcrs_dir: Optional[Union[str, Path]] = None,
+    kallisto_quant_reference_genome_dir: Optional[Union[str, Path]] = None,
+    reference_genome_t2g: Optional[Union[str, Path]] = None,
+    vcf_data_dataframe: Optional[Union[str, Path]] = None,
+    variants: object = None,
+    sequences: object = None,
+    variant_source: Optional[str] = None,
+    vcrs_metadata_df: object = None,
+    variants_usecols: Optional[Union[str, list]] = None,
+    seq_id_column: str = "seq_ID",
+    var_column: str = "mutation",
+    var_id_column: Optional[str] = None,
+    gene_id_column: str = "gene_id",
+    adata_vcrs_clean_out: Optional[Union[str, Path]] = None,
+    adata_reference_genome_clean_out: Optional[Union[str, Path]] = None,
+    vcf_out: Optional[Union[str, Path]] = None,
+    save_vcf: bool = False,
+    save_vcf_samples: bool = False,
+    variants_updated_dataframe: Optional[Union[str, Path]] = None,
+    bustools: Optional[str] = None,
+    cosmic_tsv: Optional[Union[str, Path]] = None,
+    cosmic_reference_genome_fasta: Optional[Union[str, Path]] = None,
+    cosmic_version: Union[str, int] = 101,
+    forgiveness: int = 100,
+    add_hgvs_breakdown_to_adata_var: bool = True,
+    # ---- passthrough to vk summarize ----
+    top_values: PositiveInt = 10,
+    gene_name_column: Optional[str] = None,
+    plot_strand_bias: bool = False,
+    cdna_fasta: Optional[str] = None,
+    seq_id_cdna_column: str = "seq_ID",
+    start_variant_position_cdna_column: str = "start_variant_position",
+    end_variant_position_cdna_column: str = "end_variant_position",
+    stats_file: Optional[Union[str, Path]] = None,
+    specific_stats_folder: Optional[Union[str, Path]] = None,
+    plots_folder: Optional[Union[str, Path]] = None,
     # --- Advanced parameters: part of the Python signature (validated by @validate_call) but hidden from `vk count --help`. See the "Advanced parameters" docstring section. ---
     num: bool = True,
     parity_kb_count: Optional[Parity] = "single",
-    **kwargs,  # * including all arguments for vk fastqpp, clean, summarize, and kb count
+    **kwargs,  # * kb count pass-through args + forward-compat only (every fastqpp/clean/summarize arg is now an explicit parameter above)
 ):
     """
     Perform variant screening on sequencing data. Wraps around varseek fastqpp, kb count, varseek clean, and varseek summarize.
@@ -265,9 +377,8 @@ def count(
 
     # * 2. Type-checking
     params_dict = make_function_parameter_to_value_dict(1)
-    params_dict["adata_vcrs"] = "placeholder/adata.h5ad"  # this is just a placeholder, but it is needed for type checking
-    params_dict["adata"] = "placeholder/adata_cleaned.h5ad"  # this is just a placeholder, but it is needed for type checking
-    params_dict["kallisto_quant_reference_genome_dir"] = None  # this is just a placeholder, but it is needed for type checking
+    params_dict["adata_vcrs"] = "placeholder/adata.h5ad"  # placeholder for type checking (adata_vcrs is derived internally, not a count parameter)
+    params_dict["adata"] = "placeholder/adata_cleaned.h5ad"  # placeholder for type checking (adata is derived internally, not a count parameter)
 
     # Set params_dict_for_type_checking to default values of children functions - important so type checking works properly
     count_signature = inspect.signature(count)
@@ -313,7 +424,7 @@ def count(
 
     # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
     if not kb_count_vcrs_out_dir:
-        kb_count_vcrs_out_dir = os.path.join(out, "kb_count_out_vcrs") if not kwargs.get("kb_count_vcrs_dir") else kwargs["kb_count_vcrs_dir"]
+        kb_count_vcrs_out_dir = os.path.join(out, "kb_count_out_vcrs") if not kb_count_vcrs_dir else kb_count_vcrs_dir
     if not vk_summarize_out_dir:
         vk_summarize_out_dir = os.path.join(out, "vk_summarize")
 
@@ -322,17 +433,19 @@ def count(
         os.makedirs(kb_count_vcrs_out_dir, exist_ok=True)
 
     # for kb count --> vk clean
-    kb_count_vcrs_out_dir, kwargs["kb_count_vcrs_dir"] = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(kb_count_vcrs_out_dir, kwargs.get("kb_count_vcrs_dir"))  # check that, if kb_count_vcrs_dir and kb_count_vcrs_out_dir are both provided, they are the same directory; otherwise, if only one is provided, then make them equal to each other
+    kb_count_vcrs_out_dir, kb_count_vcrs_dir = check_that_two_paths_are_the_same_if_both_provided_otherwise_set_them_equal(kb_count_vcrs_out_dir, kb_count_vcrs_dir)  # check that, if kb_count_vcrs_dir and kb_count_vcrs_out_dir are both provided, they are the same directory; otherwise, if only one is provided, then make them equal to each other
 
-    adata_vcrs = f"{kb_count_vcrs_out_dir}/counts_unfiltered/adata.h5ad" if not kwargs.get("adata_vcrs") else kwargs.get("adata_vcrs")  # from vk clean
-    # adata_reference_genome (only present if the user supplies a pre-computed reference-genome kb count for the gene-matrix-based scanpy QC in vk clean)
-    adata_reference_genome = kwargs.get("adata_reference_genome")
-    if not adata_reference_genome and kwargs.get("kallisto_quant_reference_genome_dir"):
-        adata_reference_genome = f"{kwargs['kallisto_quant_reference_genome_dir']}/counts_unfiltered/adata.h5ad"
-    adata_vcrs_clean_out = f"{out}/adata_cleaned.h5ad" if not kwargs.get("adata_vcrs_clean_out") else kwargs.get("adata_vcrs_clean_out")  # from vk clean
-    adata_reference_genome_clean_out = f"{out}/adata_cleaned.h5ad" if not kwargs.get("adata_reference_genome_clean_out") else kwargs.get("adata_reference_genome_clean_out")  # from vk clean
-    vcf_out = os.path.join(out, "variants.vcf") if not kwargs.get("vcf_out") else kwargs["vcf_out"]  # from vk clean
-    stats_file = os.path.join(vk_summarize_out_dir, "varseek_summarize_stats.txt") if not kwargs.get("stats_file") else kwargs["stats_file"]  # from vk summarize
+    adata_vcrs = f"{kb_count_vcrs_out_dir}/counts_unfiltered/adata.h5ad" if not kwargs.get("adata_vcrs") else kwargs.get("adata_vcrs")  # derived internally; overridable via **kwargs
+    # adata_reference_genome is forwarded to vk clean as-is (raw, may be None). adata_reference_genome_resolved is
+    # only for vk count's own bookkeeping (existence check / returned output dict): if the user did not pass a
+    # matrix directly but did pass kallisto_quant_reference_genome_dir, point at the adata inside that directory.
+    adata_reference_genome_resolved = adata_reference_genome
+    if not adata_reference_genome_resolved and kallisto_quant_reference_genome_dir:
+        adata_reference_genome_resolved = f"{kallisto_quant_reference_genome_dir}/counts_unfiltered/adata.h5ad"
+    adata_vcrs_clean_out = f"{out}/adata_cleaned.h5ad" if not adata_vcrs_clean_out else adata_vcrs_clean_out  # from vk clean
+    adata_reference_genome_clean_out = f"{out}/adata_cleaned.h5ad" if not adata_reference_genome_clean_out else adata_reference_genome_clean_out  # from vk clean
+    vcf_out = os.path.join(out, "variants.vcf") if not vcf_out else vcf_out  # from vk clean
+    stats_file = os.path.join(vk_summarize_out_dir, "varseek_summarize_stats.txt") if not stats_file else stats_file  # from vk summarize
 
     for file in [stats_file]:  # purposely excluded adata_reference_genome because it is fine if someone provides this as input even if overwrite=False; and purposely excluded adata_vcrs, adata_vcrs_clean_out, adata_reference_genome_clean_out, kb_count_vcrs_out_dir for the reasons provided in vk ref
         if os.path.isfile(file) and not overwrite:
@@ -354,14 +467,12 @@ def count(
 
     fastqs_unsorted = fastqs
     try:
-        fastqs = sort_fastq_files_for_kb_count(fastqs, technology=technology, multiplexed=kwargs.get("multiplexed"), check_only=(not sort_fastqs))
+        fastqs = sort_fastq_files_for_kb_count(fastqs, technology=technology, multiplexed=multiplexed, check_only=(not sort_fastqs))
     except ValueError as e:
         if sort_fastqs:
             logger.warning(f"Automatic FASTQ argument order sorting for kb count could not recognize FASTQ file name format. Skipping argument order sorting.")
 
-    # so parity_vcrs is set correctly - copied from fastqpp
-    concatenate_paired_fastqs = kwargs.get("concatenate_paired_fastqs", False)
-    split_reads_by_Ns_and_low_quality_bases = kwargs.get("split_reads_by_Ns_and_low_quality_bases", False)
+    # so parity_vcrs is set correctly - copied from fastqpp (concatenate_paired_fastqs / split_reads_by_Ns_and_low_quality_bases are now count parameters)
     if (concatenate_paired_fastqs or split_reads_by_Ns_and_low_quality_bases) and parity == "paired":
         if not concatenate_paired_fastqs:
             logger.info("Setting concatenate_paired_fastqs=True")
@@ -370,14 +481,13 @@ def count(
         if concatenate_paired_fastqs:
             logger.info("Setting concatenate_paired_fastqs=False")
         concatenate_paired_fastqs = False
-    kwargs["concatenate_paired_fastqs"] = concatenate_paired_fastqs
 
     if disable_clean:
         pseudobam_validation = False  # disable_clean gets priority (pseudobam validation happens inside vk clean)
 
-    if not kwargs.get("length_required"):
+    if not length_required:
         logger.info("Setting length_required to %s if fastqpp is run", k)
-        kwargs["length_required"] = k
+        length_required = k
 
     # define the vk fastqpp, clean, and summarize arguments (explicit arguments and allowable kwargs)
     explicit_parameters_vk_fastqpp = vk.utils.get_set_of_parameters_from_function_signature(vk.varseek_fastqpp.fastqpp)  # originally did not include *fastqs due to asterisk, but I removed the asterisk so now it's fine
@@ -393,15 +503,21 @@ def count(
     all_parameter_names_set_vk_clean = explicit_parameters_vk_clean | allowable_kwargs_vk_clean
     all_parameter_names_set_vk_summarize = explicit_parameters_vk_summarize | allowable_kwargs_vk_summarize
 
+    def _passthrough_kwargs(child_param_names, extra_exclude=frozenset()):
+        # Forward every passthrough argument that belongs to this child, sourced from count's current parameter
+        # values (which reflect any in-place updates above) plus leftover **kwargs. Native count arguments are
+        # excluded because they are either count-only or forwarded to the child explicitly by name in the call
+        # below; extra_exclude drops the internally-derived arguments that the call also passes explicitly.
+        current = make_function_parameter_to_value_dict(2)  # 2 frames up: this closure -> count
+        return {key: value for key, value in current.items() if key in child_param_names and key not in count_native_parameters and key not in extra_exclude}
+
     # vk fastqpp
-    if not any([kwargs.get(fastqpp_param) for fastqpp_param in ["quality_control_fastqs", "split_reads_by_Ns_and_low_quality_bases", "concatenate_paired_fastqs"]]):
+    if not any([quality_control_fastqs, split_reads_by_Ns_and_low_quality_bases, concatenate_paired_fastqs]):
         disable_fastqpp_original = disable_fastqpp
         disable_fastqpp = True
 
     if not disable_fastqpp:  # don't do the whole overwrite thing here because it is the first function, and a user should know if they are overwriting their fastqs
-        kwargs_vk_fastqpp = {key: value for key, value in kwargs.items() if ((key in all_parameter_names_set_vk_fastqpp) and (key not in count_signature.parameters.keys()))}
-        # update anything in kwargs_vk_fastqpp that is not fully updated in (vk count's) kwargs (should be nothing or very close to it, as I try to avoid these double-assignments by always keeping kwargs in kwargs)
-        # eg kwargs_vk_summarize['mykwarg'] = mykwarg
+        kwargs_vk_fastqpp = _passthrough_kwargs(all_parameter_names_set_vk_fastqpp)  # fastqs/technology/parity/out/... are native and passed explicitly below
 
         logger.info("Running vk fastqpp")
         if dry_run:
@@ -443,7 +559,7 @@ def count(
         if strand:
             kb_count_command.extend(["--strand", strand])
         if technology in {"BULK", "SMARTSEQ2"}:
-            parity_vcrs = "single" if kwargs.get("concatenate_paired_fastqs") else parity_kb_count
+            parity_vcrs = "single" if concatenate_paired_fastqs else parity_kb_count
             kb_count_command.extend(["--parity", parity_vcrs])
 
         if pseudobam_validation:
@@ -469,7 +585,8 @@ def count(
                         if value:  # only add if value is True
                             kb_count_command.append(f"{leading_dashes}{argument}")
                     elif dict_key == "one_argument":
-                        kb_count_command.extend([f"{leading_dashes}{argument}", value])
+                        if value is not None:  # skip when not provided (many one-arg kb flags are now count params defaulting to None)
+                            kb_count_command.extend([f"{leading_dashes}{argument}", str(value)])
                     else:  # multiple_arguments or something else
                         pass
 
@@ -495,18 +612,17 @@ def count(
     # re-aligns the reads with `kallisto quant` inside vk clean, so no separate reference-genome kb count is needed. If a user
     # wants the gene-matrix-based scanpy QC (filter_cells_by_min_counts, doublet_detection, cpm_normalization, ...), they should
     # run kb count against the reference genome themselves and pass kallisto_quant_reference_genome_dir / adata_reference_genome to vk clean.
-    if kwargs.get("kallisto_quant_reference_genome_dir") and (not os.path.exists(kwargs["kallisto_quant_reference_genome_dir"]) or len(os.listdir(kwargs["kallisto_quant_reference_genome_dir"])) == 0):
-        kwargs["kallisto_quant_reference_genome_dir"] = None  # don't pass anything into clean if it's empty
+    if kallisto_quant_reference_genome_dir and (not os.path.exists(kallisto_quant_reference_genome_dir) or len(os.listdir(kallisto_quant_reference_genome_dir)) == 0):
+        kallisto_quant_reference_genome_dir = None  # don't pass anything into clean if it's empty
 
     # vk clean
     if not disable_clean:
         if not os.path.exists(file_signifying_successful_vk_clean_completion) or overwrite:
-            kwargs_vk_clean = {key: value for key, value in kwargs.items() if ((key in all_parameter_names_set_vk_clean) and (key not in count_signature.parameters.keys()))}
-            # update anything in kwargs_vk_clean that is not fully updated in (vk count's) kwargs (should be nothing or very close to it, as I try to avoid these double-assignments by always keeping kwargs in kwargs)
-            # eg kwargs_vk_clean['mykwarg'] = mykwarg
+            # adata_vcrs/vcrs_index/vcrs_t2g are derived internally and passed explicitly, so exclude them from the passthrough
+            kwargs_vk_clean = _passthrough_kwargs(all_parameter_names_set_vk_clean, {"adata_vcrs", "vcrs_index", "vcrs_t2g"})
 
             logger.info("Running vk clean")
-            _ = vk.clean(adata_vcrs=adata_vcrs, vcrs_index=index, vcrs_t2g=t2g, technology=technology, fastqs=fastqs, threads=threads, k=k, pseudobam_validation=pseudobam_validation, account_for_strand_bias=account_for_strand_bias, strand_bias_end=strand_bias_end, read_length=read_length, gtf=gtf, mm=mm, parity=parity, parity_kb_count=parity_kb_count, out=out, chunksize=chunksize, dry_run=dry_run, overwrite=True, sort_fastqs=sort_fastqs, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir, **kwargs_vk_clean)  # reference_genome_index/reference_genome_t2g, kallisto_quant_reference_genome_dir, and adata_reference_genome are passed in via kwargs
+            _ = vk.clean(adata_vcrs=adata_vcrs, vcrs_index=index, vcrs_t2g=t2g, technology=technology, fastqs=fastqs, threads=threads, pseudobam_validation=pseudobam_validation, account_for_strand_bias=account_for_strand_bias, strand_bias_end=strand_bias_end, read_length=read_length, gtf=gtf, mm=mm, parity=parity, parity_kb_count=parity_kb_count, out=out, chunksize=chunksize, dry_run=dry_run, overwrite=True, sort_fastqs=sort_fastqs, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir, **kwargs_vk_clean)  # reference_genome_index/reference_genome_t2g, kallisto_quant_reference_genome_dir, and adata_reference_genome are forwarded via kwargs_vk_clean
         else:
             logger.info(f"Skipping vk clean because file {file_signifying_successful_vk_clean_completion} already exists and overwrite=False")
         adata = adata_vcrs_clean_out  # for vk summarize
@@ -517,9 +633,8 @@ def count(
     # # vk summarize
     if summarize:
         if not os.path.exists(file_signifying_successful_vk_summarize_completion) or overwrite:
-            kwargs_vk_summarize = {key: value for key, value in kwargs.items() if ((key in all_parameter_names_set_vk_summarize) and (key not in count_signature.parameters.keys()))}
-            # update anything in kwargs_vk_summarize that is not fully updated in (vk count's) kwargs (should be nothing or very close to it, as I try to avoid these double-assignments by always keeping kwargs in kwargs)
-            # eg kwargs_vk_summarize['mykwarg'] = mykwarg
+            # adata is derived internally and passed explicitly; strand_bias_end/read_length are native (count owns them for the VCRS/clean path) so vk summarize keeps its own defaults, as before
+            kwargs_vk_summarize = _passthrough_kwargs(all_parameter_names_set_vk_summarize, {"adata"})
 
             logger.info("Running vk summarize")
             try:
@@ -536,7 +651,7 @@ def count(
 
     vk_count_output_dict = {}
     vk_count_output_dict["adata_path_unprocessed"] = os.path.abspath(adata_vcrs) if os.path.isfile(os.path.abspath(adata_vcrs)) else None
-    vk_count_output_dict["adata_path_reference_genome_unprocessed"] = os.path.abspath(adata_reference_genome) if (adata_reference_genome and os.path.isfile(os.path.abspath(adata_reference_genome))) else None
+    vk_count_output_dict["adata_path_reference_genome_unprocessed"] = os.path.abspath(adata_reference_genome_resolved) if (adata_reference_genome_resolved and os.path.isfile(os.path.abspath(adata_reference_genome_resolved))) else None
     vk_count_output_dict["adata_path"] = os.path.abspath(adata_vcrs_clean_out) if os.path.isfile(os.path.abspath(adata_vcrs_clean_out)) else None
     vk_count_output_dict["adata_path_reference_genome"] = os.path.abspath(adata_reference_genome_clean_out) if os.path.isfile(os.path.abspath(adata_reference_genome_clean_out)) else None
 

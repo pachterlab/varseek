@@ -2492,18 +2492,17 @@ def main():  # noqa: C901
     if args.command == "count":
         # * ensure that all keys in params_dict correspond to the python parameters, and the values correspond to the command line values - see the vk build section in main for more details
 
-        # # (1) modify variable outside of args
-        # fastqs = params_dict.pop("fastqs")
-
         # combine with kwargs (if both params_dict and kwargs have the same key, params_dict takes precedence)
         params_dict = {**kwargs, **params_dict}
 
+        # (1) fastqs is the positional argument, so pull it out and pass it positionally
+        fastqs = params_dict.pop("fastqs")
+
         # for pytest
         if os.getenv("TESTING") == "true":
-            return params_dict
+            return fastqs, params_dict
 
-        # count_results = count(*fastqs, **params_dict)  # when using *fastqs
-        count_results = count(**params_dict)
+        count_results = count(fastqs, **params_dict)
 
         # * optionally do something with count_results (e.g., save, or print to console)
 
