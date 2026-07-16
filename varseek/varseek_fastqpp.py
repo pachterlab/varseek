@@ -140,7 +140,7 @@ def fastqpp(
     delete_intermediate_files: bool = True,
 ):
     """
-    Apply quality control to fastq files. This includes trimming edges off reads, running FastQC and MultiQC, replacing low quality bases with N, splitting reads by Ns, and concatenating paired fastq files.
+    Apply quality control to fastq files. This includes trimming edges off reads, replacing low quality bases with N, splitting reads by Ns, and concatenating paired fastq files.
 
     # Required input arguments:
     - fastqs                            (str or list[str]) List of fastq files to be processed. If paired end, the list should contains paths such as [file1_R1, file1_R2, file2_R1, file2_R2, ...]
@@ -154,7 +154,7 @@ def fastqpp(
     - cut_tail                           (bool) If True, trim bases from the tail of the read. See fastp for more details. Default: False
     - cut_window_size                    (int) Window size for sliding window trimming. See fastp for more details. Default: 4
     - cut_mean_quality                   (int) Mean quality for sliding window trimming. See fastp for more details. Default: 15
-    - disable_adapter_trimming           (bool) If True, disable adapter trimming. See fastp for more details. Default: True
+    - disable_adapter_trimming           (bool) If True, disable adapter trimming. See fastp for more details. Default: False
     - qualified_quality_phred            (int) Minimum quality for a base to be considered qualified. See fastp for more details. Default: 15
     - unqualified_percent_limit          (int) Maximum percentage of unqualified bases in a read. See fastp for more details. Default: 40
     - average_qual                       (int) Minimum average quality for a read to be considered qualified. See fastp for more details. Default: 15
@@ -166,13 +166,13 @@ def fastqpp(
     - disable_trim_poly_g                (bool) If True, disable trimming of poly-G tails. See fastp for more details. Default: False
     - failed_out                         (bool) If True, output reads that fail filtering. See fastp for more details. Default: False
     - split_reads_by_Ns_and_low_quality_bases   (bool) If True, split reads by Ns and low quality bases (lower than min_base_quality_for_splitting) into multiple smaller reads. If min_base_quality_for_splitting > 0, then requires seqtk to be installed. If technology == "bulk", then seqtk will speed this up significantly. Default: False
-    - min_base_quality_for_splitting    (int) The minimum acceptable base quality for split_reads_by_Ns_and_low_quality_bases. Bases below this quality will split. Only used if split_reads_by_Ns_and_low_quality_bases=True. Range: 0-93. Default: 13
+    - min_base_quality_for_splitting    (int) The minimum acceptable base quality for split_reads_by_Ns_and_low_quality_bases. Bases below this quality will split. Only used if split_reads_by_Ns_and_low_quality_bases=True. Range: 0-93. Default: 5
     - concatenate_paired_fastqs         (bool) If True, concatenate paired fastq files. Default: False
     - out                               (str) Output directory. Default: "."
     - dry_run                           (bool) If True, print the commands that would be run without actually running them. Default: False
     - overwrite                         (True/False) Whether to overwrite existing output files. Will return if any output file already exists. Default: False.
     - sort_fastqs                       (bool) If True, sort fastq files by kb count. If False, then still check the order but do not change anything. Default: True
-    - threads                           (int) Number of threads to use during do_sequence_trimming_or_filtering. Default: 2
+    - threads                           (int) Number of threads to use during perform_fastp_trimming_and_filtering. Default: 2
     - logging_level                     (str) Logging level. Can also be set with the environment variable VARSEEK_LOGGING_LEVEL. Default: INFO.
     - save_logs                         (True/False) Whether to save logs to a file. Default: False.
     - log_out_dir                       (str) Directory to save logs. Default: `out`/logs

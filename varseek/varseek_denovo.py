@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 from .utils.varseek_denovo_utils import (
     infer_hgvs_prefix,
+    infer_reference_type_from_fasta,
     vcf_allele_to_hgvs,
     vcf_to_tsv,
     configure_logger,
@@ -31,7 +32,7 @@ from .utils.varseek_denovo_utils import (
 
 def denovo(
     inputs,
-    fasta_ref,
+    sequences,
     parity="single",
     gtf=None,
     star_genome_index_dir="genome_index",
@@ -46,6 +47,8 @@ def denovo(
     read_length=None,
     min_counts=3,
     aligner="bowtie2",
+    reads_type=None,
+    reference_type="auto",
     variant_caller="bcftools",
     bowtie2_seed_length=None,
     bowtie2_score_min=None,
@@ -68,7 +71,7 @@ def denovo(
 
     # Required input arguments:
     - inputs                         (str or list[str]) Input BAMs or FASTQs. Pass one or more files as separate values. For paired FASTQs, pass alternating R1/R2 files.
-    - fasta_ref                      (str) Reference FASTA file.
+    - sequences                      (str) Path to a reference genome FASTA file — the same file passed as `sequences` to vk build. Must end with one of: .fa, .fasta, .fna (optionally .gz).
 
     # Optional input arguments:
     - parity                         (str) Whether FASTQ inputs are single-end or paired-end. Use "single" to treat each FASTQ separately. Use "paired" to pair alternating inputs as R1/R2 and require an even number of FASTQs. Default: "single"
@@ -84,7 +87,9 @@ def denovo(
     - tsv_reference_type             (str) Variant coordinate prefix for output_tsv. One of auto, dna, genome, cdna, transcriptome. Default: "auto"
     - read_length                    (int) Read length. Default: None
     - min_counts                     (int) Minimum count threshold for filtering. Default: 3
-    - aligner                        (str) Aligner to use. One of STAR or bowtie2. Default: "STAR"
+    - aligner                        (str) Aligner to use. One of STAR or bowtie2. Splice-aware STAR is required only when RNA reads are aligned to a genome (reads span exon-exon junctions); bowtie2 is correct otherwise (DNA reads to a genome, or RNA reads to a transcriptome). A mismatch against `reads_type`/`reference_type` raises. Default: "bowtie2"
+    - reads_type                     (str) Whether the reads are RNA (spliced) or DNA. One of "rna", "dna", or None. Only used to validate `aligner`; required to validate the choice when the reference is a genome. Default: None
+    - reference_type                 (str) Whether `sequences` is a genome or transcriptome, used to validate `aligner`. One of auto, genome, dna, transcriptome, cdna. "auto" infers it from the FASTA sequence IDs. Default: "auto"
     - variant_caller                 (str) Variant caller to use. One of bcftools or cigar. Default: "bcftools"
     - bowtie2_seed_length            (int) Seed length for Bowtie2 aligner. Default: None
     - bowtie2_score_min              (str) Bowtie2 score-min setting. Default: None
@@ -112,14 +117,14 @@ def denovo(
     #* Validate flagged arguments
     if not output.endswith(".vcf") and not output.endswith(".vcf.gz"):
         raise ValueError("--output must end with .vcf or .vcf.gz")
-    if fasta_ref:
+    if sequences:
         valid_fasta_extensions = [".fa", ".fasta", ".fa.gz", ".fasta.gz", ".fna", ".fna.gz"]
-        if not any(fasta_ref.endswith(ext) for ext in valid_fasta_extensions):
-            raise ValueError(f"--fasta-ref must be a FASTA file ending with {', '.join(valid_fasta_extensions)}")
-        if not os.path.isfile(fasta_ref):
-            fasta_dir = os.path.dirname(fasta_ref) or "."
-            recommended_command = f"gget ref -r 111 -d -od {fasta_dir} -w dna human && gunzip {fasta_ref}.gz"
-            raise ValueError(f"FASTA reference '{fasta_ref}' not found. Recommended command to download: {recommended_command}")
+        if not any(sequences.endswith(ext) for ext in valid_fasta_extensions):
+            raise ValueError(f"-s/--sequences must be a FASTA file ending with {', '.join(valid_fasta_extensions)}")
+        if not os.path.isfile(sequences):
+            fasta_dir = os.path.dirname(sequences) or "."
+            recommended_command = f"gget ref -r 111 -d -od {fasta_dir} -w dna human && gunzip {sequences}.gz"
+            raise ValueError(f"FASTA reference '{sequences}' not found. Recommended command to download: {recommended_command}")
     if gtf:
         if not gtf.endswith(".gtf"):
             raise ValueError("--gtf must be a GTF file ending with .gtf")
@@ -195,7 +200,52 @@ def denovo(
             raise ValueError("paired FASTQ inputs require an even number of files in alternating R1/R2 order")
         single_fastq_files = []
         paired_fastq_files = list(zip(inputs[0::2], inputs[1::2]))
-    
+
+    #* Validate the aligner against the biology (only matters when we actually align FASTQs).
+    # Splice-aware STAR is required only when RNA reads are aligned to a genome (spliced reads span
+    # exon-exon junctions); bowtie2 is correct otherwise (DNA->genome, or RNA->transcriptome).
+    if input_type == "fastq":
+        reads_type_normalized = (reads_type or "").lower() or None
+        if reads_type_normalized in {"dna", "genomic", "g"}:
+            reads_type_normalized = "dna"
+        elif reads_type_normalized in {"rna", "cdna", "transcriptomic", "c"}:
+            reads_type_normalized = "rna"
+        elif reads_type_normalized is not None:
+            raise ValueError("reads_type must be one of 'rna', 'dna', or None")
+
+        ref_type = (reference_type or "auto").lower()
+        if ref_type in {"dna", "genome", "genomic", "g"}:
+            reference_is_genome = True
+        elif ref_type in {"cdna", "transcriptome", "transcript", "c"}:
+            reference_is_genome = False
+        elif ref_type == "auto":
+            reference_is_genome = infer_reference_type_from_fasta(sequences) == "genome"
+        else:
+            raise ValueError("reference_type must be one of auto, genome, dna, transcriptome, cdna")
+
+        if reference_is_genome:
+            if reads_type_normalized is None:
+                raise ValueError(
+                    "Cannot verify the aligner for a genome reference without knowing the read type. "
+                    "Set reads_type='rna' (spliced RNA reads -> STAR) or reads_type='dna' (DNA reads -> bowtie2)."
+                )
+            expected_aligner = "STAR" if reads_type_normalized == "rna" else "bowtie2"
+        else:
+            expected_aligner = "bowtie2"  # transcriptome reference: no splicing in alignment
+
+        if aligner != expected_aligner:
+            ref_desc = "genome" if reference_is_genome else "transcriptome"
+            reads_desc = f"{reads_type_normalized} reads" if reads_type_normalized else "reads"
+            reason = (
+                "splice-aware STAR is required to align RNA reads across exon-exon junctions on a genome"
+                if expected_aligner == "STAR"
+                else "bowtie2 is appropriate because no splicing occurs in this alignment"
+            )
+            raise ValueError(
+                f"aligner='{aligner}' is incompatible with a {ref_desc} reference and {reads_desc}. "
+                f"Use aligner='{expected_aligner}' ({reason})."
+            )
+
     #* Define derivative variables
     output_type = "-Oz" if output.endswith(".gz") else "-Ov"
     os.makedirs(os.path.dirname(output) or ".", exist_ok=True)
@@ -229,7 +279,7 @@ def denovo(
                 #* Build STAR genome if needed
                 if not os.path.isdir(star_genome_index_dir) or not os.listdir(star_genome_index_dir):
                     logger.info(f"Building STAR genome index at {star_genome_index_dir}...")
-                    star_build_command = f"STAR --runThreadN {threads} --runMode genomeGenerate --genomeDir {star_genome_index_dir} --genomeFastaFiles {fasta_ref} --sjdbGTFfile {gtf} --sjdbOverhang {read_length_minus_one} --limitSjdbInsertNsj 1000000 --limitBAMsortRAM 0"
+                    star_build_command = f"STAR --runThreadN {threads} --runMode genomeGenerate --genomeDir {star_genome_index_dir} --genomeFastaFiles {sequences} --sjdbGTFfile {gtf} --sjdbOverhang {read_length_minus_one} --limitSjdbInsertNsj 1000000 --limitBAMsortRAM 0"
                     run(star_build_command)
                 
                 logger.info("Running STAR alignment...")
@@ -258,7 +308,7 @@ def denovo(
                     split_bam = f"{star_alignment_prefix}split_exons.sorted.bam"
                     if not os.path.exists(split_bam):
                         # TODO: rewrite without GATK dependency
-                        split_cmd = f"gatk SplitNCigarReads -R {fasta_ref} -I {bam_for_bcftools} -O {split_bam} --create-output-bam-index"
+                        split_cmd = f"gatk SplitNCigarReads -R {sequences} -I {bam_for_bcftools} -O {split_bam} --create-output-bam-index"
                         if tmp_dir:
                             split_cmd += f" --tmp-dir {tmp_dir}"
                         run(split_cmd)
@@ -274,7 +324,7 @@ def denovo(
                 bowtie2_options += f" --score-min {bowtie2_score_min}"
             
             bowtie2_genome_index_file = f"{bowtie2_genome_index_prefix}.1.bt2"
-            bowtie_build_command = f"bowtie2-build {fasta_ref} {bowtie2_genome_index_prefix}"
+            bowtie_build_command = f"bowtie2-build {sequences} {bowtie2_genome_index_prefix}"
 
             if merge_bam_files:
                 bam_for_bcftools = os.path.join(bowtie2_alignment_dir, "aligned.sorted.bam")
@@ -297,13 +347,13 @@ def denovo(
                 if not out_bam_dir:
                     out_bam_dir = os.path.dirname(first_fastq)
                 os.makedirs(out_bam_dir, exist_ok=True)
-                fasta_ref_base = os.path.basename(fasta_ref)
-                fasta_ref_base = re.sub(r"\.(fa|fasta|fna)(\.gz)?$", "", fasta_ref_base)
-                fasta_ref_base = fasta_ref_base.replace(".", "_")
+                sequences_base = os.path.basename(sequences)
+                sequences_base = re.sub(r"\.(fa|fasta|fna)(\.gz)?$", "", sequences_base)
+                sequences_base = sequences_base.replace(".", "_")
                 if parity == "paired":
                     for fastq1, fastq2 in paired_fastq_files:
                         fq_base = re.sub(r"\..*", "", os.path.basename(fastq1))
-                        bam_out = os.path.join(out_bam_dir, f"{fq_base}_aligned_to_{fasta_ref_base}.bam")
+                        bam_out = os.path.join(out_bam_dir, f"{fq_base}_aligned_to_{sequences_base}.bam")
                         if not os.path.exists(bam_out):
                             if not os.path.exists(bowtie2_genome_index_file):
                                 run(bowtie_build_command)
@@ -313,7 +363,7 @@ def denovo(
                 else:
                     for fastq in single_fastq_files:
                         fq_base = re.sub(r"\..*", "", os.path.basename(fastq))
-                        bam_out = os.path.join(out_bam_dir, f"{fq_base}_aligned_to_{fasta_ref_base}.bam")
+                        bam_out = os.path.join(out_bam_dir, f"{fq_base}_aligned_to_{sequences_base}.bam")
                         if not os.path.exists(bam_out):
                             if not os.path.exists(bowtie2_genome_index_file):
                                 run(bowtie_build_command)
@@ -342,7 +392,7 @@ def denovo(
         if not output.endswith(".vcf") and not output.endswith(".vcf.gz"):
             raise ValueError("when using 'bcftools' variant caller, --output must end with .vcf or .vcf.gz")
         
-        bcftools_cmd = f"bcftools mpileup --threads {threads} -A -f {fasta_ref} -a INFO/AD -Q 0 -d 10000 -Ou"
+        bcftools_cmd = f"bcftools mpileup --threads {threads} -A -f {sequences} -a INFO/AD -Q 0 -d 10000 -Ou"
         if regions:
             bcftools_cmd += f" -R {regions}"
         if disable_baq:
@@ -362,7 +412,7 @@ def denovo(
 
         #* optional: bcftools norm and additional filter (must repeat after normalization)
         if not disable_bcftools_norm:
-            bcftools_cmd += f" -Ou | bcftools norm -f {fasta_ref} -c s -d all -m -any --threads {threads}"
+            bcftools_cmd += f" -Ou | bcftools norm -f {sequences} -c s -d all -m -any --threads {threads}"
             if do_filtering:
                 bcftools_cmd += f" -Ou | {filter_expression}"
 
@@ -416,7 +466,7 @@ def denovo(
             raise ValueError("--output-tsv is only supported with the 'bcftools' variant caller")
         if not output.endswith(".csv"):
             raise ValueError("when using 'cigar' variant caller, --output must end with .csv")
-        parse_cigars(bam_path=bam_for_bcftools, total=None, out_plot=None, do_baq=(not disable_baq), regions=regions, min_threshold=min_counts, strip_version_numbers=strip_version_numbers, out_csv=output, logger=logger)
+        parse_cigars(bam_path=bam_for_bcftools, total=None, out_plot=None, do_baq=(not disable_baq), regions=regions, min_threshold=min_counts, strip_version_numbers=strip_version_numbers, out_dataframe=output, logger=logger)
     else:
         raise ValueError(f"variant caller '{variant_caller}' not supported")
 
@@ -428,7 +478,7 @@ read2vcf = denovo
 def main():
     parser = argparse.ArgumentParser(description="STAR alignment + bcftools variant calling pipeline")
     parser.add_argument("inputs", nargs="+", help="Input BAMs or FASTQs. For paired FASTQs, pass alternating R1/R2 files.")
-    parser.add_argument("-f", "--fasta-ref", required=True, help="Reference FASTA file")
+    parser.add_argument("-s", "--sequences", required=True, help="Path to a reference genome FASTA file — the same file passed as `sequences` to vk build")
     parser.add_argument("-p", "--parity", default="single", choices=["single", "paired"], help="FASTQ parity. Use paired to pair alternating R1/R2 inputs.")
     parser.add_argument("-g", "--gtf", default="", help="genome annotation GTF file")
     parser.add_argument("-xs", "--star-genome-index-dir", default="genome_index", help="STAR or Bowtie2 genome index directory")
@@ -440,9 +490,11 @@ def main():
     parser.add_argument("-o", "--output", default="out.vcf.gz", help="Output VCF file (For bcftools variant caller) or CSV file (for cigar variant caller)")
     parser.add_argument("--output-tsv", default="", help="Optional TSV output converted from the bcftools VCF with columns: seq_id, variant")
     parser.add_argument("--tsv-reference-type", default="auto", choices=["auto", "dna", "genome", "cdna", "transcriptome"], help="Variant coordinate prefix for --output-tsv. auto uses c. for transcript-like sequence IDs and g. otherwise.")
-    parser.add_argument("-r", "--read-length", type=int, default=90, help="Read length")
+    parser.add_argument("-r", "--read-length", type=int, default=None, help="Read length (default: inferred from the first read)")
     parser.add_argument("-m", "--min-counts", type=int, default=3, help="Minimum count threshold for filtering")
-    parser.add_argument("-a", "--aligner", default="STAR", choices=["STAR", "bowtie2"], help="Aligner to use: STAR or bowtie2")
+    parser.add_argument("-a", "--aligner", default="bowtie2", choices=["STAR", "bowtie2"], help="Aligner to use: STAR (splice-aware; RNA reads to a genome) or bowtie2 (otherwise)")
+    parser.add_argument("--reads-type", "--reads_type", default=None, choices=["rna", "dna"], help="Read type, used to validate the aligner. Required to validate the choice when the reference is a genome.")
+    parser.add_argument("--reference-type", "--reference_type", default="auto", choices=["auto", "genome", "dna", "transcriptome", "cdna"], help="Whether --sequences is a genome or transcriptome, used to validate the aligner. auto infers it from the FASTA sequence IDs.")
     parser.add_argument("--variant-caller", default="bcftools", choices=["bcftools", "cigar"], help="Variant caller to use: bcftools or cigar")
     parser.add_argument("--bowtie2-seed-length", type=int, default=None, help="Seed length for Bowtie2 aligner")
     parser.add_argument("--bowtie2-score-min", default=None, help="Score minimum for Bowtie2 aligner")
@@ -463,7 +515,7 @@ def main():
 
     denovo(
         inputs=args.inputs,
-        fasta_ref=args.fasta_ref,
+        sequences=args.sequences,
         parity=args.parity,
         gtf=args.gtf,
         star_genome_index_dir=args.star_genome_index_dir,
@@ -478,6 +530,8 @@ def main():
         read_length=args.read_length,
         min_counts=args.min_counts,
         aligner=args.aligner,
+        reads_type=args.reads_type,
+        reference_type=args.reference_type,
         variant_caller=args.variant_caller,
         bowtie2_seed_length=args.bowtie2_seed_length,
         bowtie2_score_min=args.bowtie2_score_min,

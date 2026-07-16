@@ -3,7 +3,9 @@ import re
 import gzip
 import json
 import shutil
+import tarfile
 import tempfile
+import time
 from pathlib import Path
 from typing import get_args
 from collections import OrderedDict, defaultdict
@@ -17,8 +19,8 @@ import pyfastx
 from tqdm import tqdm
 
 from varseek.constants import codon_to_amino_acid, mutation_pattern, supported_databases_and_corresponding_reference_sequence_type, complement, fasta_extensions, varseek_ref_only_allowable_kb_ref_arguments, species_to_url
-from varseek.utils.logger_utils import set_up_logger, download_box_url
-from varseek.utils.seq_utils import fasta_to_fastq, make_intergenic_fasta, make_transcriptome_fasta, create_identity_t2g, reverse_complement
+from varseek.utils.logger_utils import set_up_logger, download_box_url, is_program_installed
+from varseek.utils.seq_utils import fasta_to_fastq, make_intergenic_fasta, make_transcriptome_fasta, make_cdna_fasta, make_nascent_fasta, create_identity_t2g, reverse_complement
 from varseek.utils.type_utils import ReferenceType
 
 import logging
@@ -523,7 +525,7 @@ def create_header_to_sequence_ordered_dict_from_fasta_after_semicolon_splitting(
 #     mutation_reference_file_fasta_transcriptome,
 #     mutation_reference_file_fasta_genome,
 #     mutation_reference_file_fasta_combined,
-#     cosmic_reference_file_mutation_csv,
+#     cosmic_reference_file_mutation_dataframe,
 # ):
 
 #     # TODO: make header fasta from id fasta with id:header dict
@@ -532,7 +534,7 @@ def create_header_to_sequence_ordered_dict_from_fasta_after_semicolon_splitting(
 #     mutant_reference_genome = create_header_to_sequence_ordered_dict_from_fasta_after_semicolon_splitting(mutation_reference_file_fasta_genome)
 
 #     cosmic_df = pd.read_csv(
-#         cosmic_reference_file_mutation_csv,
+#         cosmic_reference_file_mutation_dataframe,
 #         usecols=["seq_ID", "mutation_cdna", "chromosome", "mutation_genome"],  # TODO: remove column hard-coding
 #     )
 #     cosmic_df["chromosome"] = cosmic_df["chromosome"].apply(convert_chromosome_value_to_int_when_possible)
@@ -806,13 +808,13 @@ def drop_duplication_mutations(input_mutations, output, mutation_column="mutatio
     return df_no_dup_mutations
 
 
-def improve_genome_strand_information(cosmic_reference_file_mutation_csv, mutation_genome_column_name="mutation_genome", output_mutations_path=None):
-    if isinstance(cosmic_reference_file_mutation_csv, str):
-        df = pd.read_csv(cosmic_reference_file_mutation_csv)
-    elif isinstance(cosmic_reference_file_mutation_csv, pd.DataFrame):
-        df = cosmic_reference_file_mutation_csv
+def improve_genome_strand_information(cosmic_reference_file_mutation_dataframe, mutation_genome_column_name="mutation_genome", output_mutations_path=None):
+    if isinstance(cosmic_reference_file_mutation_dataframe, str):
+        df = pd.read_csv(cosmic_reference_file_mutation_dataframe)
+    elif isinstance(cosmic_reference_file_mutation_dataframe, pd.DataFrame):
+        df = cosmic_reference_file_mutation_dataframe
     else:
-        raise ValueError("cosmic_reference_file_mutation_csv must be a string or a DataFrame.")
+        raise ValueError("cosmic_reference_file_mutation_dataframe must be a string or a DataFrame.")
 
     df["strand_modified"] = df["strand"].replace(".", "+")
 
@@ -855,7 +857,7 @@ def improve_genome_strand_information(cosmic_reference_file_mutation_csv, mutati
     df.drop(
         columns=["GENOME_START", "GENOME_STOP", "nucleotide_positions", "actual_variant", "actual_variant_rc", "variant_type", "mut_nucleotides", "mut_nucleotides_rc", "actual_variant_final", "strand_modified"],
         inplace=True,
-    )  # drop all columns exceptmutation_genome_column_name(and the original ones)
+    )  # drop all columns except mutation_genome_column_name (and the original ones)
 
     if output_mutations_path:
         df.to_csv(output_mutations_path, index=False)
@@ -1210,13 +1212,13 @@ def make_reference_index(dna_fasta, reference_type, out_dir="reference_index", i
         if k is None:
             raise ValueError("k must be provided to download a prebuilt index via `species`.")
         try:
-            url = species_to_url[species][reference_type][str(k)]
+            url = species_to_url[species]["kallisto"][reference_type][str(k)]
         except KeyError as exc:
             raise ValueError(
-                f"No prebuilt index for species={species}, reference_type={reference_type}, k={k}. "
-                f"Valid options for this species: {species_to_url.get(species, {})}"
+                f"No prebuilt kallisto index for species={species}, reference_type={reference_type}, k={k}. "
+                f"Valid options for this species: {species_to_url.get(species, {}).get('kallisto', {})}"
             ) from exc
-        logger.info(f"Downloading prebuilt index for species={species}, reference_type={reference_type}, k={k}")
+        logger.info(f"Downloading prebuilt kallisto index for species={species}, reference_type={reference_type}, k={k}")
         download_box_url(url, output_folder=out_dir, output_file_name=index, verbose=True)
         logger.info(f"Downloaded reference index to {index}")
         return  # only the .idx is needed for `kallisto bus`
@@ -1230,22 +1232,6 @@ def make_reference_index(dna_fasta, reference_type, out_dir="reference_index", i
         c1 = os.path.join(out_dir, "cdna.txt")
         c2 = os.path.join(out_dir, "nascent.txt")
         run_kb_ref(index=index, t2g=t2g, f1=f1, workflow="nac", dna_fasta=dna_fasta, gtf=gtf, k=k, threads=threads, kallisto=kallisto, bustools=bustools, f2=f2, c1=c1, c2=c2, tmp=tmp)
-    elif reference_type == "genome_or_transcriptome":  # custom-dna + cdna
-        cdna_index = os.path.join(out_dir, "cdna.idx")
-        cdna_t2g = os.path.join(out_dir, "cdna.txt")
-        cdna_fasta = os.path.join(out_dir, "cdna.fasta")
-        if not os.path.exists(cdna_fasta):
-            # only the cdna fasta is needed here, so skip building its standalone index
-            run_kb_ref(index=cdna_index, t2g=cdna_t2g, f1=cdna_fasta, workflow="standard", dna_fasta=dna_fasta, k=k, threads=threads, kallisto=kallisto, bustools=bustools, gtf=gtf, tmp=tmp, skip_index=True)
-
-        # combine genome and cdna fasta into a single fasta for kb ref
-        genome_or_transcriptome_fasta = dna_fasta.replace(".fasta", "_plus_cdna.fasta").replace(".fa", "_plus_cdna.fa").replace(".fna", "_plus_cdna.fna")
-        with open(genome_or_transcriptome_fasta, "wb") as wfd:
-            for f in [dna_fasta, cdna_fasta]:
-                with open(f, "rb") as fd:
-                    wfd.write(fd.read())
-
-        run_kb_ref(index=index, t2g=t2g, f1=f1, workflow="custom", dna_fasta=genome_or_transcriptome_fasta, k=k, threads=threads, kallisto=kallisto, bustools=bustools, tmp=tmp)
     else:
         raise ValueError(f"Invalid reference_type: {reference_type}. Must be one of {REFERENCE_TYPES}")
 
@@ -1254,6 +1240,33 @@ def make_reference_index(dna_fasta, reference_type, out_dir="reference_index", i
 
 def pseudoalign(vcrs_fasta, reference_type, out_dir="kallisto_bus_out", dna_fasta=None, index_dir=None, index=None, t2g=None, gtf=None, k=None, threads=None, kallisto=None, bustools=None, overwrite=False, species=None, tmp=None):
     """Pseudoalign ``vcrs_fasta`` against a normal ``reference_type`` index and return the list of aligned read ids."""
+    if reference_type == "genome_or_transcriptome":
+        # Rather than building a single combined genome+cdna index, pseudoalign against the genome
+        # and cdna references independently (each gets its own index + kallisto bus) and return the
+        # union of aligned read ids. The cdna reference is created from the genome via `kb ref`
+        # (standard workflow) as part of building its index if it does not already exist.
+        aligned = set()
+        for sub_type in ("genome", "cdna"):
+            sub_aligned = pseudoalign(
+                vcrs_fasta=vcrs_fasta,
+                reference_type=sub_type,
+                out_dir=os.path.join(out_dir, sub_type),
+                dna_fasta=dna_fasta,
+                index_dir=index_dir,
+                index=None,  # derive per-sub-type index/t2g from index_dir
+                t2g=None,
+                gtf=gtf,
+                k=k,
+                threads=threads,
+                kallisto=kallisto,
+                bustools=bustools,
+                overwrite=overwrite,
+                species=species,
+                tmp=tmp,
+            )
+            aligned.update(sub_aligned)
+        return sorted(aligned)
+
     os.makedirs(out_dir, exist_ok=True)
     if index is None:
         index = os.path.join(index_dir, f"{reference_type}.idx")
@@ -1327,16 +1340,371 @@ def pseudoalign(vcrs_fasta, reference_type, out_dir="kallisto_bus_out", dna_fast
     return aligned_headers
 
 
-def run_pseudoalign_on_vcrs_df(df, reference_type, index_dir, out_dir, dna_fasta=None, gtf=None, k=None, threads=None, seq_col="vcrs_sequence", species=None):
+def _parse_fasta_records(path):
+    """Yield (header, sequence) tuples from a FASTA file."""
+    header, seq = None, []
+    with open(path) as f:
+        for line in f:
+            line = line.rstrip("\n")
+            if line.startswith(">"):
+                if header is not None:
+                    yield header, "".join(seq)
+                header, seq = line[1:], []
+            else:
+                seq.append(line)
+    if header is not None:
+        yield header, "".join(seq)
+
+
+def _read_name_to_positions(read_fa):
+    """Map each read's SAM QNAME (header up to first whitespace) to the list of
+    0-based positions at which it appears in ``read_fa``.
+
+    A list is used because two reads could in principle share a truncated header.
+    """
+    name_to_positions = {}
+    for pos, (header, _) in enumerate(_parse_fasta_records(read_fa)):
+        name = header.split()[0] if header else header
+        name_to_positions.setdefault(name, []).append(pos)
+    return name_to_positions
+
+
+def kmer_match_bowtie2(
+    ref_fa,
+    read_fa,
+    k=31,
+    threads=2,
+    bowtie2="bowtie2",
+    bowtie2_build="bowtie2-build",
+    strandedness=False,
+    N_penalty=1,
+    max_ambiguous=0,
+    work_dir=None,
+    index_prefix=None,
+):
+    """Align every k-mer of every read in ``read_fa`` to ``ref_fa`` with bowtie2
+    and return ``(matched_positions, read_match_counts)``:
+
+    - ``matched_positions``: sorted 0-based indices of reads with >= 1 exact
+      k-mer hit to ``ref_fa``.
+    - ``read_match_counts``: a list (indexed by read position) giving the total
+      number of k-mer matches for each read, i.e. the sum over all of the read's
+      k-mers of the number of exact reference hits each k-mer had.
+
+    If ``index_prefix`` is given, that prebuilt bowtie2 index is used directly and
+    ``ref_fa`` is ignored (nothing is built). Otherwise a bowtie2 index is built
+    over ``ref_fa`` inside ``work_dir``. A read matches if any of its k-mers aligns
+    with an exact, full-length (score 0) hit. Modeled on
+    ``align_to_normal_genome_and_build_dlist`` in ``varseek/utils/varseek_info_utils.py``.
+    """
+    # Set up a working directory for the index and SAM output.
+    cleanup = False
+    if work_dir is None:
+        work_dir = tempfile.mkdtemp(prefix="kmer_match_bowtie2_")
+        cleanup = True
+    else:
+        os.makedirs(work_dir, exist_ok=True)
+
+    output_sam_file = os.path.join(work_dir, "alignment.sam")
+
+    runtimes = {}
+
+    try:
+        # --- Build the bowtie2 index over the reference FASTA (unless a prebuilt one was given). ---
+        if index_prefix is None:
+            index_dir = os.path.join(work_dir, "bowtie_index")
+            index_prefix = os.path.join(index_dir, "ref")
+            if not os.path.exists(index_dir) or not os.listdir(index_dir):
+                os.makedirs(index_dir, exist_ok=True)
+                logger.info("Building bowtie2 index over reference")
+                index_start = time.perf_counter()
+                subprocess.run(
+                    [
+                        bowtie2_build,
+                        "--threads",
+                        str(threads),
+                        ref_fa,
+                        index_prefix,
+                    ],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                runtimes["index_build_seconds"] = time.perf_counter() - index_start
+                logger.debug(f"Index build runtime: {runtimes['index_build_seconds']:.2f} s")
+
+        # --- Align every k-mer of every read to the reference index. ---
+        # -F k,1 extracts each length-k substring (stride 1) of every read and
+        # aligns it as its own query, named "{read_header}_{offset}".
+        # --score-min C,0,0 with -N 0 / --no-1mm-upfront forces exact matches.
+        logger.info("Running bowtie2 alignment")
+        bowtie2_alignment_command = [
+            bowtie2,
+            "-a",  # report all alignments
+            # "-k", "1",  # stop after the first valid alignment (we only need boolean occurrence)
+            "-f",  # input reads are FASTA
+            "--threads",
+            str(threads),
+            "--xeq",
+            "--score-min",
+            "C,0,0",  # only perfect-score (exact) alignments
+            "--np",
+            str(N_penalty),
+            "--n-ceil",
+            f"C,0,{max_ambiguous}",
+            "-F",
+            f"{k},1",  # extract every k-mer (stride 1) from each read
+            "-R",
+            "1",
+            "-N",
+            "0",
+            "-L",
+            "31",
+            "-i",
+            "C,1,0",
+            "--no-1mm-upfront",
+            "--no-unal",  # do not write unaligned k-mers
+            "--no-hd",  # suppress SAM header lines
+            "-x",
+            index_prefix,
+            "-U",
+            read_fa,
+            "-S",
+            output_sam_file,
+        ]
+        if strandedness:
+            bowtie2_alignment_command.insert(3, "--norc")
+
+        alignment_start = time.perf_counter()
+        subprocess.run(
+            bowtie2_alignment_command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=True,
+        )
+        runtimes["alignment_seconds"] = time.perf_counter() - alignment_start
+        logger.debug(f"Alignment runtime: {runtimes['alignment_seconds']:.2f} s")
+
+        # --- Recover, per read, the total number of aligning k-mers. ---
+        # With ``-a`` bowtie2 emits one SAM record per (k-mer, reference hit),
+        # so summing the SAM records that belong to a read gives the total
+        # number of k-mer matches for that read (summed across all its k-mers).
+        name_to_positions = _read_name_to_positions(read_fa)
+        n_reads = sum(len(positions) for positions in name_to_positions.values())
+        read_match_counts = [0] * n_reads
+        with open(output_sam_file) as sam:
+            for line in tqdm(sam, desc="Scanning bowtie2 alignments"):
+                if not line or line.startswith("@"):
+                    continue
+                qname = line.split("\t", 1)[0]
+                # -F names each k-mer "{read_header}_{offset}"; strip the offset.
+                read_name = qname.rsplit("_", 1)[0]
+                for pos in name_to_positions.get(read_name, ()):
+                    read_match_counts[pos] += 1
+
+        matched_positions = [pos for pos, c in enumerate(read_match_counts) if c > 0]
+        return sorted(matched_positions), read_match_counts
+    finally:
+        if cleanup:
+            shutil.rmtree(work_dir, ignore_errors=True)
+
+
+# How each user-facing ``reference_type`` decomposes into the individual bowtie2
+# reference "components". Unlike kallisto's combined nac index, bowtie2 has no single
+# "transcriptome" index, so the transcriptome is covered by iterating over the cdna and
+# nascent references separately. This is the single source of truth shared by the
+# local-build (:func:`_reference_fastas_for_bowtie2`) and prebuilt-download
+# (:func:`_download_bowtie2_indices`) paths.
+_BOWTIE2_COMPONENTS = {
+    "genome": ["genome"],
+    "cdna": ["cdna"],
+    "transcriptome": ["cdna", "nascent"],
+    "genome_or_transcriptome": ["genome", "cdna"],
+}
+
+# The fasta filename + builder used to construct each non-genome bowtie2 component from
+# the genomic DNA fasta (plus a gtf). ``genome`` uses the provided dna_fasta directly.
+_BOWTIE2_COMPONENT_BUILDERS = {
+    "cdna": ("cdna.fasta", make_cdna_fasta),
+    "nascent": ("nascent.fasta", make_nascent_fasta),
+}
+
+
+def _reference_fastas_for_bowtie2(reference_type, dna_fasta, gtf, out_dir, overwrite=False):
+    """Resolve the reference fasta(s) to align a VCRS set against for ``reference_type``.
+
+    A genomic DNA fasta is assumed to always be provided; cDNA / nascent references are
+    generated from it (plus a gtf) via the sequence helpers as needed. See
+    :data:`_BOWTIE2_COMPONENTS` for how each ``reference_type`` decomposes, e.g.:
+
+      - ``genome``                  -> [genomic dna]
+      - ``cdna``                    -> [cdna]                (cdna built from dna + gtf)
+      - ``transcriptome``           -> [cdna, nascent]       (both built from dna + gtf; unioned)
+      - ``genome_or_transcriptome`` -> [genomic dna, cdna]   (unioned)
+    """
+    if dna_fasta is None or not os.path.isfile(dna_fasta):
+        raise ValueError(f"A genomic DNA fasta is required for bowtie2 pseudoalignment (got dna_fasta={dna_fasta!r}).")
+
+    components = _BOWTIE2_COMPONENTS.get(reference_type)
+    if components is None:
+        raise ValueError(f"Invalid reference_type: {reference_type}. Must be one of {REFERENCE_TYPES}")
+
+    def _build(name, builder):
+        path = os.path.join(out_dir, name)
+        if overwrite or not os.path.isfile(path):
+            if gtf is None or not os.path.isfile(gtf):
+                raise ValueError(f"reference_type={reference_type} requires a gtf to build {name} from the genomic DNA fasta.")
+            logger.info(f"Building {name} from {dna_fasta} + {gtf}")
+            builder(dna_fasta, gtf, path)
+        return path
+
+    fastas = []
+    for component in components:
+        if component == "genome":
+            fastas.append(dna_fasta)
+        else:
+            name, builder = _BOWTIE2_COMPONENT_BUILDERS[component]
+            fastas.append(_build(name, builder))
+    return fastas
+
+
+def _download_and_extract_bowtie2_index(species, component, url, out_dir):
+    """Download + unpack one prebuilt bowtie2 component index (``genome``/``cdna``/``nascent``).
+
+    The index is distributed as a ``.tar.gz`` archive that unpacks to ``FOLDER/ref.*``
+    bowtie2 index files. Returns the shared ``.../ref`` prefix of the ``ref.1.bt2`` ...
+    files that bowtie2 expects (no suffix). The index is independent of the k-mer size
+    used downstream, so no ``k`` is needed to select it.
+    """
+    extract_dir = os.path.join(out_dir, f"{component}_bowtie2_index")
+
+    def _find_index_prefix():
+        # bowtie2 wants the prefix shared by <prefix>.1.bt2[l], <prefix>.2.bt2[l], ...
+        # The .rev.*.bt2[l] files also end in ".1.bt2[l]", so exclude them.
+        for suffix in (".1.bt2l", ".1.bt2"):
+            for path in sorted(Path(extract_dir).rglob(f"*{suffix}")):
+                if ".rev." not in path.name:
+                    return str(path)[: -len(suffix)]
+        return None
+
+    index_prefix = _find_index_prefix()
+    if index_prefix is None:  # not already downloaded/unpacked
+        os.makedirs(extract_dir, exist_ok=True)
+        tarball = os.path.join(extract_dir, f"{component}_bowtie2_index.tar.gz")
+        logger.info(f"Downloading prebuilt bowtie2 index for species={species}, component={component}")
+        download_box_url(url, output_folder=extract_dir, output_file_name=tarball, verbose=True)
+        with tarfile.open(tarball, "r:gz") as tar:
+            try:
+                tar.extractall(extract_dir, filter="data")  # filter added in py3.12
+            except TypeError:
+                tar.extractall(extract_dir)
+        os.remove(tarball)
+        index_prefix = _find_index_prefix()
+
+    if index_prefix is None:
+        raise ValueError(
+            f"Downloaded bowtie2 index archive for species={species}, component={component} "
+            f"contained no bowtie2 index files (expected *.1.bt2[l]) under {extract_dir}."
+        )
+    return index_prefix
+
+
+def _download_bowtie2_indices(species, reference_type, out_dir):
+    """Download and unpack the prebuilt bowtie2 index/indices for ``species``/``reference_type``.
+
+    bowtie2 has no single combined "transcriptome" index (unlike kallisto's nac index),
+    so a ``reference_type`` that spans the transcriptome is served by downloading and
+    iterating over its individual components (e.g. ``transcriptome`` -> cdna + nascent);
+    see :data:`_BOWTIE2_COMPONENTS`.
+
+    Returns a list of ``(index_prefix, is_prebuilt=True)`` tuples to hand to
+    :func:`kmer_match_bowtie2` -- one per component, in decomposition order.
+    """
+    components = _BOWTIE2_COMPONENTS.get(reference_type)
+    if components is None:
+        raise ValueError(f"Invalid reference_type: {reference_type}. Must be one of {REFERENCE_TYPES}")
+
+    species_indices = species_to_url.get(species, {}).get("bowtie2", {})
+    references = []
+    for component in components:
+        try:
+            url = species_indices[component]
+        except KeyError as exc:
+            raise ValueError(
+                f"No prebuilt bowtie2 index for species={species}, reference_type={reference_type} "
+                f"(missing component '{component}'). Available components for this species: {sorted(species_indices)}"
+            ) from exc
+        references.append((_download_and_extract_bowtie2_index(species, component, url, out_dir), True))
+    return references
+
+
+def pseudoalign_bowtie2(vcrs_fasta, reference_type, out_dir="bowtie2_out", dna_fasta=None, gtf=None, k=None, threads=None, bowtie2="bowtie2", bowtie2_build="bowtie2-build", overwrite=False, species=None, vcrs_strandedness=False):
+    """Bowtie2 analogue of :func:`pseudoalign`.
+
+    Returns the positional read-ids (as strings ``"0"``, ``"1"``, ...) in ``vcrs_fasta`` that share
+    an exact k-mer with the normal ``reference_type`` reference. The reference is built from the
+    genomic DNA fasta (plus a gtf for cdna/nascent) via :func:`_reference_fastas_for_bowtie2`, or
+    downloaded for a supported ``species``. When ``reference_type`` maps to multiple references
+    (e.g. ``transcriptome`` -> cdna + nascent), the aligned read-ids are unioned across them.
+    """
+    os.makedirs(out_dir, exist_ok=True)
+    k = k or 31
+
+    if species is not None:
+        references = _download_bowtie2_indices(species, reference_type, out_dir)
+    else:
+        references = [(ref, False) for ref in _reference_fastas_for_bowtie2(reference_type, dna_fasta, gtf, out_dir, overwrite=overwrite)]
+
+    aligned_positions = set()
+    n_reads = None
+    for i, (ref, is_prebuilt) in enumerate(references):
+        work_dir = os.path.join(out_dir, f"ref_{i}")
+        if overwrite and os.path.isdir(work_dir):
+            shutil.rmtree(work_dir, ignore_errors=True)
+        matched, read_match_counts = kmer_match_bowtie2(
+            ref_fa=None if is_prebuilt else ref,
+            read_fa=vcrs_fasta,
+            k=k,
+            threads=(threads or 2),
+            bowtie2=bowtie2,
+            bowtie2_build=bowtie2_build,
+            strandedness=vcrs_strandedness,
+            work_dir=work_dir,
+            index_prefix=ref if is_prebuilt else None,
+        )
+        aligned_positions.update(matched)
+        n_reads = len(read_match_counts)
+        logger.info(f"reference_type: {reference_type} (bowtie2, ref {i + 1}/{len(references)} = {ref}): {len(matched)} / {n_reads} VCRSs matched a k-mer.")
+
+    aligned_headers = [str(p) for p in sorted(aligned_positions)]
+    if n_reads:
+        logger.info(f"reference_type: {reference_type} (bowtie2), union across references: {len(aligned_headers)} / {n_reads} reads matched.")
+    return aligned_headers
+
+
+def run_pseudoalign_on_vcrs_df(df, reference_type, index_dir, out_dir, dna_fasta=None, gtf=None, k=None, threads=None, seq_col="vcrs_sequence", species=None, aligner="bowtie2", bowtie2="bowtie2", bowtie2_build="bowtie2-build", vcrs_strandedness=False):
     """Drop rows of ``df`` whose VCRS sequence pseudoaligns to the normal ``reference_type`` reference.
 
     A temporary fasta is written with contiguous positional headers (0..n-1 over the written,
-    non-empty records) so that the read ids kallisto reports map unambiguously back to the
+    non-empty records) so that the read ids the aligner reports map unambiguously back to the
     originating rows of ``df``. Rows that pseudoalign are removed (they would be false positives).
     Returns the filtered DataFrame with its original index labels preserved.
+
+    ``aligner`` selects the alignment backend: ``"bowtie2"`` (default) aligns the VCRS sequences'
+    k-mers against reference fasta(s) built from the genomic DNA (plus a gtf for cdna/nascent);
+    ``"kallisto"`` uses kallisto bus against a kb-ref index. When ``aligner="bowtie2"`` but bowtie2
+    is not installed, a warning is emitted and it falls back to kallisto.
     """
     if seq_col not in df.columns:
         raise ValueError(f"Column '{seq_col}' not found in DataFrame. Available columns: {df.columns.tolist()}")
+
+    if aligner not in ("bowtie2", "kallisto"):
+        raise ValueError(f"Invalid aligner: {aligner!r}. Must be 'bowtie2' or 'kallisto'.")
+    # bowtie2 is the default, but fall back to kallisto when bowtie2 is unavailable.
+    if aligner == "bowtie2" and not (is_program_installed(bowtie2) and is_program_installed(bowtie2_build)):
+        logger.warning(f"aligner='bowtie2' requested but bowtie2 is not installed/available (checked '{bowtie2}' and '{bowtie2_build}'); falling back to kallisto pseudoalignment.")
+        aligner = "kallisto"
 
     fd, vcrs_fasta = tempfile.mkstemp(suffix=".fasta")
     os.close(fd)
@@ -1353,17 +1721,32 @@ def run_pseudoalign_on_vcrs_df(df, reference_type, index_dir, out_dir, dna_fasta
         mask = np.ones(len_df, dtype=bool)
 
         if written_positions:
-            aligned_headers = pseudoalign(
-                reference_type=reference_type,
-                index_dir=index_dir,
-                out_dir=out_dir,
-                vcrs_fasta=vcrs_fasta,
-                dna_fasta=dna_fasta,
-                gtf=gtf,
-                threads=threads,
-                k=k,
-                species=species,
-            )
+            if aligner == "bowtie2":
+                aligned_headers = pseudoalign_bowtie2(
+                    reference_type=reference_type,
+                    out_dir=out_dir,
+                    vcrs_fasta=vcrs_fasta,
+                    dna_fasta=dna_fasta,
+                    gtf=gtf,
+                    threads=threads,
+                    k=k,
+                    bowtie2=bowtie2,
+                    bowtie2_build=bowtie2_build,
+                    species=species,
+                    vcrs_strandedness=vcrs_strandedness,
+                )
+            else:
+                aligned_headers = pseudoalign(
+                    reference_type=reference_type,
+                    index_dir=index_dir,
+                    out_dir=out_dir,
+                    vcrs_fasta=vcrs_fasta,
+                    dna_fasta=dna_fasta,
+                    gtf=gtf,
+                    threads=threads,
+                    k=k,
+                    species=species,
+                )
             rows_to_remove = [written_positions[int(h)] for h in aligned_headers]
             if rows_to_remove:
                 mask[rows_to_remove] = False
@@ -1379,12 +1762,11 @@ def run_pseudoalign_on_vcrs_df(df, reference_type, index_dir, out_dir, dna_fasta
                 pass
 
 
-def create_vcrs_index(vcrs_fasta_for_index, index_out, k, threads=2, overwrite=False, dry_run=False, kb_ref_kwargs=None, wt_vcrs_fasta_for_index=None, wt_vcrs_index_out=None, dlist="None"):
+def create_vcrs_index(vcrs_fasta_for_index, index_out, k, threads=2, overwrite=False, dry_run=False, kb_ref_kwargs=None, dlist="None"):
     """Build the kallisto index from a VCRS fasta by wrapping `kb ref` (previously done by vk ref).
 
-    Runs `kb ref` for the main VCRS fasta, and — if a wildtype VCRS fasta exists — for the wildtype
-    counterpart as well. Existing index files are left untouched unless overwrite=True, and dry_run
-    prints the command(s) instead of running them.
+    Runs `kb ref` for the VCRS fasta. Existing index files are left untouched unless overwrite=True,
+    and dry_run prints the command instead of running it.
 
     `dlist` is the already-resolved value passed through to `kb ref --d-list`: either the literal
     "None" (no d-list) or a path to a d-list fasta (see `resolve_dlist`).
@@ -1431,22 +1813,6 @@ def create_vcrs_index(vcrs_fasta_for_index, index_out, k, threads=2, overwrite=F
             subprocess.run(kb_ref_command, check=True)
     else:
         logger.warning(f"Skipping kb ref because {index_out} already exists and overwrite=False")
-
-    #!!! erase if removing wt vcrs feature
-    if wt_vcrs_fasta_for_index and os.path.exists(wt_vcrs_fasta_for_index) and wt_vcrs_index_out:
-        if not os.path.exists(wt_vcrs_index_out) or overwrite:
-            wt_tmp = os.path.join(os.path.dirname(wt_vcrs_index_out) or ".", "kb_ref_tmp_wt")
-            kb_ref_wt_vcrs_command = ["kb", "ref", "--workflow", "custom", "-t", str(threads), "-i", wt_vcrs_index_out, "--d-list", dlist, "-k", str(k), "--overwrite", "--tmp", wt_tmp, wt_vcrs_fasta_for_index]
-            if dry_run:
-                print(" ".join(kb_ref_wt_vcrs_command))
-            else:
-                if os.path.exists(wt_tmp):
-                    shutil.rmtree(wt_tmp, ignore_errors=True)
-                logger.info(f"Running kb ref for wt vcrs index with command: {' '.join(kb_ref_wt_vcrs_command)}")
-                subprocess.run(kb_ref_wt_vcrs_command, check=True)
-        else:
-            logger.warning(f"Skipping kb ref for wt vcrs because {wt_vcrs_index_out} already exists and overwrite=False")
-    #!!! erase if removing wt vcrs feature
 
 
 def resolve_reference_dna_and_gtf(reference_dna, reference_gtf, sequences, gtf, need_gtf=True):

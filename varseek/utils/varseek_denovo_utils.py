@@ -1,5 +1,6 @@
 """Helper functions for varseek denovo."""
 
+import gzip
 import os
 import re
 import shutil
@@ -28,6 +29,21 @@ def infer_hgvs_prefix(seq_id, reference_type="auto"):
     seq_id = str(seq_id)
     transcript_prefixes = ("ENST", "NM_", "NR_", "XM_", "XR_")
     return "c." if seq_id.startswith(transcript_prefixes) else "g."
+
+
+def infer_reference_type_from_fasta(sequences):
+    """Guess whether a reference FASTA is a genome or transcriptome from its first header.
+
+    Returns "genome" or "transcriptome" using the same transcript-ID prefixes as
+    infer_hgvs_prefix (ENST/NM_/NR_/XM_/XR_). Falls back to "genome" if no header is found."""
+    transcript_prefixes = ("ENST", "NM_", "NR_", "XM_", "XR_")
+    opener = gzip.open if str(sequences).endswith(".gz") else open
+    with opener(sequences, "rt") as handle:
+        for line in handle:
+            if line.startswith(">"):
+                seq_id = line[1:].strip().split()[0] if line[1:].strip() else ""
+                return "transcriptome" if seq_id.startswith(transcript_prefixes) else "genome"
+    return "genome"
 
 
 def vcf_allele_to_hgvs(pos, ref, alt, prefix):
@@ -111,11 +127,12 @@ def run(cmd, check=True, shell=True, logger=logger):
 
 def check_tool(tool):
     """Ensure that a required command-line tool is available."""
-    if not shutil.which(tool) and not os.path.exists(tool):
+    from varseek.utils.logger_utils import is_program_installed  # shared availability check (reused across modules)
+    if not is_program_installed(tool):
         raise ValueError(f"required tool '{tool}' is not installed or not in PATH.")
 
 
-def parse_cigars(bam_path=None, total=None, out_plot=None, do_baq=False, regions=None, min_threshold=3, strip_version_numbers=False, out_csv=None, logger=logger):
+def parse_cigars(bam_path=None, total=None, out_plot=None, do_baq=False, regions=None, min_threshold=3, strip_version_numbers=False, out_dataframe=None, logger=logger):
     import pyranges as pr
     # TODO: accept multiple BAMs
     # TODO: change df column name from Chromosome to Transcript if genome vs cdna (need to detect which I'm using)
@@ -232,7 +249,7 @@ def parse_cigars(bam_path=None, total=None, out_plot=None, do_baq=False, regions
         df = df.loc[df["Count"] >= min_threshold].reset_index(drop=True)
         logger.info("Total unique variants after applying min_threshold:", len(df))
 
-    if out_csv:
-        df.to_csv(out_csv, index=False)
+    if out_dataframe:
+        df.to_csv(out_dataframe, index=False)
 
     logger.info(f"Final unique variants: {len(df)}")

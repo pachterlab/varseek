@@ -35,7 +35,7 @@ reference_folder_parent = os.path.join(os.path.dirname(test_directory), "data", 
 ensembl_grch37_release93_folder = os.path.join(reference_folder_parent, "ensembl_grch37_release93")
 vk_ref_folder = os.path.join(os.path.dirname(test_directory), "data", "vk_ref_out")
 fastq_file = os.path.join(os.path.dirname(test_directory), "data", "ccle_data_base", "RNASeq_MELHO_SKIN", "SRR8615233_1_head.fastq")
-vcf_data_csv = os.path.join(reference_folder_parent, "cosmic", "CancerMutationCensus_AllData_Tsv_v101_GRCh37", "CancerMutationCensus_AllData_v101_GRCh37_vcf_data.csv")
+vcf_data_dataframe = os.path.join(reference_folder_parent, "cosmic", "CancerMutationCensus_AllData_Tsv_v101_GRCh37", "CancerMutationCensus_AllData_v101_GRCh37_vcf_data.csv")
 kb_ref_standard_workflow_folder = os.path.join(ensembl_grch37_release93_folder, "kb_ref_out_standard_workflow")
 pytest_permanent_out_dir_base = test_directory / "pytest_output" / Path(__file__).stem
 current_datetime = datetime.now().strftime("date_%Y_%m_%d_time_%H%M_%S")
@@ -109,12 +109,12 @@ def test_vk_count(out_dir):
         if not make_new_gt:
             pytest.skip("Ground truth folder is missing or empty, and make_new_gt is False. Skipping test.")
 
-    if save_vcf and not os.path.exists(vcf_data_csv):  # alternatively, I can do this in vk clean by passing in vcf_data_csv=vcf_data_csv, cosmic_tsv=cosmic_tsv, cosmic_reference_genome_fasta=cosmic_reference_genome_fasta, variants="cosmic_cmc", sequences="cdna", cosmic_version=101
+    if save_vcf and not os.path.exists(vcf_data_dataframe):  # alternatively, I can do this in vk clean by passing in vcf_data_dataframe=vcf_data_dataframe, cosmic_tsv=cosmic_tsv, cosmic_reference_genome_fasta=cosmic_reference_genome_fasta, variants="cosmic_cmc", sequences="cdna", cosmic_version=101
         cosmic_tsv = os.path.join(reference_folder_parent, "cosmic", "CancerMutationCensus_AllData_Tsv_v101_GRCh37", "CancerMutationCensus_AllData_v101_GRCh37.tsv")
         reference_genome_fasta = os.path.join(ensembl_grch37_release93_folder, "Homo_sapiens.GRCh37.dna.primary_assembly.fa")
         if not os.path.exists(reference_genome_fasta) or not os.path.exists(cosmic_tsv):
-            pytest.skip("Skipping becasue save_vcf is True, vcf_data_csv doesn't exist, and either cosmic_tsv and/or reference_genome_fasta doesn't exist. Ensure cosmic_tsv and reference_genome_fasta exist.")
-        vk.utils.add_vcf_info_to_cosmic_tsv(cosmic_tsv=cosmic_tsv, reference_genome_fasta=reference_genome_fasta, cosmic_df_out=vcf_data_csv, sequences="cdna", cosmic_version=101)
+            pytest.skip("Skipping becasue save_vcf is True, vcf_data_dataframe doesn't exist, and either cosmic_tsv and/or reference_genome_fasta doesn't exist. Ensure cosmic_tsv and reference_genome_fasta exist.")
+        vk.utils.add_vcf_info_to_cosmic_tsv(cosmic_tsv=cosmic_tsv, reference_genome_fasta=reference_genome_fasta, cosmic_df_out=vcf_data_dataframe, sequences="cdna", cosmic_version=101)
 
     if make_new_gt:
         os.makedirs(ground_truth_folder, exist_ok=True)
@@ -135,7 +135,7 @@ def test_vk_count(out_dir):
         reference_genome_index=reference_genome_index, reference_genome_t2g=reference_genome_t2g,
         qc_against_gene_matrix=qc_against_gene_matrix,
         save_vcf=save_vcf,
-        vcf_data_csv=vcf_data_csv
+        vcf_data_dataframe=vcf_data_dataframe
     )
 
 

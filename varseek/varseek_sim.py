@@ -72,8 +72,6 @@ class SimParams(BaseModel):
     variants_updated_csv_out: object = None
     reads_fastq_out: object = None
     reads_csv_out: object = None
-    wt_vcrs_fasta_out: object = None
-    wt_vcrs_t2g_out: object = None
     removed_variants_text_out: object = None
     gtf: object = None
 
@@ -95,9 +93,11 @@ class SimParams(BaseModel):
         else:
             raise ValueError(f"variants must be a df, a path to a variant database, or a string specifying a variant database supported by varseek. Got {type(variants)}.\nTo see a list of supported variant databases and reference genomes, please use the 'list_internally_supported_indices' flag/argument.")
 
+        if not (is_valid_int(self.number_of_variants_to_sample, ">=", 1) or self.number_of_variants_to_sample == "all"):
+            raise ValueError(f"number_of_variants_to_sample must be an integer >= 1 or 'all'. Got {self.number_of_variants_to_sample}.")
+
         # integers - optional just means that it's in kwargs (w and k enforced on the signature)
         for param_name, min_value, optional_value in [
-            ("number_of_variants_to_sample", 1, False),
             ("seed", 0, True),
         ]:
             param_value = getattr(self, param_name)
@@ -135,7 +135,7 @@ class SimParams(BaseModel):
         if not (is_valid_int(self.max_errors, ">=", 0) or isinstance(self.max_errors, float)):
             raise ValueError("max_errors must be a positive integer or float.")
 
-        for param_name, file_type in {"reads_fastq_parent": "fastq", "reads_csv_parent": "csv", "variants_updated_csv_out": ["csv", "tsv"], "reads_fastq_out": "fastq", "reads_csv_out": "csv", "wt_vcrs_fasta_out": "fasta", "wt_vcrs_t2g_out": "t2g", "removed_variants_text_out": "txt", "gtf": "gtf"}.items():
+        for param_name, file_type in {"reads_fastq_parent": "fastq", "reads_csv_parent": "csv", "variants_updated_csv_out": ["csv", "tsv"], "reads_fastq_out": "fastq", "reads_csv_out": "csv", "removed_variants_text_out": "txt", "gtf": "gtf"}.items():
             check_file_path_is_string_with_valid_extension(getattr(self, param_name), param_name, file_type)
 
         # boolean flags enforced on the signature
@@ -169,8 +169,8 @@ def sim(
     reads_fastq_out=None,
     variants_updated_csv_out=None,
     reads_csv_out=None,
-    save_variants_updated_csv: bool = True,
-    save_reads_csv: bool = True,
+    save_variants_updated_dataframe: bool = True,
+    save_reads_dataframe: bool = True,
     vk_build_out_dir=None,
     sequences=None,
     seq_id_column="seq_ID",
@@ -198,7 +198,7 @@ def sim(
 
     # Required input arguments:
     - variants                         (str or pd.DataFrame) Path to the csv file or a dataframe object containing variant information.
-        Valid input files include the variants_updated_csv_out file from vk build (save_variants_updated_csv=True) with merge_identical=False, or the variants_updated_exploded_vk_info_csv_out output of vk info (save_variants_updated_exploded_vk_info_csv=True).
+        Valid input files include the variants_updated_csv_out file from vk build (save_variants_updated_dataframe=True) with merge_identical=False, or the variants_updated_exploded_vk_info_csv_out output of vk info (save_variants_updated_exploded_vk_info_csv=True).
         Expects the following columns:
             header: variant header/ID
             variant_sequence_read_parent_column: the parent variant-containing sequence from which to draw the read - should correspond to roughly twice the read length (so that the variant can occur in any position in the read) - required if and only if number_of_reads_per_variant_alt > 0
@@ -208,8 +208,8 @@ def sim(
 
     # Optional input arguments:
     - number_of_variants_to_sample     (int) Number of variants to sample from `variants`, or 'all' for all variants. Default: 1500
-    - number_of_reads_per_variant_alt    (int or str) Number of variant-containing reads to simulate per variant. Either accepts an integer greater than 0 or "all" to simulate all possible reads per variant. Default: "all"
-    - number_of_reads_per_variant_ref    (int or str) Number of non-variant-containing reads to simulate per variant. Either accepts an integer greater than 0 or "all" to simulate all possible reads per variant. Default: "all"
+    - number_of_reads_per_variant_alt    (int or str) Number of variant-containing reads to simulate per variant. Either accepts an integer greater than or equal to 0 or "all" to simulate all possible reads per variant. Default: "all"
+    - number_of_reads_per_variant_ref    (int or str) Number of non-variant-containing reads to simulate per variant. Either accepts an integer greater than or equal to 0 or "all" to simulate all possible reads per variant. Default: "all"
     - sample_ref_and_alt_reads_from_same_locations (bool) Whether to sample variant-containing and non-variant-containing reads from the same locations. Requires number_of_reads_per_variant_alt and number_of_reads_per_variant_ref to be the same. Default: False
     - with_replacement                  (bool) Whether to sample with replacement. Default: False
     - strand                            (str) Strand to simulate reads from. Possible values: 'f' (forward strand), 'r' (reverse complement strand), 'both' (both strands equally), 'random' (select a strand at random for each read), or None (select a strand at random for all reads derived from each variant). Default: None
@@ -230,8 +230,8 @@ def sim(
     - reads_fastq_out                   (str) Path to the output fastq file containing the simulated reads. Default: `out`/synthetic_reads.fq
     - variants_updated_csv_out         (str) Path to the output csv file containing the updated variant metadata dataframe (one row per variant). Default: `out`/variants_updated_synthetic_reads.csv
     - reads_csv_out                     (str) Path to the output csv file containing the simulated reads (one row per read). Default: `out`/synthetic_reads_df.csv
-    - save_variants_updated_csv        (bool) Whether to save the updated variant metadata dataframe to a csv file. Default: True
-    - save_reads_csv                     (bool) Whether to save the simulated reads to a csv file. Default: True
+    - save_variants_updated_dataframe        (bool) Whether to save the updated variant metadata dataframe to a csv file. Default: True
+    - save_reads_dataframe                     (bool) Whether to save the simulated reads to a csv file. Default: True
     - vk_build_out_dir                  (str) Only applies if variants does not exist or have the expected columns. Path to the output directory for the vk_build files. Default: `out`/vk_build.
     - sequences                         (str) Only applies if variants does not exist or have the expected columns. Path to the fasta file containing the sequences. Default: None
     - seq_id_column                     (str) Only applies if variants does not exist or have the expected columns. Name of the column containing the sequence IDs. Default: "seq_ID"
@@ -239,7 +239,7 @@ def sim(
     - var_id_column                     (str) Only applies if variants does not exist or have the expected columns. Name of the column containing the variant header. Default: "header"
     - variant_type_column               (str) Only applies if variants does not exist or have the expected columns. Name of the column containing the variant type. Default: "vcrs_variant_type"
     - k                                 (int) Only applies if variants does not exist or have the expected columns. Length of the k-mer to use for filtering. Default: 59
-    - w                                 (int) Only applies if variants does not exist or have the expected columns. Length of the k-mer to use for filtering. Default: 54
+    - w                                 (int) Only applies if variants does not exist or have the expected columns. Length of sequence windows flanking the variant. Default: 54
     - sequences_cdna                    (str) Only applies if variants does not exist or have the expected columns. Path to the fasta file containing the cDNA sequences. Default: None
     - seq_id_column_cdna                (str) Only applies if variants does not exist or have the expected columns. Name of the column containing the sequence IDs for cDNA sequences. Default: "seq_ID"
     - var_column_cdna                   (str) Only applies if variants does not exist or have the expected columns. Name of the column containing the variants for cDNA sequences. Default: "mutation"
@@ -294,9 +294,9 @@ def sim(
     # * 6. Set up default folder/file output paths, and make sure they don't exist unless overwrite=True
     if not reads_fastq_out:
         reads_fastq_out = os.path.join(out, "synthetic_reads.fq")
-    if save_variants_updated_csv and not variants_updated_csv_out:
+    if save_variants_updated_dataframe and not variants_updated_csv_out:
         variants_updated_csv_out = os.path.join(out, "variants_updated_synthetic_reads.csv")
-    if save_reads_csv and not reads_csv_out:
+    if save_reads_dataframe and not reads_csv_out:
         reads_csv_out = os.path.join(out, "synthetic_reads_df.csv")
 
     os.makedirs(out, exist_ok=True)
@@ -355,11 +355,11 @@ def sim(
         if sequences_cdna is not None and sequences_genome is not None:
             update_df_out_cdna = update_df_out.replace(".csv", "_cdna.csv")
             if not os.path.exists(update_df_out_cdna):
-                varseek.build(sequences=sequences_cdna, variants=variants, out=vk_build_out_dir, w=read_w, k=read_k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, required_insertion_overlap_length=None, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, save_variants_updated_csv=True, variants_updated_csv_out=update_df_out_cdna, seq_id_column=seq_id_column_cdna, var_column=var_column_cdna, overwrite=True, dont_create_index=True, **kwargs)
+                varseek.build(sequences=sequences_cdna, variants=variants, out=vk_build_out_dir, w=read_w, k=read_k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, required_insertion_overlap_length=None, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, save_variants_updated_dataframe=True, variants_updated_csv_out=update_df_out_cdna, seq_id_column=seq_id_column_cdna, var_column=var_column_cdna, overwrite=True, dont_create_index=True, **kwargs)
 
             update_df_out_genome = update_df_out.replace(".csv", "_genome.csv")
             if not os.path.exists(update_df_out_genome):
-                varseek.build(sequences=sequences_genome, variants=variants, out=vk_build_out_dir, w=read_w, k=read_k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, required_insertion_overlap_length=None, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, save_variants_updated_csv=True, variants_updated_csv_out=update_df_out_genome, seq_id_column=seq_id_column_genome, var_column=var_column_genome, overwrite=True, dont_create_index=True, **kwargs)
+                varseek.build(sequences=sequences_genome, variants=variants, out=vk_build_out_dir, w=read_w, k=read_k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, required_insertion_overlap_length=None, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, save_variants_updated_dataframe=True, variants_updated_csv_out=update_df_out_genome, seq_id_column=seq_id_column_genome, var_column=var_column_genome, overwrite=True, dont_create_index=True, **kwargs)
 
             # Load the CSV files
             df_cdna = pd.read_csv(update_df_out_cdna)
@@ -372,7 +372,7 @@ def sim(
         else:
             if not os.path.exists(update_df_out):
                 logger.info("running varseek build")
-                varseek.build(sequences=sequences, variants=variants, out=vk_build_out_dir, w=read_w, k=read_k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, required_insertion_overlap_length=None, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, save_variants_updated_csv=True, variants_updated_csv_out=update_df_out, seq_id_column=seq_id_column, var_column=var_column, var_id_column=var_id_column, overwrite=True, dont_create_index=True, **kwargs)
+                varseek.build(sequences=sequences, variants=variants, out=vk_build_out_dir, w=read_w, k=read_k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, required_insertion_overlap_length=None, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, save_variants_updated_dataframe=True, variants_updated_csv_out=update_df_out, seq_id_column=seq_id_column, var_column=var_column, var_id_column=var_id_column, overwrite=True, dont_create_index=True, **kwargs)
 
             sim_data_df = pd.read_csv(update_df_out)
         

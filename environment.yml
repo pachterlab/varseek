@@ -11,5 +11,6 @@ dependencies:
   - seqtk>=1.4
   - bcftools>=1.17.0
   - samtools>=1.17.0
+  - STAR>=2.7.10a
   - pip:
-      - .  # . installs varseek and dependencies from pyproject.toml  # -r requirements.txt
+      - .  # . installs varseek and dependencies from pyproject.toml

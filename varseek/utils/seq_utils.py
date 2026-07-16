@@ -356,6 +356,234 @@ def make_transcriptome_fasta(fasta, gtf, out, feature="exon", id_key="transcript
     return out
 
 
+def _genes_and_transcripts_from_gtf(gtf):
+    """Parse a GTF into per-gene and per-transcript records.
+
+    Mirrors kb-python / ngs_tools ``genes_and_transcripts_from_gtf``: only the
+    ``gene``, ``transcript`` and ``exon`` features are considered, GTF 1-based inclusive
+    coordinates are converted to 0-based half-open ``[start, end)``, and each gene's and
+    transcript's span is expanded to the min/max over its own features. A gene with no
+    transcripts falls back to a single transcript (and single exon) spanning the whole
+    gene, keyed by the gene id (as kb-python does).
+
+    Args:
+        gtf (str) Path to the GTF annotation (optionally gzipped).
+
+    Returns:
+        gene_infos       (dict) gene_id -> {"chromosome", "strand", "gene_name",
+                               "start", "end", "transcripts": [transcript_id, ...]}
+        transcript_infos (dict) transcript_id -> {"gene_id", "start", "end",
+                               "transcript_name", "exons": [(start, end), ...]}
+        Both dicts preserve GTF parse order; ``exons`` are sorted ascending.
+    """
+    gtf_df = pd.read_csv(
+        gtf,
+        sep="\t",
+        comment="#",
+        header=None,
+        names=["seqname", "source", "feature", "start", "end", "score", "strand", "frame", "attribute"],
+        dtype={"seqname": str},
+    )
+    gtf_df = gtf_df[gtf_df["feature"].isin(("gene", "transcript", "exon"))].copy()
+
+    # Vectorised attribute extraction (empty string when the attribute is absent).
+    gtf_df["gene_id"] = gtf_df["attribute"].str.extract(r'gene_id "([^"]*)"', expand=False).fillna("")
+    gtf_df["transcript_id"] = gtf_df["attribute"].str.extract(r'transcript_id "([^"]*)"', expand=False).fillna("")
+    gtf_df["gene_name"] = gtf_df["attribute"].str.extract(r'gene_name "([^"]*)"', expand=False).fillna("")
+    gtf_df["transcript_name"] = gtf_df["attribute"].str.extract(r'transcript_name "([^"]*)"', expand=False).fillna("")
+
+    gene_infos = {}
+    transcript_infos = {}
+    transcript_exons = {}
+
+    for row in gtf_df.itertuples(index=False):
+        gene_id = row.gene_id
+        if not gene_id:  # every feature must carry a gene_id
+            continue
+        start0 = row.start - 1  # GTF 1-based inclusive -> 0-based half-open
+        end = row.end
+
+        gene_info = gene_infos.get(gene_id)
+        if gene_info is None:
+            gene_info = {"chromosome": row.seqname, "strand": row.strand, "gene_name": row.gene_name, "start": start0, "end": end, "transcripts": []}
+            gene_infos[gene_id] = gene_info
+        else:
+            gene_info["start"] = min(gene_info["start"], start0)
+            gene_info["end"] = max(gene_info["end"], end)
+            if row.gene_name:
+                gene_info["gene_name"] = row.gene_name
+
+        if row.feature == "gene":
+            # The gene feature is authoritative for chromosome/strand.
+            gene_info["chromosome"] = row.seqname
+            gene_info["strand"] = row.strand
+            continue
+
+        transcript_id = row.transcript_id
+        if not transcript_id:  # transcript/exon features must carry a transcript_id
+            continue
+        gene_info["transcripts"].append(transcript_id)
+
+        transcript_info = transcript_infos.get(transcript_id)
+        if transcript_info is None:
+            transcript_info = {"gene_id": gene_id, "start": start0, "end": end, "transcript_name": row.transcript_name}
+            transcript_infos[transcript_id] = transcript_info
+        else:
+            transcript_info["start"] = min(transcript_info["start"], start0)
+            transcript_info["end"] = max(transcript_info["end"], end)
+            if row.transcript_name:
+                transcript_info["transcript_name"] = row.transcript_name
+
+        if row.feature == "exon":
+            transcript_exons.setdefault(transcript_id, []).append((start0, end))
+
+    # Attach each transcript's exons (sorted ascending, like ngs_tools' SegmentCollection).
+    for transcript_id, transcript_info in transcript_infos.items():
+        transcript_info["exons"] = sorted(transcript_exons.get(transcript_id, []))
+
+    # De-duplicate per-gene transcript lists; a gene with no transcripts becomes one
+    # transcript/exon spanning the whole gene (keyed by the gene id).
+    for gene_id, gene_info in gene_infos.items():
+        seen = set()
+        cleaned = []
+        for transcript_id in gene_info["transcripts"]:
+            if transcript_id in transcript_infos and transcript_id not in seen:
+                seen.add(transcript_id)
+                cleaned.append(transcript_id)
+        if not cleaned:
+            # kb-python's nac workflow renames such synthetic transcripts to
+            # ``gene_id + '-T'`` so they don't collide with the nascent entry (also
+            # named by gene_id). Fall back to the bare gene_id only if that is taken.
+            synthetic_id = f"{gene_id}-T" if f"{gene_id}-T" not in transcript_infos else gene_id
+            cleaned.append(synthetic_id)
+            transcript_infos[synthetic_id] = {"gene_id": gene_id, "start": gene_info["start"], "end": gene_info["end"], "transcript_name": "", "exons": [(gene_info["start"], gene_info["end"])]}
+        gene_info["transcripts"] = cleaned
+
+    return gene_infos, transcript_infos
+
+
+def make_cdna_fasta(fasta, gtf, out):
+    """
+    Write a spliced cDNA FASTA (one entry per transcript) from a genome FASTA + GTF.
+
+    For each transcript, its exon intervals are concatenated in genomic order, so introns
+    are spliced out while UTRs are retained (i.e. all gene regions except introns). Minus-
+    strand transcripts are reverse-complemented into mRNA 5'->3' orientation. Headers follow
+    kb-python's ``nac``/``lamanno`` cDNA format, e.g.::
+
+        >NR_182074.1 gene_id:LOC127239154 gene_name: transcript_name: chr:NC_060925.1 start:7506 end:138480 strand:-
+
+    This reproduces kb-python's ``cdna.fasta`` (the mature-transcript reference).
+
+    Args:
+        fasta (str) Path to the genome DNA FASTA (optionally gzipped).
+        gtf   (str) Path to the GTF annotation (optionally gzipped).
+        out   (str) Path to the output FASTA (gzipped if it ends with ".gz").
+
+    Returns:
+        out (str) Path to the written FASTA.
+    """
+    gene_infos, transcript_infos = _genes_and_transcripts_from_gtf(gtf)
+
+    # Group transcripts by chromosome, ordered by gene parse order then sorted per gene
+    # (matches kb-python's emission order).
+    transcripts_by_chrom = {}
+    for gene_id, gene_info in gene_infos.items():
+        chrom_transcripts = transcripts_by_chrom.setdefault(gene_info["chromosome"], [])
+        for transcript_id in sorted(gene_info["transcripts"]):
+            chrom_transcripts.append((transcript_id, gene_id))
+
+    is_gzipped = out.endswith(".gz")
+    open_func = gzip.open if is_gzipped else open
+    open_mode = "wt" if is_gzipped else "w"
+
+    n_transcripts = 0
+    with open_func(out, open_mode) as out_fh:
+        for header, sequence in read_fasta(fasta):
+            chrom = header.split()[0]  # strip description after the first whitespace
+            chrom_len = len(sequence)
+
+            for transcript_id, gene_id in transcripts_by_chrom.get(chrom, []):
+                gene_info = gene_infos[gene_id]
+                transcript_info = transcript_infos[transcript_id]
+                strand = gene_info["strand"]
+
+                spliced = "".join(sequence[max(lo, 0):min(hi, chrom_len)] for lo, hi in transcript_info["exons"])
+                if not spliced:
+                    continue
+                if strand == "-":
+                    # kb-python's reverse-complement (ngs_tools.complement_sequence)
+                    # uppercases; plus-strand output keeps the genome's soft-masking.
+                    spliced = reverse_complement(spliced.upper())
+
+                out_fh.write(f">{transcript_id} gene_id:{gene_id} gene_name:{gene_info['gene_name']} transcript_name:{transcript_info['transcript_name']} chr:{chrom} start:{transcript_info['start'] + 1} end:{transcript_info['end']} strand:{strand}\n")
+                for i in range(0, len(spliced), 60):
+                    out_fh.write(spliced[i:i + 60] + "\n")
+                n_transcripts += 1
+
+    print(f"Wrote {n_transcripts} cDNA transcripts to {out}", flush=True)
+    return out
+
+
+def make_nascent_fasta(fasta, gtf, out):
+    """
+    Write a nascent (unspliced pre-mRNA) FASTA (one entry per gene) from a genome FASTA + GTF.
+
+    For each gene, the entire genomic span from the gene's start to end is emitted, so both
+    introns and UTRs are retained (i.e. all gene regions). Minus-strand genes are reverse-
+    complemented. Headers follow kb-python's ``nac`` nascent format, e.g.::
+
+        >LOC127239154 gene_id:LOC127239154 gene_name: chr:NC_060925.1 start:7506 end:138480 strand:-
+
+    This reproduces kb-python's ``nascent.fasta`` (the unspliced reference).
+
+    Args:
+        fasta (str) Path to the genome DNA FASTA (optionally gzipped).
+        gtf   (str) Path to the GTF annotation (optionally gzipped).
+        out   (str) Path to the output FASTA (gzipped if it ends with ".gz").
+
+    Returns:
+        out (str) Path to the written FASTA.
+    """
+    gene_infos, _ = _genes_and_transcripts_from_gtf(gtf)
+
+    genes_by_chrom = {}
+    for gene_id, gene_info in gene_infos.items():
+        genes_by_chrom.setdefault(gene_info["chromosome"], []).append(gene_id)
+
+    is_gzipped = out.endswith(".gz")
+    open_func = gzip.open if is_gzipped else open
+    open_mode = "wt" if is_gzipped else "w"
+
+    n_genes = 0
+    with open_func(out, open_mode) as out_fh:
+        for header, sequence in read_fasta(fasta):
+            chrom = header.split()[0]  # strip description after the first whitespace
+            chrom_len = len(sequence)
+
+            for gene_id in genes_by_chrom.get(chrom, []):
+                gene_info = gene_infos[gene_id]
+                strand = gene_info["strand"]
+                lo = max(gene_info["start"], 0)
+                hi = min(gene_info["end"], chrom_len)
+
+                nascent = sequence[lo:hi]
+                if not nascent:
+                    continue
+                if strand == "-":
+                    # kb-python's reverse-complement (ngs_tools.complement_sequence)
+                    # uppercases; plus-strand output keeps the genome's soft-masking.
+                    nascent = reverse_complement(nascent.upper())
+
+                out_fh.write(f">{gene_id} gene_id:{gene_id} gene_name:{gene_info['gene_name']} chr:{chrom} start:{gene_info['start'] + 1} end:{gene_info['end']} strand:{strand}\n")
+                for i in range(0, len(nascent), 60):
+                    out_fh.write(nascent[i:i + 60] + "\n")
+                n_genes += 1
+
+    print(f"Wrote {n_genes} nascent transcripts to {out}", flush=True)
+    return out
+
+
 def filter_fasta(input_fasta, output_fasta=None, sequence_names_set=None, keep="not_in_list"):
     if sequence_names_set is None:
         sequence_names_set = set()
@@ -525,11 +753,11 @@ def contains_kmer_in_vcrs(read_sequence, vcrs_sequence, k):
 
 def check_for_read_kmer_in_vcrs(read_df, unique_vcrs_df, k, subset=None, strand=None):
     """
-    Adds a column 'read_contains_kmer_in_vcrs' to read_df_subset indicating whether a k-mer
+    Adds a column 'read_contains_kmer_in_vcrs' to read_df indicating whether a k-mer
     from the read_sequence exists in the corresponding vcrs_sequence.
 
     Parameters:
-    - read_df_subset: The subset of the read_df DataFrame (e.g., read_df.loc[read_df['FN']])
+    - read_df: The read_df DataFrame (optionally restricted via the subset arg, e.g. a boolean column like 'FN')
     - unique_vcrs_df: DataFrame containing 'vcrs_header' and 'vcrs_sequence' for lookups
     - k: The length of the k-mers to check for
 
@@ -722,9 +950,9 @@ def get_ensembl_gene_id_bulk(transcript_ids: list[str], species="human", referen
 # gene_id
 
 
-def make_mapping_dict(id_to_header_csv, dict_key="id"):
+def make_mapping_dict(id_to_header_dataframe, dict_key="id"):
     mapping_dict = {}
-    with open(id_to_header_csv, newline="", encoding="utf-8") as csvfile:
+    with open(id_to_header_dataframe, newline="", encoding="utf-8") as csvfile:
         reader = csv.reader(csvfile)
         for row in reader:
             seq_id, header = row
@@ -735,15 +963,15 @@ def make_mapping_dict(id_to_header_csv, dict_key="id"):
     return mapping_dict
 
 
-def swap_ids_for_headers_in_fasta(in_fasta, id_to_header_csv, out_fasta=None):
+def swap_ids_for_headers_in_fasta(in_fasta, id_to_header_dataframe, out_fasta=None):
     if out_fasta is None:
         base, ext = splitext_custom(in_fasta)
         out_fasta = f"{base}_with_headers{ext}"
 
-    if id_to_header_csv.endswith(".csv"):
-        id_to_header = make_mapping_dict(id_to_header_csv, dict_key="id")
+    if id_to_header_dataframe.endswith(".csv"):
+        id_to_header = make_mapping_dict(id_to_header_dataframe, dict_key="id")
     else:
-        id_to_header = id_to_header_csv
+        id_to_header = id_to_header_dataframe
 
     with open(out_fasta, "w", encoding="utf-8") as output_file:
         for seq_id, sequence in pyfastx.Fastx(in_fasta):
@@ -752,15 +980,15 @@ def swap_ids_for_headers_in_fasta(in_fasta, id_to_header_csv, out_fasta=None):
     print("Swapping complete")
 
 
-def swap_headers_for_ids_in_fasta(in_fasta, id_to_header_csv, out_fasta=None):
+def swap_headers_for_ids_in_fasta(in_fasta, id_to_header_dataframe, out_fasta=None):
     if out_fasta is None:
         base, ext = splitext_custom(in_fasta)
         out_fasta = f"{base}_with_ids{ext}"
 
-    if id_to_header_csv.endswith(".csv"):
-        header_to_id = make_mapping_dict(id_to_header_csv, dict_key="header")
+    if id_to_header_dataframe.endswith(".csv"):
+        header_to_id = make_mapping_dict(id_to_header_dataframe, dict_key="header")
     else:
-        header_to_id = id_to_header_csv
+        header_to_id = id_to_header_dataframe
 
     with open(out_fasta, "w", encoding="utf-8") as output_file:
         for header, sequence in pyfastx.Fastx(in_fasta):
@@ -1002,7 +1230,7 @@ def bulk_sort_order_for_kb_count_fastqs(filepath):
     if not match:
         raise ValueError(f"Invalid SRA-style FASTQ filename: {filepath}")
 
-    sample_number, read_type = match.groups()
+    sample_number, read_type = match.group(1), match.group(2)
 
     return (sample_number, read_type_order.get(read_type, 999))
 

@@ -9,6 +9,24 @@ import pytest
 
 import varseek as vk
 
+
+@pytest.fixture(autouse=True)
+def _disable_alignment_to_reference_filter(monkeypatch):
+    """Opt every vk.build call in this file out of the remove_alignment_to_reference filter.
+
+    That filter (default True) pseudoaligns each VCRS against a normal genome reference to drop
+    false positives, which requires a genome fasta / downloadable species that these toy tests do
+    not provide. The filter itself is exercised in test_varseek_ref.py; here we only test the
+    variant-building logic, so default it off (still overridable per-call via setdefault)."""
+    original_build = vk.build
+
+    def build_without_alignment_filter(*args, **kwargs):
+        kwargs.setdefault("remove_alignment_to_reference", False)
+        return original_build(*args, **kwargs)
+
+    monkeypatch.setattr(vk, "build", build_without_alignment_filter)
+
+
 store_out_in_permanent_paths = False
 tests_dir = Path(__file__).resolve().parent
 pytest_permanent_out_dir_base = tests_dir / "pytest_output" / Path(__file__).stem
@@ -696,7 +714,7 @@ dont_create_index=True,
 #         optimize_flanking_regions = True,
 #         variants="c.35G>A",
 #         translate = True,
-#         save_variants_updated_csv = True,
+#         save_variants_updated_dataframe = True,
 #         store_full_sequences=True,
 #         return_variant_output=True,
 #         required_insertion_overlap_length=None,
@@ -744,7 +762,7 @@ def test_vcf(vcf_file_and_corresponding_sequences, out_dir):
         variants=vcf_file_path,
         sequences=sequences_fasta_path,
         out=out_dir,
-        save_variants_updated_csv=True,
+        save_variants_updated_dataframe=True,
         overwrite=True,
         w=6,
         k=7,
@@ -769,7 +787,7 @@ def test_vcf_chunks(vcf_file_and_corresponding_sequences, out_dir):
         variants=vcf_file_path,
         sequences=sequences_fasta_path,
         out=out_dir,
-        save_variants_updated_csv=True,
+        save_variants_updated_dataframe=True,
         overwrite=True,
         w=6,
         k=7,
@@ -831,3 +849,50 @@ def test_fasta_merging_with_awk_using_IDs(toy_vcrs_fa_path_for_merge_testing, tm
 
 
 
+
+
+def test_convert_variant_coordinates_genome_to_transcript(long_sequence, tmp_path, out_dir):
+    """Genomic variants are projected onto a transcript (via a local GTF) before building.
+
+    `long_sequence` is treated as a single-exon transcript ENST1 spanning genomic 1001..1074 (+ strand),
+    so g.1035G>A maps to c.35G>A -- the same variant/output as test_single_substitution.
+    """
+    cdna_fasta = tmp_path / "cdna.fa"
+    cdna_fasta.write_text(f">ENST1\n{long_sequence}\n")
+
+    gtf = tmp_path / "single_exon.gtf"
+    gtf.write_text('1\ttest\texon\t1001\t1074\t.\t+\t.\ttranscript_id "ENST1"; gene_id "G1";\n')
+
+    variants_csv = tmp_path / "genomic_variants.csv"
+    variants_csv.write_text("seq_ID,mutation\n1,g.1035G>A\n")
+
+    result = vk.build(
+        dont_create_index=True,
+        sequences=str(cdna_fasta),
+        variants=str(variants_csv),
+        gtf=str(gtf),
+        convert_variant_coordinates="genome_to_transcript",
+        return_variant_output=True,
+        required_insertion_overlap_length=None,
+        w=30,
+        k=31,
+        out=out_dir,
+    )
+
+    assert result == ["GCCCCACCCCGCCCCTCCCCGCCCCACCCCACCCCTCCCCGCCCCACCCCGCCCCTCCCCG"]
+
+    assert_global_variables_zero()
+
+
+def test_convert_variant_coordinates_requires_gtf(long_sequence, out_dir):
+    """Requesting coordinate conversion without a GTF is rejected up front."""
+    with pytest.raises(Exception):
+        vk.build(
+            dont_create_index=True,
+            sequences=long_sequence,
+            variants="g.35G>A",
+            convert_variant_coordinates="genome_to_transcript",
+            w=30,
+            k=31,
+            out=out_dir,
+        )

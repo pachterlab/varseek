@@ -98,7 +98,6 @@ __all__ = [
     "StrandBiasEnd",
     "Workflow",
     "ReferenceType",
-    "AlignmentReferenceType",
     "Species",
     "LoggingLevel",
     "Technology",
@@ -319,9 +318,8 @@ Parity = Literal["single", "paired"]
 Strand = Literal["unstranded", "forward", "reverse"]
 StrandBiasEnd = Literal["5p", "3p"]
 Workflow = Literal["standard", "nac", "custom"]
+# Also what build's alignment_to_reference_type is checked against.
 ReferenceType = Literal["genome", "cdna", "transcriptome", "genome_or_transcriptome"]
-# The reference type build's alignment_to_reference_type is checked against.
-AlignmentReferenceType = Literal["genome", "cdna", "transcriptome", "genome_or_transcriptome"]
 # Derived from the keys of constants.species_to_url so there is one source of truth.
 Species = Literal[tuple(species_to_url)]
 LoggingLevel = Literal[

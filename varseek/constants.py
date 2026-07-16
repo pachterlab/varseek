@@ -322,14 +322,20 @@ varseek_count_only_allowable_kb_count_arguments = {
     "multiple_arguments": set(),
 }  # don't include t, i, workflow here because I do it myself later; cannot take in a custom value for k (because this would get confusing with k for fastqpp/clean)
 
-# species -> reference_type -> k -> prebuilt-index URL (placeholder URLs for now).
+# species -> aligner -> reference_type -> k -> prebuilt-index URL (placeholder URLs for now).
 # Source of truth for the Species vocabulary (type_utils.Species derives from its keys).
 species_to_url = {
     "human": {
-        "genome": {"41": "https://example.com/human_index.idx"},
-        "cdna": {"41": "https://example.com/human_cdna_index.idx"},
-        "transcriptome": {"41": "https://example.com/human_transcriptome_index.idx"},
-        "genome_or_transcriptome": {"41": "https://example.com/human_genome_or_transcriptome_index.idx"},
+        "bowtie2": {
+            "cdna": "https://caltech.box.com/shared/static/1bkix3nyohjzy2ei99ehmuyx9qmebc72.gz",
+            "genome": "https://caltech.box.com/shared/static/6lkas43vs9xepne6352kr6lrf153u422.gz",
+            "nascent": "https://caltech.box.com/shared/static/2awppbvyz904z5jnu2b7pq6gxetq6py0.gz",
+        },
+        "kallisto": {
+            "cdna": {"41": "https://caltech.box.com/shared/static/j4jbc6q3zxr95hl254wmamx0faokts07.idx"},
+            "genome": {"41": "https://caltech.box.com/shared/static/omtmn07m02d5e5yn1omi00yrebmqyxxj.idx"},
+            "transcriptome": {"41": "https://caltech.box.com/shared/static/x980wrviv52v6qyca63lq26alfovtd77.idx"},
+        },
     },
 }
 

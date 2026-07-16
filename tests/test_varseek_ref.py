@@ -171,7 +171,7 @@ def test_vk_ref(cosmic_csv_path, out_dir):
         var_column = "mutation_cdna",
         w = w,
         k = k,
-        save_variants_updated_csv = True,
+        save_variants_updated_dataframe = True,
         columns_to_include = columns_to_include,  # info args
         seq_id_cdna_column="seq_ID",
         var_cdna_column="mutation_cdna",

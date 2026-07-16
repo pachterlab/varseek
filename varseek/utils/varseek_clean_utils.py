@@ -1234,7 +1234,7 @@ def make_bus_df_original(kallisto_out, fastq_file_list, t2g_file, mm=False, unio
 
 
 # TODO: test
-def match_paired_ends_after_single_end_run(bus_df_path, gene_name_type="vcrs_id", id_to_header_csv=None):
+def match_paired_ends_after_single_end_run(bus_df_path, gene_name_type="vcrs_id", id_to_header_dataframe=None):
     if os.path.exists(bus_df_path):
         bus_df = pd.read_csv(bus_df_path)
     else:
@@ -1282,7 +1282,7 @@ def match_paired_ends_after_single_end_run(bus_df_path, gene_name_type="vcrs_id"
     bus_df["gene_names_final_pair"] = bus_df["gene_names_final_pair"].apply(safe_literal_eval)
 
     if gene_name_type == "vcrs_id":
-        id_to_header_dict = make_mapping_dict(id_to_header_csv, dict_key="id")
+        id_to_header_dict = make_mapping_dict(id_to_header_dataframe, dict_key="id")
 
         bus_df["vcrs_header_list"] = bus_df["gene_names_final"].apply(lambda gene_list: [id_to_header_dict.get(gene, gene) for gene in gene_list])
 
@@ -1307,7 +1307,7 @@ def match_paired_ends_after_single_end_run(bus_df_path, gene_name_type="vcrs_id"
 
 
 # TODO: unsure if this works for sc
-def adjust_variant_adata_by_normal_gene_matrix_original(adata, kb_count_vcrs_dir, kb_count_reference_genome_dir, id_to_header_csv=None, adata_output_path=None, vcrs_t2g=None, t2g_standard=None, fastq_file_list=None, mm=False, technology="bulk", parity="single", bustools="bustools", ignore_barcodes=False, check_only=False, chunksize=None):
+def adjust_variant_adata_by_normal_gene_matrix_original(adata, kb_count_vcrs_dir, kb_count_reference_genome_dir, id_to_header_dataframe=None, adata_output_path=None, vcrs_t2g=None, t2g_standard=None, fastq_file_list=None, mm=False, technology="bulk", parity="single", bustools="bustools", ignore_barcodes=False, check_only=False, chunksize=None):
     if not adata:
         adata = f"{kb_count_vcrs_dir}/counts_unfiltered/adata.h5ad"
     if isinstance(adata, str):
@@ -1337,9 +1337,9 @@ def adjust_variant_adata_by_normal_gene_matrix_original(adata, kb_count_vcrs_dir
     bus_df_mutation["gene_names_final"] = bus_df_mutation["gene_names_final"].apply(safe_literal_eval)
     bus_df_mutation.rename(columns={"gene_names_final": "VCRS_headers_final", "count": "count_value"}, inplace=True)
 
-    if id_to_header_csv:
+    if id_to_header_dataframe:
         bus_df_mutation.rename(columns={"VCRS_headers_final": "VCRS_ids_final"}, inplace=True)
-        id_to_header_dict = make_mapping_dict(id_to_header_csv, dict_key="id")
+        id_to_header_dict = make_mapping_dict(id_to_header_dataframe, dict_key="id")
         bus_df_mutation["VCRS_headers_final"] = bus_df_mutation["VCRS_ids_final"].apply(lambda name_list: [id_to_header_dict.get(name, name) for name in name_list])
 
     bus_df_mutation["transcripts_VCRS"] = bus_df_mutation["VCRS_headers_final"].apply(lambda string_list: tuple({s.split(":")[0] for s in string_list}))
@@ -2485,7 +2485,7 @@ def _validate_clean_params(params_dict):
         raise ValueError(f"filter_cells_by_max_mt_content must be an integer between 0 and 100, or None. Got {params_dict.get('filter_cells_by_max_mt_content')}.")
 
     # boolean
-    for param_name in ["use_binary_matrix", "drop_empty_columns", "apply_dlist_correction", "qc_against_gene_matrix", "doublet_detection", "remove_doublets", "cpm_normalization", "sum_rows", "mm", "save_vcf", "dry_run", "overwrite", "account_for_strand_bias"]:
+    for param_name in ["use_binary_matrix", "drop_empty_columns", "apply_dlist_correction", "qc_against_gene_matrix", "doublet_detection", "remove_doublets", "cpm_normalization", "sum_rows", "drop_multi_variant_vcrs", "rename_vcrs_to_variant", "mm", "save_vcf", "dry_run", "overwrite", "account_for_strand_bias"]:
         if not isinstance(params_dict.get(param_name), bool):
             raise ValueError(f"{param_name} must be a boolean. Got {param_name} of type {type(params_dict.get(param_name))}.")
     if not isinstance(params_dict.get("multiplexed"), bool) and params_dict.get("multiplexed") is not None:

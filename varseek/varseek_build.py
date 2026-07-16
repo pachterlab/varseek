@@ -28,6 +28,9 @@ from .constants import (
 )
 from .utils import (
     add_variant_type,
+    build_transcript_exon_model,
+    convert_variants_genome_to_transcript,
+    convert_variants_transcript_to_genome,
     convert_chromosome_value_to_int_when_possible,
     convert_mutation_cds_locations_to_cdna,
     create_identity_t2g,
@@ -71,7 +74,7 @@ from .utils import (
     OddInt3To63,
     Ratio,
     GtfArg,
-    AlignmentReferenceType,
+    ReferenceType,
     LoggingLevel,
 )
 from .utils.varseek_build_utils import (
@@ -152,6 +155,8 @@ class BuildParams(BaseModel):
     variants: object = None
     w: object = None
     k: object = None
+    gtf: object = None
+    convert_variant_coordinates: object = None
 
     # Every per-parameter check (including the value-semantics of gtf, dlist,
     # required_insertion_overlap_length, min_triplet_complexity, and
@@ -210,6 +215,11 @@ class BuildParams(BaseModel):
             if k > 2 * w:
                 raise ValueError("k must be less than or equal to 2*w")
 
+        # coordinate conversion requires a GTF for exon structure
+        if self.convert_variant_coordinates:
+            if not (isinstance(self.gtf, str) and os.path.isfile(self.gtf)):
+                raise ValueError(f"convert_variant_coordinates='{self.convert_variant_coordinates}' requires 'gtf' to be a path to an existing GTF file. Got: {self.gtf}")
+
         return self
 
 @report_time_elapsed
@@ -226,18 +236,20 @@ def build(
     gtf: GtfArg = None,
     gtf_transcript_id_column: Optional[str] = None,
     transcript_boundaries: bool = False,
+    convert_variant_coordinates: Optional[Literal["genome_to_transcript", "transcript_to_genome"]] = None,
     out: Union[str, Path] = ".",
     reference_out_dir: Optional[Union[str, Path]] = None,
     vcrs_unfiltered_fasta_out: Optional[FastaFile] = None,
     vcrs_fasta_out: Optional[FastaFile] = None,
     variants_updated_csv_out: Optional[CsvFile] = None,
     id_to_header_csv_out: Optional[CsvFile] = None,
+    id_to_header_unfiltered_csv_out: Optional[CsvFile] = None,
     vcrs_t2g_out: Optional[T2GFile] = None,
     index_out: Optional[IndexFile] = None,
     removed_variants_text_out: Optional[TxtFile] = None,
     filtering_report_text_out: Optional[TxtFile] = None,
     return_variant_output: bool = False,
-    save_variants_updated_csv: bool = False,
+    save_variants_updated_dataframe: bool = False,
     store_full_sequences: bool = False,
     translate: bool = False,
     translate_start: Optional[Union[int, str]] = None,
@@ -262,7 +274,8 @@ def build(
     max_homopolymer_length: Optional[PositiveInt] = None,
     min_triplet_complexity: Optional[Ratio] = None,
     remove_alignment_to_reference: bool = True,
-    alignment_to_reference_type: AlignmentReferenceType = "genome_or_transcriptome",
+    alignment_to_reference_type: ReferenceType = "genome_or_transcriptome",
+    alignment_to_reference_aligner: Literal["bowtie2", "kallisto"] = "bowtie2",
     species: Optional[str] = None,
     alignment_to_reference_dna: Optional[str] = None,
     alignment_to_reference_gtf: Optional[str] = None,
@@ -286,7 +299,7 @@ def build(
     compatible with k-mer-based methods (i.e., kallisto | bustools) for variant detection.
 
     # Required input argument:
-    - variants                          str or list[str] or DataFrame object) Variants to apply to the sequences. Input formats options include the following:
+    - variants                          (str or list[str] or DataFrame object) Variants to apply to the sequences. Input formats options include the following:
                                         1) Single variant (str), along with a single sequence for `sequences` (str). E.g., variants='c.2G>T' and sequences='AGCTAGCT'.
                                         2) List of variants (list[str]), along with a list of sequences for `sequences` (list[str]). E.g., variants=['c.2G>T', 'c.1A>C'] and sequences=['AGCTAGCT', 'AGCTAGCT'].
                                         NOTE: The number of variants must equal the number of input sequences.
@@ -295,10 +308,10 @@ def build(
                                         The CSV/TSV/DataFrame must be structured in the following way:
 
                                         | var_column         | seq_id_column | var_id_column |
-                                        | c.2C>T             | seq1          | var1          | -> Apply varation 1 to sequence 1
-                                        | c.9_13inv          | seq2          | var2          | -> Apply varation 2 to sequence 2
-                                        | c.9_13inv          | seq3          | var2          | -> Apply varation 2 to sequence 3
-                                        | c.9_13delinsAAT    | seq3          | var3          | -> Apply varation 3 to sequence 3
+                                        | c.2C>T             | seq1          | var1          | -> Apply variation 1 to sequence 1
+                                        | c.9_13inv          | seq2          | var2          | -> Apply variation 2 to sequence 2
+                                        | c.9_13inv          | seq3          | var2          | -> Apply variation 2 to sequence 3
+                                        | c.9_13delinsAAT    | seq3          | var3          | -> Apply variation 3 to sequence 3
                                         | ...                | ...           | ...           |
 
                                         'var_column' = Column containing the variants to be performed written in standard mutation/variant annotation matching HGVS variant format (see below).
@@ -329,24 +342,28 @@ def build(
     - var_column                         (str) Name of the column containing the variants to be introduced in 'variants'. Important for CSV/TSV/DataFrame input with pre-defined columns. Default: 'mutation'.
     - seq_id_column                      (str) Name of the column containing the IDs of the sequences to be mutated in 'variants'. Important for CSV/TSV/DataFrame input with pre-defined columns. Default: 'seq_ID'.
     - var_id_column                      (str) Name of the column containing the IDs of each variant in 'variants'. Optional. Default: use <seq_id_column>_<var_column> for each row.
-    - gtf                                (str) Path to .gtf file. Only used in conjunction with the argument `transcript_boundaries`, as well as to add some information to the downloaded database when variants='cosmic_cmc'. If downloading sequence information, then setting gtf=True will automatically include it in the download. Default: None
+    - gtf                                (str) Path to .gtf file. Used in conjunction with the argument `transcript_boundaries`, `convert_variant_coordinates`, and the pseudoalignment filter, as well as to add some information to the downloaded database when variants='cosmic_cmc'. If downloading sequence information, then setting gtf=True will automatically include it in the download. Default: None
     - gtf_transcript_id_column           (str) Column name in the input 'variants' file containing the transcript ID.
                                          In this case, column seq_id_column should contain the chromosome number.
                                          Required when 'gtf' is provided. Default: None
     - transcript_boundaries              (True/False) Whether to use the transcript boundaries in the input 'gtf' file to define the boundaries of the VCRSs. Only used when the `sequences` and `variants` information is in terms of the genome, and when `gtf` is specified. Default: False.
+    - convert_variant_coordinates        (str) Project the input variants between genome (g.) and transcript/cDNA (c.) coordinates before building, using the exon structure in `gtf` (a local GTF is required). One of:
+                                         'genome_to_transcript' (input variants are genomic (g.), with `seq_id_column` holding chromosome names; each variant is remapped onto every transcript whose exon covers it — so `sequences` should be the cDNA/transcriptome and rows may expand), or
+                                         'transcript_to_genome' (input variants are transcript (c.), with `seq_id_column` holding transcript IDs; each is remapped to genomic coordinates — so `sequences` should be the genome). Intronic/intergenic variants and variants spanning an exon-exon junction are dropped. Default: None (no conversion).
 
     # Output paths and associated parameters
-    - out                                (str) Path to default output directory to containing created files. Any individual output file path can be overriden if the specific file path is provided
+    - out                                (str) Path to default output directory containing created files. Any individual output file path can be overridden if the specific file path is provided
                                          as an argument. Default: "." (current directory).
     - reference_out_dir                  (str) Path to reference file directory to be downloaded if 'variants' is a supported database and the file corresponding to 'sequences' does not exist.
                                          Default: <out>/reference.
     - vcrs_unfiltered_fasta_out          (str) Path to output fasta file containing the unfiltered, unmerged VCRSs, written before the quality filters and before merging identical VCRSs.
-                                         Headers are the per-variant `<seq_ID>:<variant>` (or var_id_column) values. Default: "<out>/vcrs_unfiltered.fa"
+                                         Headers are the per-variant `<seq_ID>:<variant>` (or var_id_column) values. Only written when an explicit path is provided. Default: None (not saved).
     - vcrs_fasta_out                     (str) Path to output fasta file containing the filtered VCRSs. This is the file the (kallisto) index and t2g are built from.
                                          If use_IDs=False, then the fasta headers will be the variant IDs (semicolon-joined if merge_identical=True).
                                          Otherwise, if use_IDs=True (default), then the fasta headers will be of the form 'vcrs_<int>' where <int> is a unique integer. Default: "<out>/vcrs.fa"
-    - variants_updated_csv_out          (str) Path to output csv file containing the updated DataFrame. Only valid if save_variants_updated_csv=True. Default: "<out>/variants_updated.csv"
-    - id_to_header_csv_out               (str) File name of csv file containing the mapping of unique IDs to the original sequence headers if use_IDs=True. Default: "<out>/id_to_header_mapping.csv"
+    - variants_updated_csv_out          (str) Path to output csv file containing the updated DataFrame. Only valid if save_variants_updated_dataframe=True. Default: "<out>/variants_updated.csv"
+    - id_to_header_csv_out               (str) File name of csv file containing the mapping of unique IDs to the original sequence headers (for the filtered VCRSs) if use_IDs=True. Default: "<out>/id_to_header_mapping.csv"
+    - id_to_header_unfiltered_csv_out     (str) Path to output csv file mapping unique IDs to the original sequence headers for the UNFILTERED VCRSs (one row per built variant, before the quality filters). Useful for tracing which variants survived the build vs. the filter step. Only written when an explicit path is provided. Default: None (not saved).
     - vcrs_t2g_out                       (str) Path to output t2g file containing the transcript-to-gene mapping for the VCRSs. Used in kallisto | bustools workflow. Default: "<out>/vcrs_t2g.txt"
     - index_out                          (str) Path to output VCRS (kallisto) index file created via kb ref. Only used when the index is created (see `dont_create_index`). Default: "<out>/vcrs_index.idx".
     - fasta_out                          (str) Alias for `vcrs_fasta_out` (kept for backwards compatibility with vk ref; passed as a keyword argument). If provided, takes precedence over `vcrs_fasta_out`. Default: None.
@@ -356,10 +373,10 @@ def build(
 
     # Returning and saving of optional output
     - return_variant_output             (True/False) Whether to return the variant output saved in the fasta file. Default: False.
-    - save_variants_updated_csv         (True/False) Whether to update the input 'variants' DataFrame to include additional columns with the variant type,
+    - save_variants_updated_dataframe         (True/False) Whether to update the input 'variants' DataFrame to include additional columns with the variant type,
                                          wildtype nucleotide sequence, and mutant nucleotide sequence (only valid if 'variants' is a csv or tsv file). Default: False
     - store_full_sequences               (True/False) Whether to also include the complete wildtype and mutant sequences in the updated 'variants' DataFrame (not just the sub-sequence with
-                                         w-length flanks). Only valid if save_variants_updated_csv=True. Default: False
+                                         w-length flanks). Only valid if save_variants_updated_dataframe=True. Default: False
     - translate                          (True/False) Add additional columns to the 'variants' DataFrame containing the wildtype and mutant amino acid sequences.
                                          Only valid if store_full_sequences=True. Default: False
     - translate_start                    (int | str | None) The position in the input nucleotide sequence to start translating. If a string is provided, it should correspond
@@ -367,10 +384,10 @@ def build(
                                          Only valid if translate=True. Default: None (translate from the beginning of the sequence)
     - translate_end                      (int | str | None) The position in the input nucleotide sequence to end translating. If a string is provided, it should correspond
                                          to a column name in 'variants' containing the open reading frame end positions for each sequence/variant.
-                                         Only valid if translate=True. Default: None (translate from to the end of the sequence)
+                                         Only valid if translate=True. Default: None (translate to the end of the sequence)
 
     # General arguments:
-    - download                           (True/False) If True, download prebuilt reference files (index, t2g, vcrs fasta) into `out` (or the paths specified by index_out, t2g_out, and fasta_out, respectively) instead of building them. Default: False.
+    - download                           (True/False) If True, download prebuilt reference files (index, t2g, vcrs fasta) into `out` (or the paths specified by index_out, vcrs_t2g_out, and vcrs_fasta_out, respectively) instead of building them. Default: False.
     - chunksize                          (int) Number of variants to process at a time. If None, then all variants will be processed at once. Default: None.
     - dry_run                            (True/False) Whether to simulate the function call without executing it. Default: False.
     - list_internally_supported_indices           (True/False) Whether to print the supported databases and sequences. Default: False.
@@ -397,7 +414,8 @@ def build(
     - min_triplet_complexity             (float) Drop any VCRS whose triplet complexity (distinct 3-mers / total 3-mers, in (0, 1]) is below this value. None disables the filter. Default: None.
     - remove_alignment_to_reference      (True/False) Remove VCRSs that pseudoalign to a normal reference (they would be false positives). Requires a reference DNA fasta (see `alignment_to_reference_dna`/`species`). Default: True.
     - alignment_to_reference_type        (str) Which normal reference to pseudoalign against when remove_alignment_to_reference=True: one of 'genome', 'cdna', 'transcriptome', 'genome_or_transcriptome'. Default: 'genome_or_transcriptome'.
-    - species                            (str) If a supported species (e.g. 'human'), download a prebuilt reference index for the pseudoalignment filter instead of building one. Default: None.
+    - alignment_to_reference_aligner     (str) Aligner backend for the pseudoalignment filter: 'bowtie2' (default; falls back to 'kallisto' if bowtie2 is not installed) or 'kallisto'. Default: 'bowtie2'.
+    - species                            (str) If a supported species (e.g. 'human'), download a prebuilt reference index (from the chosen aligner) for the pseudoalignment filter instead of building one. Default: None.
     - alignment_to_reference_dna         (str) Path to the reference DNA (genome) fasta used to build the pseudoalignment index. Required when remove_alignment_to_reference=True and no downloadable `species` is given (falls back to `sequences` if it looks like a genome fasta). Default: None.
     - alignment_to_reference_gtf         (str) Path to the reference GTF used to build the pseudoalignment index for cdna/transcriptome/genome_or_transcriptome types. Falls back to the build `gtf` if not given. Default: None.
     - dlist                              (str) The d-list (distinguishing list) passed to `kb ref` when creating the VCRS index, used to mask k-mers shared with a normal reference. One of:
@@ -428,7 +446,7 @@ def build(
     - save_column_names_json_path        (str) Whether to save the column names in their own json file. Utilized internally by vk ref. Default: None.
 
 
-    Saves mutated sequences in fasta format (or returns a list containing the mutated sequences if out=None).
+    Saves mutated sequences in fasta format (or returns a list containing the mutated sequences if return_variant_output=True).
     """
 
     global intronic_mutations, posttranslational_region_mutations, unknown_mutations, uncertain_mutations, ambiguous_position_mutations, variants_incorrect_wt_base, mut_idx_outside_seq
@@ -462,8 +480,8 @@ def build(
     # * 1.5 Chunk iteration
     if chunksize and return_variant_output:
         raise ValueError("return_variant_output cannot be True when chunksize is specified. Please set return_variant_output to False.")
-    if chunksize and merge_identical and save_variants_updated_csv:
-        raise ValueError("both merge_identical and save_variants_updated_csv cannot be True when chunksize is specified. Please set merge_identical to False and/or save_variants_updated_csv to False.")
+    if chunksize and merge_identical and save_variants_updated_dataframe:
+        raise ValueError("both merge_identical and save_variants_updated_dataframe cannot be True when chunksize is specified. Please set merge_identical to False and/or save_variants_updated_dataframe to False.")
     if chunksize is not None and isinstance(variants, (str, Path)) and os.path.exists(variants):
         variants = str(variants)  # convert Path to string
         params_dict = make_function_parameter_to_value_dict(1)
@@ -576,9 +594,8 @@ def build(
 
     # if someone specifies an output path, then it should be saved - could technically incorporate this logic in else statements below, but this feels cleaner
     if variants_updated_csv_out:
-        save_variants_updated_csv = True
-    if not vcrs_unfiltered_fasta_out:
-        vcrs_unfiltered_fasta_out = os.path.join(out, "vcrs_unfiltered.fa")
+        save_variants_updated_dataframe = True
+    # vcrs_unfiltered_fasta_out and id_to_header_unfiltered_csv_out are opt-in: only written when an explicit path is provided (left as None otherwise).
     if not vcrs_fasta_out:
         vcrs_fasta_out = os.path.join(out, "vcrs.fa")
     if not variants_updated_csv_out:
@@ -614,9 +631,11 @@ def build(
         logger.info(f"Downloaded files: {vk_ref_output_dict}")
         return vk_ref_output_dict
 
-    # make sure directories of all output files exist
-    output_files = [vcrs_unfiltered_fasta_out, vcrs_fasta_out, variants_updated_csv_out, id_to_header_csv_out, vcrs_t2g_out, removed_variants_text_out, filtering_report_text_out]
+    # make sure directories of all output files exist (skip the opt-in unfiltered outputs when not requested)
+    output_files = [vcrs_unfiltered_fasta_out, vcrs_fasta_out, variants_updated_csv_out, id_to_header_csv_out, id_to_header_unfiltered_csv_out, vcrs_t2g_out, removed_variants_text_out, filtering_report_text_out]
     for output_file in output_files:
+        if output_file is None:
+            continue
         if os.path.isfile(output_file) and not overwrite and first_chunk:
             raise ValueError(f"Output file '{output_file}' already exists. Set 'overwrite=True' to overwrite it.")
         if os.path.dirname(output_file):
@@ -765,7 +784,7 @@ def build(
                 columns_to_keep.append(col)  # append "mutation_aa", "gene_name", "mutation_id"
 
     elif isinstance(mutations, str) and (mutations.endswith(".vcf") or mutations.endswith(".vcf.gz")):
-        mutations = vcf_to_dataframe(mutations, additional_columns=save_variants_updated_csv, explode_alt=True, filter_empty_alt=True, verbose=verbose)  # only load in additional columns if I plan to later save this updated csv
+        mutations = vcf_to_dataframe(mutations, additional_columns=save_variants_updated_dataframe, explode_alt=True, filter_empty_alt=True, verbose=verbose)  # only load in additional columns if I plan to later save this updated csv
         mutations.rename(columns={"CHROM": seq_id_column}, inplace=True)
         if var_id_column:
             # mutations.rename(columns={"ID": var_id_column}, inplace=True)  # ID is not always guaranteed to be present - thus, this would complicate things for vk clean
@@ -822,6 +841,27 @@ def build(
             - A list of variants (the number of variants must equal the number of input sequences) (e.g. ['c.2C>T', 'c.1A>C'])
             """
         )
+
+    # Project variants between genome (g.) and transcript/cDNA (c.) coordinates so they match the
+    # coordinate system of `sequences`. Requires a local GTF for exon structure (no external DB).
+    if convert_variant_coordinates:
+        if not (isinstance(gtf, str) and os.path.isfile(gtf)):
+            raise ValueError(f"convert_variant_coordinates='{convert_variant_coordinates}' requires 'gtf' to be a path to an existing GTF file. Got: {gtf}")
+        first_variant = str(mutations[var_column].dropna().iloc[0]) if not mutations.empty else ""
+        if convert_variant_coordinates == "genome_to_transcript" and first_variant.startswith("c."):
+            logger.warning("convert_variant_coordinates='genome_to_transcript' but the variants already look like transcript (c.) coordinates.")
+        elif convert_variant_coordinates == "transcript_to_genome" and first_variant.startswith("g."):
+            logger.warning("convert_variant_coordinates='transcript_to_genome' but the variants already look like genome (g.) coordinates.")
+
+        logger.info("Converting variant coordinates (%s) using GTF '%s'", convert_variant_coordinates, gtf)
+        exon_model = build_transcript_exon_model(gtf)
+        converter = convert_variants_genome_to_transcript if convert_variant_coordinates == "genome_to_transcript" else convert_variants_transcript_to_genome
+        mutations, _conversion_report = converter(mutations, seq_id_column, var_column, exon_model)
+        if mutations.empty:
+            logger.warning("No variants remained after coordinate conversion (%s).", convert_variant_coordinates)
+            return [] if return_variant_output else None
+        if "variant_type" in mutations.columns:
+            mutations = mutations.drop(columns=["variant_type"])  # positions/prefixes changed; recomputed downstream
 
     if "c." in mutations[var_column].values[0]:
         reference_source = "transcriptome"
@@ -1071,7 +1111,7 @@ def build(
 
     mut_apply = (lambda *args, **kwargs: mutations.progress_apply(*args, **kwargs)) if verbose else mutations.apply
 
-    if save_variants_updated_csv and store_full_sequences:
+    if save_variants_updated_dataframe and store_full_sequences:
         # Extract flank sequences
         if verbose:
             tqdm.pandas(desc="Extracting full left flank sequences")
@@ -1202,12 +1242,23 @@ def build(
 
     # * Save the unfiltered VCRS fasta (before the quality filters and before merging identical VCRSs).
     # One record per surviving variant, headers = the per-variant `header` column, no t2g and no merge.
+    # Both unfiltered outputs are opt-in: written only when an explicit path was provided.
     raw_mask = mutations["vcrs_sequence"].astype(bool)
-    if raw_mask.any():
+    if raw_mask.any() and vcrs_unfiltered_fasta_out:
         raw_fasta = ">" + mutations.loc[raw_mask, "header"].astype(str) + "\n" + mutations.loc[raw_mask, "vcrs_sequence"].astype(str) + "\n"
         with open(vcrs_unfiltered_fasta_out, determine_write_mode(vcrs_unfiltered_fasta_out, overwrite=overwrite, first_chunk=first_chunk), encoding="utf-8") as raw_fasta_file:
             raw_fasta_file.write("".join(raw_fasta.values))
         logger.info("Unfiltered (pre-filter, pre-merge) VCRS fasta written to %s.", vcrs_unfiltered_fasta_out)
+
+    if raw_mask.any() and id_to_header_unfiltered_csv_out:
+        # id -> header mapping for the UNFILTERED VCRSs (one row per built variant, pre-filter, pre-merge).
+        unfiltered_id_start = get_last_vcrs_number(id_to_header_unfiltered_csv_out) + 1 if not first_chunk else 1
+        unfiltered_id_to_header = pd.DataFrame({
+            "vcrs_id": generate_unique_ids(int(raw_mask.sum()), start=unfiltered_id_start, total_rows=total_rows),
+            "vcrs_header": mutations.loc[raw_mask, "header"].astype(str).values,
+        })
+        unfiltered_id_to_header.to_csv(id_to_header_unfiltered_csv_out, index=False, header=first_chunk, mode=determine_write_mode(id_to_header_unfiltered_csv_out, overwrite=overwrite, first_chunk=first_chunk))
+        logger.info("Unfiltered (pre-filter) id-to-header mapping written to %s.", id_to_header_unfiltered_csv_out)
 
     if remove_seqs_with_wt_kmers:
         if verbose:
@@ -1228,7 +1279,7 @@ def build(
     else:
         mutations_overlapping_with_wt = 0
 
-    if save_variants_updated_csv and store_full_sequences:
+    if save_variants_updated_dataframe and store_full_sequences:
         columns_to_keep.extend(["wt_sequence_full", "vcrs_sequence_full"])
 
         # Create full sequences (substitution and non-substitution)
@@ -1321,6 +1372,8 @@ def build(
             threads=threads,
             seq_col="vcrs_sequence",
             species=species,
+            aligner=alignment_to_reference_aligner,
+            vcrs_strandedness=vcrs_strandedness,
         )
         num_rows_pseudoaligned = len_before_pseudoalign - len(mutations)
         logger.info("Removed %d variant-containing reference sequences that pseudoaligned to the %s reference...", num_rows_pseudoaligned, alignment_to_reference_type)
@@ -1382,7 +1435,7 @@ def build(
     with open(filtering_report_text_out, determine_write_mode(filtering_report_text_out, overwrite=overwrite, first_chunk=first_chunk), encoding="utf-8") as file:
         file.write(report)
 
-    if translate and save_variants_updated_csv and store_full_sequences:
+    if translate and save_variants_updated_dataframe and store_full_sequences:
         columns_to_keep.extend(["wt_sequence_aa_full", "vcrs_sequence_aa_full"])
 
         if not translate_start:
@@ -1428,7 +1481,7 @@ def build(
         for mutation in removed_mutation_set:
             file.write(f"{mutation}\n")
 
-    if save_variants_updated_csv:
+    if save_variants_updated_dataframe:
         # recalculate start_variant_position and end_variant_position due to messing with it above
         mutations.drop(
             columns=["start_variant_position", "end_variant_position"],
@@ -1475,8 +1528,8 @@ def build(
             columns_not_to_semicolon_join = []
             agg_columns = [col for col in mutations.columns if col != "vcrs_sequence"]
 
-        if save_variants_updated_csv:
-            logger.warning("Merging rows of identical VCRSs can take a while if save_variants_updated_csv=True since it will concatenate all VCRSs too")
+        if save_variants_updated_dataframe:
+            logger.warning("Merging rows of identical VCRSs can take a while if save_variants_updated_dataframe=True since it will concatenate all VCRSs too")
             mutations = mutations.groupby(group_key, sort=False).agg({col: ("first" if col in columns_not_to_semicolon_join else (";".join if col == "header" else lambda x: list(x.fillna(np.nan)))) for col in agg_columns}).reset_index(drop=merge_identical_rc)  # lambda x: list(x) will make simple list, but lengths will be inconsistent with NaN values  # concatenate values with semicolons: lambda x: `";".join(x.astype(str))`   # drop if merging by vcrs_sequence_and_rc_tuple, but not if merging by vcrs_sequence
             if original_order:
                 mutations["original_order"] = mutations["original_order"].apply(min)  # get the minimum original order for each group
@@ -1561,7 +1614,7 @@ def build(
         mutations["vcrs_id"] = mutations["vcrs_header"]
     columns_to_keep.extend(["vcrs_id", "vcrs_header"])
 
-    if save_variants_updated_csv:  # use variants_updated_csv_out if present,
+    if save_variants_updated_dataframe:  # use variants_updated_csv_out if present,
         logger.info("Saving dataframe with updated variant info...")
         logger.warning("File size can be very large if the number of variants is large.")
         mutations.to_csv(variants_updated_csv_out, index=False, header=first_chunk, mode=determine_write_mode(variants_updated_csv_out, overwrite=overwrite, first_chunk=first_chunk))

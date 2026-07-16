@@ -3,6 +3,7 @@
 from .logger_utils import *
 from .seq_utils import *
 from .type_utils import *
+from .coordinate_conversion import *
 from .varseek_build_utils import *
 from .varseek_clean_utils import *
 from .varseek_denovo_utils import *

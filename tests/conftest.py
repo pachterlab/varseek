@@ -80,8 +80,8 @@ def compare_two_t2gs(t2g_path, t2g_path_ground_truth):
     t2g_ground_truth_dict = t2g_ground_truth.set_index("transcript_id")["gene_id"].to_dict()
     assert t2g_dict == t2g_ground_truth_dict
 
-def compare_two_id_to_header_mappings(id_to_header_csv, id_to_header_csv_ground_truth):
-    id_to_header_dict = make_mapping_dict(id_to_header_csv, dict_key="id")
+def compare_two_id_to_header_mappings(id_to_header_dataframe, id_to_header_csv_ground_truth):
+    id_to_header_dict = make_mapping_dict(id_to_header_dataframe, dict_key="id")
     id_to_header_dict_ground_truth = make_mapping_dict(id_to_header_csv_ground_truth, dict_key="id")
     assert id_to_header_dict == id_to_header_dict_ground_truth
 

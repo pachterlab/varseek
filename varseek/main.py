@@ -265,8 +265,12 @@ def main():  # noqa: C901
 
     # Define parent parser
     parent_parser = argparse.ArgumentParser(description=f"varseek v{__version__}", add_help=False)
-    # Initiate subparsers
-    parent_subparsers = parent_parser.add_subparsers(dest="command")
+    # Initiate subparsers.
+    # `build` is intentionally omitted from this metavar so it stays hidden from the top-level
+    # `vk --help` command listing. It remains fully invocable (`vk build ...`) and is the argument
+    # source for `vk ref`; `vk ref` is the public-facing name for the same functionality (mirroring
+    # kb ref / kb count). If you add or rename a *public* subcommand, update this list to match.
+    parent_subparsers = parent_parser.add_subparsers(dest="command", metavar="{denovo,fastqpp,clean,summarize,ref,count}")
     # Define parent (not sure why I need both parent parser and parent, but otherwise it does not work)
     parent = argparse.ArgumentParser(add_help=False)
 
@@ -306,11 +310,10 @@ def main():  # noqa: C901
         help=extract_help_from_doc(denovo, "inputs"),
     )
     parser_denovo.add_argument(
-        "-f",
-        "--fasta-ref",
-        "--fasta_ref",
+        "-s",
+        "--sequences",
         required=True,
-        help=extract_help_from_doc(denovo, "fasta_ref"),
+        help=extract_help_from_doc(denovo, "sequences"),
     )
     parser_denovo.add_argument(
         "-g",
@@ -405,6 +408,20 @@ def main():  # noqa: C901
         choices=["STAR", "bowtie2"],
         default=argparse.SUPPRESS,
         help=extract_help_from_doc(denovo, "aligner"),
+    )
+    parser_denovo.add_argument(
+        "--reads-type",
+        "--reads_type",
+        choices=["rna", "dna"],
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "reads_type"),
+    )
+    parser_denovo.add_argument(
+        "--reference-type",
+        "--reference_type",
+        choices=["auto", "genome", "dna", "transcriptome", "cdna"],
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "reference_type"),
     )
     parser_denovo.add_argument(
         "--variant-caller",
@@ -523,7 +540,9 @@ def main():  # noqa: C901
         "build",
         parents=[parent],
         description=build_desc,
-        help=build_desc,
+        # No `help=` on purpose: omitting it keeps `build` out of the top-level `vk --help` listing
+        # while leaving it fully invocable (`vk build ...`, `vk build --help`) and usable as the
+        # argument source for `vk ref`. `vk ref` is the public-facing name for this functionality.
         # epilog=vk_build_end_help_message,
         add_help=True,
         formatter_class=CustomHelpFormatter,
@@ -612,10 +631,10 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "transcript_boundaries"),
     )
     parser_build.add_argument(
-        "--identify_all_spliced_from_genome",
-        action="store_true",
+        "--convert_variant_coordinates",
+        choices=["genome_to_transcript", "transcript_to_genome"],
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "identify_all_spliced_from_genome"),
+        help=extract_help_from_doc(build, "convert_variant_coordinates"),
     )
     parser_build.add_argument(
         "-o",
@@ -675,10 +694,10 @@ def main():  # noqa: C901
         help=extract_help_from_doc(build, "return_variant_output"),
     )
     parser_build.add_argument(
-        "--save_variants_updated_csv",
+        "--save_variants_updated_dataframe",
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "save_variants_updated_csv"),
+        help=extract_help_from_doc(build, "save_variants_updated_dataframe"),
     )
     parser_build.add_argument(
         "--store_full_sequences",
@@ -898,6 +917,13 @@ def main():  # noqa: C901
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(build, "alignment_to_reference_type"),
+    )
+    parser_build.add_argument(
+        "--alignment_to_reference_aligner",
+        required=False,
+        choices=["bowtie2", "kallisto"],
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "alignment_to_reference_aligner"),
     )
     parser_build.add_argument(
         "--species",
@@ -1246,18 +1272,6 @@ def main():  # noqa: C901
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(clean, "drop_empty_columns"),
     )
-    # parser_clean.add_argument(
-    #     "--apply_single_end_mode_on_paired_end_data_correction",
-    #     action="store_true",
-    #     default=argparse.SUPPRESS,  # Remove from args if not provided
-    #     help=extract_help_from_doc(clean, "apply_single_end_mode_on_paired_end_data_correction"),
-    # )
-    parser_clean.add_argument(
-        "--split_reads_by_Ns_and_low_quality_bases",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "split_reads_by_Ns_and_low_quality_bases"),
-    )
     parser_clean.add_argument(
         "--apply_dlist_correction",
         action="store_true",
@@ -1369,6 +1383,19 @@ def main():  # noqa: C901
         action="store_true",
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(clean, "sum_rows"),
+    )
+    parser_clean.add_argument(
+        "--drop_multi_variant_vcrs",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "drop_multi_variant_vcrs"),
+    )
+    parser_clean.add_argument(
+        "--disable_rename_vcrs_to_variant",
+        dest="rename_vcrs_to_variant",
+        action="store_false",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "rename_vcrs_to_variant", disable=True),
     )
     parser_clean.add_argument(
         "--vcrs_id_set_to_exclusively_keep",
@@ -1489,10 +1516,10 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "reference_genome_t2g"),
     )
     parser_clean.add_argument(
-        "--vcf_data_csv",
+        "--vcf_data_dataframe",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "vcf_data_csv"),
+        help=extract_help_from_doc(clean, "vcf_data_dataframe"),
     )
     parser_clean.add_argument(
         "--variants",
@@ -1630,16 +1657,16 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "vcrs_fasta"),
     )
     parser_clean.add_argument(
-        "--id_to_header_csv",
+        "--id_to_header_dataframe",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "id_to_header_csv"),
+        help=extract_help_from_doc(clean, "id_to_header_dataframe"),
     )
     parser_clean.add_argument(
-        "--variants_updated_csv",
+        "--variants_updated_dataframe",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(clean, "variants_updated_csv"),
+        help=extract_help_from_doc(clean, "variants_updated_dataframe"),
     )
     parser_clean.add_argument(
         "--dlist_fasta",
@@ -1759,12 +1786,6 @@ def main():  # noqa: C901
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(summarize, "gene_name_column"),
-    )
-    parser_summarize.add_argument(
-        "--vcrs_header_column",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(summarize, "vcrs_header_column"),
     )
     parser_summarize.add_argument(
         "-o",
@@ -1942,6 +1963,13 @@ def main():  # noqa: C901
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(build, "alignment_to_reference_type"),
+    )
+    parser_ref.add_argument(
+        "--alignment_to_reference_aligner",
+        required=False,
+        choices=["bowtie2", "kallisto"],
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "alignment_to_reference_aligner"),
     )
     parser_ref.add_argument(
         "--species",
