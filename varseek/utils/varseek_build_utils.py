@@ -1,5 +1,6 @@
 import os
 import re
+import bisect
 import gzip
 import json
 import shutil
@@ -20,7 +21,7 @@ from tqdm import tqdm
 
 from varseek.constants import codon_to_amino_acid, mutation_pattern, supported_databases_and_corresponding_reference_sequence_type, complement, fasta_extensions, varseek_ref_only_allowable_kb_ref_arguments, species_to_url
 from varseek.utils.logger_utils import set_up_logger, download_box_url, is_program_installed
-from varseek.utils.seq_utils import fasta_to_fastq, make_intergenic_fasta, make_transcriptome_fasta, make_cdna_fasta, make_nascent_fasta, create_identity_t2g, reverse_complement
+from varseek.utils.seq_utils import fasta_to_fastq, make_intergenic_fasta, make_transcriptome_fasta, make_cdna_fasta, make_nascent_fasta, create_identity_t2g, reverse_complement, gene_name_lookups_from_gtf
 from varseek.utils.type_utils import ReferenceType
 
 import logging
@@ -38,6 +39,78 @@ def convert_chromosome_value_to_int_when_possible(val):
     except ValueError:
         # If conversion fails, keep the value as it is
         return str(val)
+
+
+def _gene_name_for_position(chrom_index, pos):
+    """Return the gene name whose interval contains ``pos`` (1-based), or "" if none.
+
+    ``chrom_index`` is the ``(starts, ends, names, max_end)`` tuple produced by
+    :func:`_build_chrom_gene_index` for a single chromosome. Uses a binary search on the
+    (start-sorted) intervals plus a running max-end so the common "position falls in no gene"
+    case returns in O(log G), while overlapping/nested genes are still resolved correctly.
+    """
+    starts, ends, names, max_end = chrom_index
+    hi = bisect.bisect_right(starts, pos)  # intervals [0:hi] have start <= pos
+    if hi == 0 or max_end[hi - 1] < pos:
+        return ""
+    for i in range(hi - 1, -1, -1):
+        if max_end[i] < pos:  # max_end is non-decreasing: nothing earlier can contain pos
+            break
+        if ends[i] >= pos:
+            return names[i]
+    return ""
+
+
+def _build_chrom_gene_index(intervals):
+    """Turn a start-sorted list of ``(start, end, name)`` into a fast per-chromosome lookup."""
+    starts = [interval[0] for interval in intervals]
+    ends = [interval[1] for interval in intervals]
+    names = [interval[2] for interval in intervals]
+    max_end = []
+    running = 0
+    for end in ends:
+        running = end if end > running else running
+        max_end.append(running)
+    return starts, ends, names, max_end
+
+
+def compute_gene_name_series_for_headers(mutations, seq_id_column, var_column, gtf):
+    """Map each variant to its gene name (symbol) using a GTF, for HGVS-header annotation.
+
+    Transcript/cDNA/CDS variants (seq_ID like ``ENST...``) are mapped ENST -> gene_name; genome
+    variants (chromosome seq_ID with a ``g.`` mutation) are mapped chromosome+position -> gene_name
+    via the GTF gene intervals. Variants with no gene match get an empty string (they are written
+    without a gene annotation).
+
+    Returns a pandas Series of gene names aligned to ``mutations.index``.
+    """
+    transcript_to_gene_name, gene_intervals = gene_name_lookups_from_gtf(gtf)
+
+    seq_ids = mutations[seq_id_column].astype(str).str.split(".").str[0]  # strip any version suffix
+    variants = mutations[var_column].astype(str)
+    gene_names = pd.Series("", index=mutations.index, dtype=object)
+
+    # Transcript/cDNA variants: ENST -> gene_name via the transcript->gene map.
+    is_transcript = seq_ids.str.startswith("ENST")
+    if is_transcript.any():
+        gene_names.loc[is_transcript] = seq_ids[is_transcript].map(transcript_to_gene_name).fillna("")
+
+    # Genome variants: chromosome + position -> gene_name via interval lookup.
+    is_genome = (~is_transcript) & variants.str.startswith("g.")
+    if is_genome.any() and gene_intervals:
+        chrom_indexes = {chrom: _build_chrom_gene_index(intervals) for chrom, intervals in gene_intervals.items()}
+        positions = variants[is_genome].str.extract(r"g\.(\d+)")[0]
+        for idx, chrom, pos in zip(positions.index, seq_ids[is_genome], positions):
+            if pos is None or (isinstance(pos, float) and np.isnan(pos)):
+                continue
+            chrom_index = chrom_indexes.get(str(chrom))
+            if chrom_index is None:
+                continue
+            gene_name = _gene_name_for_position(chrom_index, int(pos))
+            if gene_name:
+                gene_names.at[idx] = gene_name
+
+    return gene_names
 
 
 # Function to ensure unique IDs

@@ -67,6 +67,19 @@ technology_info = {
         "num_files": {"single": 1, "paired": 2},
         "barcode_umi": {"barcode_start": None, "barcode_end": None, "umi_start": None, "umi_end": None, "spacer_start": None, "spacer_end": None},
     },
+    # DNA is a virtual technology: it is processed exactly like BULK (no barcodes/UMIs, single or
+    # paired), but additionally declares that the sequencing reads are genomic DNA rather than RNA.
+    # That reads-type signal is what selects the pseudobam-QC alignment strategy (see
+    # _determine_pseudobam_mode): RNA reads against a DNA/genome VCRS reference need a cDNA index +
+    # `kallisto quant --genomebam`, whereas DNA reads align to the genome directly with --pseudobam.
+    # It is normalized to BULK before the actual kb count / kallisto invocation.
+    "DNA": {
+        "strand_bias": None,
+        "transcript_file_index": 0,
+        "barcode_position": None,
+        "num_files": {"single": 1, "paired": 2},
+        "barcode_umi": {"barcode_start": None, "barcode_end": None, "umi_start": None, "umi_end": None, "spacer_start": None, "spacer_end": None},
+    },
     "CELSEQ": {
         "strand_bias": ("3p",),
         "transcript_file_index": 1,
@@ -160,7 +173,7 @@ technology_info = {
     },
 }
 technology_valid_values = set(technology_info)
-non_single_cell_technologies = {"BULK", "VISIUM"}
+non_single_cell_technologies = {"BULK", "DNA", "VISIUM"}
 supported_downloadable_normal_reference_genomes_with_kb_ref = {"human", "mouse", "dog", "monkey", "zebrafish"}  # see full list at https://github.com/pachterlab/kallisto-transcriptome-indices/
 
 
@@ -309,10 +322,15 @@ supported_databases_and_corresponding_reference_sequence_type = {
 
 seqID_pattern = r"(ENST\d+|(?:[1-9]|1[0-9]|2[0-3]|X|Y|MT)\d+)"
 mutation_pattern = r"(?:c|g)\.([0-9_\-\+\*\(\)\?]+)([a-zA-Z>]+)"  # more complex: r'c\.([0-9_\-\+\*\(\)\?]+)([a-zA-Z>\(\)0-9]+)'
-HGVS_pattern = rf"^{seqID_pattern}:{mutation_pattern}$"
+# Optional gene-name annotation inserted between the seq_ID and the ':' by varseek build when a
+# GTF is provided, e.g. 'ENST00000123456(ACT):c.123A>C' or '3(ACT):g.12214A>C'. Gene symbols may
+# contain letters, digits, '.', '-' and '_'. Kept as a non-capturing group so it does not shift the
+# seq_ID / mutation capture-group indices that downstream code relies on.
+gene_name_in_header_pattern = r"(?:\([A-Za-z0-9._\-]+\))?"
+HGVS_pattern = rf"^{seqID_pattern}{gene_name_in_header_pattern}:{mutation_pattern}$"
 
 seqID_pattern_general = r"[A-Za-z0-9_-]+"
-HGVS_pattern_general = rf"^{seqID_pattern_general}:{mutation_pattern}$"
+HGVS_pattern_general = rf"^{seqID_pattern_general}{gene_name_in_header_pattern}:{mutation_pattern}$"
 
 varseek_ref_only_allowable_kb_ref_arguments = {"zero_arguments": {"--keep-tmp", "--verbose", "--aa"}, "one_argument": {"--tmp", "--kallisto", "--bustools"}, "multiple_arguments": set()}  # don't include d-list, t, i, k, workflow, overwrite here because I do it myself later
 

@@ -83,7 +83,7 @@ def test_vk_count(out_dir):
 
     if not os.path.exists(vcrs_index) or not os.path.exists(vcrs_t2g):
         pytest.skip("vcrs_index.idx or vcrs_t2g_filtered.txt not found. Please make this index to continue (see comments below)")
-        # vk.ref(variants="cosmic_cmc", sequences="cdna", w=47, k=51, dlist_reference_source="t2t", index_out=vcrs_index, t2g_out=vcrs_t2g, cosmic_email=cosmic_email, cosmic_password=cosmic_password, download=True)
+        # vk.ref(variants="cosmic_cmc", sequences="cdna", w=47, k=51, dlist_reference_source="t2t", index_out=vcrs_index, vcrs_t2g_out=vcrs_t2g, cosmic_email=cosmic_email, cosmic_password=cosmic_password, download=True)
 
     if not os.path.exists(fastq_file):
         pytest.skip("fastq_file not found. Please download it to continue (see comments below)")

@@ -13,7 +13,7 @@ import gget
 import numpy as np
 import pandas as pd
 import pyfastx
-from pydantic import BaseModel, ConfigDict, TypeAdapter, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 from tqdm import tqdm
 
 from .constants import (
@@ -24,6 +24,7 @@ from .constants import (
     prebuilt_vk_ref_files,
     supported_databases_and_corresponding_reference_sequence_type,
     varseek_ref_only_allowable_kb_ref_arguments,
+    species_to_url
 )
 from .utils import (
     add_variant_type,
@@ -73,6 +74,7 @@ from .utils import (
     Ratio,
     GtfArg,
     ReferenceType,
+    # Technology,  # only used by the disabled `technology` parameter below
     LoggingLevel,
 )
 from .utils.varseek_build_utils import (
@@ -94,6 +96,7 @@ from .utils.varseek_build_utils import (
     calculate_end_mutation_overlap_with_left_flank,
     iterate_through_vcf_in_chunks,
     merge_subsequence_vcrss,
+    compute_gene_name_series_for_headers,
 )
 
 tqdm.pandas()
@@ -262,11 +265,13 @@ def build(
     species: Optional[str] = None,
     alignment_to_reference_dna: Optional[str] = None,
     alignment_to_reference_gtf: Optional[str] = None,
+    # technology: Optional[Technology] = None,  # disabled for now (kept for future use in vk build; see vk count/clean for the reads-type / pseudobam behavior)
     var_column: str = "mutation",
     seq_id_column: str = "seq_ID",
     var_id_column: Optional[str] = None,
     gtf: GtfArg = None,
     gtf_transcript_id_column: Optional[str] = None,
+    add_gene_name_to_header: bool = True,
     transcript_boundaries: bool = False,
     convert_variant_coordinates: Optional[Literal["genome_to_transcript", "transcript_to_genome"]] = None,
     out: Union[str, Path] = ".",
@@ -380,6 +385,7 @@ def build(
     - gtf_transcript_id_column           (str) Column name in the input 'variants' file containing the transcript ID.
                                          In this case, column seq_id_column should contain the chromosome number.
                                          Required when 'gtf' is provided. Default: None
+    - add_gene_name_to_header            (True/False) When a `gtf` is provided, annotate each HGVS-like VCRS header with the gene name in parentheses, e.g. 'ENST00000123456(ACT):c.123A>C' or '3(ACT):g.12214A>C'. The gene name is taken from the GTF by mapping the transcript ID (ENST...) to its gene for c. variants, or the chromosome+position to the overlapping gene for g. variants. Variants with no gene match are left as the plain 'seq_ID:mutation' form. Has no effect when no GTF is provided. Default: True.
     - transcript_boundaries              (True/False) Whether to use the transcript boundaries in the input 'gtf' file to define the boundaries of the VCRSs. Only used when the `sequences` and `variants` information is in terms of the genome, and when `gtf` is specified. Default: False.
     - convert_variant_coordinates        (str) Project the input variants between genome (g.) and transcript/cDNA (c.) coordinates before building, using the exon structure in `gtf` (a local GTF is required). One of:
                                          'genome_to_transcript' (input variants are genomic (g.), with `seq_id_column` holding chromosome names; each variant is remapped onto every transcript whose exon covers it — so `sequences` should be the cDNA/transcriptome and rows may expand), or
@@ -400,8 +406,6 @@ def build(
     - id_to_header_unfiltered_csv_out     (str) Path to output csv file mapping unique IDs to the original sequence headers for the UNFILTERED VCRSs (one row per built variant, before the quality filters). Useful for tracing which variants survived the build vs. the filter step. Only written when an explicit path is provided. Default: None (not saved).
     - vcrs_t2g_out                       (str) Path to output t2g file containing the transcript-to-gene mapping for the VCRSs. Used in kallisto | bustools workflow. Default: "<out>/vcrs_t2g.txt"
     - index_out                          (str) Path to output VCRS (kallisto) index file created via kb ref. Only used when the index is created (see `dont_create_index`). Default: "<out>/vcrs_index.idx".
-    - fasta_out                          (str) Alias for `vcrs_fasta_out` (kept for backwards compatibility with vk ref; passed as a keyword argument). If provided, takes precedence over `vcrs_fasta_out`. Default: None.
-    - t2g_out                            (str) Alias for `vcrs_t2g_out` (kept for backwards compatibility with vk ref; passed as a keyword argument). If provided, takes precedence over `vcrs_t2g_out`. Default: None.
     - removed_variants_text_out          (str) Path to output text file containing the removed variants. Default: "<out>/removed_variants.txt"
     - filtering_report_text_out          (str) Path to output text file containing the filtering report. Default: "<out>/filtering_report.txt"
 
@@ -446,15 +450,6 @@ def build(
             print(f"Description: {downloadable_reference['description']}\nDownload command: {downloadable_reference['download_command']}\n")
         report_time_elapsed(start_time, "build", running_within_chunk_iteration=kwargs.get("running_within_chunk_iteration", False))
         return None
-
-    # * 0.5. fasta_out / t2g_out are backwards-compatible aliases (from vk ref) for vcrs_fasta_out / vcrs_t2g_out.
-    # They live in **kwargs rather than the signature; validate them here the same way @validate_call would.
-    fasta_out = kwargs.pop("fasta_out", None)
-    t2g_out = kwargs.pop("t2g_out", None)
-    if fasta_out:
-        vcrs_fasta_out = TypeAdapter(FastaFile).validate_python(fasta_out)
-    if t2g_out:
-        vcrs_t2g_out = TypeAdapter(T2GFile).validate_python(t2g_out)
 
     # * 1. logger
     if save_logs and not log_out_dir:
@@ -920,12 +915,26 @@ def build(
 
     mutations["vcrs_sequence"] = ""
 
+    # Optionally annotate the HGVS-like header with the gene name in parentheses, e.g.
+    # 'ENST00000123456(ACT):c.123A>C' or '3(ACT):g.12214A>C'. Only possible when a GTF is provided
+    # (ENST->gene_name for transcript/cDNA variants; chromosome+position->gene_name for genome
+    # variants). Variants with no gene match are left as the plain 'seq_ID:mutation' form.
+    gene_name_suffix = ""  # broadcasts as an empty string when there is nothing to annotate
+    if add_gene_name_to_header:
+        if isinstance(gtf, str) and os.path.isfile(gtf):
+            gene_name_series = compute_gene_name_series_for_headers(mutations, seq_id_column, var_column, gtf)
+            annotated_count = int((gene_name_series != "").sum())
+            gene_name_suffix = np.where(gene_name_series != "", "(" + gene_name_series.astype(str) + ")", "")
+            logger.info("Annotated %d/%d variant headers with a gene name from the GTF.", annotated_count, len(mutations))
+        else:
+            logger.info("add_gene_name_to_header is set, but no GTF path was provided; leaving headers without gene-name annotations.")
+
     if var_id_column is not None:
         mutations["header"] = mutations[var_id_column]
-        mutations["hgvs"] = mutations[seq_id_column].astype(str) + ":" + mutations[var_column]
+        mutations["hgvs"] = mutations[seq_id_column].astype(str) + gene_name_suffix + ":" + mutations[var_column]
         logger.info("Using var_id_column '%s' as the variant header column.", var_id_column)
     else:
-        mutations["header"] = mutations[seq_id_column].astype(str) + ":" + mutations[var_column]
+        mutations["header"] = mutations[seq_id_column].astype(str) + gene_name_suffix + ":" + mutations[var_column]
         logger.info("Using the seq_id_column:var_column '%s' columns as the variant header column.", f"{seq_id_column}:{var_column}")
 
     # make a set of all initial mutation IDs
@@ -1254,57 +1263,49 @@ def build(
         logger.info("Removed %d variant-containing reference sequences with triplet complexity below %s...", num_rows_triplet, min_triplet_complexity)
 
     if remove_alignment_to_reference and not mutations.empty:
-        dna_ref, gtf_ref = alignment_to_reference_dna, alignment_to_reference_gtf
-        if dna_ref is None and species is None:
-            if isinstance(sequences, str) and os.path.isfile(sequences) and sequences.endswith(fasta_extensions):
-                # Best gtf available for the cDNA-vs-genome cross-check: the explicit
-                # alignment gtf if given, else the build gtf (if it is a path on disk).
-                detection_gtf = gtf_ref if gtf_ref is not None else (gtf if isinstance(gtf, str) and os.path.isfile(gtf) else None)
-                if fasta_looks_like_cdna(sequences, gtf=detection_gtf):
-                    if alignment_to_reference_type == "genome":
-                        # `genome` uses kb ref's `custom` workflow, which indexes the provided fasta
-                        # directly, so a cDNA fasta still yields a usable (if unintended) index. Warn only.
-                        logger.warning(
-                            "alignment_to_reference_dna not provided; falling back to `sequences` (%s), which looks like a cDNA/transcriptome fasta rather than genomic DNA. "
-                            "Proceeding because alignment_to_reference_type='genome' indexes the provided fasta directly, but ensure this is the reference you intend to pseudoalign against.",
-                            sequences,
-                        )
+        if species is not None and species in species_to_url:  #* 1. use species
+            pass
+        else:
+            if species is not None:  #? bad species or no species
+                logger.warning("Species '%s' not recognized; falling back to alignment_to_reference_dna and alignment_to_reference_gtf for pseudoalignment.", species)
+            dna_ref, gtf_ref = alignment_to_reference_dna, alignment_to_reference_gtf  #* 2. use alignment_to_reference_dna, alignment_to_reference_gtf
+            if dna_ref is None and species is None:  #? no DNA ref - try fallback to sequences
+                if isinstance(sequences, str) and os.path.isfile(sequences) and sequences.endswith(fasta_extensions):  #* 3. use sequences
+                    detection_gtf = gtf_ref if gtf_ref is not None else (gtf if isinstance(gtf, str) and os.path.isfile(gtf) else None)  #? no alignment_to_reference_gtf - try fallback to gtf
+                    if fasta_looks_like_cdna(sequences, gtf=detection_gtf):
+                        if alignment_to_reference_type == "cdna":
+                            pass  # will set to "genome" later - misleading name, but this ensures kb ref works in custom mode to map directly to the fasta file
+                        else:  #* requesting DNA, but we only have cdna
+                            logger.warning("alignment_to_reference_dna not provided, and `sequences` (%s) looks like a cDNA/transcriptome fasta rather than genomic DNA. alignment_to_reference_type=%s builds its reference index from a genome (DNA) fasta plus a gtf, so a cDNA fasta will not work. Provide a genome fasta via alignment_to_reference_dna (or a downloadable species), or set alignment_to_reference_type='cdna' or 'transcriptome'.", sequences, alignment_to_reference_type)
+                        alignment_to_reference_type = "genome"
                     else:
-                        # cdna/transcriptome/genome_or_transcriptome build their index from a genome
-                        # (DNA) fasta plus a gtf (kb ref `standard`/`nac`), so a cDNA fasta will not work.
-                        raise ValueError(
-                            f"alignment_to_reference_dna not provided, and `sequences` ({sequences}) looks like a cDNA/transcriptome fasta rather than genomic DNA. "
-                            f"alignment_to_reference_type={alignment_to_reference_type} builds its reference index from a genome (DNA) fasta plus a gtf, so a cDNA fasta will not work. "
-                            "Provide a genome fasta via alignment_to_reference_dna (or a downloadable species), or set alignment_to_reference_type='genome'."
-                        )
+                        logger.warning("alignment_to_reference_dna not provided; falling back to `sequences` as the reference DNA fasta. Ensure `sequences` is a genome (DNA) fasta, not cDNA.")
+                    dna_ref = sequences
                 else:
-                    logger.warning("alignment_to_reference_dna not provided; falling back to `sequences` as the reference DNA fasta. Ensure `sequences` is a genome (DNA) fasta, not cDNA.")
-                dna_ref = sequences
-            else:
-                raise ValueError("remove_alignment_to_reference=True requires alignment_to_reference_dna, a downloadable species, or a genome fasta in `sequences`.")
-        if alignment_to_reference_type != "genome" and gtf_ref is None and species is None:
-            if isinstance(gtf, str) and os.path.isfile(gtf):
-                logger.warning("alignment_to_reference_gtf not provided; falling back to the build `gtf`.")
-                gtf_ref = gtf
-            else:
-                raise ValueError(f"alignment_to_reference_type={alignment_to_reference_type} requires a gtf (alignment_to_reference_gtf, build gtf, or a downloadable species).")
-        len_before_pseudoalign = len(mutations)
-        mutations = run_pseudoalign_on_vcrs_df(
-            mutations,
-            reference_type=alignment_to_reference_type,
-            index_dir=reference_out_dir,
-            out_dir=os.path.join(out, "kmer_alignment_tmp"),
-            dna_fasta=dna_ref,
-            gtf=gtf_ref,
-            k=k,
-            threads=threads,
-            seq_col="vcrs_sequence",
-            species=species,
-            aligner=alignment_to_reference_aligner,
-            vcrs_strandedness=vcrs_strandedness,
-        )
-        num_rows_pseudoaligned = len_before_pseudoalign - len(mutations)
-        logger.info("Removed %d variant-containing reference sequences that pseudoaligned to the %s reference...", num_rows_pseudoaligned, alignment_to_reference_type)
+                    raise ValueError("remove_alignment_to_reference=True requires alignment_to_reference_dna, a downloadable species, or a genome fasta in `sequences`.")
+            if alignment_to_reference_type != "genome" and gtf_ref is None and species is None:
+                if isinstance(gtf, str) and os.path.isfile(gtf):
+                    logger.warning("alignment_to_reference_gtf not provided; falling back to the build `gtf`.")
+                    gtf_ref = gtf
+                else:
+                    raise ValueError(f"alignment_to_reference_type={alignment_to_reference_type} requires a gtf (alignment_to_reference_gtf, build gtf, or a downloadable species).")
+            len_before_pseudoalign = len(mutations)
+            mutations = run_pseudoalign_on_vcrs_df(
+                mutations,
+                reference_type=alignment_to_reference_type,
+                index_dir=reference_out_dir,
+                out_dir=os.path.join(out, "kmer_alignment_tmp"),
+                dna_fasta=dna_ref,
+                gtf=gtf_ref,
+                k=k,
+                threads=threads,
+                seq_col="vcrs_sequence",
+                species=species,
+                aligner=alignment_to_reference_aligner,
+                vcrs_strandedness=vcrs_strandedness,
+            )
+            num_rows_pseudoaligned = len_before_pseudoalign - len(mutations)
+            logger.info("Removed %d variant-containing reference sequences that pseudoaligned to the %s reference...", num_rows_pseudoaligned, alignment_to_reference_type)
 
     # Report status of mutations back to user
     good_mutations = mutations.shape[0]

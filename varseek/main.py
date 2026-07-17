@@ -143,6 +143,428 @@ def copy_arguments(src_parser_list, dest_parser):
                 dest_parser.add_argument(*option_strings, action=action.__class__, **kwargs)
 
 
+def add_build_arguments(parser, required):
+    """Add the full set of `vk build` command-line arguments to `parser`.
+
+    `vk ref` is literally an alias/wrapper for `vk build` (see varseek_ref.ref), so both
+    subparsers expose the exact same arguments by calling this. `required` controls whether
+    the core `--variants`/`--sequences` arguments are required (they are not when a
+    list-and-exit flag such as --list_downloadable_references is present).
+    """
+    parser.add_argument(
+        "-v",
+        "--variants",
+        # type=strpath_or_str_or_list_or_df,
+        nargs="+",
+        required=required,
+        help=extract_help_from_doc(build, "variants"),
+    )
+    parser.add_argument(
+        "-s",
+        "--sequences",
+        type=str,
+        nargs="+",
+        required=required,
+        help=extract_help_from_doc(build, "sequences"),
+    )
+    parser.add_argument(
+        "-w",
+        "--w",
+        type=int,
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "w"),
+    )
+    parser.add_argument(
+        "-k",
+        "--k",
+        type=int,
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "k"),
+    )
+    parser.add_argument(
+        "-ma",
+        "--max_ambiguous",
+        type=int,
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "max_ambiguous"),
+    )
+    # disabled for now (see the commented-out `technology` parameter on vk build)
+    # parser.add_argument(
+    #     "-x",
+    #     "--technology",
+    #     type=str,
+    #     required=False,
+    #     default=argparse.SUPPRESS,  # Remove from args if not provided
+    #     help=extract_help_from_doc(build, "technology"),
+    # )
+    parser.add_argument(
+        "-vc",
+        "--var_column",
+        type=str,
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "var_column"),
+    )
+    parser.add_argument(
+        "-sic",
+        "--seq_id_column",
+        type=str,
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "seq_id_column"),
+    )
+    parser.add_argument(
+        "-vic",
+        "--var_id_column",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "var_id_column"),
+    )
+    parser.add_argument(
+        "-gtf",
+        "--gtf",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "gtf"),
+    )
+    parser.add_argument(
+        "-gtic",
+        "--gtf_transcript_id_column",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "gtf_transcript_id_column"),
+    )
+    parser.add_argument(
+        "--transcript_boundaries",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "transcript_boundaries"),
+    )
+    parser.add_argument(
+        "--convert_variant_coordinates",
+        choices=["genome_to_transcript", "transcript_to_genome"],
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "convert_variant_coordinates"),
+    )
+    parser.add_argument(
+        "-o",
+        "--out",
+        type=str,
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "out"),
+    )
+    parser.add_argument(
+        "-r",
+        "--reference_out_dir",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "reference_out_dir"),
+    )
+    parser.add_argument(
+        "--vcrs_unfiltered_fasta_out",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "vcrs_unfiltered_fasta_out"),
+    )
+    parser.add_argument(
+        "--variants_updated_csv_out",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "variants_updated_csv_out"),
+    )
+    parser.add_argument(
+        "--id_to_header_csv_out",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "id_to_header_csv_out"),
+    )
+    parser.add_argument(
+        "--id_to_header_unfiltered_csv_out",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "id_to_header_unfiltered_csv_out"),
+    )
+    parser.add_argument(
+        "-g",
+        "--vcrs_t2g_out",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "vcrs_t2g_out"),
+    )
+    parser.add_argument(
+        "--removed_variants_text_out",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "removed_variants_text_out"),
+    )
+    parser.add_argument(
+        "--filtering_report_text_out",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "filtering_report_text_out"),
+    )
+    parser.add_argument(
+        "--return_variant_output",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "return_variant_output"),
+    )
+    parser.add_argument(
+        "--save_variants_updated_dataframe",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "save_variants_updated_dataframe"),
+    )
+    parser.add_argument(
+        "--chunksize",
+        type=int,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "chunksize"),
+    )
+    parser.add_argument(
+        "--dry_run",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "dry_run"),
+    )
+    parser.add_argument(
+        "--list_internally_supported_indices",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "list_internally_supported_indices"),
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "overwrite"),
+    )
+    parser.add_argument(
+        "--logging_level",
+        choices=["NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "0", "10", "20", "30", "40", "50", "60", None],
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "logging_level"),
+    )
+    parser.add_argument(
+        "--save_logs",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "save_logs"),
+    )
+    parser.add_argument(
+        "--log_out_dir",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "log_out_dir"),
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "verbose"),
+    )
+
+    # Additional kwargs arguments that I still want as command-line options
+    parser.add_argument(
+        "--insertion_size_limit",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "insertion_size_limit"),
+    )
+    parser.add_argument(
+        "--min_seq_len",
+        type=int,
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "min_seq_len"),
+    )
+    parser.add_argument(
+        "--disable_optimize_flanking_regions",
+        dest="optimize_flanking_regions",
+        action="store_false",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "optimize_flanking_regions", disable=True),
+    )
+    parser.add_argument(
+        "--disable_remove_seqs_with_wt_kmers",
+        dest="remove_seqs_with_wt_kmers",
+        action="store_false",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "remove_seqs_with_wt_kmers", disable=True),
+    )
+    parser.add_argument(
+        "--disable_merge_identical",
+        dest="merge_identical",
+        action="store_false",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "merge_identical", disable=True),
+    )
+    parser.add_argument(
+        "--disable_merge_subsequences",
+        dest="merge_subsequences",
+        action="store_false",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "merge_subsequences", disable=True),
+    )
+    parser.add_argument(
+        "--disable_add_gene_name_to_header",
+        dest="add_gene_name_to_header",
+        action="store_false",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "add_gene_name_to_header", disable=True),
+    )
+    parser.add_argument(
+        "-vs",
+        "--vcrs_strandedness",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "vcrs_strandedness"),
+    )
+    parser.add_argument(
+        "--use_IDs",
+        dest="use_IDs",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "use_IDs"),
+    )
+    parser.add_argument(
+        "--cosmic_version",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "cosmic_version"),
+    )
+    parser.add_argument(
+        "--cosmic_grch",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "cosmic_grch"),
+    )
+    parser.add_argument(
+        "--disable_original_order",
+        dest="original_order",
+        action="store_false",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "original_order", disable=True),
+    )
+    parser.add_argument(
+        "--cdna_derived_vcf",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "cdna_derived_vcf"),
+    )
+
+    # index-creation / reference arguments (kb ref is now run by vk build; formerly vk ref)
+    parser.add_argument(
+        "-i",
+        "--index_out",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "index_out"),
+    )
+    parser.add_argument(
+        "--vcrs_fasta_out",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "vcrs_fasta_out"),
+    )
+    parser.add_argument(
+        "--max_homopolymer_length",
+        type=int,
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "max_homopolymer_length"),
+    )
+    parser.add_argument(
+        "--min_triplet_complexity",
+        type=float,
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "min_triplet_complexity"),
+    )
+    parser.add_argument(
+        "--keep_alignment_to_reference",
+        dest="remove_alignment_to_reference",
+        action="store_false",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "remove_alignment_to_reference"),
+    )
+    parser.add_argument(
+        "--alignment_to_reference_type",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "alignment_to_reference_type"),
+    )
+    parser.add_argument(
+        "--alignment_to_reference_aligner",
+        required=False,
+        choices=["bowtie2", "kallisto"],
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "alignment_to_reference_aligner"),
+    )
+    parser.add_argument(
+        "--species",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "species"),
+    )
+    parser.add_argument(
+        "--alignment_to_reference_dna",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "alignment_to_reference_dna"),
+    )
+    parser.add_argument(
+        "--alignment_to_reference_gtf",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "alignment_to_reference_gtf"),
+    )
+    parser.add_argument(
+        "--dlist",
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "dlist"),
+    )
+    parser.add_argument(
+        "-t",
+        "--threads",
+        type=int,
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "threads"),
+    )
+    parser.add_argument(
+        "--dont_create_index",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help="Skip the kb ref index-creation step and only produce the VCRS fasta/t2g (the classic vk build behavior). By default the index is created.",
+    )
+    parser.add_argument(
+        "-d",
+        "--download",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "download"),
+    )
+    parser.add_argument(
+        "--list_downloadable_references",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "list_downloadable_references"),
+    )
+
+    # Hide the advanced `build` parameters (defined in varseek_build.vk_build_hidden_from_help) from
+    # help. They remain fully parseable — only their help text is suppressed. Matched by
+    # dest, so the --disable_* flags map to their underlying parameter name.
+    for action in parser._actions:
+        if action.dest in vk_build_hidden_from_help:
+            action.help = argparse.SUPPRESS
+
+
 # Custom formatter for help messages that preserved the text formatting and adds the default value to the end of the help message
 class CustomHelpFormatter(argparse.RawTextHelpFormatter):
     def _get_help_string(self, action):
@@ -547,414 +969,7 @@ def main():  # noqa: C901
         add_help=True,
         formatter_class=CustomHelpFormatter,
     )
-    parser_build.add_argument(
-        "-v",
-        "--variants",
-        # type=strpath_or_str_or_list_or_df,
-        nargs="+",
-        required=not vk_ref_list_information_and_exit_flag_present,
-        help=extract_help_from_doc(build, "variants"),
-    )
-    parser_build.add_argument(
-        "-s",
-        "--sequences",
-        type=str,
-        nargs="+",
-        required=not vk_ref_list_information_and_exit_flag_present,
-        help=extract_help_from_doc(build, "sequences"),
-    )
-    parser_build.add_argument(
-        "-w",
-        "--w",
-        type=int,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "w"),
-    )
-    parser_build.add_argument(
-        "-k",
-        "--k",
-        type=int,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "k"),
-    )
-    parser_build.add_argument(
-        "-ma",
-        "--max_ambiguous",
-        type=int,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "max_ambiguous"),
-    )
-    parser_build.add_argument(
-        "-vc",
-        "--var_column",
-        type=str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "var_column"),
-    )
-    parser_build.add_argument(
-        "-sic",
-        "--seq_id_column",
-        type=str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "seq_id_column"),
-    )
-    parser_build.add_argument(
-        "-vic",
-        "--var_id_column",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "var_id_column"),
-    )
-    parser_build.add_argument(
-        "-gtf",
-        "--gtf",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "gtf"),
-    )
-    parser_build.add_argument(
-        "-gtic",
-        "--gtf_transcript_id_column",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "gtf_transcript_id_column"),
-    )
-    parser_build.add_argument(
-        "--transcript_boundaries",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "transcript_boundaries"),
-    )
-    parser_build.add_argument(
-        "--convert_variant_coordinates",
-        choices=["genome_to_transcript", "transcript_to_genome"],
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "convert_variant_coordinates"),
-    )
-    parser_build.add_argument(
-        "-o",
-        "--out",
-        type=str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "out"),
-    )
-    parser_build.add_argument(
-        "-r",
-        "--reference_out_dir",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "reference_out_dir"),
-    )
-    parser_build.add_argument(
-        "--vcrs_unfiltered_fasta_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "vcrs_unfiltered_fasta_out"),
-    )
-    parser_build.add_argument(
-        "--variants_updated_csv_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "variants_updated_csv_out"),
-    )
-    parser_build.add_argument(
-        "--id_to_header_csv_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "id_to_header_csv_out"),
-    )
-    parser_build.add_argument(
-        "--id_to_header_unfiltered_csv_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "id_to_header_unfiltered_csv_out"),
-    )
-    parser_build.add_argument(
-        "--vcrs_t2g_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "vcrs_t2g_out"),
-    )
-    parser_build.add_argument(
-        "--removed_variants_text_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "removed_variants_text_out"),
-    )
-    parser_build.add_argument(
-        "--filtering_report_text_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "filtering_report_text_out"),
-    )
-    parser_build.add_argument(
-        "--return_variant_output",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "return_variant_output"),
-    )
-    parser_build.add_argument(
-        "--save_variants_updated_dataframe",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "save_variants_updated_dataframe"),
-    )
-    parser_build.add_argument(
-        "--chunksize",
-        type=int,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "chunksize"),
-    )
-    parser_build.add_argument(
-        "--dry_run",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "dry_run"),
-    )
-    parser_build.add_argument(
-        "--list_internally_supported_indices",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "list_internally_supported_indices"),
-    )
-    parser_build.add_argument(
-        "--overwrite",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "overwrite"),
-    )
-    parser_build.add_argument(
-        "--logging_level",
-        choices=["NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "0", "10", "20", "30", "40", "50", "60", None],
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "logging_level"),
-    )
-    parser_build.add_argument(
-        "--save_logs",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "save_logs"),
-    )
-    parser_build.add_argument(
-        "--log_out_dir",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "log_out_dir"),
-    )
-    parser_build.add_argument(
-        "--verbose",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "verbose"),
-    )
-
-    # Additional kwargs arguments that I still want as command-line options
-    parser_build.add_argument(
-        "--insertion_size_limit",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "insertion_size_limit"),
-    )
-    parser_build.add_argument(
-        "--min_seq_len",
-        type=int,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "min_seq_len"),
-    )
-    parser_build.add_argument(
-        "--disable_optimize_flanking_regions",
-        dest="optimize_flanking_regions",
-        action="store_false",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "optimize_flanking_regions", disable=True),
-    )
-    parser_build.add_argument(
-        "--disable_remove_seqs_with_wt_kmers",
-        dest="remove_seqs_with_wt_kmers",
-        action="store_false",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "remove_seqs_with_wt_kmers", disable=True),
-    )
-    parser_build.add_argument(
-        "--disable_merge_identical",
-        dest="merge_identical",
-        action="store_false",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "merge_identical", disable=True),
-    )
-    parser_build.add_argument(
-        "--disable_merge_subsequences",
-        dest="merge_subsequences",
-        action="store_false",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "merge_subsequences", disable=True),
-    )
-    parser_build.add_argument(
-        "-vs",
-        "--vcrs_strandedness",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "vcrs_strandedness"),
-    )
-    parser_build.add_argument(
-        "--use_IDs",
-        dest="use_IDs",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "use_IDs"),
-    )
-    parser_build.add_argument(
-        "--cosmic_version",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "cosmic_version"),
-    )
-    parser_build.add_argument(
-        "--cosmic_grch",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "cosmic_grch"),
-    )
-    parser_build.add_argument(
-        "--disable_original_order",
-        dest="original_order",
-        action="store_false",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "original_order", disable=True),
-    )
-    parser_build.add_argument(
-        "--cdna_derived_vcf",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "cdna_derived_vcf"),
-    )
-
-    # index-creation / reference arguments (kb ref is now run by vk build; formerly vk ref)
-    parser_build.add_argument(
-        "-i",
-        "--index_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "index_out"),
-    )
-    parser_build.add_argument(
-        "-g",
-        "--t2g_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "t2g_out"),
-    )
-    parser_build.add_argument(
-        "--fasta_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "fasta_out"),
-    )
-    parser_build.add_argument(
-        "--vcrs_fasta_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "vcrs_fasta_out"),
-    )
-    parser_build.add_argument(
-        "--max_homopolymer_length",
-        type=int,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "max_homopolymer_length"),
-    )
-    parser_build.add_argument(
-        "--min_triplet_complexity",
-        type=float,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "min_triplet_complexity"),
-    )
-    parser_build.add_argument(
-        "--keep_alignment_to_reference",
-        dest="remove_alignment_to_reference",
-        action="store_false",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "remove_alignment_to_reference"),
-    )
-    parser_build.add_argument(
-        "--alignment_to_reference_type",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "alignment_to_reference_type"),
-    )
-    parser_build.add_argument(
-        "--alignment_to_reference_aligner",
-        required=False,
-        choices=["bowtie2", "kallisto"],
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "alignment_to_reference_aligner"),
-    )
-    parser_build.add_argument(
-        "--species",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "species"),
-    )
-    parser_build.add_argument(
-        "--alignment_to_reference_dna",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "alignment_to_reference_dna"),
-    )
-    parser_build.add_argument(
-        "--alignment_to_reference_gtf",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "alignment_to_reference_gtf"),
-    )
-    parser_build.add_argument(
-        "--dlist",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "dlist"),
-    )
-    parser_build.add_argument(
-        "-t",
-        "--threads",
-        type=int,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "threads"),
-    )
-    parser_build.add_argument(
-        "--dont_create_index",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help="Skip the kb ref index-creation step and only produce the VCRS fasta/t2g (the classic vk build behavior). By default the index is created.",
-    )
-    parser_build.add_argument(
-        "-d",
-        "--download",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "download"),
-    )
-    parser_build.add_argument(
-        "--list_downloadable_references",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "list_downloadable_references"),
-    )
-
-    # Hide the advanced `build` parameters (defined in varseek_build.vk_build_hidden_from_help) from
-    # `vk build --help`. They remain fully parseable — only their help text is suppressed. Matched by
-    # dest, so the --disable_* flags map to their underlying parameter name.
-    for action in parser_build._actions:
-        if action.dest in vk_build_hidden_from_help:
-            action.help = argparse.SUPPRESS
+    add_build_arguments(parser_build, required=not vk_ref_list_information_and_exit_flag_present)
 
     # NEW PARSER
     fastqpp_desc = "Preprocess the fastq files."
@@ -1824,219 +1839,7 @@ def main():  # noqa: C901
     ref_desc = "Create a reference index and t2g file for variant screening with varseek count. Wraps around varseek build and kb ref."
     parser_ref = parent_subparsers.add_parser("ref", parents=[parent], description=ref_desc, help=ref_desc, add_help=True, formatter_class=CustomHelpFormatter, epilog="To see the full list of allowable arguments, please explore vk build and (kallisto-bustools') kb ref")
 
-    parser_ref.add_argument(
-        "-v",
-        "--variants",
-        # type=strpath_or_str_or_list_or_df,
-        nargs="+",
-        required=not vk_ref_list_information_and_exit_flag_present,  # generally True
-        help=extract_help_from_doc(build, "variants"),
-    )
-    parser_ref.add_argument(
-        "-s",
-        "--sequences",
-        type=str,
-        nargs="+",
-        required=not vk_ref_list_information_and_exit_flag_present,  # generally True
-        help=extract_help_from_doc(build, "sequences"),
-    )
-    parser_ref.add_argument(
-        "-w",
-        "--w",
-        type=int,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "w"),
-    )
-    parser_ref.add_argument(
-        "-k",
-        "--k",
-        type=int,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "k"),
-    )
-    parser_ref.add_argument(
-        "--vcrs_fasta_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "vcrs_fasta_out"),
-    )
-    parser_ref.add_argument(
-        "--max_homopolymer_length",
-        type=int,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "max_homopolymer_length"),
-    )
-    parser_ref.add_argument(
-        "--min_triplet_complexity",
-        type=float,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "min_triplet_complexity"),
-    )
-    parser_ref.add_argument(
-        "--keep_alignment_to_reference",
-        dest="remove_alignment_to_reference",
-        action="store_false",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "remove_alignment_to_reference"),
-    )
-    parser_ref.add_argument(
-        "--alignment_to_reference_type",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "alignment_to_reference_type"),
-    )
-    parser_ref.add_argument(
-        "--alignment_to_reference_aligner",
-        required=False,
-        choices=["bowtie2", "kallisto"],
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "alignment_to_reference_aligner"),
-    )
-    parser_ref.add_argument(
-        "--species",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "species"),
-    )
-    parser_ref.add_argument(
-        "--alignment_to_reference_dna",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "alignment_to_reference_dna"),
-    )
-    parser_ref.add_argument(
-        "--alignment_to_reference_gtf",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "alignment_to_reference_gtf"),
-    )
-    parser_ref.add_argument(
-        "--dlist",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "dlist"),
-    )
-    parser_ref.add_argument(
-        "--var_column",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "var_column"),
-    )
-    parser_ref.add_argument(
-        "--seq_id_column",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "seq_id_column"),
-    )
-    parser_ref.add_argument(
-        "--var_id_column",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "var_id_column"),
-    )
-    parser_ref.add_argument(
-        "-o",
-        "--out",
-        type=str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "out"),
-    )
-    parser_ref.add_argument(
-        "--reference_out_dir",
-        type=str,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "reference_out_dir"),
-    )
-    parser_ref.add_argument(
-        "-i",
-        "--index_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "index_out"),
-    )
-    parser_ref.add_argument(
-        "-g",
-        "--t2g_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "t2g_out"),
-    )
-    parser_ref.add_argument(
-        "--fasta_out",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "fasta_out"),
-    )
-    parser_ref.add_argument(
-        "-d",
-        "--download",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "download"),
-    )
-    parser_ref.add_argument(
-        "--chunksize",
-        type=int,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "chunksize"),
-    )
-    parser_ref.add_argument(
-        "--dry_run",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "dry_run"),
-    )
-    parser_ref.add_argument(
-        "--list_downloadable_references",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "list_downloadable_references"),
-    )
-    parser_ref.add_argument(
-        "--overwrite",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "overwrite"),
-    )
-    parser_ref.add_argument(
-        "-t",
-        "--threads",
-        type=int,
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "threads"),
-    )
-    parser_ref.add_argument(
-        "--logging_level",
-        choices=["NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "0", "10", "20", "30", "40", "50", "60", None],
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "logging_level"),
-    )
-    parser_ref.add_argument(
-        "--save_logs",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "save_logs"),
-    )
-    parser_ref.add_argument(
-        "--log_out_dir",
-        required=False,
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "log_out_dir"),
-    )
-    parser_ref.add_argument(
-        "--verbose",
-        action="store_true",
-        default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "verbose"),
-    )
+    add_build_arguments(parser_ref, required=not vk_ref_list_information_and_exit_flag_present)
 
     # NEW PARSER
     count_desc = "Perform variant screening on sequencing data. Wraps around varseek fastqpp, kb count, varseek clean, and vk summarize."

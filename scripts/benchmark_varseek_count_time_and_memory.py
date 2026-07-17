@@ -153,7 +153,7 @@ if number_of_reads_max > (number_of_cosmic_mutations * number_of_reads_per_varia
 
 #* Download varseek index
 if not os.path.exists(vk_ref_index_path) or not os.path.exists(vk_ref_t2g_path):
-    vk.ref(variants="cosmic_cmc", sequences="cdna", w=w, k=k, out=vk_ref_out, dlist_reference_source=dlist_reference_source, download=True, index_out=vk_ref_index_path, t2g_out=vk_ref_t2g_path)
+    vk.ref(variants="cosmic_cmc", sequences="cdna", w=w, k=k, out=vk_ref_out, dlist_reference_source=dlist_reference_source, download=True, index_out=vk_ref_index_path, vcrs_t2g_out=vk_ref_t2g_path)
     # alternatively, to build from scratch: subprocess.run([os.path.join(script_dir, "run_vk_ref.py")], check=True)
 
 #* install seqtk if not installed

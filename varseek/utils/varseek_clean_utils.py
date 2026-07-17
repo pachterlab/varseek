@@ -41,6 +41,7 @@ from varseek.utils.seq_utils import (
     get_ensembl_gene_id_from_transcript_id_bulk,
     make_good_barcodes_and_file_index_tuples,
     load_adata_from_mtx,
+    strip_gene_name_from_seq_id,
 )
 from varseek.utils.coordinate_conversion import (
     build_transcript_exon_model,
@@ -705,11 +706,10 @@ def _resolve_kb_binary(binary, name):
 
 
 def _infer_reference_sequences_type(sequences):
-    """Best-effort guess of whether the VCRS was built from RNA (transcriptome) or DNA (genome).
+    """Best-effort guess of whether the VCRS reference was built from RNA (transcriptome) or DNA (genome).
 
-    Returns 'rna', 'dna', or None (unknown). Used only to disambiguate the HGVSc case, where an
-    RNA reference means transcript-space --pseudobam and a DNA reference means genome-space
-    --genomebam. Callers may pass an explicit value to override this heuristic.
+    Returns 'rna', 'dna', or None (unknown). Feeds the pseudobam-QC alignment strategy (see
+    _determine_pseudobam_mode). Callers may pass an explicit value to override this heuristic.
     """
     if not isinstance(sequences, (str, Path)):
         return None
@@ -721,13 +721,37 @@ def _infer_reference_sequences_type(sequences):
     return None
 
 
-def _determine_pseudobam_mode(adata_var, variant_source=None, reference_sequences_type=None, sequences=None):
-    """Resolve (header_type, mode) for the pseudobam QC.
+def _determine_pseudobam_mode(adata_var, variant_source=None, reference_sequences_type=None, sequences=None, reads_type=None):
+    """Resolve the pseudobam-QC strategy from three independent axes.
 
-    header_type is 'hgvsc' or 'hgvsg'. mode is one of:
-      - 'transcriptome_pseudobam' : RNA sequences + HGVSc  -> --pseudobam, compare in transcript space
-      - 'genome_pseudobam'        : DNA sequences + HGVSg  -> --pseudobam, compare in genome space
-      - 'genome_genomebam'        : DNA sequences + HGVSc  -> --genomebam, compare in genome space
+    The three axes are:
+      - reads_type ('rna'/'dna'): the sequencing molecule. RNA-seq reads span spliced exon
+        junctions, so they cannot pseudoalign to a raw genome; DNA/genomic reads align contiguously.
+        Taken from the `technology` (the virtual "dna" technology => 'dna', any RNA technology =>
+        'rna'). When None, it defaults to `reference_sequences_type` (i.e. reads assumed to match the
+        reference: dna-dna or rna-rna) so the --genomebam path is opt-in for the minority
+        RNA-reads-against-DNA-reference case.
+      - reference_sequences_type ('rna'/'dna'): whether the VCRS reference was built from a
+        transcriptome (RNA) or a genome (DNA). Determines the coordinate space alignments land in.
+      - header_type ('hgvsc'/'hgvsg'): the coordinate system the VCRS HGVS headers are written in.
+
+    Returns a dict with:
+      - header_type                 : 'hgvsc' | 'hgvsg'
+      - reference_sequences_type    : 'rna' | 'dna' | None
+      - reads_type                  : 'rna' | 'dna' | None
+      - use_genomebam (bool)        : True iff RNA reads against a DNA/genome reference. In that case
+                                      the reads are aligned to a cDNA index (extracted from the genome
+                                      + GTF via `kb ref --workflow standard`) and projected back onto
+                                      the genome with `kallisto quant --genomebam`. Otherwise the
+                                      reference is indexed directly (`--workflow custom`) and aligned
+                                      with `--pseudobam`.
+      - convert_transcript_to_genome (bool) : True iff HGVSc headers are compared in genome space
+                                      (i.e. a DNA/genome reference), so the transcript-coordinate loci
+                                      must be lifted to genome coordinates to match the alignments.
+                                      Independent of use_genomebam: DNA reads + DNA ref + HGVSc
+                                      headers also align in genome space (via --pseudobam) and need
+                                      the same lift, while RNA reads + DNA ref + HGVSg headers use
+                                      --genomebam but need no lift (headers are already genomic).
     """
     # header type
     if variant_source in ("transcriptome", "cdna", "c", "hgvsc"):
@@ -742,16 +766,59 @@ def _determine_pseudobam_mode(adata_var, variant_source=None, reference_sequence
             raise ValueError("The VCRS headers contain a mix of HGVSc (c.) and HGVSg (g.) variants. Please split them and run the pseudobam QC separately per coordinate system, or pass variant_source explicitly.")
         header_type = "hgvsg" if has_g else "hgvsc"
 
-    seq_type = reference_sequences_type or _infer_reference_sequences_type(sequences)
+    ref_type = reference_sequences_type or _infer_reference_sequences_type(sequences)
+    if reads_type is None:
+        reads_type = ref_type  # assume reads match the reference (dna-dna or rna-rna)
 
-    if header_type == "hgvsg":
-        # genomic headers -> genome reference -> straight pseudobam in genome space
-        return header_type, "genome_pseudobam"
-    # header_type == "hgvsc"
-    if seq_type == "dna":
-        return header_type, "genome_genomebam"
-    # default / seq_type == "rna": transcript-space pseudobam
-    return header_type, "transcriptome_pseudobam"
+    # HGVSg headers are genomic coordinates, so the reference is a genome regardless of what the
+    # `sequences` path looked like -> alignments (and the loci they are compared to) are genome-space.
+    reference_is_genome_space = (ref_type == "dna") or (header_type == "hgvsg")
+
+    use_genomebam = (reads_type == "rna") and reference_is_genome_space
+    convert_transcript_to_genome = (header_type == "hgvsc") and reference_is_genome_space
+
+    return {
+        "header_type": header_type,
+        "reference_sequences_type": ref_type,
+        "reads_type": reads_type,
+        "use_genomebam": use_genomebam,
+        "convert_transcript_to_genome": convert_transcript_to_genome,
+    }
+
+
+def _build_reference_genome_index(reference_genome_index, use_genomebam, sequences=None, gtf=None, threads=2, kallisto="kallisto", bustools="bustools"):
+    """Build the standard reference kallisto index for the pseudobam QC if it does not already exist.
+
+    The index space is dictated by `use_genomebam`:
+      - use_genomebam=True (RNA reads against a DNA/genome `sequences` reference): the RNA reads span
+        spliced junctions and cannot pseudoalign to the raw genome, so they are aligned to a cDNA index
+        and then projected back onto the genome with kallisto's --genomebam. The cDNA is extracted from
+        the genome FASTA + GTF with `kb ref --workflow standard` (i.e. a cDNA index):
+        `kb ref --workflow standard -i INDEX -g t2g.txt -f1 cdna.fa -t THREADS genome.fa genome.gtf`.
+      - use_genomebam=False (RNA reads + cDNA reference, or DNA reads + genome reference): `sequences`
+        is already in the space the reads align to, so it is indexed directly with `kb ref --workflow custom`.
+    """
+    from .varseek_build_utils import run_kb_ref  # local import to avoid a circular import at module load time
+
+    if os.path.exists(str(reference_genome_index)):
+        return reference_genome_index
+    if not sequences or not os.path.exists(str(sequences)):
+        raise ValueError(f"reference_genome_index '{reference_genome_index}' does not exist and cannot be built because `sequences` was not provided (or does not exist).")
+
+    out_dir = os.path.dirname(str(reference_genome_index)) or "."
+    os.makedirs(out_dir, exist_ok=True)
+
+    if use_genomebam:
+        if not gtf or not os.path.exists(str(gtf)):
+            raise ValueError("Building the pseudobam reference index for the RNA-reads-against-a-DNA-(genome)-`sequences` case requires a `gtf`; the cDNA is extracted from the genome FASTA + GTF with `kb ref --workflow standard`.")
+        t2g = os.path.splitext(str(reference_genome_index))[0] + "_t2g.txt"
+        f1 = os.path.join(out_dir, "reference_genome_index_cdna.fasta")
+        logger.info(f"reference_genome_index '{reference_genome_index}' not found; building a cDNA index from genome '{sequences}' + gtf '{gtf}' with `kb ref --workflow standard`.")
+        run_kb_ref(index=str(reference_genome_index), workflow="standard", dna_fasta=str(sequences), t2g=str(t2g), f1=str(f1), gtf=str(gtf), threads=threads, kallisto=kallisto, bustools=bustools, tmp=os.path.join(out_dir, "kb_ref_tmp_pseudobam"))
+    else:
+        logger.info(f"reference_genome_index '{reference_genome_index}' not found; building it from '{sequences}' with `kb ref --workflow custom`.")
+        run_kb_ref(index=str(reference_genome_index), workflow="custom", dna_fasta=str(sequences), threads=threads, kallisto=kallisto, bustools=bustools)
+    return reference_genome_index
 
 
 def _generate_chromosomes_file(out_path, sequences=None, gtf=None):
@@ -807,7 +874,7 @@ def _group_fastqs_for_quant(fastq_file_list, technology, parity, barcodes):
     return groups
 
 
-def _run_kallisto_quant_group(kallisto, reference_genome_index, out_dir, fastq_files, is_single_end, mode, threads=2, fragment_length=51, fragment_sd=5, gtf=None, chromosomes=None, overwrite=False):
+def _run_kallisto_quant_group(kallisto, reference_genome_index, out_dir, fastq_files, is_single_end, use_genomebam, threads=2, fragment_length=51, fragment_sd=5, gtf=None, chromosomes=None, overwrite=False):
     """Run `kallisto quant` for one fastq group and return the path to pseudoalignments.bam."""
     os.makedirs(out_dir, exist_ok=True)
     bam_path = os.path.join(out_dir, "pseudoalignments.bam")
@@ -818,9 +885,9 @@ def _run_kallisto_quant_group(kallisto, reference_genome_index, out_dir, fastq_f
     command = [kallisto, "quant", "-i", str(reference_genome_index), "-o", out_dir, "-t", str(threads)]
     if is_single_end:
         command += ["--single", "-l", str(fragment_length), "-s", str(fragment_sd)]
-    if mode == "genome_genomebam":
+    if use_genomebam:
         if not gtf:
-            raise ValueError("--genomebam requires a `gtf` (DNA sequences with HGVSc headers).")
+            raise ValueError("--genomebam requires a `gtf` (RNA reads against a DNA/genome reference).")
         command += ["--genomebam", "--gtf", str(gtf), "--chromosomes", str(chromosomes)]
     else:
         command += ["--pseudobam"]
@@ -874,19 +941,21 @@ def _vcrs_individual_headers_frame(adata_var):
     return out
 
 
-def _build_vcrs_locus_map(adata_var, mode, gtf=None, seq_id_column="seq_ID", var_column="mutation"):
+def _build_vcrs_locus_map(adata_var, convert_transcript_to_genome, gtf=None, seq_id_column="seq_ID", var_column="mutation"):
     """Map each vcrs_id to the reference locus/loci where a genuine read should align.
 
     Returns {vcrs_id: {'refs': set(seq_id/chrom), 'intervals': {ref: [(lo, hi), ...]}}}, all in the
-    same coordinate space as the pseudoalignments.bam (transcript space for --pseudobam HGVSc,
-    genome space for HGVSg or the --genomebam HGVSc case).
+    same coordinate space as the pseudoalignments.bam. When `convert_transcript_to_genome` is True
+    (HGVSc headers compared against a genome-space alignment), the transcript-coordinate loci are
+    lifted to genome coordinates; otherwise the header coordinates are used as-is (transcript space
+    for HGVSc against a cDNA reference, genome space for HGVSg).
     """
     frame = _vcrs_individual_headers_frame(adata_var)
     parts = frame["header"].str.split(":", n=1, expand=True)
-    frame["seq_id"] = parts[0].str.split(".").str[0]
+    frame["seq_id"] = strip_gene_name_from_seq_id(parts[0]).str.split(".").str[0]  # drop any '(GENE)' annotation, then the version suffix
     frame["mutation"] = parts[1] if parts.shape[1] > 1 else None
 
-    if mode == "genome_genomebam":
+    if convert_transcript_to_genome:
         model = build_transcript_exon_model(str(gtf))
         conv_in = pd.DataFrame({"vcrs_id": frame["vcrs_id"].values, seq_id_column: frame["seq_id"].values, var_column: frame["mutation"].values})
         converted, _ = convert_variants_transcript_to_genome(conv_in, seq_id_column, var_column, model)
@@ -1052,6 +1121,7 @@ def adjust_variant_adata_by_pseudobam(
     threads=2,
     variant_source=None,
     reference_sequences_type=None,
+    reads_type=None,
     sequences=None,
     gtf=None,
     chromosomes=None,
@@ -1070,10 +1140,10 @@ def adjust_variant_adata_by_pseudobam(
 ):
     """Faster/more-accurate replacement for adjust_variant_adata_by_normal_gene_matrix.
 
-    Aligns the reads with `kallisto quant --pseudobam` (or `--genomebam` for DNA-sequence /
-    HGVSc-header references), compares each read's true alignment coordinate to the HGVS locus of
-    its assigned VCRS, drops reads that aligned somewhere inconsistent with the variant, and
-    regenerates the VCRS count matrix with `bustools count`.
+    Aligns the reads with `kallisto quant --pseudobam` (or `--genomebam` when RNA reads are aligned
+    against a DNA/genome reference; see _determine_pseudobam_mode), compares each read's true alignment
+    coordinate to the HGVS locus of its assigned VCRS, drops reads that aligned somewhere inconsistent
+    with the variant, and regenerates the VCRS count matrix with `bustools count`.
     """
     if kallisto_quant_reference_genome_dir is None:
         kallisto_quant_reference_genome_dir = os.path.join(kb_count_vcrs_dir, "pseudobam_qc")
@@ -1087,8 +1157,16 @@ def adjust_variant_adata_by_pseudobam(
     bustools = _resolve_kb_binary(bustools, "bustools")
     kallisto = _resolve_kb_binary(kallisto, "kallisto")
 
-    header_type, mode = _determine_pseudobam_mode(adata.var, variant_source=variant_source, reference_sequences_type=reference_sequences_type, sequences=sequences)
-    logger.info(f"pseudobam QC mode: {mode} (header_type={header_type})")
+    pb = _determine_pseudobam_mode(adata.var, variant_source=variant_source, reference_sequences_type=reference_sequences_type, sequences=sequences, reads_type=reads_type)
+    header_type = pb["header_type"]
+    use_genomebam = pb["use_genomebam"]
+    convert_transcript_to_genome = pb["convert_transcript_to_genome"]
+    logger.info(f"pseudobam QC: header_type={header_type}, reference_sequences_type={pb['reference_sequences_type']}, reads_type={pb['reads_type']}, use_genomebam={use_genomebam}, convert_transcript_to_genome={convert_transcript_to_genome}")
+
+    # Build the standard reference index on the fly if it does not exist. When RNA reads are aligned against a
+    # DNA/genome `sequences` reference (use_genomebam), the index is built as a cDNA index via
+    # `kb ref --workflow standard`; otherwise `sequences` is indexed directly with `kb ref --workflow custom`.
+    reference_genome_index = _build_reference_genome_index(reference_genome_index, use_genomebam, sequences=sequences, gtf=gtf, threads=threads, kallisto=kallisto, bustools=bustools)
 
     if fastq_file_list is None:
         raise ValueError("fastq_file_list is required for the pseudobam QC (the reads must be re-aligned with kallisto quant).")
@@ -1112,7 +1190,7 @@ def adjust_variant_adata_by_pseudobam(
         vcrs_parity = "single"
 
     # ---- generate chromosomes file for --genomebam if needed ----
-    if mode == "genome_genomebam" and not chromosomes:
+    if use_genomebam and not chromosomes:
         chromosomes = os.path.join(kallisto_quant_reference_genome_dir, "chromosomes.txt")
         os.makedirs(kallisto_quant_reference_genome_dir, exist_ok=True)
         if not os.path.exists(chromosomes) or overwrite:
@@ -1129,7 +1207,7 @@ def adjust_variant_adata_by_pseudobam(
     for gi, (group_barcode, group_files, is_single_end) in enumerate(groups):
         group_out = os.path.join(kallisto_quant_reference_genome_dir, f"quant_group_{gi}")
         bam_path = _run_kallisto_quant_group(
-            kallisto, reference_genome_index, group_out, group_files, is_single_end, mode,
+            kallisto, reference_genome_index, group_out, group_files, is_single_end, use_genomebam,
             threads=threads, fragment_length=fragment_length, fragment_sd=fragment_sd,
             gtf=gtf, chromosomes=chromosomes, overwrite=overwrite,
         )
@@ -1179,7 +1257,7 @@ def adjust_variant_adata_by_pseudobam(
 
     # ---- build the VCRS -> reference-locus map ----
     logger.info("Building VCRS locus map from HGVS headers")
-    locus_map = _build_vcrs_locus_map(adata.var, mode, gtf=gtf, seq_id_column=seq_id_column, var_column=var_column)
+    locus_map = _build_vcrs_locus_map(adata.var, convert_transcript_to_genome, gtf=gtf, seq_id_column=seq_id_column, var_column=var_column)
 
     # ---- compare each read's alignment to its assigned VCRS loci ----
     # A read is dropped only if NONE of its assigned VCRS are consistent with where the read truly
@@ -1826,8 +1904,8 @@ def match_paired_ends_after_single_end_run(bus_df_path, gene_name_type="vcrs_id"
 
         bus_df["vcrs_header_list_pair"] = bus_df["gene_names_final_pair"].apply(lambda gene_list: [id_to_header_dict.get(gene, gene) for gene in gene_list])
 
-        bus_df["ensembl_transcript_list"] = [value.split(":")[0] for value in bus_df["vcrs_header_list"]]
-        bus_df["ensembl_transcript_list_pair"] = [value.split(":")[0] for value in bus_df["vcrs_header_list_pair"]]
+        bus_df["ensembl_transcript_list"] = [strip_gene_name_from_seq_id(value.split(":")[0]) for value in bus_df["vcrs_header_list"]]
+        bus_df["ensembl_transcript_list_pair"] = [strip_gene_name_from_seq_id(value.split(":")[0]) for value in bus_df["vcrs_header_list_pair"]]
 
         # TODO: map ENST to ENSG
         bus_df["gene_list"] = ""
@@ -1880,7 +1958,7 @@ def adjust_variant_adata_by_normal_gene_matrix_original(adata, kb_count_vcrs_dir
         id_to_header_dict = make_mapping_dict(id_to_header_dataframe, dict_key="id")
         bus_df_mutation["VCRS_headers_final"] = bus_df_mutation["VCRS_ids_final"].apply(lambda name_list: [id_to_header_dict.get(name, name) for name in name_list])
 
-    bus_df_mutation["transcripts_VCRS"] = bus_df_mutation["VCRS_headers_final"].apply(lambda string_list: tuple({s.split(":")[0] for s in string_list}))
+    bus_df_mutation["transcripts_VCRS"] = bus_df_mutation["VCRS_headers_final"].apply(lambda string_list: tuple({strip_gene_name_from_seq_id(s.split(":")[0]) for s in string_list}))
 
     if not os.path.exists(bus_df_standard_path):
         bus_df_standard = make_bus_df(
@@ -2853,7 +2931,8 @@ def make_t2g_dict_from_gtf(gtf):
 
 def add_information_from_variant_header_to_adata_var_exploded(adata_var_exploded, vcrs_header_individual_column="vcrs_header_individual", seq_id_column="seq_ID", var_column="mutation", gene_id_column="gene_id", variant_source=None, include_position_information=True, include_gene_information=True, t2g_file=None, gtf=None):
     if seq_id_column not in adata_var_exploded.columns or var_column not in adata_var_exploded.columns:
-        adata_var_exploded[[seq_id_column, var_column]] = adata_var_exploded[vcrs_header_individual_column].str.split(":", expand=True)
+        adata_var_exploded[[seq_id_column, var_column]] = adata_var_exploded[vcrs_header_individual_column].str.split(":", n=1, expand=True)
+        adata_var_exploded[seq_id_column] = strip_gene_name_from_seq_id(adata_var_exploded[seq_id_column])  # drop any '(GENE)' annotation from the seq_ID
 
     adata_var_exploded[seq_id_column] = adata_var_exploded[seq_id_column].str.split(".").str[0]  # strip off the version number
 
@@ -2929,10 +3008,14 @@ def add_information_from_variant_header_to_adata_var_exploded(adata_var_exploded
     
     if gene_id_column in adata_var_exploded.columns:
         # adata_var_exploded['vcrs_header_with_gene_name'] = ("(" + adata_var_exploded[gene_id_column].astype(str) + ")" + adata_var_exploded[vcrs_header_individual_column].astype(str))
+        header_parts = adata_var_exploded[vcrs_header_individual_column].str.split(":", n=1, expand=True)
+        # strip any '(GENE)' annotation build may have added, so we don't double-annotate the seq_ID
+        header_seq_id = strip_gene_name_from_seq_id(header_parts[0])
+        header_mutation = header_parts[1] if header_parts.shape[1] > 1 else ""
         adata_var_exploded['vcrs_header_with_gene_name'] = (
             adata_var_exploded[gene_id_column].astype(str) + "(" +
-            adata_var_exploded[vcrs_header_individual_column].str.split(":").str[0] + "):" +
-            adata_var_exploded[vcrs_header_individual_column].str.split(":").str[1]
+            header_seq_id + "):" +
+            header_mutation
         )
 
     return adata_var_exploded

@@ -246,7 +246,7 @@ def test_parameter_values(toy_sequences_fasta_for_vk_ref, toy_variants_csv_for_v
         {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "filters": ["alignment_to_reference:is_not_true", "num_distinct_triplets:greater_than"]},  # bad filter rule (greater_than needs a VALUE)
         {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "dlist_reference_source": "invalid"},  # invalid dlist_reference_source
         {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "index_out": "index.fasta"},  # bad ext for index_out (expects .idx)
-        {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "t2g_out": "t2g.fasta"},  # bad ext for t2g_out (expects .txt)
+        {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "vcrs_t2g_out": "t2g.fasta"},  # bad ext for vcrs_t2g_out (expects .txt)
         {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "download": "yes"},  # download should be a boolean
         {"sequences": toy_sequences_fasta_for_vk_ref, "variants": toy_variants_csv_for_vk_ref, "out": out_dir, "threads": 0},  # threads should be a positive integer
 

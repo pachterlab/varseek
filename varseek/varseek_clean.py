@@ -130,6 +130,7 @@ def clean(
     check_alignment_position: bool = False,
     alignment_position_tolerance: int = 50,
     reference_sequences_type: Optional[str] = None,
+    reads_type: Optional[str] = None,
     kallisto: Optional[str] = None,
     threads: int = 2,
     count_reads_that_dont_pseudoalign_to_reference_genome: bool = True,
@@ -207,11 +208,12 @@ def clean(
     - min_counts                            (int) Minimum counts to consider valid in the VCRS count matrix - everything below this number gets set to 0. Default: 2.
     - use_binary_matrix                     (bool) Whether to binarize the matrix (i.e., set all values >=1 to 1). Default: False.
     - drop_empty_columns                    (bool) Whether to drop columns (variants) that are empty across all samples. Default: False.
-    - pseudobam_validation                  (bool) Whether to validate the VCRS count matrix against the reference genome via the pseudobam method. The reads are re-aligned with `kallisto quant --pseudobam` (or `--genomebam` for DNA-sequence references with HGVSc headers), and each read's true alignment coordinate is compared against the HGVS locus of its assigned VCRS; reads that aligned somewhere inconsistent with the variant are dropped and the VCRS count matrix is regenerated. Requires `reference_genome_index` and `fastqs`. Default: False.
-    - reference_genome_index                (str) Path to a standard reference-genome kallisto index (transcriptome for RNA/HGVSc, genome for DNA/HGVSg). Required when pseudobam_validation=True. Default: None.
+    - pseudobam_validation                  (bool) Whether to validate the VCRS count matrix against the reference genome via the pseudobam method. The reads are re-aligned with `kallisto quant --pseudobam` (or `--genomebam` when RNA reads are aligned against a DNA/genome reference), and each read's true alignment coordinate is compared against the HGVS locus of its assigned VCRS; reads that aligned somewhere inconsistent with the variant are dropped and the VCRS count matrix is regenerated. Requires `reference_genome_index` and `fastqs`. Default: False.
+    - reference_genome_index                (str) Path to the standard reference kallisto index used for pseudobam validation. Required when pseudobam_validation=True. If the path does not exist, it is built from `sequences`: for RNA reads against a DNA (genome) `sequences` reference, a cDNA index is extracted from the genome + `gtf` with `kb ref --workflow standard` (so the reads can be projected back onto the genome with --genomebam); otherwise `sequences` is indexed directly with `kb ref --workflow custom`. Default: None.
     - check_alignment_position              (bool) When pseudobam_validation=True, also require each read's alignment position to fall within `alignment_position_tolerance` of its assigned variant's position (in addition to matching the sequence/reference name). Heavier but more accurate. Default: False.
     - alignment_position_tolerance          (int) Position tolerance (bp) used when check_alignment_position=True. Default: 50.
-    - reference_sequences_type              (str) "rna" or "dna": whether the VCRS reference was built from transcriptome (RNA) or genome (DNA) sequences. Only needed to disambiguate the HGVSc pseudobam case; inferred from `sequences` when not provided. Default: None.
+    - reference_sequences_type              (str) "rna" or "dna": whether the VCRS reference was built from transcriptome (RNA) or genome (DNA) sequences. Used (with reads_type) to pick the pseudobam alignment strategy; inferred from `sequences` when not provided. Default: None.
+    - reads_type                            (str) "rna" or "dna": the sequencing molecule of the reads. Normally derived from `technology` (the "dna" technology => "dna", any RNA technology => "rna"); pass explicitly to override. RNA reads against a DNA/genome reference trigger the `kb ref --workflow standard` + `kallisto quant --genomebam` path. When None, it defaults to `reference_sequences_type` (reads assumed to match the reference). Default: None.
     - kallisto                              (str) Path to the kallisto binary (must support --pseudobam/--genomebam). Resolved from `kb info` when not provided. Only used for pseudobam_validation=True. Default: None.
     - threads                               (int) Number of threads for kallisto quant / bustools. Only used for pseudobam_validation=True. Default: 2.
     - count_reads_that_dont_pseudoalign_to_reference_genome (bool) Whether to count reads that don't pseudoalign to the reference genome. Only used when pseudobam_validation=True. Default: True.
@@ -315,6 +317,16 @@ def clean(
     run_info_file = os.path.join(out, "config", "vk_clean_run_info.txt")
     save_run_info(run_info_file, params_dict=params_dict, function_name="clean")
 
+    # The virtual "dna" technology behaves exactly like bulk for kb count / barcode handling, but
+    # additionally declares that the reads are genomic DNA. Derive the reads-type signal (used only by
+    # the pseudobam QC to pick --pseudobam vs --genomebam) and normalize the technology to bulk so all
+    # downstream bulk logic applies unchanged. When reads_type is not given (e.g. vk count already
+    # derived it, or a caller left it unset), infer it from the technology: any RNA technology => "rna".
+    if reads_type is None and technology is not None:
+        reads_type = "dna" if str(technology).upper() == "DNA" else "rna"
+    if technology is not None and str(technology).upper() == "DNA":
+        technology = "bulk"
+
     # * 5. Set up default folder/file input paths, and make sure the necessary ones exist
     if kallisto_quant_reference_genome_dir and not adata_reference_genome:
         adata_reference_genome = os.path.join(kallisto_quant_reference_genome_dir, "counts_unfiltered", "adata.h5ad")
@@ -329,8 +341,17 @@ def clean(
     if pseudobam_validation:
         if not kb_count_vcrs_dir or not os.path.exists(kb_count_vcrs_dir) or len(os.listdir(kb_count_vcrs_dir)) == 0:
             raise ValueError("kb_count_vcrs_dir must be provided as the output from kb count out to the VCRS reference if pseudobam_validation is True.")
-        if not reference_genome_index or not os.path.exists(reference_genome_index):
-            raise ValueError("reference_genome_index must point to an existing kallisto index when pseudobam_validation=True (the reads are re-aligned with kallisto quant --pseudobam/--genomebam).")
+        if not reference_genome_index:
+            raise ValueError("reference_genome_index must be provided when pseudobam_validation=True (the reads are re-aligned with kallisto quant --pseudobam/--genomebam against this index).")
+        # The standard reference index is built on the fly inside adjust_variant_adata_by_pseudobam if it does
+        # not exist yet, because the required index space depends on the reads type vs the reference type:
+        # RNA reads against a DNA (genome) `sequences` reference need a cDNA index extracted from the genome +
+        # GTF with `kb ref --workflow standard -i INDEX -g t2g.txt -f1 cdna.fa -t THREADS genome.fa genome.gtf`
+        # so the reads can be projected back onto the genome with --genomebam; all other combinations index
+        # `sequences` directly with `kb ref --workflow custom` and align with --pseudobam.
+        # Fail fast here if it cannot be built at all (missing `sequences`).
+        if not os.path.exists(reference_genome_index) and (not sequences or not os.path.exists(str(sequences))):
+            raise ValueError(f"reference_genome_index '{reference_genome_index}' does not exist and cannot be built because `sequences` was not provided (or does not exist). Provide `sequences` (the reference fasta the VCRSs were built from: the transcriptome cDNA for HGVSc variants or the genome for HGVSg variants), or point reference_genome_index at a prebuilt kallisto index.")
         if not fastqs:
             raise ValueError("fastqs must be provided when pseudobam_validation=True (the reads must be re-aligned with kallisto quant).")
 
@@ -561,7 +582,7 @@ def clean(
     #     )
 
     if pseudobam_validation:
-        adata = adjust_variant_adata_by_pseudobam(kb_count_vcrs_dir=kb_count_vcrs_dir, reference_genome_index=reference_genome_index, technology=technology, kallisto_quant_reference_genome_dir=kallisto_quant_reference_genome_dir, adata=adata, fastq_file_list=fastqs, adata_output_path=None, parity=parity, mm=mm, bustools=bustools, kallisto=kallisto, threads=threads, variant_source=variant_source, reference_sequences_type=reference_sequences_type, sequences=sequences, gtf=gtf, vcrs_t2g=vcrs_t2g, check_alignment_position=check_alignment_position, alignment_position_tolerance=alignment_position_tolerance, count_reads_that_dont_pseudoalign_to_reference_genome=count_reads_that_dont_pseudoalign_to_reference_genome, avoid_paired_double_counting=avoid_paired_double_counting, seq_id_column=seq_id_column, var_column=var_column, fastq_sorting_check_only=(not sort_fastqs), save_type="parquet", overwrite=overwrite)
+        adata = adjust_variant_adata_by_pseudobam(kb_count_vcrs_dir=kb_count_vcrs_dir, reference_genome_index=reference_genome_index, technology=technology, kallisto_quant_reference_genome_dir=kallisto_quant_reference_genome_dir, adata=adata, fastq_file_list=fastqs, adata_output_path=None, parity=parity, mm=mm, bustools=bustools, kallisto=kallisto, threads=threads, variant_source=variant_source, reference_sequences_type=reference_sequences_type, reads_type=reads_type, sequences=sequences, gtf=gtf, vcrs_t2g=vcrs_t2g, check_alignment_position=check_alignment_position, alignment_position_tolerance=alignment_position_tolerance, count_reads_that_dont_pseudoalign_to_reference_genome=count_reads_that_dont_pseudoalign_to_reference_genome, avoid_paired_double_counting=avoid_paired_double_counting, seq_id_column=seq_id_column, var_column=var_column, fastq_sorting_check_only=(not sort_fastqs), save_type="parquet", overwrite=overwrite)
     
     # set all count values below min_counts to 0
     if min_counts is not None:  # important I do BEFORE CPM normalization

@@ -42,8 +42,26 @@ tqdm.pandas()
 dlist_pattern_utils = re.compile(
     r"^(\d+)_(\d+)$"  # First pattern: digits underscore digits
     r"|^(unspliced)?(\d+)(;(unspliced)?\d+)*_(\d+)$"  # Second pattern: optional unspliced, digits, underscore, digits
-    r"|^(unspliced)?(ENST\d+:(?:c\.|g\.)\d+(_\d+)?([a-zA-Z>]+))(;(unspliced)?ENST\d+:(?:c\.|g\.)\d+(_\d+)?([a-zA-Z>]+))*_\d+$"  # Third pattern: complex ENST pattern
+    r"|^(unspliced)?(ENST\d+(?:\([A-Za-z0-9._\-]+\))?:(?:c\.|g\.)\d+(_\d+)?([a-zA-Z>]+))(;(unspliced)?ENST\d+(?:\([A-Za-z0-9._\-]+\))?:(?:c\.|g\.)\d+(_\d+)?([a-zA-Z>]+))*_\d+$"  # Third pattern: complex ENST pattern (with optional '(GENE)' annotation before the colon)
 )
+
+
+def strip_gene_name_from_seq_id(seq_id):
+    """Remove the optional ``(GENE)`` annotation that varseek build appends to the seq_ID.
+
+    varseek build (when a GTF is provided) writes HGVS-like headers of the form
+    ``seq_ID(GENE):mutation`` (e.g. ``ENST00000123456(ACT):c.123A>C`` or ``3(ACT):g.12214A>C``).
+    Any code that recovers the bare seq_ID by splitting the header on ``:`` gets ``seq_ID(GENE)``
+    as the first field; call this on that field to drop the trailing ``(GENE)`` and get back the
+    plain seq_ID. Headers without a gene annotation pass through unchanged.
+
+    Accepts either a single string or a pandas Series (vectorised).
+    """
+    if isinstance(seq_id, pd.Series):
+        return seq_id.str.replace(r"\([^)]*\)$", "", regex=True)
+    if not isinstance(seq_id, str):
+        return seq_id
+    return re.sub(r"\([^)]*\)$", "", seq_id)
 
 
 def read_fastq(fastq_file):
@@ -460,6 +478,41 @@ def _genes_and_transcripts_from_gtf(gtf):
         gene_info["transcripts"] = cleaned
 
     return gene_infos, transcript_infos
+
+
+def gene_name_lookups_from_gtf(gtf):
+    """Build the two lookups needed to annotate HGVS headers with gene names from a GTF.
+
+    Returns:
+        transcript_to_gene_name (dict) transcript_id (version-stripped) -> gene_name, for
+            transcript/cDNA/CDS variants whose seq_ID is an ``ENST...`` id.
+        gene_intervals (dict) chromosome (str) -> list of ``(start_1based, end_1based, gene_name)``
+            tuples sorted by start, for genome variants whose seq_ID is a chromosome and whose
+            position comes from a ``g.`` mutation. Coordinates are 1-based inclusive to match the
+            HGVS ``g.`` position convention.
+
+    Genes without a ``gene_name`` attribute are skipped (they contribute no annotation).
+    """
+    gene_infos, transcript_infos = _genes_and_transcripts_from_gtf(gtf)
+
+    transcript_to_gene_name = {}
+    for transcript_id, transcript_info in transcript_infos.items():
+        gene_name = gene_infos.get(transcript_info["gene_id"], {}).get("gene_name", "")
+        if gene_name:
+            transcript_to_gene_name[transcript_id.split(".")[0]] = gene_name
+
+    gene_intervals = {}
+    for gene_info in gene_infos.values():
+        gene_name = gene_info.get("gene_name", "")
+        if not gene_name:
+            continue
+        chromosome = str(gene_info["chromosome"])
+        # gene_infos stores 0-based half-open [start, end); convert back to 1-based inclusive.
+        gene_intervals.setdefault(chromosome, []).append((gene_info["start"] + 1, gene_info["end"], gene_name))
+    for chromosome in gene_intervals:
+        gene_intervals[chromosome].sort()
+
+    return transcript_to_gene_name, gene_intervals
 
 
 def make_cdna_fasta(fasta, gtf, out):

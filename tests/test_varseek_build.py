@@ -890,3 +890,146 @@ def test_convert_variant_coordinates_requires_gtf(long_sequence, out_dir):
             k=31,
             out=out_dir,
         )
+
+
+# ---------------------------------------------------------------------------
+# add_gene_name_to_header: annotate HGVS-like headers with the gene name in
+# parentheses (seq_ID(GENE):mutation) when a GTF is provided.
+# ---------------------------------------------------------------------------
+
+def _first_fasta_header(fasta_path):
+    """Return the first header line (without the leading '>') of a FASTA file."""
+    with open(fasta_path) as fh:
+        for line in fh:
+            if line.startswith(">"):
+                return line[1:].strip()
+    raise AssertionError(f"No header found in {fasta_path}")
+
+
+@pytest.fixture
+def transcript_gtf(tmp_path):
+    """A minimal GTF mapping transcript ENST1 (and chromosome 1) to gene name 'ACT'."""
+    gtf = tmp_path / "gene_name.gtf"
+    gtf.write_text(
+        '1\ttest\tgene\t1\t100\t.\t+\t.\tgene_id "G1"; gene_name "ACT";\n'
+        '1\ttest\ttranscript\t1\t100\t.\t+\t.\tgene_id "G1"; transcript_id "ENST1"; gene_name "ACT";\n'
+        '1\ttest\texon\t1\t100\t.\t+\t.\tgene_id "G1"; transcript_id "ENST1"; gene_name "ACT";\n'
+    )
+    return str(gtf)
+
+
+def test_gene_name_added_to_header_transcript(long_sequence, transcript_gtf, tmp_path, out_dir):
+    """With a GTF, a transcript (ENST) variant header gains the gene name in parentheses."""
+    cdna_fasta = tmp_path / "cdna.fa"
+    cdna_fasta.write_text(f">ENST1\n{long_sequence}\n")
+
+    variants_csv = tmp_path / "variants.csv"
+    variants_csv.write_text("seq_ID,mutation\nENST1,c.35G>A\n")
+
+    fasta_out = tmp_path / "vcrs.fa"
+    vk.build(
+        dont_create_index=True,
+        sequences=str(cdna_fasta),
+        variants=str(variants_csv),
+        gtf=transcript_gtf,
+        vcrs_fasta_out=str(fasta_out),
+        w=30,
+        k=31,
+        out=out_dir,
+        overwrite=True,
+    )
+
+    assert _first_fasta_header(fasta_out) == "ENST1(ACT):c.35G>A"
+    assert_global_variables_zero()
+
+
+def test_gene_name_opt_out(long_sequence, transcript_gtf, tmp_path, out_dir):
+    """add_gene_name_to_header=False keeps the plain seq_ID:mutation header even with a GTF."""
+    cdna_fasta = tmp_path / "cdna.fa"
+    cdna_fasta.write_text(f">ENST1\n{long_sequence}\n")
+
+    variants_csv = tmp_path / "variants.csv"
+    variants_csv.write_text("seq_ID,mutation\nENST1,c.35G>A\n")
+
+    fasta_out = tmp_path / "vcrs.fa"
+    vk.build(
+        dont_create_index=True,
+        sequences=str(cdna_fasta),
+        variants=str(variants_csv),
+        gtf=transcript_gtf,
+        add_gene_name_to_header=False,
+        vcrs_fasta_out=str(fasta_out),
+        w=30,
+        k=31,
+        out=out_dir,
+        overwrite=True,
+    )
+
+    assert _first_fasta_header(fasta_out) == "ENST1:c.35G>A"
+    assert_global_variables_zero()
+
+
+def test_gene_name_no_gtf_leaves_plain_header(long_sequence, tmp_path, out_dir):
+    """Without a GTF there is nothing to map from, so the header is left plain (default on)."""
+    cdna_fasta = tmp_path / "cdna.fa"
+    cdna_fasta.write_text(f">ENST1\n{long_sequence}\n")
+
+    variants_csv = tmp_path / "variants.csv"
+    variants_csv.write_text("seq_ID,mutation\nENST1,c.35G>A\n")
+
+    fasta_out = tmp_path / "vcrs.fa"
+    vk.build(
+        dont_create_index=True,
+        sequences=str(cdna_fasta),
+        variants=str(variants_csv),
+        vcrs_fasta_out=str(fasta_out),
+        w=30,
+        k=31,
+        out=out_dir,
+        overwrite=True,
+    )
+
+    assert _first_fasta_header(fasta_out) == "ENST1:c.35G>A"
+    assert_global_variables_zero()
+
+
+def test_compute_gene_name_series_transcript_and_genome(tmp_path):
+    """Unit-test the GTF gene-name lookup for ENST (transcript) and chrom+pos (genome) variants."""
+    from varseek.utils.varseek_build_utils import compute_gene_name_series_for_headers
+
+    gtf = tmp_path / "genes.gtf"
+    gtf.write_text(
+        '1\ttest\tgene\t1000\t2000\t.\t+\t.\tgene_id "G1"; gene_name "ACT";\n'
+        '1\ttest\ttranscript\t1000\t2000\t.\t+\t.\tgene_id "G1"; transcript_id "ENST00000000001"; gene_name "ACT";\n'
+        '1\ttest\texon\t1000\t2000\t.\t+\t.\tgene_id "G1"; transcript_id "ENST00000000001"; gene_name "ACT";\n'
+        '7\ttest\tgene\t500\t900\t.\t-\t.\tgene_id "G2"; gene_name "BRCA1";\n'
+    )
+
+    mutations = pd.DataFrame(
+        {
+            "seq_ID": ["ENST00000000001", "1", "7", "7", "1"],
+            "mutation": ["c.10A>G", "g.1500T>C", "g.600G>A", "g.2000A>T", "g.999C>G"],
+        }
+    )
+
+    gene_names = compute_gene_name_series_for_headers(mutations, "seq_ID", "mutation", str(gtf))
+
+    assert list(gene_names) == [
+        "ACT",      # ENST -> gene name
+        "ACT",      # chr1:1500 inside 1000-2000
+        "BRCA1",    # chr7:600 inside 500-900
+        "",         # chr7:2000 outside 500-900
+        "",         # chr1:999 just before the 1-based inclusive start (1000)
+    ]
+
+
+def test_strip_gene_name_from_seq_id_round_trip():
+    """The parse-side helper recovers the bare seq_ID from an annotated header field."""
+    from varseek.utils.seq_utils import strip_gene_name_from_seq_id
+
+    assert strip_gene_name_from_seq_id("ENST00000123456(ACT)") == "ENST00000123456"
+    assert strip_gene_name_from_seq_id("3(BRCA1)") == "3"
+    assert strip_gene_name_from_seq_id("ENST00000123456") == "ENST00000123456"  # no annotation -> unchanged
+
+    series = pd.Series(["ENST1(ACT)", "3(BRCA1)", "ENST9"])
+    assert list(strip_gene_name_from_seq_id(series)) == ["ENST1", "3", "ENST9"]

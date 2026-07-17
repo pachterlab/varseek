@@ -11,7 +11,7 @@ from scipy import stats
 import logging
 
 from varseek.utils.logger_utils import set_up_logger
-from varseek.utils.seq_utils import add_variant_type
+from varseek.utils.seq_utils import add_variant_type, strip_gene_name_from_seq_id
 from ..constants import technology_valid_values, technology_info
 
 logger = logging.getLogger(__name__)
@@ -1010,7 +1010,8 @@ def plot_variant_types(df, variant_header_column="vcrs_id", variant_type_column 
         if variant_header_column not in df.columns:
             raise ValueError("variant_header_column must be in df if ref_base_column and alt_base_column are not.")
         df["variant_header_first"] = df[variant_header_column].str.split(";").str[0]  # take the first variant header
-        df[["seq_ID", "variant"]] = df["variant_header_first"].str.split(":", expand=True)
+        df[["seq_ID", "variant"]] = df["variant_header_first"].str.split(":", n=1, expand=True)
+        df["seq_ID"] = strip_gene_name_from_seq_id(df["seq_ID"])  # drop any '(GENE)' annotation from the seq_ID
         add_variant_type(df, "variant")
         df.rename(columns={"variant_type": variant_type_column}, inplace=True)
 
