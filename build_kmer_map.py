@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
-from collections import defaultdict
 from pathlib import Path
 from tqdm import tqdm
 import time
 import argparse
 
+import numpy as np
 import pandas as pd
 
 
@@ -15,6 +15,22 @@ DNA = {
     "G": 2,
     "T": 3,
 }
+
+# Byte -> 2-bit code lookup for vectorised packing. Only uppercase A/C/G/T map to
+# 0..3; every other byte (N, lowercase soft-masked bases, anything else) maps to -1
+# and breaks the window, exactly like the DNA.get(base, -1) path used to.
+_CODE_LUT = np.full(256, -1, dtype=np.int8)
+for _base, _code in DNA.items():
+    _CODE_LUT[ord(_base)] = _code
+
+
+def _count_seqs(path):
+    """Count FASTA records cheaply in one binary pass (each header is a '>' byte)."""
+    n = 0
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            n += chunk.count(b">")
+    return n
 
 
 def fasta_reader(filename):
@@ -54,16 +70,33 @@ def fasta_reader(filename):
             yield header, "".join(seq)
 
 
-def build_kmer_map(inputs, left_extent, right_extent):
-    """
-    Group reference positions into k-mer equivalence classes.
+# Bases packed per int64 limb. 31 bases = 62 bits keeps each limb non-negative, so
+# a window wider than 31 bases (k > 31) is carried across several int64 limbs and
+# grouped by comparing the limbs together. k is otherwise unbounded.
+_BASES_PER_LIMB = 31
 
-    Every valid (A/C/G/T) base is treated as an anchor. The window spans up to
-    `left_extent` bases to the left of the anchor and `right_extent` to the
-    right, truncated at the sequence ends and at any invalid base (so a window
-    never crosses an N or soft-masked base). The anchor itself is the base that
-    the position label refers to; where it sits in the window is controlled by
-    the caller (left / right / middle) via the two extents.
+
+def build_kmer_map(inputs, left_extent, right_extent, skip_truncated=False):
+    """
+    Pack every anchor's context window into flat, sort-ready arrays.
+
+    Every valid (A/C/G/T) base is an anchor. Its window spans up to `left_extent`
+    bases to the left and `right_extent` to the right, truncated at the sequence
+    ends and at any invalid base (so a window never crosses an N or soft-masked
+    base). Two anchors are interchangeable iff they share the same (left_len,
+    right_len, packed_window) key; grouping equal keys is deferred to
+    build_ec_tables, which sorts these arrays instead of hashing per base.
+
+    The heavy lifting is vectorised: each maximal run of valid bases is converted
+    to int8 codes, its rolling packed windows are built with k NumPy shift-or
+    passes (O(k) per run, not per base), and every anchor's key/position is read
+    off with array indexing. Positions are carried as integers (ref_id, 1-based
+    anchor pos) rather than formatted strings, so the billions of singleton
+    windows that build_ec_tables discards never pay for string construction.
+
+    The packed window is right-aligned (the anchor's rightmost base is the low
+    2 bits) and split across ceil(k / 31) int64 limbs, so k is unbounded (e.g.
+    k = 91 uses 3 limbs); truncation just masks off the high (leftmost) bits.
 
     Parameters
     ----------
@@ -72,80 +105,121 @@ def build_kmer_map(inputs, left_extent, right_extent):
         (genomic); it becomes the HGVS-style tag in each location label.
     left_extent, right_extent : int
         Max bases of context on each side of the anchor.
+    skip_truncated : bool
+        When True, only anchors with a full window on both sides are emitted
+        (edge anchors near a run/sequence boundary are skipped), reproducing the
+        original single-k-mer builder, which recorded a position only once k
+        valid bases were available. Such positions become singletons at query
+        time. When False (default) every valid base is an anchor.
 
     Returns
     -------
-    table : dict[(int, int, int), list[str]]
-        Maps (left_len, right_len, packed_window) to the location labels
-        ("<ref>:<prefix>.<anchor_position>") that share that window, where
-        anchor_position is the 1-based coordinate of the anchor base. left_len /
-        right_len record how many bases of context the window actually has on
-        each side, so a truncated edge window cannot collide with a longer one
-        that happens to share a suffix/prefix.
+    arrays : tuple of np.ndarray (left_len i8, right_len i8, packed i64[N, n_limbs],
+        ref_id i32, position i32), one entry per anchor across all inputs.
+        position is the 1-based coordinate of the anchor base; ref_id indexes
+        into ref_names.
+    ref_names : list[str]
+        ref_id -> ref name.
     seq_prefix : dict[str, str]
         Maps each ref name to the prefix ("c"/"g") it was labelled with, so a
         singleton position's HGVS-like label can be reconstructed at query time.
     """
 
-    table = defaultdict(list)
-    seq_prefix = {}
-
-    # A window never exceeds k = left_extent + right_extent + 1 bases. Keeping a
-    # rolling packed value masked to the last k bases (win_mask) lets every anchor
-    # window be read off as a masked suffix, so packing is O(1) per base instead of
-    # re-scanning the whole window. span_masks[s] isolates the low s bases (2 bits
-    # each); precomputed so the per-anchor mask is never rebuilt as a big int.
+    # A window never exceeds k = left_extent + right_extent + 1 bases; it needs
+    # n_limbs int64s to hold its 2*k bits.
     k = left_extent + right_extent + 1
-    win_mask = (1 << (2 * k)) - 1
-    span_masks = [(1 << (2 * s)) - 1 for s in range(k + 1)]
+    n_limbs = (k + _BASES_PER_LIMB - 1) // _BASES_PER_LIMB
+
+    ref_names = []
+    seq_prefix = {}
+    lefts, rights, packeds, ref_id_chunks, pos_chunks = [], [], [], [], []
 
     for fasta, prefix in inputs:
         print(f"Processing {Path(fasta).name}...")
-        fasta_len = sum(1 for _ in fasta_reader(fasta))
+        total = _count_seqs(fasta)
 
-        for ref, seq in tqdm(fasta_reader(fasta), desc="Building k-mer map", unit="sequence", total=fasta_len):
+        for ref, seq in tqdm(fasta_reader(fasta), desc="Building k-mer map", unit="sequence", total=total):
 
+            ref_id = len(ref_names)
+            ref_names.append(ref)
             seq_prefix[ref] = prefix
-            n = len(seq)
-            codes = [DNA.get(base, -1) for base in seq]  # -1 for any non-ACGT base
 
-            # Walk maximal runs of valid (A/C/G/T) bases; a run boundary is exactly
-            # where the explicit expansion used to stop, so windows never span an N.
-            j = 0
-            while j < n:
-                if codes[j] < 0:
-                    j += 1
-                    continue
+            codes = _CODE_LUT[np.frombuffer(seq.encode("latin-1"), dtype=np.uint8)]
+            valid = codes >= 0
+            if not valid.any():
+                continue
 
-                start = j
-                while j < n and codes[j] >= 0:
-                    j += 1
-                run = j - start  # number of valid bases in [start, j)
+            # Maximal runs of valid (A/C/G/T) bases; a run boundary is exactly where
+            # the window used to stop, so windows never span an N or masked base.
+            edges = np.diff(valid.view(np.int8))
+            run_starts = np.flatnonzero(edges == 1) + 1
+            run_ends = np.flatnonzero(edges == -1) + 1
+            if valid[0]:
+                run_starts = np.concatenate(([0], run_starts))
+            if valid[-1]:
+                run_ends = np.concatenate((run_ends, [valid.size]))
 
-                # Roll a masked packed window across the run. rw[i] holds the packed
-                # value of the last min(k, i + 1) bases ending at run index i (MSB
-                # first), each step a single shift-or-mask on a bounded-width int.
-                rw = [0] * run
-                w = 0
-                for i in range(run):
-                    w = ((w << 2) | codes[start + i]) & win_mask
-                    rw[i] = w
+            for rs, re_ in zip(run_starts.tolist(), run_ends.tolist()):
+                L = re_ - rs
+                if skip_truncated and L < k:
+                    continue  # no anchor in this run has a full window
+                c = codes[rs:re_].astype(np.int64)
 
-                # One key per anchor. Context is truncated at the run ends: at most
-                # left_extent bases to the left, right_extent to the right, capped by
-                # how much of the run is actually there. The anchor window ends at
-                # hi and has `span` bases, so it's the low `span` bases of rw[hi].
-                for i in range(run):
-                    left_len = i if i < left_extent else left_extent
-                    right_avail = run - 1 - i
-                    right_len = right_avail if right_avail < right_extent else right_extent
-                    hi = i + right_len
-                    span = left_len + right_len + 1
-                    packed = rw[hi] & span_masks[span]
-                    key = (left_len, right_len, packed)  # (left_len, right_len, window)
-                    table[key].append(f"{ref}:{prefix}.{start + i + 1}")
+                # rw_limbs[m][t] = the packed value (right-aligned, base at run index t
+                # in the low 2 bits) of the run's bases at offsets [31m, 31m+31) behind
+                # t, i.e. limb m of the window ending at t. Each limb is built with up
+                # to 31 shift-or passes; bits per offset are disjoint within the limb.
+                rw_limbs = []
+                for m in range(n_limbs):
+                    limb = np.zeros(L, dtype=np.int64)
+                    d0 = _BASES_PER_LIMB * m
+                    for d in range(d0, min(k, d0 + _BASES_PER_LIMB)):
+                        if d >= L:
+                            break
+                        limb[d:] |= c[: L - d] << (2 * (d - d0))
+                    rw_limbs.append(limb)
 
-    return table, seq_prefix
+                # Anchor set: full-window-only when skipping, else every base. The
+                # window ends at hi and has `span` bases; its limbs are rw_limbs[*][hi]
+                # masked down to `span` bases (drops the leftmost/high overflow).
+                if skip_truncated:
+                    i = np.arange(left_extent, L - right_extent)
+                    left_len = np.full(i.size, left_extent)
+                    right_len = np.full(i.size, right_extent)
+                else:
+                    i = np.arange(L)
+                    left_len = np.minimum(i, left_extent)
+                    right_len = np.minimum(L - 1 - i, right_extent)
+                span = left_len + right_len + 1
+                hi = i + right_len
+
+                packed = np.empty((i.size, n_limbs), dtype=np.int64)
+                for m in range(n_limbs):
+                    keep = np.clip(span - _BASES_PER_LIMB * m, 0, _BASES_PER_LIMB)  # bases of limb m inside window
+                    mask = (np.int64(1) << (2 * keep).astype(np.int64)) - 1         # keep==31 -> full-limb mask
+                    packed[:, m] = rw_limbs[m][hi] & mask
+
+                lefts.append(left_len.astype(np.int8))
+                rights.append(right_len.astype(np.int8))
+                packeds.append(packed)
+                ref_id_chunks.append(np.full(i.size, ref_id, dtype=np.int32))
+                pos_chunks.append((rs + i + 1).astype(np.int32))
+
+    if packeds:
+        arrays = (
+            np.concatenate(lefts),
+            np.concatenate(rights),
+            np.concatenate(packeds, axis=0),
+            np.concatenate(ref_id_chunks),
+            np.concatenate(pos_chunks),
+        )
+    else:
+        arrays = (
+            np.empty(0, np.int8), np.empty(0, np.int8), np.empty((0, n_limbs), np.int64),
+            np.empty(0, np.int32), np.empty(0, np.int32),
+        )
+
+    return arrays, ref_names, seq_prefix
 
 
 def anchor_extents(anchor, k):
@@ -201,14 +275,17 @@ def _annotate_labels(refs, prefixes, positions, gtf):
     return [f"{r}({g}):{p}.{pos}" if g else plabel for r, p, pos, g, plabel in zip(refs, prefixes, positions, genes, plain)]
 
 
-def build_ec_tables(table, seq_prefix, gtf=None, seq_id_column="seq_id", position_column="position"):
+def build_ec_tables(kmer_arrays, ref_names, seq_prefix, gtf=None, seq_id_column="seq_id", position_column="position"):
     """
-    Turn the raw k-mer map into three compact, lookup-ready tables.
+    Turn the packed anchor arrays into three compact, lookup-ready tables.
 
-    Only windows shared by 2+ locations form an equivalence class (EC); a position
-    absent from the map is its own singleton class. The EC's members are stored once
-    (normalised by an integer ec_id) rather than repeating the joined class on every
-    row, so storage stays O(total members) instead of O(sum of class_size^2).
+    Anchors are grouped by sorting on their (left_len, right_len, packed) key so
+    equal keys become adjacent runs — a single O(N log N) sort in place of a
+    per-base hash table. Only keys shared by 2+ anchors form an equivalence class
+    (EC); a position absent from any EC is its own singleton class and is
+    reconstructed at query time, so singletons are never materialised here. The
+    EC's members are stored once (normalised by an integer ec_id) rather than
+    repeating the joined class on every row, so storage stays O(total members).
 
     seq_id_column / position_column name the seq-id and position columns in the
     output tables; pass the same names to substitute() so the lookup merge lines up.
@@ -227,37 +304,63 @@ def build_ec_tables(table, seq_prefix, gtf=None, seq_id_column="seq_id", positio
     """
     print("Assembling equivalence-class tables...")
 
-    classes = [m for m in table.values() if len(m) >= 2]
+    left, right, packed, ref_ids, positions = kmer_arrays
+    seq_meta_df = pd.DataFrame({seq_id_column: list(seq_prefix), "prefix": list(seq_prefix.values())})
 
-    # Flatten every ambiguous member, tagged with its ec_id (contiguous by class)
-    # and its EC's member count.
-    flat_refs, flat_prefix, flat_pos, flat_ec, flat_size = [], [], [], [], []
-    for ec_id, members in enumerate(tqdm(classes, desc="Flattening classes", unit="EC")):
-        size = len(members)
-        for label in members:
-            ref, prefix, pos = parse_label(label)
-            flat_refs.append(ref)
-            flat_prefix.append(prefix)
-            flat_pos.append(pos)
-            flat_ec.append(ec_id)
-            flat_size.append(size)
+    N = packed.shape[0]
+    if N == 0:
+        positions_df = pd.DataFrame({seq_id_column: [], position_column: [], "ec_id": [], "ec_size": []})
+        positions_df["ec_size"] = positions_df["ec_size"].astype("int32")
+        ecs_df = pd.DataFrame({"ec_id": [], "header": []})
+        print("Built 0 equivalence classes covering 0 positions.")
+        return positions_df, ecs_df, seq_meta_df
+
+    # Sort so identical (left_len, right_len, packed) keys are adjacent. packed is
+    # (N, n_limbs); each limb column is its own lexsort key. The last lexsort key is
+    # primary, so this groups by the full (left, right, all limbs) tuple.
+    order = np.lexsort((*packed.T, right, left))
+    left, right, packed = left[order], right[order], packed[order]
+    ref_ids, positions = ref_ids[order], positions[order]
+
+    # Group boundaries: a new group starts wherever any key field (any limb
+    # included) differs from the previous row.
+    same = (left[1:] == left[:-1]) & (right[1:] == right[:-1]) & (packed[1:] == packed[:-1]).all(axis=1)
+    starts = np.concatenate(([0], np.flatnonzero(~same) + 1))
+    sizes = np.diff(np.concatenate((starts, [N])))
+
+    # Only groups of 2+ members are ECs; number them contiguously in group order.
+    is_ec = sizes >= 2
+    n_ec = int(is_ec.sum())
+    ec_id_of_group = np.full(sizes.size, -1, dtype=np.int64)
+    ec_id_of_group[is_ec] = np.arange(n_ec)
+
+    # Broadcast each group's ec_id / size back onto its members, then keep only
+    # members that belong to an EC. Sorted order keeps each EC's members contiguous.
+    elem_ec = np.repeat(ec_id_of_group, sizes)
+    elem_size = np.repeat(sizes, sizes)
+    member = elem_ec >= 0
+
+    m_ec = elem_ec[member]
+    m_size = elem_size[member].astype(np.int32)
+    flat_refs = [ref_names[r] for r in ref_ids[member].tolist()]
+    flat_pos = positions[member].tolist()
+    flat_prefix = [seq_prefix[r] for r in flat_refs]
 
     labels = _annotate_labels(flat_refs, flat_prefix, flat_pos, gtf)
 
-    # Group the (now annotated) labels back into one header per EC.
-    headers = [None] * len(classes)
-    start = 0
-    for ec_id, members in enumerate(classes):
-        end = start + len(members)
-        headers[ec_id] = ";".join(sorted(labels[start:end]))
-        start = end
+    # One header per EC: sort+join the labels of its (contiguous) members.
+    ec_sizes = sizes[is_ec]
+    headers = [None] * n_ec
+    s = 0
+    for j, sz in enumerate(ec_sizes.tolist()):
+        headers[j] = ";".join(sorted(labels[s:s + sz]))
+        s += sz
 
-    positions_df = pd.DataFrame({seq_id_column: flat_refs, position_column: flat_pos, "ec_id": flat_ec, "ec_size": flat_size})
+    positions_df = pd.DataFrame({seq_id_column: flat_refs, position_column: flat_pos, "ec_id": m_ec, "ec_size": m_size})
     # int32 keeps the column small while still covering huge repeat classes (int16
     # tops out at 32767, which a repetitive k-mer's EC can exceed).
     positions_df["ec_size"] = positions_df["ec_size"].astype("int32")
-    ecs_df = pd.DataFrame({"ec_id": range(len(classes)), "header": headers})
-    seq_meta_df = pd.DataFrame({seq_id_column: list(seq_prefix), "prefix": list(seq_prefix.values())})
+    ecs_df = pd.DataFrame({"ec_id": np.arange(n_ec), "header": headers})
 
     print(f"Built {len(ecs_df)} equivalence classes covering {len(positions_df)} positions.")
     return positions_df, ecs_df, seq_meta_df
@@ -339,7 +442,7 @@ def _write_query(df, path):
 
 
 
-def build_kmer_index(cdna=None, dna=None, k=31, anchor="middle", gtf=None, out="kmer_ec_tables", seq_id_column="seq_id", position_column="position"):
+def build_kmer_index(cdna=None, dna=None, k=31, anchor="middle", gtf=None, out="kmer_ec_tables", seq_id_column="seq_id", position_column="position", skip_truncated=False):
     start_time = time.perf_counter()
     if not cdna and not dna:
         raise SystemExit("provide at least one FASTA via --cdna and/or --dna")
@@ -351,8 +454,8 @@ def build_kmer_index(cdna=None, dna=None, k=31, anchor="middle", gtf=None, out="
 
     inputs = [(fasta, "c") for fasta in cdna] + [(fasta, "g") for fasta in dna]
 
-    table, seq_prefix = build_kmer_map(inputs, left_extent, right_extent)
-    positions_df, ecs_df, seq_meta_df = build_ec_tables(table, seq_prefix, gtf=gtf, seq_id_column=seq_id_column, position_column=position_column)
+    kmer_arrays, ref_names, seq_prefix = build_kmer_map(inputs, left_extent, right_extent, skip_truncated=skip_truncated)
+    positions_df, ecs_df, seq_meta_df = build_ec_tables(kmer_arrays, ref_names, seq_prefix, gtf=gtf, seq_id_column=seq_id_column, position_column=position_column)
     write_ec_tables(positions_df, ecs_df, seq_meta_df, out)
     print(f"Finished building k-mer equivalence-class tables in {time.perf_counter() - start_time:.1f} seconds.")
 
@@ -380,8 +483,9 @@ def main():
     b = sub.add_parser("build", help="Build the equivalence-class tables from FASTA(s).")
     b.add_argument("--cdna", nargs="*", default=[], metavar="FASTA", help="Transcript/cDNA FASTA(s); labelled 'c.'.")
     b.add_argument("--dna", nargs="*", default=[], metavar="FASTA", help="Genomic FASTA(s); labelled 'g.'.")
-    b.add_argument("-k", type=int, default=31, help="Window size (default: 31). Must be odd when --anchor is middle.")
+    b.add_argument("-k", type=int, default=31, help="Window size (default: 31). Must be odd when --anchor is middle. Any k is allowed (windows wider than 31 bases use multiple int64 limbs).")
     b.add_argument("--anchor", choices=["l", "left", "r", "right", "m", "middle"], default="middle", help="Which base the position labels: l/left (window start), r/right (window end), or m/middle (center, requires odd k; default).")
+    b.add_argument("--skip-truncated", action="store_true", help="Only emit anchors with a full window; skip edge/truncated k-mers (as the original single-k-mer builder did). Skipped positions become singletons at query time.")
     b.add_argument("--gtf", default=None, help="Optional GTF; bakes gene names into headers ('<ref>(<GENE>):<prefix>.<pos>').")
     b.add_argument("-o", "--out", default="kmer_ec_tables", help="Output directory for the parquet tables.")
     b.add_argument("--seq_id_column", default="seq_id", help="Name for the seq-id column in the output tables (default: seq_id).")

@@ -341,15 +341,6 @@ def clean(
     if pseudobam_validation:
         if not kb_count_vcrs_dir or not os.path.exists(kb_count_vcrs_dir) or len(os.listdir(kb_count_vcrs_dir)) == 0:
             raise ValueError("kb_count_vcrs_dir must be provided as the output from kb count out to the VCRS reference if pseudobam_validation is True.")
-        if not reference_genome_index:
-            raise ValueError("reference_genome_index must be provided when pseudobam_validation=True (the reads are re-aligned with kallisto quant --pseudobam/--genomebam against this index).")
-        # The standard reference index is built on the fly inside adjust_variant_adata_by_pseudobam if it does
-        # not exist yet, because the required index space depends on the reads type vs the reference type:
-        # RNA reads against a DNA (genome) `sequences` reference need a cDNA index extracted from the genome +
-        # GTF with `kb ref --workflow standard -i INDEX -g t2g.txt -f1 cdna.fa -t THREADS genome.fa genome.gtf`
-        # so the reads can be projected back onto the genome with --genomebam; all other combinations index
-        # `sequences` directly with `kb ref --workflow custom` and align with --pseudobam.
-        # Fail fast here if it cannot be built at all (missing `sequences`).
         if not os.path.exists(reference_genome_index) and (not sequences or not os.path.exists(str(sequences))):
             raise ValueError(f"reference_genome_index '{reference_genome_index}' does not exist and cannot be built because `sequences` was not provided (or does not exist). Provide `sequences` (the reference fasta the VCRSs were built from: the transcriptome cDNA for HGVSc variants or the genome for HGVSg variants), or point reference_genome_index at a prebuilt kallisto index.")
         if not fastqs:
