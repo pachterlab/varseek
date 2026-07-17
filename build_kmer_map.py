@@ -90,6 +90,15 @@ def build_kmer_map(inputs, left_extent, right_extent):
     table = defaultdict(list)
     seq_prefix = {}
 
+    # A window never exceeds k = left_extent + right_extent + 1 bases. Keeping a
+    # rolling packed value masked to the last k bases (win_mask) lets every anchor
+    # window be read off as a masked suffix, so packing is O(1) per base instead of
+    # re-scanning the whole window. span_masks[s] isolates the low s bases (2 bits
+    # each); precomputed so the per-anchor mask is never rebuilt as a big int.
+    k = left_extent + right_extent + 1
+    win_mask = (1 << (2 * k)) - 1
+    span_masks = [(1 << (2 * s)) - 1 for s in range(k + 1)]
+
     for fasta, prefix in inputs:
         print(f"Processing {Path(fasta).name}...")
         fasta_len = sum(1 for _ in fasta_reader(fasta))
@@ -100,27 +109,41 @@ def build_kmer_map(inputs, left_extent, right_extent):
             n = len(seq)
             codes = [DNA.get(base, -1) for base in seq]  # -1 for any non-ACGT base
 
-            for c in range(n):
+            # Walk maximal runs of valid (A/C/G/T) bases; a run boundary is exactly
+            # where the explicit expansion used to stop, so windows never span an N.
+            j = 0
+            while j < n:
+                if codes[j] < 0:
+                    j += 1
+                    continue
 
-                if codes[c] < 0:
-                    continue  # no variant sits on a non-ACGT base
+                start = j
+                while j < n and codes[j] >= 0:
+                    j += 1
+                run = j - start  # number of valid bases in [start, j)
 
-                # Expand up to the allowed extents each way, stopping at a
-                # sequence end or invalid base so the window never spans an N.
-                lo = c
-                while lo > 0 and c - lo < left_extent and codes[lo - 1] >= 0:
-                    lo -= 1
+                # Roll a masked packed window across the run. rw[i] holds the packed
+                # value of the last min(k, i + 1) bases ending at run index i (MSB
+                # first), each step a single shift-or-mask on a bounded-width int.
+                rw = [0] * run
+                w = 0
+                for i in range(run):
+                    w = ((w << 2) | codes[start + i]) & win_mask
+                    rw[i] = w
 
-                hi = c
-                while hi < n - 1 and hi - c < right_extent and codes[hi + 1] >= 0:
-                    hi += 1
-
-                packed = 0
-                for j in range(lo, hi + 1):
-                    packed = (packed << 2) | codes[j]
-
-                key = (c - lo, hi - c, packed)  # (left_len, right_len, window)
-                table[key].append(f"{ref}:{prefix}.{c + 1}")
+                # One key per anchor. Context is truncated at the run ends: at most
+                # left_extent bases to the left, right_extent to the right, capped by
+                # how much of the run is actually there. The anchor window ends at
+                # hi and has `span` bases, so it's the low `span` bases of rw[hi].
+                for i in range(run):
+                    left_len = i if i < left_extent else left_extent
+                    right_avail = run - 1 - i
+                    right_len = right_avail if right_avail < right_extent else right_extent
+                    hi = i + right_len
+                    span = left_len + right_len + 1
+                    packed = rw[hi] & span_masks[span]
+                    key = (left_len, right_len, packed)  # (left_len, right_len, window)
+                    table[key].append(f"{ref}:{prefix}.{start + i + 1}")
 
     return table, seq_prefix
 
