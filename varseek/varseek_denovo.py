@@ -126,7 +126,7 @@ def denovo(
     read_length: Optional[PositiveInt] = None,
     min_counts: int = 3,
     aligner: Literal["STAR", "bowtie2"] = "bowtie2",
-    reads_type: Optional[str] = None,  # not a strict Literal: the body lowercases and accepts synonyms ('genomic', 'g', 'cdna', 'transcriptomic', 'c')
+    technology: Optional[str] = None,  # kb-style technology string (as in vk ref/count); "DNA" => genomic DNA reads, anything else => RNA reads. Used to derive the read type for aligner validation.
     reference_type: Optional[str] = "auto",  # not a strict Literal: the body lowercases before validating
     variant_caller: Literal["bcftools", "cigar"] = "bcftools",
     bowtie2_seed_length: Optional[PositiveInt] = None,
@@ -166,8 +166,8 @@ def denovo(
     - tsv_reference_type             (str) Variant coordinate prefix for output_tsv. One of auto, dna, genome, cdna, transcriptome. Default: "auto"
     - read_length                    (int) Read length. Default: None
     - min_counts                     (int) Minimum count threshold for filtering. Default: 3
-    - aligner                        (str) Aligner to use. One of STAR or bowtie2. Splice-aware STAR is required only when RNA reads are aligned to a genome (reads span exon-exon junctions); bowtie2 is correct otherwise (DNA reads to a genome, or RNA reads to a transcriptome). A mismatch against `reads_type`/`reference_type` raises. Default: "bowtie2"
-    - reads_type                     (str) Whether the reads are RNA (spliced) or DNA. One of "rna", "dna", or None. Only used to validate `aligner`; required to validate the choice when the reference is a genome. Default: None
+    - aligner                        (str) Aligner to use. One of STAR or bowtie2. Splice-aware STAR is required only when RNA reads are aligned to a genome (reads span exon-exon junctions); bowtie2 is correct otherwise (DNA reads to a genome, or RNA reads to a transcriptome). A mismatch against `technology`/`reference_type` raises. Default: "bowtie2"
+    - technology                     (str) Sequencing technology, using the same vocabulary as vk ref/count (run `kb --list`; varseek additionally accepts "dna"). It fills in the read type used to validate `aligner`: "dna" (or "DNA") declares genomic DNA reads (-> bowtie2), any other technology declares RNA reads (-> STAR on a genome). Required to validate the aligner when the reference is a genome. Default: None
     - reference_type                 (str) Whether `sequences` is a genome or transcriptome, used to validate `aligner`. One of auto, genome, dna, transcriptome, cdna. "auto" infers it from the FASTA sequence IDs. Default: "auto"
     - variant_caller                 (str) Variant caller to use. One of bcftools or cigar. Default: "bcftools"
     - bowtie2_seed_length            (int) Seed length for Bowtie2 aligner. Default: None
@@ -251,13 +251,15 @@ def denovo(
     # Splice-aware STAR is required only when RNA reads are aligned to a genome (spliced reads span
     # exon-exon junctions); bowtie2 is correct otherwise (DNA->genome, or RNA->transcriptome).
     if input_type == "fastq":
-        reads_type_normalized = (reads_type or "").lower() or None
-        if reads_type_normalized in {"dna", "genomic", "g"}:
+        # Derive the read type from `technology` the same way vk count does: the virtual "DNA"
+        # technology declares genomic DNA reads, any other (RNA) technology declares RNA reads.
+        technology_normalized = (technology or "").upper() or None
+        if technology_normalized == "DNA":
             reads_type_normalized = "dna"
-        elif reads_type_normalized in {"rna", "cdna", "transcriptomic", "c"}:
+        elif technology_normalized is not None:
             reads_type_normalized = "rna"
-        elif reads_type_normalized is not None:
-            raise ValueError("reads_type must be one of 'rna', 'dna', or None")
+        else:
+            reads_type_normalized = None
 
         ref_type = (reference_type or "auto").lower()
         if ref_type in {"dna", "genome", "genomic", "g"}:
@@ -273,7 +275,7 @@ def denovo(
             if reads_type_normalized is None:
                 raise ValueError(
                     "Cannot verify the aligner for a genome reference without knowing the read type. "
-                    "Set reads_type='rna' (spliced RNA reads -> STAR) or reads_type='dna' (DNA reads -> bowtie2)."
+                    "Set technology to an RNA technology (spliced RNA reads -> STAR) or technology='dna' (DNA reads -> bowtie2)."
                 )
             expected_aligner = "STAR" if reads_type_normalized == "rna" else "bowtie2"
         else:
@@ -539,7 +541,7 @@ def main():
     parser.add_argument("-r", "--read-length", type=int, default=None, help="Read length (default: inferred from the first read)")
     parser.add_argument("-m", "--min-counts", type=int, default=3, help="Minimum count threshold for filtering")
     parser.add_argument("-a", "--aligner", default="bowtie2", choices=["STAR", "bowtie2"], help="Aligner to use: STAR (splice-aware; RNA reads to a genome) or bowtie2 (otherwise)")
-    parser.add_argument("--reads-type", "--reads_type", default=None, choices=["rna", "dna"], help="Read type, used to validate the aligner. Required to validate the choice when the reference is a genome.")
+    parser.add_argument("--technology", "--technology", default=None, help="Sequencing technology (same vocabulary as vk ref/count; 'dna' declares genomic DNA reads, any other technology declares RNA reads). Fills in the read type used to validate the aligner; required to validate the choice when the reference is a genome.")
     parser.add_argument("--reference-type", "--reference_type", default="auto", choices=["auto", "genome", "dna", "transcriptome", "cdna"], help="Whether --sequences is a genome or transcriptome, used to validate the aligner. auto infers it from the FASTA sequence IDs.")
     parser.add_argument("--variant-caller", default="bcftools", choices=["bcftools", "cigar"], help="Variant caller to use: bcftools or cigar")
     parser.add_argument("--bowtie2-seed-length", type=int, default=None, help="Seed length for Bowtie2 aligner")
@@ -576,7 +578,7 @@ def main():
         read_length=args.read_length,
         min_counts=args.min_counts,
         aligner=args.aligner,
-        reads_type=args.reads_type,
+        technology=args.technology,
         reference_type=args.reference_type,
         variant_caller=args.variant_caller,
         bowtie2_seed_length=args.bowtie2_seed_length,

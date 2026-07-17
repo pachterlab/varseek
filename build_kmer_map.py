@@ -4,9 +4,12 @@ from pathlib import Path
 from tqdm import tqdm
 import time
 import argparse
+import logging
 
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 DNA = {
@@ -27,9 +30,11 @@ for _base, _code in DNA.items():
 def _count_seqs(path):
     """Count FASTA records cheaply in one binary pass (each header is a '>' byte)."""
     n = 0
-    with open(path, "rb") as f:
+    size = Path(path).stat().st_size
+    with open(path, "rb") as f, tqdm(total=size, desc=f"Counting sequences in {Path(path).name}", unit="B", unit_scale=True, leave=False) as bar:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             n += chunk.count(b">")
+            bar.update(len(chunk))
     return n
 
 
@@ -135,7 +140,7 @@ def build_kmer_map(inputs, left_extent, right_extent, skip_truncated=False):
     lefts, rights, packeds, ref_id_chunks, pos_chunks = [], [], [], [], []
 
     for fasta, prefix in inputs:
-        print(f"Processing {Path(fasta).name}...")
+        logger.info("Processing %s...", Path(fasta).name)
         total = _count_seqs(fasta)
 
         for ref, seq in tqdm(fasta_reader(fasta), desc="Building k-mer map", unit="sequence", total=total):
@@ -302,7 +307,7 @@ def build_ec_tables(kmer_arrays, ref_names, seq_prefix, gtf=None, seq_id_column=
     seq_meta_df : DataFrame [<seq_id_column>, prefix]
         The prefix each ref was labelled with, to reconstruct singleton headers.
     """
-    print("Assembling equivalence-class tables...")
+    logger.info("Assembling equivalence-class tables...")
 
     left, right, packed, ref_ids, positions = kmer_arrays
     seq_meta_df = pd.DataFrame({seq_id_column: list(seq_prefix), "prefix": list(seq_prefix.values())})
@@ -312,18 +317,21 @@ def build_ec_tables(kmer_arrays, ref_names, seq_prefix, gtf=None, seq_id_column=
         positions_df = pd.DataFrame({seq_id_column: [], position_column: [], "ec_id": [], "ec_size": []})
         positions_df["ec_size"] = positions_df["ec_size"].astype("int32")
         ecs_df = pd.DataFrame({"ec_id": [], "header": []})
-        print("Built 0 equivalence classes covering 0 positions.")
+        logger.info("Built 0 equivalence classes covering 0 positions.")
         return positions_df, ecs_df, seq_meta_df
 
     # Sort so identical (left_len, right_len, packed) keys are adjacent. packed is
     # (N, n_limbs); each limb column is its own lexsort key. The last lexsort key is
     # primary, so this groups by the full (left, right, all limbs) tuple.
+    t0 = time.perf_counter()
     order = np.lexsort((*packed.T, right, left))
     left, right, packed = left[order], right[order], packed[order]
     ref_ids, positions = ref_ids[order], positions[order]
+    logger.info("Sorted %d anchors in %.1fs", N, time.perf_counter() - t0)
 
     # Group boundaries: a new group starts wherever any key field (any limb
     # included) differs from the previous row.
+    t0 = time.perf_counter()
     same = (left[1:] == left[:-1]) & (right[1:] == right[:-1]) & (packed[1:] == packed[:-1]).all(axis=1)
     starts = np.concatenate(([0], np.flatnonzero(~same) + 1))
     sizes = np.diff(np.concatenate((starts, [N])))
@@ -342,19 +350,25 @@ def build_ec_tables(kmer_arrays, ref_names, seq_prefix, gtf=None, seq_id_column=
 
     m_ec = elem_ec[member]
     m_size = elem_size[member].astype(np.int32)
+    logger.info("Grouped %d anchors into %d ECs (%d member rows) in %.1fs", N, n_ec, int(member.sum()), time.perf_counter() - t0)
+
+    t0 = time.perf_counter()
     flat_refs = [ref_names[r] for r in ref_ids[member].tolist()]
     flat_pos = positions[member].tolist()
     flat_prefix = [seq_prefix[r] for r in flat_refs]
 
     labels = _annotate_labels(flat_refs, flat_prefix, flat_pos, gtf)
+    logger.info("Built %d member labels%s in %.1fs", len(labels), " (with GTF gene names)" if gtf else "", time.perf_counter() - t0)
 
     # One header per EC: sort+join the labels of its (contiguous) members.
+    t0 = time.perf_counter()
     ec_sizes = sizes[is_ec]
     headers = [None] * n_ec
     s = 0
-    for j, sz in enumerate(ec_sizes.tolist()):
+    for j, sz in enumerate(tqdm(ec_sizes.tolist(), desc="Joining EC headers", unit="EC")):
         headers[j] = ";".join(sorted(labels[s:s + sz]))
         s += sz
+    logger.info("Joined %d EC headers in %.1fs", n_ec, time.perf_counter() - t0)
 
     positions_df = pd.DataFrame({seq_id_column: flat_refs, position_column: flat_pos, "ec_id": m_ec, "ec_size": m_size})
     # int32 keeps the column small while still covering huge repeat classes (int16
@@ -362,7 +376,7 @@ def build_ec_tables(kmer_arrays, ref_names, seq_prefix, gtf=None, seq_id_column=
     positions_df["ec_size"] = positions_df["ec_size"].astype("int32")
     ecs_df = pd.DataFrame({"ec_id": np.arange(n_ec), "header": headers})
 
-    print(f"Built {len(ecs_df)} equivalence classes covering {len(positions_df)} positions.")
+    logger.info("Built %d equivalence classes covering %d positions.", len(ecs_df), len(positions_df))
     return positions_df, ecs_df, seq_meta_df
 
 
@@ -373,7 +387,7 @@ def write_ec_tables(positions_df, ecs_df, seq_meta_df, outdir):
     positions_df.to_parquet(outdir / "positions.parquet", index=False)
     ecs_df.to_parquet(outdir / "ecs.parquet", index=False)
     seq_meta_df.to_parquet(outdir / "seq_meta.parquet", index=False)
-    print(f"Wrote tables to {outdir}/")
+    logger.info("Wrote tables to %s/", outdir)
 
 
 def substitute(query_df, table_dir, fill_singletons=True, seq_id_column="seq_id", position_column="position"):
@@ -457,7 +471,7 @@ def build_kmer_index(cdna=None, dna=None, k=31, anchor="middle", gtf=None, out="
     kmer_arrays, ref_names, seq_prefix = build_kmer_map(inputs, left_extent, right_extent, skip_truncated=skip_truncated)
     positions_df, ecs_df, seq_meta_df = build_ec_tables(kmer_arrays, ref_names, seq_prefix, gtf=gtf, seq_id_column=seq_id_column, position_column=position_column)
     write_ec_tables(positions_df, ecs_df, seq_meta_df, out)
-    print(f"Finished building k-mer equivalence-class tables in {time.perf_counter() - start_time:.1f} seconds.")
+    logger.info("Finished building k-mer equivalence-class tables in %.1f seconds.", time.perf_counter() - start_time)
 
 
 def map_to_kmer_index(table, query, no_singletons=False, out=None, seq_id_column="seq_id", position_column="position"):
@@ -470,12 +484,14 @@ def map_to_kmer_index(table, query, no_singletons=False, out=None, seq_id_column
     result = substitute(query, table, fill_singletons=not no_singletons, seq_id_column=seq_id_column, position_column=position_column)
     if out:
         _write_query(result, out)
-        print(f"Wrote {len(result)} substituted rows to {out}")
-    print(f"Finished mapping {len(result)} query rows to k-mer equivalence-class headers in {time.perf_counter() - start_time:.1f} seconds.")
+        logger.info("Wrote %d substituted rows to %s", len(result), out)
+    logger.info("Finished mapping %d query rows to k-mer equivalence-class headers in %.1f seconds.", len(result), time.perf_counter() - start_time)
     return result
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
+
     parser = argparse.ArgumentParser(description="Build k-mer equivalence-class tables and substitute HGVS-like locations with their EC header.")
     sub = parser.add_subparsers(dest="command", required=True)
 

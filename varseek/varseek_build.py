@@ -103,6 +103,27 @@ tqdm.pandas()
 logger = logging.getLogger(__name__)
 logger = set_up_logger(logger, logging_level="INFO", save_logs=False, log_dir=None)
 
+
+def _load_build_kmer_map():
+    """Import ``build_kmer_map`` (which lives at the repo root, not inside the installed
+    package). Tries a normal import first (works when the repo root is on sys.path, e.g.
+    running from a source checkout), then falls back to loading it by path relative to
+    this file so it works regardless of the current working directory."""
+    import importlib
+
+    try:
+        return importlib.import_module("build_kmer_map")
+    except ImportError:
+        import importlib.util
+
+        module_path = Path(__file__).resolve().parent.parent / "build_kmer_map.py"
+        spec = importlib.util.spec_from_file_location("build_kmer_map", module_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"could not locate build_kmer_map.py at {module_path}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
 # Define global variables to count occurences of weird mutations
 intronic_mutations = 0
 posttranslational_region_mutations = 0
@@ -252,6 +273,7 @@ def build(
     k: OddInt3To63 = 51,
     optimize_flanking_regions: bool = True,
     merge_identical: bool = True,
+    merge_reference_equivalent_headers: bool = False,
     dlist: Optional[Union[Literal["None", "intergenic_dna", "cdna"], ExistingFasta]] = None,
     max_ambiguous: NonNegativeInt = 0,  # filters
     min_seq_len: Optional[Union[PositiveInt, Literal["k"]]] = "k",  # "k" sentinel = "use the k value" (default); None = no length filter; int = that minimum
@@ -355,6 +377,12 @@ def build(
                                          that the mutant sequence does not contain any (w+1)-mers (where a (w+1)-mer is a subsequence of length w+1, with w defined by the 'w' argument) also found in the wildtype/input sequence. Default: True
     - merge_identical                    (True/False) Whether to merge sequence-identical VCRSs in the output (identical VCRSs will be merged by concatenating the sequence
                                          headers for all identical sequences with semicolons). Default: True
+    - merge_reference_equivalent_headers (True/False) Whether to merge the headers of variants whose positions are indistinguishable in the *reference* — i.e. whose
+                                         surrounding (2*w+1)-mer window is identical to that of another reference position, so any event at one looks identical to the same
+                                         event at the other. Unlike merge_identical (which compares the built VCRS sequences), this compares the reference sequences, and it
+                                         runs *before* merge_identical. Under the hood it builds (once, cached under `reference_out_dir`) a k-mer equivalence-class index over
+                                         `sequences` with k=2*w+1 via build_kmer_map, then maps each variant's position to its equivalence class and semicolon-joins the headers
+                                         of variants sharing one. Requires `sequences` to be a fasta file. Default: False.
     - dlist                              (str) The d-list (distinguishing list) passed to `kb ref` when creating the VCRS index, used to mask k-mers shared with a normal reference. One of:
                                          None (no d-list; default), 'intergenic_dna' (build a d-list fasta of intergenic genomic regions from the reference DNA + GTF via make_intergenic_fasta),
                                          'cdna' (build a spliced-transcript/cDNA d-list fasta from the reference DNA + GTF via make_transcriptome_fasta), or a path to an existing fasta file to use directly.
@@ -1391,6 +1419,61 @@ def build(
             mutations["end_variant_position"] = mutations["start_variant_position"]
 
         mutations[["start_variant_position", "end_variant_position"]] = mutations[["start_variant_position", "end_variant_position"]].astype(int)
+
+    # Merge variants that are indistinguishable in the *reference* (their (2*w+1)-mer window is
+    # identical to another reference position's, so any event at one looks identical at the other).
+    # This precedes merge_identical (which compares the built VCRS sequences instead).
+    if merge_reference_equivalent_headers and not mutations.empty:
+        if not (isinstance(sequences, str) and os.path.isfile(sequences) and sequences.endswith(fasta_extensions)):
+            logger.warning("merge_reference_equivalent_headers requires `sequences` to be a fasta file; skipping this merge step (got %r).", sequences)
+        else:
+            bkm = _load_build_kmer_map()
+
+            # Build (once) a k-mer equivalence-class index over the reference, cached alongside the
+            # other derived reference artifacts so repeat runs reuse it.
+            kmer_ec_table_dir = os.path.join(reference_out_dir if reference_out_dir else os.path.join(out, "reference"), "kmer_ec_tables")
+            if os.path.exists(os.path.join(kmer_ec_table_dir, "positions.parquet")):
+                logger.info("Reusing existing k-mer equivalence-class tables at %s.", kmer_ec_table_dir)
+            else:
+                detection_gtf = gtf if isinstance(gtf, str) and os.path.isfile(gtf) else None
+                looks_like_cdna = fasta_looks_like_cdna(sequences, gtf=detection_gtf)
+                logger.info("Building k-mer equivalence-class tables over %s (detected as %s) with k=%d...", sequences, "cDNA/transcriptome" if looks_like_cdna else "genomic DNA", 2 * w + 1)
+                bkm.build_kmer_index(
+                    cdna=[sequences] if looks_like_cdna else [],
+                    dna=[] if looks_like_cdna else [sequences],
+                    k=2 * w + 1,
+                    anchor="middle",
+                    gtf=detection_gtf,
+                    out=kmer_ec_table_dir,
+                    seq_id_column=seq_id_column,
+                    position_column="position",
+                )
+
+            # Map each variant to its reference equivalence class. The anchor base is the variant's
+            # position (build_kmer_map is 1-based; start_variant_position is 0-based -> +1). Rows in a
+            # multi-member class (ec_size >= 2) share an identical reference window.
+            kmer_query = mutations[[seq_id_column]].copy()
+            kmer_query["position"] = mutations["start_variant_position"].astype(int) + 1
+            mapped = bkm.map_to_kmer_index(kmer_ec_table_dir, kmer_query, seq_id_column=seq_id_column, position_column="position")
+
+            ec_key = pd.Series(mapped["header"].values, index=mutations.index)
+            ec_size = pd.to_numeric(pd.Series(mapped["ec_size"].values, index=mutations.index), errors="coerce").fillna(0).astype(int)
+            shared = ec_size >= 2
+            if shared.any():
+                merged = (
+                    mutations.loc[shared]
+                    .assign(_ec_key=ec_key[shared])
+                    .groupby("_ec_key", sort=False)["header"]
+                    .transform(lambda h: ";".join(sorted(h.astype(str))))
+                )
+                mutations.loc[shared, "header"] = merged
+                n_classes = int(ec_key[shared].nunique())
+                n_before = len(mutations)
+                # Collapse the now-identical headers within each class to a single representative VCRS.
+                mutations = mutations.drop_duplicates(subset="header", keep="first")
+                logger.info("merge_reference_equivalent_headers merged %d reference-equivalent variant(s) into %d equivalence class(es).", n_before - len(mutations), n_classes)
+            else:
+                logger.info("merge_reference_equivalent_headers: no variants shared a reference equivalence class.")
 
     if merge_identical:
         logger.info("Merging rows of identical VCRSs")

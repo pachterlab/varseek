@@ -404,6 +404,12 @@ def add_build_arguments(parser, required):
         help=extract_help_from_doc(build, "merge_identical", disable=True),
     )
     parser.add_argument(
+        "--merge_reference_equivalent_headers",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "merge_reference_equivalent_headers"),
+    )
+    parser.add_argument(
         "--disable_merge_subsequences",
         dest="merge_subsequences",
         action="store_false",
@@ -832,11 +838,9 @@ def main():  # noqa: C901
         help=extract_help_from_doc(denovo, "aligner"),
     )
     parser_denovo.add_argument(
-        "--reads-type",
-        "--reads_type",
-        choices=["rna", "dna"],
+        "--technology",
         default=argparse.SUPPRESS,
-        help=extract_help_from_doc(denovo, "reads_type"),
+        help=extract_help_from_doc(denovo, "technology"),
     )
     parser_denovo.add_argument(
         "--reference-type",
