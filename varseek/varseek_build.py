@@ -377,12 +377,14 @@ def build(
                                          that the mutant sequence does not contain any (w+1)-mers (where a (w+1)-mer is a subsequence of length w+1, with w defined by the 'w' argument) also found in the wildtype/input sequence. Default: True
     - merge_identical                    (True/False) Whether to merge sequence-identical VCRSs in the output (identical VCRSs will be merged by concatenating the sequence
                                          headers for all identical sequences with semicolons). Default: True
-    - merge_reference_equivalent_headers (True/False) Whether to merge the headers of variants whose positions are indistinguishable in the *reference* — i.e. whose
-                                         surrounding (2*w+1)-mer window is identical to that of another reference position, so any event at one looks identical to the same
-                                         event at the other. Unlike merge_identical (which compares the built VCRS sequences), this compares the reference sequences, and it
-                                         runs *before* merge_identical. Under the hood it builds (once, cached under `reference_out_dir`) a k-mer equivalence-class index over
-                                         `sequences` with k=2*w+1 via build_kmer_map, then maps each variant's position to its equivalence class and semicolon-joins the headers
-                                         of variants sharing one. Requires `sequences` to be a fasta file. Default: False.
+    - merge_reference_equivalent_headers (True/False) Whether to rewrite each VCRS header to its full reference equivalence class. Two reference positions are equivalent when
+                                         their surrounding (2*w+1)-mer window is identical, so the SAME event at either position produces indistinguishable reads. When enabled,
+                                         a variant's header is swapped for that same event transplanted onto every position in its class — e.g. with positions 10 and 30 sharing a
+                                         window, 'chr1:g.10T>A' becomes 'chr1:g.10T>A;chr1:g.30T>A'. Identical events at equivalent positions therefore collapse into one VCRS,
+                                         while different events (e.g. 'chr1:g.30T>C') keep a distinct header. Unlike merge_identical (which compares the built VCRS sequences), this
+                                         compares the reference sequences, and it runs *before* merge_identical. Under the hood it builds (once, cached under `reference_out_dir`)
+                                         a k-mer equivalence-class index over `sequences` with k=2*w+1 via build_kmer_map, then maps each variant's position to its class.
+                                         Requires `sequences` to be a fasta file (and is skipped when a custom var_id_column is used). Default: False.
     - dlist                              (str) The d-list (distinguishing list) passed to `kb ref` when creating the VCRS index, used to mask k-mers shared with a normal reference. One of:
                                          None (no d-list; default), 'intergenic_dna' (build a d-list fasta of intergenic genomic regions from the reference DNA + GTF via make_intergenic_fasta),
                                          'cdna' (build a spliced-transcript/cDNA d-list fasta from the reference DNA + GTF via make_transcriptome_fasta), or a path to an existing fasta file to use directly.
@@ -1426,6 +1428,8 @@ def build(
     if merge_reference_equivalent_headers and not mutations.empty:
         if not (isinstance(sequences, str) and os.path.isfile(sequences) and sequences.endswith(fasta_extensions)):
             logger.warning("merge_reference_equivalent_headers requires `sequences` to be a fasta file; skipping this merge step (got %r).", sequences)
+        elif var_id_column is not None:
+            logger.warning("merge_reference_equivalent_headers reconstructs HGVS-style headers and is not compatible with a custom var_id_column; skipping this merge step.")
         else:
             bkm = _load_build_kmer_map()
 
@@ -1435,8 +1439,10 @@ def build(
             if os.path.exists(os.path.join(kmer_ec_table_dir, "positions.parquet")):
                 logger.info("Reusing existing k-mer equivalence-class tables at %s.", kmer_ec_table_dir)
             else:
-                detection_gtf = gtf if isinstance(gtf, str) and os.path.isfile(gtf) else None
-                looks_like_cdna = fasta_looks_like_cdna(sequences, gtf=detection_gtf)
+                # Bake gene names into the EC member labels only when build itself annotates
+                # headers with genes, so the transplanted labels match the VCRS header style.
+                detection_gtf = gtf if (add_gene_name_to_header and isinstance(gtf, str) and os.path.isfile(gtf)) else None
+                looks_like_cdna = fasta_looks_like_cdna(sequences, gtf=detection_gtf if detection_gtf else (gtf if isinstance(gtf, str) and os.path.isfile(gtf) else None))
                 logger.info("Building k-mer equivalence-class tables over %s (detected as %s) with k=%d...", sequences, "cDNA/transcriptome" if looks_like_cdna else "genomic DNA", 2 * w + 1)
                 bkm.build_kmer_index(
                     cdna=[sequences] if looks_like_cdna else [],
@@ -1450,28 +1456,45 @@ def build(
                 )
 
             # Map each variant to its reference equivalence class. The anchor base is the variant's
-            # position (build_kmer_map is 1-based; start_variant_position is 0-based -> +1). Rows in a
-            # multi-member class (ec_size >= 2) share an identical reference window.
+            # position (build_kmer_map is 1-based; start_variant_position is 0-based -> +1). map returns
+            # the ";"-joined member positions of that class (as "<ref>:<prefix>.<pos>") plus ec_size;
+            # a multi-member class (ec_size >= 2) means the window is shared by other reference positions.
+            anchor_pos = mutations["start_variant_position"].astype(int) + 1
             kmer_query = mutations[[seq_id_column]].copy()
-            kmer_query["position"] = mutations["start_variant_position"].astype(int) + 1
+            kmer_query["position"] = anchor_pos.values
             mapped = bkm.map_to_kmer_index(kmer_ec_table_dir, kmer_query, seq_id_column=seq_id_column, position_column="position")
 
-            ec_key = pd.Series(mapped["header"].values, index=mutations.index)
+            ec_members = pd.Series(mapped["header"].values, index=mutations.index)
             ec_size = pd.to_numeric(pd.Series(mapped["ec_size"].values, index=mutations.index), errors="coerce").fillna(0).astype(int)
-            shared = ec_size >= 2
+            shared = (ec_size >= 2) & ec_members.notna()
+
             if shared.any():
-                merged = (
-                    mutations.loc[shared]
-                    .assign(_ec_key=ec_key[shared])
-                    .groupby("_ec_key", sort=False)["header"]
-                    .transform(lambda h: ";".join(sorted(h.astype(str))))
-                )
-                mutations.loc[shared, "header"] = merged
-                n_classes = int(ec_key[shared].nunique())
+                # Swap each shared variant's header for its FULL equivalence class: the SAME event
+                # transplanted onto every position in the class. For anchor position A and class member
+                # position P, the member's HGVS is this variant's HGVS with every coordinate shifted by
+                # (P - A) — so "chr1:g.10T>A" with class {10, 30} becomes "chr1:g.10T>A;chr1:g.30T>A"
+                # (identical events merge; a different event like g.30T>C keeps a distinct header).
+                def _expand_to_equivalence_class(variant_str, anchor, members):
+                    labels = set()
+                    for member in str(members).split(";"):
+                        ref, _prefix, pos = bkm.parse_label(member)  # ref may carry a "(GENE)" suffix
+                        delta = pos - anchor
+                        shifted = re.sub(r"\d+", lambda m: str(int(m.group()) + delta), variant_str) if delta else variant_str
+                        labels.add(f"{ref}:{shifted}")
+                    return ";".join(sorted(labels))
+
+                new_headers = [
+                    _expand_to_equivalence_class(v, a, m)
+                    for v, a, m in zip(mutations.loc[shared, var_column].astype(str), anchor_pos[shared], ec_members[shared])
+                ]
+                mutations.loc[shared, "header"] = new_headers
+
+                n_expanded = int(shared.sum())
                 n_before = len(mutations)
-                # Collapse the now-identical headers within each class to a single representative VCRS.
+                # Identical events at equivalent positions now share an identical header (and VCRS);
+                # collapse those duplicates to one record. Different events keep distinct headers.
                 mutations = mutations.drop_duplicates(subset="header", keep="first")
-                logger.info("merge_reference_equivalent_headers merged %d reference-equivalent variant(s) into %d equivalence class(es).", n_before - len(mutations), n_classes)
+                logger.info("merge_reference_equivalent_headers: expanded %d header(s) to their reference equivalence class; collapsed %d now-duplicate VCRS(s).", n_expanded, n_before - len(mutations))
             else:
                 logger.info("merge_reference_equivalent_headers: no variants shared a reference equivalence class.")
 

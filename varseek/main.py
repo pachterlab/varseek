@@ -884,11 +884,19 @@ def main():  # noqa: C901
         help=extract_help_from_doc(denovo, "skip_indels"),
     )
     parser_denovo.add_argument(
-        "--disable-baq",
-        "--disable_baq",
-        action="store_true",
+        "--enable-baq",
+        "--enable_baq",
+        dest="disable_baq",
+        action="store_false",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help="Enable BAQ (Base Alignment Quality) computation in mpileup. Disabled by default: BAQ raises specificity near indels but suppresses marginal calls and costs a large amount of runtime (a per-read HMM realignment).",
+    )
+    parser_denovo.add_argument(
+        "--max-depth",
+        "--max_depth",
+        type=int,
         default=argparse.SUPPRESS,
-        help=extract_help_from_doc(denovo, "disable_baq"),
+        help=extract_help_from_doc(denovo, "max_depth"),
     )
     parser_denovo.add_argument(
         "--split-bam-by-n",

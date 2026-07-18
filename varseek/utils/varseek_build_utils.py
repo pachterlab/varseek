@@ -74,7 +74,7 @@ def _build_chrom_gene_index(intervals):
     return starts, ends, names, max_end
 
 
-def compute_gene_name_series_for_headers(mutations, seq_id_column, var_column, gtf):
+def compute_gene_name_series_for_headers(mutations, seq_id_column, var_column, gtf, lookups=None):
     """Map each variant to its gene name (symbol) using a GTF, for HGVS-header annotation.
 
     Transcript/cDNA/CDS variants (seq_ID like ``ENST...``) are mapped ENST -> gene_name; genome
@@ -82,9 +82,13 @@ def compute_gene_name_series_for_headers(mutations, seq_id_column, var_column, g
     via the GTF gene intervals. Variants with no gene match get an empty string (they are written
     without a gene annotation).
 
+    ``lookups`` optionally supplies an already-parsed ``(transcript_to_gene_name, gene_intervals)``
+    pair (from :func:`gene_name_lookups_from_gtf`), so callers that annotate in several passes can
+    parse the (potentially multi-GB) GTF once instead of on every call. When None it is parsed here.
+
     Returns a pandas Series of gene names aligned to ``mutations.index``.
     """
-    transcript_to_gene_name, gene_intervals = gene_name_lookups_from_gtf(gtf)
+    transcript_to_gene_name, gene_intervals = lookups if lookups is not None else gene_name_lookups_from_gtf(gtf)
 
     seq_ids = mutations[seq_id_column].astype(str).str.split(".").str[0]  # strip any version suffix
     variants = mutations[var_column].astype(str)

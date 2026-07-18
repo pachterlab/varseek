@@ -66,10 +66,15 @@ class DenovoParams(BaseModel):
     output_tsv: object = None
     tsv_reference_type: object = "auto"
     overwrite: object = False
+    variant_caller: object = "bcftools"
 
     @model_validator(mode="after")
     def _validate(self):
-        if not self.output.endswith(".vcf") and not self.output.endswith(".vcf.gz"):
+        # The two callers emit different formats, so the required extension depends on the caller.
+        if self.variant_caller == "cigar":
+            if not self.output.endswith(".csv"):
+                raise ValueError("when using the 'cigar' variant caller, --output must end with .csv")
+        elif not self.output.endswith(".vcf") and not self.output.endswith(".vcf.gz"):
             raise ValueError("--output must end with .vcf or .vcf.gz")
 
         if self.sequences:
@@ -133,7 +138,8 @@ def denovo(
     bowtie2_score_min: Optional[str] = None,
     include: Optional[str] = None,
     skip_indels: bool = False,
-    disable_baq: bool = False,
+    disable_baq: bool = True,
+    max_depth: PositiveInt = 1000,
     split_bam_by_n: bool = False,
     disable_bcftools_norm: bool = False,
     bcftools_call_prior: Optional[str] = None,
@@ -174,7 +180,8 @@ def denovo(
     - bowtie2_score_min              (str) Bowtie2 score-min setting. Default: None
     - include                        (str) bcftools filter expression. Default: None
     - skip_indels                    (bool) Skip indels. Default: False
-    - disable_baq                    (bool) Disable BAQ computation in mpileup. Default: False
+    - disable_baq                    (bool) Disable BAQ (Base Alignment Quality) computation in mpileup, passing -B. BAQ downweights base qualities near indels and in misalignment-prone regions, which raises specificity but suppresses marginal calls and costs a large amount of runtime (a per-read HMM realignment). Disabled by default because varseek's typical use is sensitive candidate discovery; set False to recover bcftools' stock specificity. Default: True
+    - max_depth                      (int) Maximum reads per input file at any single position in mpileup, passed as -d. Only binds at positions deeper than this. Capping subsamples reads, so allele *fraction* is roughly preserved and only absolute counts shrink -- a variant is lost only if its capped ALT count falls under min_counts (roughly AF < min_counts/max_depth at capped sites). Raise it when hunting low-frequency somatic/subclonal variants; lower it for speed on deep RNA-seq pileups. Default: 1000
     - split_bam_by_n                 (bool) Split BAM by N in CIGAR using GATK SplitNCigarReads. Default: False
     - disable_bcftools_norm          (bool) Disable bcftools norm. Default: False
     - bcftools_call_prior            (str) Prior for bcftools call. Default: None
@@ -342,6 +349,7 @@ def denovo(
                     --sjdbOverhang {read_length_minus_one} \
                     --outFileNamePrefix {star_alignment_prefix} \
                     --outSAMtype BAM SortedByCoordinate \
+                    --outSAMattributes NH HI AS nM MD \
                     --outSAMmapqUnique 60 \
                     --twopassMode Basic \
                     --limitSjdbInsertNsj 1000000 \
@@ -440,7 +448,7 @@ def denovo(
         if not output.endswith(".vcf") and not output.endswith(".vcf.gz"):
             raise ValueError("when using 'bcftools' variant caller, --output must end with .vcf or .vcf.gz")
         
-        bcftools_cmd = f"bcftools mpileup --threads {threads} -A -f {sequences} -a INFO/AD -Q 0 -d 10000 -Ou"
+        bcftools_cmd = f"bcftools mpileup --threads {threads} -A -f {sequences} -a INFO/AD -Q 0 -d {max_depth} -Ou"
         if regions:
             bcftools_cmd += f" -R {regions}"
         if disable_baq:
@@ -514,6 +522,11 @@ def denovo(
             raise ValueError("--output-tsv is only supported with the 'bcftools' variant caller")
         if not output.endswith(".csv"):
             raise ValueError("when using 'cigar' variant caller, --output must end with .csv")
+        if len(bam_files) > 1:
+            raise NotImplementedError(
+                f"the 'cigar' variant caller reads a single BAM, but {len(bam_files)} were given. "
+                "Pass merge_bam_files=True to combine them, or run one input at a time."
+            )
         parse_cigars(bam_path=bam_for_bcftools, total=None, out_plot=None, do_baq=(not disable_baq), regions=regions, min_threshold=min_counts, strip_version_numbers=strip_version_numbers, out_dataframe=output, logger=logger)
     else:
         raise ValueError(f"variant caller '{variant_caller}' not supported")
@@ -548,7 +561,8 @@ def main():
     parser.add_argument("--bowtie2-score-min", default=None, help="Score minimum for Bowtie2 aligner")
     parser.add_argument("-i", "--include", default="", help="bcftools filter expression")
     parser.add_argument("-I", "--skip-indels", action="store_true", help="Skip indels")
-    parser.add_argument("--disable-baq", action="store_true", help="Disable BAQ computation in mpileup")
+    parser.add_argument("--enable-baq", dest="disable_baq", action="store_false", help="Enable BAQ computation in mpileup (disabled by default: BAQ raises specificity near indels but suppresses marginal calls and is a large runtime cost)")
+    parser.add_argument("--max-depth", type=int, default=1000, help="Maximum reads per input file at any single position in mpileup (-d). Raise for low-frequency somatic/subclonal variants, lower for speed on deep pileups.")
     parser.add_argument("--split-bam-by-n", action="store_true", help="Split BAM by N in CIGAR (spliced reads)")
     parser.add_argument("--merge-bam-files", action="store_true", help="Merge multiple BAM files into one for variant calling (Bowtie2 only)")
     parser.add_argument("--strip-version-numbers", action="store_true", help="Strip version numbers from chromosome names in output VCF")
@@ -586,6 +600,7 @@ def main():
         include=args.include,
         skip_indels=args.skip_indels,
         disable_baq=args.disable_baq,
+        max_depth=args.max_depth,
         split_bam_by_n=args.split_bam_by_n,
         merge_bam_files=args.merge_bam_files,
         strip_version_numbers=args.strip_version_numbers,

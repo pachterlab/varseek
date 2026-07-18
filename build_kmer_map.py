@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from pathlib import Path
+import resource
 from tqdm import tqdm
 import time
 import argparse
@@ -8,6 +9,12 @@ import logging
 
 import numpy as np
 import pandas as pd
+
+max_ram_gb = 500  # 300 GB
+MAX_RAM = max_ram_gb * 1024**3
+
+soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+resource.setrlimit(resource.RLIMIT_AS, (MAX_RAM, MAX_RAM))
 
 logger = logging.getLogger(__name__)
 
@@ -271,13 +278,28 @@ def _annotate_labels(refs, prefixes, positions, gtf):
     if gtf is None:
         return plain
 
-    # Reuse varseek's mapping over the flat member list in one vectorised call.
+    from varseek.utils.seq_utils import gene_name_lookups_from_gtf
     from varseek.utils.varseek_build_utils import compute_gene_name_series_for_headers
 
-    members = pd.DataFrame({"seq_id": refs, "mutation": [f"{p}.{pos}" for p, pos in zip(prefixes, positions)]})
-    genes = compute_gene_name_series_for_headers(members, "seq_id", "mutation", gtf).tolist()
+    # Parse the (potentially multi-GB) GTF exactly once, then resolve gene names over the
+    # UNIQUE dedup keys rather than once per member. A transcript (c.) variant's gene depends
+    # only on its seq_id, so its key drops the position — a transcriptome's millions of anchors
+    # collapse to its few thousand distinct transcripts. Genome (g.) variants keep the position
+    # (gene depends on it), so they are not deduplicated beyond exact repeats.
+    lookups = gene_name_lookups_from_gtf(gtf)
 
-    return [f"{r}({g}):{p}.{pos}" if g else plabel for r, p, pos, g, plabel in zip(refs, prefixes, positions, genes, plain)]
+    dedup_keys = [(r, "" if p == "c" else f"{p}.{pos}") for r, p, pos in zip(refs, prefixes, positions)]
+    uniq_keys = list(dict.fromkeys(dedup_keys))
+
+    # "c.1" is a throwaway position for transcript rows: the ENST->gene path ignores it, so any
+    # valid c. mutation yields the same gene. Genome rows carry their real "g.<pos>" mutation.
+    frame = pd.DataFrame({
+        "seq_id": [k[0] for k in uniq_keys],
+        "mutation": [k[1] or "c.1" for k in uniq_keys],
+    })
+    gene_of_key = dict(zip(uniq_keys, compute_gene_name_series_for_headers(frame, "seq_id", "mutation", gtf, lookups=lookups).tolist()))
+
+    return [f"{r}({g}):{p}.{pos}" if (g := gene_of_key[k]) else plabel for r, p, pos, k, plabel in zip(refs, prefixes, positions, dedup_keys, plain)]
 
 
 def build_ec_tables(kmer_arrays, ref_names, seq_prefix, gtf=None, seq_id_column="seq_id", position_column="position"):

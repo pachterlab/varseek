@@ -132,8 +132,86 @@ def check_tool(tool):
         raise ValueError(f"required tool '{tool}' is not installed or not in PATH.")
 
 
+def tokenize_md(md):
+    """Tokenize an MD tag into a list of ('match', n) / ('mismatch', base) / ('del', bases)."""
+    tokens = []
+    for num, deletion, mismatch in re.findall(r"(\d+)|\^([A-Za-z]+)|([A-Za-z])", md):
+        if num:
+            n = int(num)
+            if n:  # MD emits 0-length runs between adjacent mismatches
+                tokens.append(("match", n))
+        elif deletion:
+            tokens.append(("del", deletion.upper()))
+        elif mismatch:
+            tokens.append(("mismatch", mismatch.upper()))
+    return tokens
+
+
+def extract_variants_from_read(read, chrom):
+    """Return HGVS-style variant strings for one aligned read.
+
+    Walks the CIGAR and the MD tag together. MD describes only the reference bases covered
+    by M/=/X and D operations -- it encodes nothing about soft clips (S), insertions (I), or
+    spliced gaps (N), so it cannot be walked on its own to derive coordinates. Doing so
+    shifts every variant downstream of a junction by the intron length, which is why spliced
+    (e.g. STAR) alignments in particular need the joint walk.
+    """
+    seq = read.query_sequence
+    cigar = read.cigartuples
+    if seq is None or not cigar or not read.has_tag("MD"):
+        return []
+
+    md_tokens = tokenize_md(read.get_tag("MD"))
+    md_idx = 0
+    md_match_left = 0  # unconsumed length of the current ('match', n) token
+
+    variants = []
+    ref_pos = read.reference_start + 1  # pysam is 0-based, HGVS is 1-based
+    read_pos = 0
+
+    for op, length in cigar:
+        if op in (0, 7, 8):  # M / = / X -- consume both; MD says which of these mismatch
+            consumed = 0
+            while consumed < length:
+                if md_match_left == 0:
+                    if md_idx >= len(md_tokens):
+                        break  # MD exhausted early (malformed); treat the rest as matches
+                    kind, value = md_tokens[md_idx]
+                    md_idx += 1
+                    if kind == "match":
+                        md_match_left = value
+                    elif kind == "mismatch":
+                        alt_base = seq[read_pos + consumed]
+                        variants.append(f"{chrom}:g.{ref_pos + consumed}{value}>{alt_base}")
+                        consumed += 1
+                    # a 'del' token cannot occur inside an M run; skip it defensively
+                    continue
+                step = min(md_match_left, length - consumed)
+                md_match_left -= step
+                consumed += step
+            ref_pos += length
+            read_pos += length
+        elif op == 1:  # I -- consumes read only; invisible to MD. ref_pos is the base *after* the insertion.
+            variants.append(f"{chrom}:g.{ref_pos - 1}_{ref_pos}ins{seq[read_pos:read_pos + length]}")
+            read_pos += length
+        elif op == 2:  # D -- consumes reference; MD carries a matching ^ token
+            if md_match_left == 0 and md_idx < len(md_tokens) and md_tokens[md_idx][0] == "del":
+                md_idx += 1
+            if length == 1:
+                variants.append(f"{chrom}:g.{ref_pos}del")
+            else:
+                variants.append(f"{chrom}:g.{ref_pos}_{ref_pos + length - 1}del")
+            ref_pos += length
+        elif op == 3:  # N -- spliced gap: a reference skip, not a deletion, and absent from MD
+            ref_pos += length
+        elif op == 4:  # S -- soft clip: present in query_sequence, so it advances read_pos
+            read_pos += length
+        # 5 (H) and 6 (P) consume neither the read nor the reference
+
+    return variants
+
+
 def parse_cigars(bam_path=None, total=None, out_plot=None, do_baq=False, regions=None, min_threshold=3, strip_version_numbers=False, out_dataframe=None, logger=logger):
-    import pyranges as pr
     # TODO: accept multiple BAMs
     # TODO: change df column name from Chromosome to Transcript if genome vs cdna (need to detect which I'm using)
     # TODO: implement BAQ adjustment if do_baq=True
@@ -146,66 +224,34 @@ def parse_cigars(bam_path=None, total=None, out_plot=None, do_baq=False, regions
         total = sum(1 for _ in bam)
         bam.reset()
 
+    reads_considered = 0
+    reads_with_md = 0
     for read in tqdm(bam, total=total):
         if read.is_unmapped:
             continue
         if all(op in {3, 4, 5, 6, 7} for op, _ in read.cigartuples):  # skip reads without difference from reference
             continue
 
+        reads_considered += 1
+        if not read.has_tag("MD"):
+            continue
+        reads_with_md += 1
+
         chrom = bam.get_reference_name(read.reference_id)
-        seq = read.query_sequence
-        ref_pos = read.reference_start + 1
-        read_pos = 0
-        md = read.get_tag("MD") if read.has_tag("MD") else None
+        for hgvs in extract_variants_from_read(read, chrom):
+            variant_counter[hgvs] += 1
 
-        # --- Mismatches and deletions (from MD) ---
-        if md:
-            tokens = re.findall(r'(\d+)|(\^[A-Z]+)|([A-Z])', md)
-            for num, deletion, mismatch in tokens:
-                if num:
-                    n = int(num)
-                    ref_pos += n
-                    read_pos += n
-                elif deletion:
-                    # Deletion from reference
-                    deleted_bases = deletion[1:]
-                    if len(deleted_bases) == 1:
-                        hgvs = f"{chrom}:g.{ref_pos}del"  # {deleted_bases}"
-                    else:
-                        hgvs = f"{chrom}:g.{ref_pos}_{ref_pos+len(deleted_bases)-1}del"  # {deleted_bases}"
-                    variant_counter[hgvs] += 1
-                    ref_pos += len(deleted_bases)
-                elif mismatch:
-                    # SNV
-                    ref_base = mismatch
-                    alt_base = seq[read_pos]
-                    hgvs = f"{chrom}:g.{ref_pos}{ref_base}>{alt_base}"
-                    variant_counter[hgvs] += 1
-                    ref_pos += 1
-                    read_pos += 1
-
-        # --- Insertions (from CIGAR) ---
-        for op, length in read.cigartuples:
-            if op in (0, 7, 8):  # M, =, X
-                ref_pos += length
-                read_pos += length
-            elif op == 1:  # Insertion
-                ins_seq = seq[read_pos:read_pos + length]
-                hgvs = f"{chrom}:g.{ref_pos}_{ref_pos+1}ins{ins_seq}"
-                variant_counter[hgvs] += 1
-                read_pos += length
-            elif op in (2, 3):  # Deletion (already handled by MD) or skipped region (N - e.g., intron, functionally similar to deletion)
-                ref_pos += length
-            elif op == 4:  # soft clipping
-                read_pos += length
-            # elif op in (5, 6):  # hard clipping or padding
-                # pass  # do nothing
-
-        # if len(variant_counter) >= limit:
-        #     break
-
-    # for variant, count in variant_counter.most_common(10):
-    #     print(variant, count)
+    # Without MD there is nothing to read mismatches and deletions out of, and extraction
+    # would quietly return an empty (or insertion-only) result rather than failing.
+    if reads_considered and not reads_with_md:
+        raise ValueError(
+            f"no read in '{bam_path}' carries an MD tag, so the 'cigar' variant caller cannot "
+            "identify mismatches or deletions. Re-align emitting MD (for STAR: "
+            "--outSAMattributes NH HI AS nM MD), or add it with "
+            f"`samtools calmd -b {bam_path} <reference.fa> > with_md.bam`."
+        )
+    if reads_considered and reads_with_md < reads_considered:
+        logger.warning(f"{reads_considered - reads_with_md} of {reads_considered} reads lack an MD tag and were skipped.")
 
     # make histogram of filtered_variants counts
     if out_plot:
@@ -222,11 +268,18 @@ def parse_cigars(bam_path=None, total=None, out_plot=None, do_baq=False, regions
         plt.close()
 
     df = pd.DataFrame(variant_counter.items(), columns=["key", "Count"])
-    logger.info("Total unique variants found:", len(df))
+    logger.info(f"Total unique variants found: {len(df)}")
 
     df[["Chromosome", "Variant"]] = df["key"].str.split(":", n=1, expand=True)  # Split key like "1:g.17746delA" into two columns
 
     if regions:
+        # Imported here rather than at module scope: pyranges is not a declared dependency and is
+        # only needed for region filtering, so requiring it up front would block the caller entirely.
+        try:
+            import pyranges as pr
+        except ImportError as exc:
+            raise ImportError("region filtering (regions=...) requires pyranges. Install it with `pip install pyranges`, or omit regions.") from exc
+
         df["pos"] = pd.to_numeric(df["Variant"].str.extract(r"g\.(\d+)")[0])
         df["Start"] = df["pos"] - 1  # PyRanges is half-open: [start, end)
         df["End"] = df["pos"]
@@ -238,7 +291,7 @@ def parse_cigars(bam_path=None, total=None, out_plot=None, do_baq=False, regions
         # Interval intersection (fast!)
         df = variants_pr.join(bed_pr).as_df()
         df = df.drop_duplicates(subset=["Chromosome", "Variant"]).reset_index(drop=True)
-        logger.info("Total unique variants after region filtering:", len(df))
+        logger.info(f"Total unique variants after region filtering: {len(df)}")
 
     df = df[["Chromosome", "Variant", "Count"]]
 
@@ -247,7 +300,7 @@ def parse_cigars(bam_path=None, total=None, out_plot=None, do_baq=False, regions
 
     if min_threshold:
         df = df.loc[df["Count"] >= min_threshold].reset_index(drop=True)
-        logger.info("Total unique variants after applying min_threshold:", len(df))
+        logger.info(f"Total unique variants after applying min_threshold: {len(df)}")
 
     if out_dataframe:
         df.to_csv(out_dataframe, index=False)
