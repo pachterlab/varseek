@@ -1293,8 +1293,8 @@ def build(
         logger.info("Removed %d variant-containing reference sequences with triplet complexity below %s...", num_rows_triplet, min_triplet_complexity)
 
     if remove_alignment_to_reference and not mutations.empty:
-        if species is not None and species in species_to_url:  #* 1. use species
-            pass
+        if species is not None and species in species_to_url and (alignment_to_reference_dna is None or alignment_to_reference_gtf is None):  #* 1. use species if present, and alignment_to_reference_dna or alignment_to_reference_gtf is not provided
+            dna_ref, gtf_ref = None, None
         else:
             if species is not None:  #? bad species or no species
                 logger.warning("Species '%s' not recognized; falling back to alignment_to_reference_dna and alignment_to_reference_gtf for pseudoalignment.", species)
@@ -1319,23 +1319,23 @@ def build(
                     gtf_ref = gtf
                 else:
                     raise ValueError(f"alignment_to_reference_type={alignment_to_reference_type} requires a gtf (alignment_to_reference_gtf, build gtf, or a downloadable species).")
-            len_before_pseudoalign = len(mutations)
-            mutations = run_pseudoalign_on_vcrs_df(
-                mutations,
-                reference_type=alignment_to_reference_type,
-                index_dir=reference_out_dir,
-                out_dir=os.path.join(out, "kmer_alignment_tmp"),
-                dna_fasta=dna_ref,
-                gtf=gtf_ref,
-                k=k,
-                threads=threads,
-                seq_col="vcrs_sequence",
-                species=species,
-                aligner=alignment_to_reference_aligner,
-                vcrs_strandedness=vcrs_strandedness,
-            )
-            num_rows_pseudoaligned = len_before_pseudoalign - len(mutations)
-            logger.info("Removed %d variant-containing reference sequences that pseudoaligned to the %s reference...", num_rows_pseudoaligned, alignment_to_reference_type)
+        len_before_pseudoalign = len(mutations)
+        mutations = run_pseudoalign_on_vcrs_df(
+            mutations,
+            reference_type=alignment_to_reference_type,
+            index_dir=reference_out_dir,
+            out_dir=os.path.join(out, "kmer_alignment_tmp"),
+            dna_fasta=dna_ref,
+            gtf=gtf_ref,
+            k=k,
+            threads=threads,
+            seq_col="vcrs_sequence",
+            species=species,
+            aligner=alignment_to_reference_aligner,
+            vcrs_strandedness=vcrs_strandedness,
+        )
+        num_rows_pseudoaligned = len_before_pseudoalign - len(mutations)
+        logger.info("Removed %d variant-containing reference sequences that pseudoaligned to the %s reference...", num_rows_pseudoaligned, alignment_to_reference_type)
 
     # Report status of mutations back to user
     good_mutations = mutations.shape[0]

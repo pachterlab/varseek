@@ -1,5 +1,7 @@
 import os
 import re
+import shlex
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -693,6 +695,20 @@ def adjust_variant_adata_by_normal_gene_matrix(kb_count_vcrs_dir, kallisto_quant
 _FASTA_EXTS = (".fa", ".fasta", ".fna", ".fa.gz", ".fasta.gz", ".fna.gz")
 
 
+def needs_k64(kallisto_path, index_path):
+    result = subprocess.run(
+        [kallisto_path, "inspect", index_path],
+        capture_output=True,
+        text=True,
+    )
+
+    output = result.stdout + result.stderr
+
+    if "Length k of k-mers cannot exceed or be equal to 32" in output:
+        return True
+
+    return False
+
 def _resolve_kb_binary(binary, name):
     """Return `binary` if provided, else resolve the path bundled with kb-python via `kb info`."""
     if binary:
@@ -900,6 +916,153 @@ def _run_kallisto_quant_group(kallisto, reference_genome_index, out_dir, fastq_f
     return bam_path
 
 
+# --------------------------------------------------------------------------------------
+# True (non-pseudo) alignment for the pseudobam QC: bowtie2 / STAR instead of kallisto quant.
+# The choice is dictated by the same `use_genomebam` signal that picks --genomebam over
+# --pseudobam, because it encodes the one case that needs a splice-aware aligner: RNA reads
+# against a genome reference (reads span exon-exon junctions). Everything else (DNA reads
+# against a genome, RNA reads against a transcriptome) aligns contiguously -> bowtie2.
+# The commands mirror the ones in vk denovo.
+# --------------------------------------------------------------------------------------
+
+_STAR_INDEX_MARKER_FILES = ("SA", "SAindex", "Genome", "chrName.txt")
+_BOWTIE2_INDEX_SUFFIXES = (".1.bt2", ".1.bt2l")
+_BOWTIE2_INDEX_FILE_PATTERN = re.compile(r"\.(?:rev\.)?\d+\.bt2l?$")
+
+
+def _bowtie2_index_prefix(reference_genome_index):
+    """`bowtie2 -x` takes the index *prefix*; accept either the prefix or one of its .bt2 files."""
+    return _BOWTIE2_INDEX_FILE_PATTERN.sub("", str(reference_genome_index))
+
+
+def _detect_reference_genome_index_type(reference_genome_index):
+    """Return 'STAR' | 'bowtie2' | 'kallisto' | None for whatever sits at `reference_genome_index`.
+
+    None means nothing recognizable is on disk yet (and the path does not name a kind by
+    extension), so the caller is free to build whichever index type it needs there.
+    """
+    if not reference_genome_index:
+        return None
+    path = str(reference_genome_index)
+    if os.path.isdir(path):
+        return "STAR" if set(os.listdir(path)) & set(_STAR_INDEX_MARKER_FILES) else None
+    if _BOWTIE2_INDEX_FILE_PATTERN.search(path) or any(os.path.exists(_bowtie2_index_prefix(path) + suffix) for suffix in _BOWTIE2_INDEX_SUFFIXES):
+        return "bowtie2"
+    if path.endswith(".idx"):
+        return "kallisto"
+    return "kallisto" if os.path.isfile(path) else None
+
+
+def _infer_read_length_from_fastq(fastq_file):
+    """Read length of the first record of `fastq_file` (STAR's --sjdbOverhang wants read length - 1)."""
+    opener = gzip.open if str(fastq_file).endswith(".gz") else open
+    with opener(str(fastq_file), "rt") as f:
+        f.readline()  # skip the header line
+        return len(f.readline().strip())
+
+
+def _build_true_aligner_index(reference_genome_index, true_aligner, sequences=None, gtf=None, threads=2, read_length=None, star="STAR", bowtie2_build="bowtie2-build"):
+    """Build the STAR genome directory / bowtie2 index if it does not already exist.
+
+    Returns the handle the aligner actually wants: the genome directory for STAR, the index
+    prefix for bowtie2.
+    """
+    from varseek.utils.varseek_denovo_utils import run as run_shell  # local import to keep the module import graph acyclic
+
+    if true_aligner == "STAR":
+        genome_dir = str(reference_genome_index)
+        if os.path.isdir(genome_dir) and set(os.listdir(genome_dir)) & set(_STAR_INDEX_MARKER_FILES):
+            return genome_dir
+        if not sequences or not os.path.exists(str(sequences)):
+            raise ValueError(f"The STAR genome index '{genome_dir}' does not exist and cannot be built because `sequences` was not provided (or does not exist).")
+        if not gtf or not os.path.exists(str(gtf)):
+            raise ValueError("Building a STAR genome index requires a `gtf` (the splice junctions are what make STAR able to align RNA reads to a genome).")
+        os.makedirs(genome_dir, exist_ok=True)
+        sjdb_overhang = (read_length or 100) - 1
+        # STAR's default --genomeSAindexNbases (14) only suits genome-scale references; STAR itself
+        # recommends min(14, log2(genomeLength)/2 - 1) and errors out on small references otherwise.
+        genome_length = max(os.path.getsize(str(sequences)), 2)
+        sa_index_nbases = max(4, min(14, int(np.log2(genome_length) / 2 - 1)))
+        logger.info(f"STAR genome index '{genome_dir}' not found; building it from '{sequences}' + gtf '{gtf}'.")
+        run_shell(f"{star} --runThreadN {threads} --runMode genomeGenerate --genomeDir {shlex.quote(genome_dir)} --genomeFastaFiles {shlex.quote(str(sequences))} --sjdbGTFfile {shlex.quote(str(gtf))} --sjdbOverhang {sjdb_overhang} --genomeSAindexNbases {sa_index_nbases} --limitSjdbInsertNsj 1000000 --limitBAMsortRAM 0")
+        return genome_dir
+
+    prefix = _bowtie2_index_prefix(reference_genome_index)
+    if any(os.path.exists(prefix + suffix) for suffix in _BOWTIE2_INDEX_SUFFIXES):
+        return prefix
+    if not sequences or not os.path.exists(str(sequences)):
+        raise ValueError(f"The bowtie2 index '{prefix}' does not exist and cannot be built because `sequences` was not provided (or does not exist).")
+    os.makedirs(os.path.dirname(prefix) or ".", exist_ok=True)
+    logger.info(f"bowtie2 index '{prefix}' not found; building it from '{sequences}'.")
+    run_shell(f"{bowtie2_build} {shlex.quote(str(sequences))} {shlex.quote(prefix)}")
+    return prefix
+
+
+def _run_true_aligner_group(true_aligner, reference_genome_index, out_dir, fastq_files, is_single_end, threads=2, read_length=None, overwrite=False, star="STAR", bowtie2="bowtie2", samtools="samtools", bowtie2_options="--xeq --very-sensitive"):
+    """Align one fastq group with bowtie2/STAR and return the path to a coordinate-sorted BAM.
+
+    Same contract as :func:`_run_kallisto_quant_group`: one BAM per group whose read names are the
+    FASTQ headers, ready for :func:`_parse_pseudobam`.
+    """
+    from varseek.utils.varseek_denovo_utils import run as run_shell  # local import to keep the module import graph acyclic
+
+    os.makedirs(out_dir, exist_ok=True)
+    bam_path = os.path.join(out_dir, "aligned.sorted.bam")
+    if os.path.exists(bam_path) and not overwrite:
+        logger.info(f"Reusing existing alignment BAM at {bam_path}")
+        return bam_path
+
+    files = [str(f) for f in fastq_files]
+    # a non-single-end group is a flat [R1, R2, R1, R2, ...] list (see _group_fastqs_for_quant)
+    mates_1, mates_2 = (files, []) if is_single_end else (files[0::2], files[1::2])
+
+    if true_aligner == "STAR":
+        star_prefix = os.path.join(out_dir, "star_")
+        sjdb_overhang = (read_length or 100) - 1
+        reads_in = ",".join(mates_1) + (" " + ",".join(mates_2) if mates_2 else "")
+        command = (
+            f"{star} --runThreadN {threads} --genomeDir {shlex.quote(str(reference_genome_index))} "
+            f"--readFilesIn {reads_in} --sjdbOverhang {sjdb_overhang} "
+            f"--outFileNamePrefix {shlex.quote(star_prefix)} --outSAMtype BAM SortedByCoordinate "
+            "--outSAMattributes NH HI AS nM MD --outSAMmapqUnique 60 --twopassMode Basic "
+            "--limitSjdbInsertNsj 1000000 --limitBAMsortRAM 0"
+        )
+        if any(f.endswith(".gz") for f in files):
+            command += " --readFilesCommand zcat"
+        logger.info(f"Running STAR alignment: {command}")
+        run_shell(command)
+        os.replace(f"{star_prefix}Aligned.sortedByCoord.out.bam", bam_path)
+    else:
+        index_prefix = _bowtie2_index_prefix(reference_genome_index)
+        reads_in = f"-1 {','.join(mates_1)} -2 {','.join(mates_2)}" if mates_2 else f"-U {','.join(mates_1)}"
+        command = f"{bowtie2} {bowtie2_options} --threads {threads} -x {shlex.quote(index_prefix)} {reads_in} | {samtools} view -bS - | {samtools} sort -o {shlex.quote(bam_path)}"
+        logger.info(f"Running bowtie2 alignment: {command}")
+        # pipefail (hence bash) so a bowtie2 failure is not masked by samtools sort exiting 0 on empty input
+        subprocess.run(f"set -o pipefail; {command}", shell=True, executable="/bin/bash", check=True)
+
+    if not os.path.exists(bam_path):
+        raise FileNotFoundError(f"{true_aligner} did not produce {bam_path}.")
+    return bam_path
+
+
+def _resolve_true_aligner(pseudobam_validation_aligner, use_genomebam):
+    """Pick (and sanity-check) the true aligner for the requested mode.
+
+    Splice-aware STAR is required exactly when `use_genomebam` is True (RNA reads against a genome
+    reference, i.e. reads that span exon-exon junctions); bowtie2 is correct otherwise.
+    """
+    expected = "STAR" if use_genomebam else "bowtie2"
+    requested = {"star": "STAR", "bowtie2": "bowtie2"}.get(str(pseudobam_validation_aligner).lower())
+    if requested is not None and requested != expected:
+        reason = (
+            "splice-aware STAR is required to align RNA reads across exon-exon junctions on a genome reference"
+            if expected == "STAR"
+            else "bowtie2 is appropriate because no splicing occurs in this alignment"
+        )
+        raise ValueError(f"pseudobam_validation_aligner='{pseudobam_validation_aligner}' is incompatible with use_genomebam={use_genomebam}. Use pseudobam_validation_aligner='{expected}' ({reason}), or 'true' to select it automatically.")
+    return expected
+
+
 def _parse_pseudobam(bam_path):
     """Return {read_name: {'refs': set(ref), 'pos_by_ref': {ref: [1-based positions]}}}.
 
@@ -1000,12 +1163,33 @@ def _read_alignment_is_consistent(aln, vcrs_locus, check_position, position_tole
     return False
 
 
+def _last_byte(path):
+    """Last byte of a file (b"" when empty) -- used to tell whether it ends in a newline."""
+    with open(path, "rb") as f:
+        f.seek(0, os.SEEK_END)
+        if f.tell() == 0:
+            return b""
+        f.seek(-1, os.SEEK_END)
+        return f.read(1)
+
+
 def _recount_from_filtered_bus(kb_count_vcrs_dir, kept_records, new_ec_records, bustools, kallisto_threads, vcrs_t2g, new_counts_dir, mm):
     """Write the kept BUS records to a new BUS file and regenerate the count matrix via bustools.
 
-    `kept_records` is a DataFrame with columns [barcode, UMI, EC]; `new_ec_records` is a list of
+    `kept_records` is a DataFrame with columns [barcode, UMI, EC, read_index] and, when the per-file
+    barcodes of a paired-end bulk run were collapsed, `raw_barcode`; `new_ec_records` is a list of
     (ec_id, [transcript indices]) equivalence classes to append to matrix.ec (for reads whose EC was
     narrowed to a consistent subset). Returns the path to the produced cells_x_genes.mtx.
+
+    `read_index` is written into the BUS flag column, the same place kallisto's `--num` puts it, so the
+    filtered BUS stays traceable back to individual reads (`bustools text -f`). The flag is reset for
+    the sorted BUS that feeds `bustools count`, so the counts are identical to what they would be with
+    an all-zero flag column: sorting is barcode/UMI/EC/flag, and distinct flags would otherwise stop
+    records that differ only by read from collapsing.
+
+    `new_counts_dir` is written as a self-contained kb-count-style directory: the BUS file, the
+    matrix.ec (original classes plus the newly created ones) and the transcripts.txt those EC indices
+    refer to, so the new equivalence classes can be interpreted without the original run's files.
     """
     os.makedirs(new_counts_dir, exist_ok=True)
     filtered_txt = os.path.join(new_counts_dir, "output_filtered_bus.txt")
@@ -1014,21 +1198,39 @@ def _recount_from_filtered_bus(kb_count_vcrs_dir, kept_records, new_ec_records, 
 
     out = kept_records[["barcode", "UMI", "EC"]].copy()
     out["count"] = 1
+    out["read_index"] = kept_records["read_index"].to_numpy()
     out.to_csv(filtered_txt, sep="\t", header=False, index=False)
 
-    subprocess.run([bustools, "fromtext", "-o", filtered_bus, filtered_txt], check=True)
-    subprocess.run([bustools, "sort", "-t", str(kallisto_threads), "-o", sorted_bus, filtered_bus], check=True)
+    # The per-file barcode is collapsed in the BUS itself (see the caller), so when it was collapsed the
+    # fastq a read came from is only recoverable from this sidecar.
+    if "raw_barcode" in kept_records.columns:
+        provenance = os.path.join(new_counts_dir, "output_filtered_reads.tsv")
+        kept_records[["raw_barcode", "barcode", "UMI", "EC", "read_index"]].to_csv(provenance, sep="\t", index=False)
+        logger.info(f"Wrote per-read provenance (pre-collapse barcode + read index) to {provenance}")
 
-    # augment matrix.ec with any newly-created equivalence classes
-    transcripts_txt = os.path.join(kb_count_vcrs_dir, "transcripts.txt")
-    if new_ec_records:
-        ec = os.path.join(new_counts_dir, "matrix.ec")
-        with open(os.path.join(kb_count_vcrs_dir, "matrix.ec"), encoding="utf-8") as src, open(ec, "w", encoding="utf-8") as dst:
-            dst.write(src.read())
+    subprocess.run([bustools, "fromtext", "-o", filtered_bus, filtered_txt], check=True)
+    subprocess.run([bustools, "sort", "-t", str(kallisto_threads), "--no-flags", "-o", sorted_bus, filtered_bus], check=True)
+
+    # Write the new run's matrix.ec (original equivalence classes + the ones created when a read's EC was
+    # narrowed to the subset of VCRS consistent with its true alignment) and the transcripts.txt whose
+    # line numbers those EC entries index into. The transcript list itself is unchanged -- the new ECs are
+    # new *combinations* of existing transcripts -- so it is copied verbatim; rewriting it would shift the
+    # indices that both the original and the new EC entries refer to.
+    ec = os.path.join(new_counts_dir, "matrix.ec")
+    src_ec = os.path.join(kb_count_vcrs_dir, "matrix.ec")
+    with open(src_ec, "rb") as src, open(ec, "wb") as dst:
+        shutil.copyfileobj(src, dst)  # streamed: matrix.ec is routinely hundreds of MB
+        if new_ec_records:
+            if _last_byte(src_ec) not in (b"\n", b""):
+                dst.write(b"\n")
             for ec_id, idxs in new_ec_records:
-                dst.write(f"{ec_id}\t{','.join(str(i) for i in idxs)}\n")
-    else:
-        ec = os.path.join(kb_count_vcrs_dir, "matrix.ec")
+                dst.write(f"{ec_id}\t{','.join(str(i) for i in idxs)}\n".encode("utf-8"))
+    if new_ec_records:
+        logger.info(f"Wrote {len(new_ec_records)} new equivalence class(es) to {ec}")
+
+    transcripts_txt = os.path.join(new_counts_dir, "transcripts.txt")
+    shutil.copyfile(os.path.join(kb_count_vcrs_dir, "transcripts.txt"), transcripts_txt)
+
     count_prefix = os.path.join(new_counts_dir, "cells_x_genes")
 
     # Prefer reusing the exact bustools count invocation kb recorded, swapping input bus, matrix.ec and -o.
@@ -1058,9 +1260,12 @@ def _extract_bustools_count_command(kb_count_vcrs_dir, bustools, count_prefix, s
         # swap the -o prefix
         if "-o" in cmd:
             cmd[cmd.index("-o") + 1] = count_prefix
-        # swap the -e equivalence-class matrix (may have been augmented with new ECs)
+        # swap the -e equivalence-class matrix (augmented with the newly-created ECs) and the
+        # -t transcripts.txt its indices point into (both now live in the new counts dir)
         if "-e" in cmd:
             cmd[cmd.index("-e") + 1] = ec
+        if "-t" in cmd:
+            cmd[cmd.index("-t") + 1] = transcripts_txt
         # the trailing positional argument is the input .bus file
         for i in range(len(cmd) - 1, 0, -1):
             if str(cmd[i]).endswith(".bus"):
@@ -1078,6 +1283,26 @@ def _extract_bustools_count_command(kb_count_vcrs_dir, bustools, count_prefix, s
         cmd.insert(2, "--multimapping")
     cmd.append(sorted_bus)
     return cmd
+
+
+def join_list_columns_for_h5ad(var, sep=";"):
+    """Copy of an adata.var with its list-valued columns joined into `sep`-separated strings.
+
+    A merged VCRS carries one entry per variant it represents, so vk clean holds columns like seq_ID
+    and mutation as Python lists (`['1', '2', '4']`) for most of its run. h5py cannot write those --
+    it raises "Can't implicitly convert non-string objects to strings" -- so any adata written before
+    vk clean's final conversion has to do the same conversion first. Read back with e.g.
+    `adata.var[col].apply(lambda x: x.split(";") if isinstance(x, str) else x)`.
+
+    Membership is tested per value rather than on the first row, which can be NaN for a VCRS the
+    variant merge found nothing for and would then skip a column that does hold lists further down.
+    """
+    out = var.copy()
+    for col in out.columns:
+        is_list = out[col].map(lambda x: isinstance(x, list))
+        if is_list.any():
+            out[col] = out[col].map(lambda x: sep.join(map(str, x)) if isinstance(x, list) else x)
+    return out
 
 
 def _load_and_align_recounted_adata(mtx_file, adata_template):
@@ -1108,8 +1333,8 @@ def _load_and_align_recounted_adata(mtx_file, adata_template):
 
 def adjust_variant_adata_by_pseudobam(
     kb_count_vcrs_dir,
-    reference_genome_index,
     technology,
+    reference_genome_index=None,
     kallisto_quant_reference_genome_dir=None,
     adata=None,
     fastq_file_list=None,
@@ -1137,13 +1362,31 @@ def adjust_variant_adata_by_pseudobam(
     fastq_sorting_check_only=False,
     save_type="parquet",
     overwrite=False,
+    pseudobam_validation_aligner="pseudo",  # "pseudo" (kallisto quant --pseudobam/--genomebam), "true" (bowtie2/STAR, picked from use_genomebam), or an explicit "STAR"/"bowtie2"
+    reference_bam=None,  # skip alignment entirely and use this BAM (or one BAM per fastq group)
+    read_length=None,  # only used for STAR's --sjdbOverhang; inferred from the first fastq when None
+    star="STAR",
+    bowtie2="bowtie2",
+    samtools="samtools",
 ):
     """Faster/more-accurate replacement for adjust_variant_adata_by_normal_gene_matrix.
 
-    Aligns the reads with `kallisto quant --pseudobam` (or `--genomebam` when RNA reads are aligned
-    against a DNA/genome reference; see _determine_pseudobam_mode), compares each read's true alignment
-    coordinate to the HGVS locus of its assigned VCRS, drops reads that aligned somewhere inconsistent
-    with the variant, and regenerates the VCRS count matrix with `bustools count`.
+    Aligns the reads against the standard reference, compares each read's true alignment coordinate
+    to the HGVS locus of its assigned VCRS, drops reads that aligned somewhere inconsistent with the
+    variant, and regenerates the VCRS count matrix with `bustools count`.
+
+    How the alignment is obtained is set by `pseudobam_validation_aligner`:
+      - "pseudo" (default): `kallisto quant --pseudobam`, or `--genomebam` when RNA reads are aligned
+        against a DNA/genome reference (see _determine_pseudobam_mode). Fast, and reuses the kallisto
+        index. `reference_genome_index` is a kallisto index.
+      - "true" / "STAR" / "bowtie2": a real aligner. Splice-aware STAR is used exactly when
+        `use_genomebam` would have been True (RNA reads against a genome reference); bowtie2 otherwise.
+        `reference_genome_index` is the STAR genome directory / bowtie2 index prefix, built from
+        `sequences` (+ `gtf` for STAR) if it does not exist.
+
+    `reference_bam` short-circuits all of that: pass a BAM that was already aligned against the same
+    reference (e.g. the one vk denovo produced) and it is used as-is. Either a single BAM covering all
+    reads, or one BAM per fastq group in the same order as the fastqs.
     """
     if kallisto_quant_reference_genome_dir is None:
         kallisto_quant_reference_genome_dir = os.path.join(kb_count_vcrs_dir, "pseudobam_qc")
@@ -1163,13 +1406,33 @@ def adjust_variant_adata_by_pseudobam(
     convert_transcript_to_genome = pb["convert_transcript_to_genome"]
     logger.info(f"pseudobam QC: header_type={header_type}, reference_sequences_type={pb['reference_sequences_type']}, reads_type={pb['reads_type']}, use_genomebam={use_genomebam}, convert_transcript_to_genome={convert_transcript_to_genome}")
 
-    # Build the standard reference index on the fly if it does not exist. When RNA reads are aligned against a
-    # DNA/genome `sequences` reference (use_genomebam), the index is built as a cDNA index via
-    # `kb ref --workflow standard`; otherwise `sequences` is indexed directly with `kb ref --workflow custom`.
-    reference_genome_index = _build_reference_genome_index(reference_genome_index, use_genomebam, sequences=sequences, gtf=gtf, threads=threads, kallisto=kallisto, bustools=bustools)
+    # ---- resolve how the alignments are obtained: a supplied BAM, kallisto quant, or bowtie2/STAR ----
+    alignment_mode = "bam" if reference_bam else str(pseudobam_validation_aligner).lower()
+    if alignment_mode in {"pseudo", "kallisto", "pseudobam", "genomebam"}:
+        alignment_mode = "pseudo"
+    elif alignment_mode in {"true", "real", "star", "bowtie2"}:
+        true_aligner = _resolve_true_aligner(pseudobam_validation_aligner, use_genomebam)
+        alignment_mode = "true"
+    elif alignment_mode != "bam":
+        raise ValueError(f"pseudobam_validation_aligner must be one of 'pseudo', 'true', 'STAR', 'bowtie2'. Got '{pseudobam_validation_aligner}'.")
+
+    if alignment_mode != "bam":
+        index_type = _detect_reference_genome_index_type(reference_genome_index)
+        if alignment_mode == "pseudo":
+            if index_type in {"STAR", "bowtie2"}:
+                raise ValueError(f"pseudobam_validation_aligner='pseudo' aligns with kallisto, but reference_genome_index '{reference_genome_index}' is a {index_type} index. Pass a kallisto index, or set pseudobam_validation_aligner='true'.")
+            if needs_k64(kallisto, reference_genome_index):
+                kallisto += "_k64"
+        else:
+            if index_type == "kallisto":
+                raise ValueError(f"pseudobam_validation_aligner='{pseudobam_validation_aligner}' aligns with {true_aligner}, but reference_genome_index '{reference_genome_index}' is a kallisto index. Pass a {true_aligner} index, or set pseudobam_validation_aligner='pseudo'.")
+            if index_type is not None and index_type != true_aligner:
+                raise ValueError(f"reference_genome_index '{reference_genome_index}' is a {index_type} index, but use_genomebam={use_genomebam} requires a {true_aligner} index (RNA reads against a genome reference need splice-aware STAR; everything else aligns contiguously with bowtie2).")
+            if not reference_genome_index:
+                reference_genome_index = os.path.join(kallisto_quant_reference_genome_dir, "star_index" if true_aligner == "STAR" else "bowtie2_index")
 
     if fastq_file_list is None:
-        raise ValueError("fastq_file_list is required for the pseudobam QC (the reads must be re-aligned with kallisto quant).")
+        raise ValueError("fastq_file_list is required for the pseudobam QC (the reads must be matched to the alignments by FASTQ header).")
     fastq_file_list = load_in_fastqs(fastq_file_list)
     fastq_file_list = sort_fastq_files_for_kb_count(fastq_file_list, technology=technology, check_only=fastq_sorting_check_only)
 
@@ -1189,14 +1452,7 @@ def adjust_variant_adata_by_pseudobam(
     if technology.upper() not in {"BULK", "SMARTSEQ2"}:
         vcrs_parity = "single"
 
-    # ---- generate chromosomes file for --genomebam if needed ----
-    if use_genomebam and not chromosomes:
-        chromosomes = os.path.join(kallisto_quant_reference_genome_dir, "chromosomes.txt")
-        os.makedirs(kallisto_quant_reference_genome_dir, exist_ok=True)
-        if not os.path.exists(chromosomes) or overwrite:
-            _generate_chromosomes_file(chromosomes, sequences=sequences, gtf=gtf)
-
-    # ---- run kallisto quant per fastq group and parse the pseudoalignments ----
+    # ---- split the fastqs into the groups that get aligned (and attributed to a barcode) together ----
     barcodes = None
     if os.path.exists(f"{kb_count_vcrs_dir}/matrix.sample.barcodes"):
         with open(f"{kb_count_vcrs_dir}/matrix.sample.barcodes", encoding="utf-8") as f:
@@ -1204,14 +1460,67 @@ def adjust_variant_adata_by_pseudobam(
     groups = _group_fastqs_for_quant(fastq_file_list, technology, vcrs_parity, barcodes)
 
     align_by_group = {}
-    for gi, (group_barcode, group_files, is_single_end) in enumerate(groups):
-        group_out = os.path.join(kallisto_quant_reference_genome_dir, f"quant_group_{gi}")
-        bam_path = _run_kallisto_quant_group(
-            kallisto, reference_genome_index, group_out, group_files, is_single_end, use_genomebam,
-            threads=threads, fragment_length=fragment_length, fragment_sd=fragment_sd,
-            gtf=gtf, chromosomes=chromosomes, overwrite=overwrite,
+    if alignment_mode == "bam":
+        # ---- use BAM(s) the caller already produced against the same reference (e.g. from vk denovo) ----
+        bam_list = [str(reference_bam)] if isinstance(reference_bam, (str, Path)) else [str(b) for b in reference_bam]
+        for bam_path in bam_list:
+            if not os.path.exists(bam_path):
+                raise FileNotFoundError(f"reference_bam '{bam_path}' does not exist.")
+        if len(bam_list) == 1:
+            if len(groups) > 1:
+                logger.warning(f"A single reference_bam was given for {len(groups)} fastq groups (samples); it is used for all of them. Reads whose names collide across samples cannot be told apart.")
+            parsed = _parse_pseudobam(bam_list[0])
+            align_by_group = {group_barcode: parsed for group_barcode, _, _ in groups}
+        elif len(bam_list) == len(groups):
+            align_by_group = {group_barcode: _parse_pseudobam(bam_path) for (group_barcode, _, _), bam_path in zip(groups, bam_list)}
+        else:
+            raise ValueError(f"reference_bam has {len(bam_list)} BAMs but the fastqs form {len(groups)} group(s). Pass either one BAM covering all reads or one BAM per group, in the same order as the fastqs.")
+    elif alignment_mode == "pseudo":
+        # ---- generate chromosomes file for --genomebam if needed ----
+        if use_genomebam and not chromosomes:
+            chromosomes = os.path.join(kallisto_quant_reference_genome_dir, "chromosomes.txt")
+            os.makedirs(kallisto_quant_reference_genome_dir, exist_ok=True)
+            if not os.path.exists(chromosomes) or overwrite:
+                _generate_chromosomes_file(chromosomes, sequences=sequences, gtf=gtf)
+
+        # Build the standard reference index on the fly if it does not exist. When RNA reads are aligned against a
+        # DNA/genome `sequences` reference (use_genomebam), the index is built as a cDNA index via
+        # `kb ref --workflow standard`; otherwise `sequences` is indexed directly with `kb ref --workflow custom`.
+        reference_genome_index = _build_reference_genome_index(reference_genome_index, use_genomebam, sequences=sequences, gtf=gtf, threads=threads, kallisto=kallisto, bustools=bustools)
+
+        # ---- run kallisto quant per fastq group and parse the pseudoalignments ----
+        for gi, (group_barcode, group_files, is_single_end) in enumerate(groups):
+            group_out = os.path.join(kallisto_quant_reference_genome_dir, f"quant_group_{gi}")
+            bam_path = _run_kallisto_quant_group(
+                kallisto, reference_genome_index, group_out, group_files, is_single_end, use_genomebam,
+                threads=threads, fragment_length=fragment_length, fragment_sd=fragment_sd,
+                gtf=gtf, chromosomes=chromosomes, overwrite=overwrite,
+            )
+            align_by_group[group_barcode] = _parse_pseudobam(bam_path)
+    else:
+        # ---- true alignment: STAR when the reads must be spliced onto a genome, bowtie2 otherwise ----
+        from varseek.utils.varseek_denovo_utils import check_tool  # local import to keep the module import graph acyclic
+
+        check_tool(star if true_aligner == "STAR" else bowtie2)
+        if true_aligner == "bowtie2":
+            check_tool(samtools)
+        if read_length is None:
+            read_length = _infer_read_length_from_fastq(fastq_file_list[0])
+        logger.info(f"pseudobam QC: aligning with {true_aligner} (read_length={read_length}) against '{reference_genome_index}'")
+
+        reference_genome_index = _build_true_aligner_index(
+            reference_genome_index, true_aligner, sequences=sequences, gtf=gtf,
+            threads=threads, read_length=read_length, star=star, bowtie2_build=f"{bowtie2}-build",
         )
-        align_by_group[group_barcode] = _parse_pseudobam(bam_path)
+
+        for gi, (group_barcode, group_files, is_single_end) in enumerate(groups):
+            group_out = os.path.join(kallisto_quant_reference_genome_dir, f"align_group_{gi}")
+            bam_path = _run_true_aligner_group(
+                true_aligner, reference_genome_index, group_out, group_files, is_single_end,
+                threads=threads, read_length=read_length, overwrite=overwrite,
+                star=star, bowtie2=bowtie2, samtools=samtools,
+            )
+            align_by_group[group_barcode] = _parse_pseudobam(bam_path)
 
     single_cell = groups[0][0] is None  # barcode comes from the BUS file rather than the group
 
@@ -1280,12 +1589,14 @@ def adjust_variant_adata_by_pseudobam(
             max_ec = max(max_ec, ec_id)
     new_ec_records = []  # (ec_id, [sorted transcript indices]) to append to matrix.ec
 
-    # Collect one entry per surviving read as [corrected_barcode, umi, read_index, frozenset(consistent transcript idx)].
+    # Collect one entry per surviving read as [corrected_barcode, raw_barcode, umi, read_index,
+    # frozenset(consistent transcript idx)].
     # The alignment lookup below is keyed by the *raw* per-file barcode, but we store the collapsed
     # ("good") barcode for the recount. The collapse is applied exactly once here -- note it is NOT
     # idempotent, since a good barcode (e.g. "AAC") can also be a raw key, so it must not be re-mapped
-    # downstream. EC ids are assigned only after the optional double-counting dedup below (which can
-    # further narrow a read's transcript set).
+    # downstream. The raw barcode is carried alongside it because it is the only record of which fastq
+    # a read came from once the collapse has happened. EC ids are assigned only after the optional
+    # double-counting dedup below (which can further narrow a read's transcript set).
     per_read = []
     n_dropped = n_rewritten = n_no_align = 0
     for barcode, umi, read_index, header, vcrs_names in zip(bus_df["barcode"].astype(str), bus_df["UMI"].astype(str), bus_df["read_index"], bus_df["fastq_header"].astype(str), bus_df["vcrs_names"]):
@@ -1319,7 +1630,7 @@ def adjust_variant_adata_by_pseudobam(
         if len(consistent) != len([v for v in vcrs_list if v != "dlist"]):
             n_rewritten += 1
         corrected_barcode = bad_to_good_barcode_dict.get(barcode, barcode) if bad_to_good_barcode_dict else barcode
-        per_read.append([corrected_barcode, umi, read_index, consistent_idx])
+        per_read.append([corrected_barcode, barcode, umi, read_index, consistent_idx])
 
     # ---- optional paired double-counting removal (paired-end BULK/SMARTSEQ2 run in single mode) ----
     # Both mates of a fragment now share (corrected_barcode, read_index). Count each consistent VCRS at
@@ -1330,7 +1641,7 @@ def adjust_variant_adata_by_pseudobam(
     if avoid_paired_double_counting and bad_to_good_barcode_dict:
         seen_by_fragment = {}  # (corrected_barcode, read_index) -> set of transcript idx already counted for this fragment
         deduped = []
-        for corrected_barcode, umi, read_index, consistent_idx in per_read:
+        for corrected_barcode, raw_barcode, umi, read_index, consistent_idx in per_read:
             already = seen_by_fragment.setdefault((corrected_barcode, read_index), set())
             new_idx = consistent_idx - already
             if not new_idx:  # every VCRS on this mate was already counted by its pair -> drop
@@ -1339,14 +1650,12 @@ def adjust_variant_adata_by_pseudobam(
             if new_idx != consistent_idx:
                 n_dedup_narrowed += 1
             already |= new_idx
-            deduped.append([corrected_barcode, umi, frozenset(new_idx)])
+            deduped.append([corrected_barcode, raw_barcode, umi, read_index, frozenset(new_idx)])
         per_read = deduped
-    else:
-        per_read = [[bc, umi, consistent_idx] for bc, umi, _read_index, consistent_idx in per_read]
 
     # ---- assign (possibly new) equivalence-class ids to each kept read ----
-    kept_barcodes, kept_umis, kept_ecs = [], [], []
-    for corrected_barcode, umi, consistent_idx in per_read:
+    kept_barcodes, kept_raw_barcodes, kept_umis, kept_read_indices, kept_ecs = [], [], [], [], []
+    for corrected_barcode, raw_barcode, umi, read_index, consistent_idx in per_read:
         ec_id = ec_index_map.get(consistent_idx)
         if ec_id is None:  # need a new EC for this consistent subset
             max_ec += 1
@@ -1354,7 +1663,9 @@ def adjust_variant_adata_by_pseudobam(
             ec_index_map[consistent_idx] = ec_id
             new_ec_records.append((ec_id, sorted(consistent_idx)))
         kept_barcodes.append(corrected_barcode)
+        kept_raw_barcodes.append(raw_barcode)
         kept_umis.append(umi)
+        kept_read_indices.append(read_index)
         kept_ecs.append(ec_id)
 
     logger.info(f"pseudobam QC: {n_dropped} / {len(bus_df)} reads dropped as inconsistent with their assigned VCRS; "
@@ -1369,12 +1680,34 @@ def adjust_variant_adata_by_pseudobam(
     # ---- regenerate the count matrix from the filtered/rewritten BUS ----
     new_counts_dir = os.path.join(kb_count_vcrs_dir, "counts_unfiltered_pseudobam")
     kept_records = pd.DataFrame({"barcode": kept_barcodes, "UMI": kept_umis, "EC": kept_ecs})
+
+    # The read index goes into the BUS flag column so the filtered BUS stays traceable to individual
+    # reads. A missing index would silently become read 0, so any read whose index did not survive is
+    # flagged rather than guessed at.
+    read_index_series = pd.to_numeric(pd.Series(kept_read_indices), errors="coerce")
+    n_no_index = int(read_index_series.isna().sum())
+    if n_no_index:
+        logger.warning(f"{n_no_index} / {len(read_index_series)} kept reads have no usable read index; writing -1 for those in the BUS flag column.")
+    kept_records["read_index"] = read_index_series.fillna(-1).astype("int64").to_numpy()
+    if len(kept_records) > 1 and (kept_records["read_index"] == 0).all():
+        logger.warning("Every kept read has read index 0, so the filtered BUS cannot be traced back to individual reads. This usually means kb count was run without --num.")
+    if bad_to_good_barcode_dict:  # per-file barcodes were collapsed; keep the originals recoverable
+        kept_records["raw_barcode"] = kept_raw_barcodes
     mtx_file = _recount_from_filtered_bus(kb_count_vcrs_dir, kept_records, new_ec_records, bustools, threads, vcrs_t2g, new_counts_dir, mm)
     adata_new = _load_and_align_recounted_adata(mtx_file, adata)
 
+    adata_output_path = adata_output_path or os.path.join(new_counts_dir, "adata.h5ad")
     if adata_output_path:
         logger.info(f"Saving adjusted AnnData object to {adata_output_path}")
-        adata_new.write(adata_output_path)
+        # This is an intermediate write: vk clean only joins var's list columns into strings at the very
+        # end of its run, so the join has to happen here too. It is applied to the written copy only --
+        # the returned object keeps its lists, which the rest of vk clean still reads as lists.
+        var_with_lists = adata_new.var
+        adata_new.var = join_list_columns_for_h5ad(var_with_lists)
+        try:
+            adata_new.write(adata_output_path)
+        finally:
+            adata_new.var = var_with_lists
 
     return adata_new
 
@@ -3157,6 +3490,21 @@ def _validate_clean_params(params_dict):
             raise ValueError(f"Directory {params_dict.get(param_name)} does not exist")
     if not isinstance(params_dict.get("out"), (str, Path)):
         raise ValueError(f"Out directory {params_dict.get('out')} is not a string")
+
+    pseudobam_validation_aligner = params_dict.get("pseudobam_validation_aligner", "pseudo")
+    pseudobam_validation_aligner_valid_values = {"pseudo", "true", "star", "bowtie2"}
+    if not isinstance(pseudobam_validation_aligner, str) or pseudobam_validation_aligner.lower() not in pseudobam_validation_aligner_valid_values:
+        raise ValueError(f"pseudobam_validation_aligner must be one of 'pseudo', 'true', 'STAR', 'bowtie2'. Got {pseudobam_validation_aligner}.")
+
+    reference_bam = params_dict.get("reference_bam")
+    if reference_bam is not None:
+        reference_bam_list = [reference_bam] if isinstance(reference_bam, (str, Path)) else reference_bam
+        if not isinstance(reference_bam_list, (list, tuple)):
+            raise ValueError(f"reference_bam must be a path to a BAM file, a list of such paths, or None. Got {type(reference_bam)}.")
+        for bam in reference_bam_list:
+            check_file_path_is_string_with_valid_extension(bam, "reference_bam", "bam")
+            if not params_dict.get("dry_run") and not os.path.isfile(bam):
+                raise ValueError(f"reference_bam file {bam} does not exist")
 
     if params_dict.get("pseudobam_validation"):
         kb_count_vcrs_dir = params_dict.get("kb_count_vcrs_dir")

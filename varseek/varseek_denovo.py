@@ -39,6 +39,7 @@ from .utils.varseek_denovo_utils import (
     run,
     check_tool,
     parse_cigars,
+    bam_to_vcf,
 )
 
 
@@ -66,11 +67,39 @@ class DenovoParams(BaseModel):
     output_tsv: object = None
     tsv_reference_type: object = "auto"
     overwrite: object = False
-    variant_caller: object = "bcftools"
+    variant_caller: object = "bam2vcf"
+    min_vaf: object = 0.0
+    max_vaf: object = 1.0
+    min_mapq: object = 0
+    min_baseq: object = 0
 
     @model_validator(mode="after")
     def _validate(self):
-        # The two callers emit different formats, so the required extension depends on the caller.
+        # VAF bounds are computed from INFO/AO over INFO/DP, which only bam2vcf emits.
+        # Ignoring them for the other callers would misreport what was actually filtered.
+        if not 0.0 <= self.min_vaf <= 1.0 or not 0.0 <= self.max_vaf <= 1.0:
+            raise ValueError(f"--min-vaf and --max-vaf must lie between 0 and 1, got min_vaf={self.min_vaf}, max_vaf={self.max_vaf}")
+        if self.min_vaf > self.max_vaf:
+            raise ValueError(f"--min-vaf ({self.min_vaf}) exceeds --max-vaf ({self.max_vaf}), so no variant could pass")
+        if (self.min_vaf > 0.0 or self.max_vaf < 1.0) and self.variant_caller != "bam2vcf":
+            raise ValueError(
+                f"--min-vaf/--max-vaf require variant_caller='bam2vcf' (got '{self.variant_caller}'); "
+                "the bcftools caller can express a similar filter through --include, and the cigar caller reports no depth."
+            )
+
+        # bam2vcf reads alignment records directly, so read/base quality is the only handle it
+        # has on misalignment and sequencing error -- bcftools instead expresses these through
+        # mpileup's own -q/-Q. Silently dropping them would misreport what was filtered.
+        if int(self.min_mapq) < 0 or int(self.min_baseq) < 0:
+            raise ValueError(f"--min-mapq and --min-baseq must be non-negative, got min_mapq={self.min_mapq}, min_baseq={self.min_baseq}")
+        if (int(self.min_mapq) > 0 or int(self.min_baseq) > 0) and self.variant_caller != "bam2vcf":
+            raise ValueError(
+                f"--min-mapq/--min-baseq require variant_caller='bam2vcf' (got '{self.variant_caller}'); "
+                "the bcftools caller sets mpileup's -q/-Q itself, and the cigar caller ignores qualities."
+            )
+
+        # The callers emit different formats, so the required extension depends on the caller:
+        # only 'cigar' writes a CSV of HGVS strings; bam2vcf and bcftools both write VCF.
         if self.variant_caller == "cigar":
             if not self.output.endswith(".csv"):
                 raise ValueError("when using the 'cigar' variant caller, --output must end with .csv")
@@ -130,10 +159,15 @@ def denovo(
     tsv_reference_type: str = "auto",
     read_length: Optional[PositiveInt] = None,
     min_counts: int = 3,
+    min_vaf: float = 0.0,
+    max_vaf: float = 1.0,
+    min_mapq: NonNegativeInt = 0,
+    min_baseq: NonNegativeInt = 0,
     aligner: Literal["STAR", "bowtie2"] = "bowtie2",
     technology: Optional[str] = None,  # kb-style technology string (as in vk ref/count); "DNA" => genomic DNA reads, anything else => RNA reads. Used to derive the read type for aligner validation.
     reference_type: Optional[str] = "auto",  # not a strict Literal: the body lowercases before validating
-    variant_caller: Literal["bcftools", "cigar"] = "bcftools",
+    variant_caller: Literal["bam2vcf", "bcftools", "cigar"] = "bam2vcf",
+    bam2vcf_engine: Literal["auto", "native", "python"] = "auto",
     bowtie2_seed_length: Optional[PositiveInt] = None,
     bowtie2_score_min: Optional[str] = None,
     include: Optional[str] = None,
@@ -142,6 +176,7 @@ def denovo(
     max_depth: PositiveInt = 1000,
     split_bam_by_n: bool = False,
     disable_bcftools_norm: bool = False,
+    rm_dup: Literal["exact", "snps", "indels", "both", "all", "none"] = "exact",
     bcftools_call_prior: Optional[str] = None,
     merge_bam_files: bool = False,
     strip_version_numbers: bool = False,
@@ -167,15 +202,20 @@ def denovo(
     - bowtie2_alignment_dir          (str) Directory for Bowtie2 output BAMs. Default: "bowtie2_alignments"
     - regions                        (str) BED file of regions to restrict variant calling to. Default: None
     - out_bam_dir                    (str) Output directory for BAM files for Bowtie2 alignments when merge_bam_files=False. Default: None
-    - output                         (str) Output VCF file for bcftools or CSV file for cigar. Default: "out.vcf.gz"
+    - output                         (str) Output VCF file for the bam2vcf and bcftools variant callers, or CSV file for cigar. Default: "out.vcf.gz"
     - output_tsv                     (str) Optional TSV output converted from the bcftools VCF with columns seq_id and variant. Default: None
     - tsv_reference_type             (str) Variant coordinate prefix for output_tsv. One of auto, dna, genome, cdna, transcriptome. Default: "auto"
     - read_length                    (int) Read length. Default: None
-    - min_counts                     (int) Minimum count threshold for filtering. Default: 3
-    - aligner                        (str) Aligner to use. One of STAR or bowtie2. Splice-aware STAR is required only when RNA reads are aligned to a genome (reads span exon-exon junctions); bowtie2 is correct otherwise (DNA reads to a genome, or RNA reads to a transcriptome). A mismatch against `technology`/`reference_type` raises. Default: "bowtie2"
+    - min_counts                     (int) Minimum count threshold for filtering, i.e. the minimum number of reads supporting a variant (INFO/AO for bam2vcf, INFO/AD[1] for bcftools). Default: 3
+    - min_vaf                      (float) Minimum variant allele fraction (INFO/VAF, i.e. AO/DP), inclusive. Filters out low-fraction candidates that pass min_counts only because the site is deeply covered. Only supported by the bam2vcf variant caller. Default: 0.0
+    - max_vaf                      (float) Maximum variant allele fraction (INFO/VAF, i.e. AO/DP), inclusive. Lower it (e.g. 0.9) to drop likely-germline homozygous sites when hunting somatic variants. Only supported by the bam2vcf variant caller. Default: 1.0
+    - min_mapq                       (int) Minimum read mapping quality; reads below it contribute to neither AO nor DP. Because bam2vcf trusts the aligner's placement, unfiltered multi-mapping reads in repeats turn every mismapped base into a candidate — on 30x NA12878 chr20, min_mapq=20 cut the candidate set from 520k to 127k while keeping SNP recall above 97%. Only supported by the bam2vcf variant caller. Default: 0
+    - min_baseq                      (int) Minimum base quality at the variant position; low-quality bases contribute to neither AO nor DP. bam2vcf has no statistical model, so this is its only defence against sequencing error. Only supported by the bam2vcf variant caller. Default: 0
+    - aligner                      (str) Aligner to use. One of STAR or bowtie2. Splice-aware STAR is required only when RNA reads are aligned to a genome (reads span exon-exon junctions); bowtie2 is correct otherwise (DNA reads to a genome, or RNA reads to a transcriptome). A mismatch against `technology`/`reference_type` raises. Default: "bowtie2"
     - technology                     (str) Sequencing technology, using the same vocabulary as vk ref/count (run `kb --list`; varseek additionally accepts "dna"). It fills in the read type used to validate `aligner`: "dna" (or "DNA") declares genomic DNA reads (-> bowtie2), any other technology declares RNA reads (-> STAR on a genome). Required to validate the aligner when the reference is a genome. Default: None
     - reference_type                 (str) Whether `sequences` is a genome or transcriptome, used to validate `aligner`. One of auto, genome, dna, transcriptome, cdna. "auto" infers it from the FASTA sequence IDs. Default: "auto"
-    - variant_caller                 (str) Variant caller to use. One of bcftools or cigar. Default: "bcftools"
+    - variant_caller                 (str) Variant caller to use. One of bam2vcf, bcftools or cigar. "bam2vcf" reads every variant recorded in the alignments themselves (CIGAR indels plus mismatches from the MD tag or the reference) and writes a sites-only VCF with AO/DP/VAF; it is roughly 10x faster than the 'cigar' caller and is a sensitive candidate generator rather than a genotyper, so it applies no statistical model. "bcftools" runs mpileup/call/norm, which genotypes and filters but is far slower. "cigar" is the older Python walk and writes a CSV of HGVS strings instead of a VCF. Default: "bam2vcf"
+    - bam2vcf_engine                 (str) Implementation used by the bam2vcf caller. "auto" uses the compiled C++ helper and falls back to Python if it cannot be built, "native" requires the compiled helper, "python" forces the pysam implementation. Default: "auto"
     - bowtie2_seed_length            (int) Seed length for Bowtie2 aligner. Default: None
     - bowtie2_score_min              (str) Bowtie2 score-min setting. Default: None
     - include                        (str) bcftools filter expression. Default: None
@@ -184,6 +224,7 @@ def denovo(
     - max_depth                      (int) Maximum reads per input file at any single position in mpileup, passed as -d. Only binds at positions deeper than this. Capping subsamples reads, so allele *fraction* is roughly preserved and only absolute counts shrink -- a variant is lost only if its capped ALT count falls under min_counts (roughly AF < min_counts/max_depth at capped sites). Raise it when hunting low-frequency somatic/subclonal variants; lower it for speed on deep RNA-seq pileups. Default: 1000
     - split_bam_by_n                 (bool) Split BAM by N in CIGAR using GATK SplitNCigarReads. Default: False
     - disable_bcftools_norm          (bool) Disable bcftools norm. Default: False
+    - rm_dup                         (str) Duplicate-removal mode passed to `bcftools norm -d`, or "none" to omit -d entirely. Because -m -any runs first, every ALT of a multi-allelic site becomes its own record at the same POS -- and "all" collapses records by position alone, so only the first ALT survives. That silently discards the other alleles at exactly the sites that carry them (het indels, homopolymer/STR tracts), which is the opposite of what a sensitive candidate generator wants. "exact" dedups on CHROM+POS+REF+ALT and keeps every distinct allele. Default: "exact"
     - bcftools_call_prior            (str) Prior for bcftools call. Default: None
     - merge_bam_files                (bool) Merge multiple BAM files into one for variant calling with Bowtie2. Default: False
     - strip_version_numbers          (bool) Strip version numbers from sequence names in output. Default: False
@@ -196,9 +237,10 @@ def denovo(
     #* Configure logger
     configure_logger(verbose, quiet)
 
-    #* Check tools
-    for tool in ["bcftools"]:
-        check_tool(tool)
+    #* Check tools (only the chosen caller's dependencies: bam2vcf and cigar need neither
+    #  bcftools nor a BAM index, so requiring them up front would block those callers)
+    if variant_caller == "bcftools":
+        check_tool("bcftools")
 
     #* Validate arguments (per-parameter types on the signature via @validate_call;
     #  cross-field / filesystem checks in DenovoParams). aligner/variant_caller/parity
@@ -207,7 +249,12 @@ def denovo(
 
     if min_counts < 2:
         min_counts = 0
-        logger.warning("Filtering by a minimum count threshold is highly recommended. Additionally, indels observed once will not be output regardless of settings (bcftools mpileup behavior).")
+        message = "Filtering by a minimum count threshold is highly recommended."
+        if variant_caller == "bcftools":
+            # bam2vcf and cigar read variants straight off the alignments, so singleton
+            # indels do survive there; only mpileup drops them.
+            message += " Additionally, indels observed once will not be output regardless of settings (bcftools mpileup behavior)."
+        logger.warning(message)
 
     #* Validate inputs
     if isinstance(inputs, str):
@@ -433,18 +480,66 @@ def denovo(
     elif input_type == "bam":
         bam_for_bcftools = " ".join(inputs)
 
-    #* Index BAM
+    #* Index BAM (mpileup needs it; bam2vcf and cigar stream the BAM instead)
     assert isinstance(bam_for_bcftools, str)
     bam_files = shlex.split(bam_for_bcftools)
     for bam in bam_files:
         if not os.path.exists(bam):
             raise ValueError(f"BAM file '{bam}' not found")
+        if variant_caller != "bcftools":
+            continue
         bai = bam + ".bai"
         if not os.path.exists(bai):
+            check_tool("samtools")
             run(f"samtools index -@ {threads} {bam}")
     
+    #* bam2vcf: read every variant recorded in the alignment records themselves
+    if variant_caller == "bam2vcf":
+        if len(bam_files) > 1:
+            raise NotImplementedError(
+                f"the 'bam2vcf' variant caller reads a single BAM, but {len(bam_files)} were given. "
+                "Pass merge_bam_files=True to combine them, or run one input at a time."
+            )
+        # These shape bcftools' statistical model, which bam2vcf has no counterpart for.
+        # Silently ignoring a filter expression would misreport what was called, so refuse.
+        if include:
+            raise ValueError("--include is a bcftools filter expression and is only supported with variant_caller='bcftools'")
+        if bcftools_call_prior:
+            raise ValueError("--bcftools-call-prior is only supported with variant_caller='bcftools'")
+        for name, value, default in (("max-depth", max_depth, 1000), ("rm-dup", rm_dup, "exact"), ("disable-baq", disable_baq, True)):
+            if value != default:
+                logger.info("--%s applies only to variant_caller='bcftools' and is ignored by bam2vcf", name)
+
+        stats = bam_to_vcf(
+            bam=bam_files[0],
+            output=output,
+            reference=sequences,
+            regions=regions or None,
+            min_count=min_counts,
+            min_vaf=min_vaf,
+            max_vaf=max_vaf,
+            min_mapq=min_mapq,
+            min_baseq=min_baseq,
+            threads=threads,
+            normalize=(not disable_bcftools_norm),
+            skip_indels=skip_indels,
+            index=output.endswith(".vcf.gz"),
+            strip_version_numbers=strip_version_numbers,
+            overwrite=True,  # DenovoParams already applied the overwrite policy
+            engine=bam2vcf_engine,
+            progress=(verbose >= 1),
+            logger=logger,
+        )
+        logger.info(
+            "bam2vcf (%s engine) wrote %s records at %s sites from %s reads",
+            stats.get("engine"), stats.get("records_emitted"), stats.get("sites_emitted"), stats.get("reads_used"),
+        )
+
+        if output_tsv:
+            vcf_to_tsv(output, output_tsv, reference_type=tsv_reference_type, overwrite=overwrite, logger=logger)
+
     #* bcftools mpileup
-    if variant_caller == "bcftools":
+    elif variant_caller == "bcftools":
         if not output.endswith(".vcf") and not output.endswith(".vcf.gz"):
             raise ValueError("when using 'bcftools' variant caller, --output must end with .vcf or .vcf.gz")
         
@@ -468,7 +563,8 @@ def denovo(
 
         #* optional: bcftools norm and additional filter (must repeat after normalization)
         if not disable_bcftools_norm:
-            bcftools_cmd += f" -Ou | bcftools norm -f {sequences} -c s -d all -m -any --threads {threads}"
+            rm_dup_arg = "" if rm_dup == "none" else f" -d {rm_dup}"
+            bcftools_cmd += f" -Ou | bcftools norm -f {sequences} -c s{rm_dup_arg} -m -any --threads {threads}"
             if do_filtering:
                 bcftools_cmd += f" -Ou | {filter_expression}"
 
@@ -519,7 +615,7 @@ def denovo(
     
     elif variant_caller == "cigar":
         if output_tsv:
-            raise ValueError("--output-tsv is only supported with the 'bcftools' variant caller")
+            raise ValueError("--output-tsv is only supported with the 'bam2vcf' and 'bcftools' variant callers, which write VCF")
         if not output.endswith(".csv"):
             raise ValueError("when using 'cigar' variant caller, --output must end with .csv")
         if len(bam_files) > 1:
@@ -548,15 +644,20 @@ def main():
     parser.add_argument("--bowtie2-alignment-dir", default="bowtie2_alignments", help="directory for Bowtie2 output BAMs")
     parser.add_argument("-R", "--regions", default="", help="BED file of regions to restrict variant calling to")
     parser.add_argument("-obd", "--out-bam-dir", default="", help="Output directory for BAM files (for Bowtie2 aligner only when not merging BAMs)")
-    parser.add_argument("-o", "--output", default="out.vcf.gz", help="Output VCF file (For bcftools variant caller) or CSV file (for cigar variant caller)")
+    parser.add_argument("-o", "--output", default="out.vcf.gz", help="Output VCF file (for the bam2vcf and bcftools variant callers) or CSV file (for the cigar variant caller)")
     parser.add_argument("--output-tsv", default="", help="Optional TSV output converted from the bcftools VCF with columns: seq_id, variant")
     parser.add_argument("--tsv-reference-type", default="auto", choices=["auto", "dna", "genome", "cdna", "transcriptome"], help="Variant coordinate prefix for --output-tsv. auto uses c. for transcript-like sequence IDs and g. otherwise.")
     parser.add_argument("-r", "--read-length", type=int, default=None, help="Read length (default: inferred from the first read)")
-    parser.add_argument("-m", "--min-counts", type=int, default=3, help="Minimum count threshold for filtering")
+    parser.add_argument("-m", "--min-counts", type=int, default=3, help="Minimum count threshold for filtering (minimum reads supporting a variant)")
+    parser.add_argument("--min-vaf", type=float, default=0.0, help="Minimum variant allele fraction AO/DP, inclusive (bam2vcf variant caller only)")
+    parser.add_argument("--max-vaf", type=float, default=1.0, help="Maximum variant allele fraction AO/DP, inclusive; lower it to drop likely-germline homozygous sites (bam2vcf variant caller only)")
+    parser.add_argument("--min-mapq", type=int, default=0, help="Minimum read mapping quality; reads below it contribute to neither AO nor DP (bam2vcf variant caller only)")
+    parser.add_argument("--min-baseq", type=int, default=0, help="Minimum base quality at the variant position; low-quality bases contribute to neither AO nor DP (bam2vcf variant caller only)")
     parser.add_argument("-a", "--aligner", default="bowtie2", choices=["STAR", "bowtie2"], help="Aligner to use: STAR (splice-aware; RNA reads to a genome) or bowtie2 (otherwise)")
     parser.add_argument("--technology", "--technology", default=None, help="Sequencing technology (same vocabulary as vk ref/count; 'dna' declares genomic DNA reads, any other technology declares RNA reads). Fills in the read type used to validate the aligner; required to validate the choice when the reference is a genome.")
     parser.add_argument("--reference-type", "--reference_type", default="auto", choices=["auto", "genome", "dna", "transcriptome", "cdna"], help="Whether --sequences is a genome or transcriptome, used to validate the aligner. auto infers it from the FASTA sequence IDs.")
-    parser.add_argument("--variant-caller", default="bcftools", choices=["bcftools", "cigar"], help="Variant caller to use: bcftools or cigar")
+    parser.add_argument("--variant-caller", default="bam2vcf", choices=["bam2vcf", "bcftools", "cigar"], help="Variant caller to use: bam2vcf (default; reads variants straight out of the alignment records, VCF with AO/DP/VAF), bcftools (mpileup/call/norm) or cigar (older Python walk, CSV of HGVS strings)")
+    parser.add_argument("--bam2vcf-engine", default="auto", choices=["auto", "native", "python"], help="Implementation used by the bam2vcf caller: auto (compiled C++ with a Python fallback), native (require the compiled helper) or python")
     parser.add_argument("--bowtie2-seed-length", type=int, default=None, help="Seed length for Bowtie2 aligner")
     parser.add_argument("--bowtie2-score-min", default=None, help="Score minimum for Bowtie2 aligner")
     parser.add_argument("-i", "--include", default="", help="bcftools filter expression")
@@ -567,6 +668,7 @@ def main():
     parser.add_argument("--merge-bam-files", action="store_true", help="Merge multiple BAM files into one for variant calling (Bowtie2 only)")
     parser.add_argument("--strip-version-numbers", action="store_true", help="Strip version numbers from chromosome names in output VCF")
     parser.add_argument("--disable-bcftools-norm", action="store_true", help="Disable running bcftools norm")
+    parser.add_argument("--rm-dup", default="exact", choices=["exact", "snps", "indels", "both", "all", "none"], help="Duplicate-removal mode for `bcftools norm -d` ('none' omits -d). 'all' collapses by position, so only the first ALT of a multi-allelic site survives -- use 'exact' to keep every distinct allele.")
     parser.add_argument("--bcftools-call-prior", default="", help="Prior for bcftools call")
     parser.add_argument("--tmp-dir", default="/tmp", help="Temporary directory for intermediate files") 
     parser.add_argument("-t", "--threads", type=int, default=1, help="Number of threads to use")
@@ -595,6 +697,11 @@ def main():
         technology=args.technology,
         reference_type=args.reference_type,
         variant_caller=args.variant_caller,
+        bam2vcf_engine=args.bam2vcf_engine,
+        min_vaf=args.min_vaf,
+        max_vaf=args.max_vaf,
+        min_mapq=args.min_mapq,
+        min_baseq=args.min_baseq,
         bowtie2_seed_length=args.bowtie2_seed_length,
         bowtie2_score_min=args.bowtie2_score_min,
         include=args.include,
@@ -605,6 +712,7 @@ def main():
         merge_bam_files=args.merge_bam_files,
         strip_version_numbers=args.strip_version_numbers,
         disable_bcftools_norm=args.disable_bcftools_norm,
+        rm_dup=args.rm_dup,
         bcftools_call_prior=args.bcftools_call_prior,
         tmp_dir=args.tmp_dir,
         threads=args.threads,

@@ -852,9 +852,30 @@ def main():  # noqa: C901
     parser_denovo.add_argument(
         "--variant-caller",
         "--variant_caller",
-        choices=["bcftools", "cigar"],
+        choices=["bam2vcf", "bcftools", "cigar"],
         default=argparse.SUPPRESS,
         help=extract_help_from_doc(denovo, "variant_caller"),
+    )
+    parser_denovo.add_argument(
+        "--bam2vcf-engine",
+        "--bam2vcf_engine",
+        choices=["auto", "native", "python"],
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "bam2vcf_engine"),
+    )
+    parser_denovo.add_argument(
+        "--min-vaf",
+        "--min_vaf",
+        type=float,
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "min_vaf"),
+    )
+    parser_denovo.add_argument(
+        "--max-vaf",
+        "--max_vaf",
+        type=float,
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "max_vaf"),
     )
     parser_denovo.add_argument(
         "--bowtie2-seed-length",
@@ -1278,9 +1299,21 @@ def main():  # noqa: C901
         help=extract_help_from_doc(clean, "pseudobam_validation"),
     )
     parser_clean.add_argument(
+        "--pseudobam_validation_aligner",
+        choices=["pseudo", "true", "STAR", "bowtie2"],
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "pseudobam_validation_aligner"),
+    )
+    parser_clean.add_argument(
         "--reference_genome_index",
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(clean, "reference_genome_index"),
+    )
+    parser_clean.add_argument(
+        "--reference_bam",
+        nargs="+",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "reference_bam"),
     )
     parser_clean.add_argument(
         "--check_alignment_position",
@@ -1966,10 +1999,24 @@ def main():  # noqa: C901
         help=extract_help_from_doc(count, "parity"),
     )
     parser_count.add_argument(
+        "--pseudobam_validation_aligner",
+        required=False,
+        choices=["pseudo", "true", "STAR", "bowtie2"],
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "pseudobam_validation_aligner"),  # forwarded to vk clean (used by pseudobam_validation)
+    )
+    parser_count.add_argument(
         "--reference_genome_index",
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(clean, "reference_genome_index"),  # forwarded to vk clean (used by pseudobam_validation)
+    )
+    parser_count.add_argument(
+        "--reference_bam",
+        required=False,
+        nargs="+",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "reference_bam"),  # forwarded to vk clean (used by pseudobam_validation)
     )
     parser_count.add_argument(
         "--gtf",

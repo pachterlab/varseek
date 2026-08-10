@@ -1,4 +1,5 @@
 import os
+import shutil
 import tempfile
 import anndata as ad
 from pdb import set_trace as st
@@ -1043,3 +1044,376 @@ def test_adjust_variant_adata_by_pseudobam_bulk_paired_but_run_as_single(out_dir
                                  index=adata.obs.index, columns=adata.var.index)
         matrix_df = matrix_df.reindex(columns=matrix_df_gt.columns).round(3)
         assert matrix_df.equals(matrix_df_gt), f"avoid_paired_double_counting={avoid_paired_double_counting}: {matrix_df.to_dict()} != {matrix_df_gt.to_dict()}"
+
+
+def test_adjust_variant_adata_by_pseudobam_filtered_bus_keeps_read_indices(out_dir, NG_vcrs_reference_t2g, NG_vcrs_reference_index, NG_normal_reference_index, NG_fastq_bulk_1, NG_fastq_bulk_2, bustools, kallisto):
+    """The filtered BUS must stay traceable back to individual reads.
+
+    `bustools fromtext` fills the flag column with 0 for any record written without one, so writing the
+    kept records as (barcode, UMI, EC, count) silently relabelled every surviving read as "read 0" --
+    the count matrix was right but nothing downstream could say *which* reads supported a variant.
+    The read index must survive into the flag column, and because the two per-file sample barcodes are
+    collapsed for the recount, the pre-collapse barcode (i.e. which fastq a read came from) must survive
+    into the provenance sidecar.
+    """
+    technology = "BULK"
+    fastqs = [str(NG_fastq_bulk_1), str(NG_fastq_bulk_2)]
+
+    kb_count_out_vcrs = out_dir / "kb_count_vcrs"
+    subprocess.run(["kb", "count", "-t", "2", "-k", "31", "-i", str(NG_vcrs_reference_index), "-g", str(NG_vcrs_reference_t2g), "-x", technology, "--num", "--h5ad", "--parity", "single", "-o", str(kb_count_out_vcrs)] + fastqs, check=True)
+
+    adata_template = correct_adata_barcodes_for_running_paired_data_in_single_mode(
+        str(kb_count_out_vcrs), adata=str(kb_count_out_vcrs / "counts_unfiltered" / "adata.h5ad"), save_adata=False
+    )
+
+    def bus_records(bus_path):
+        """{(barcode, read_index)} from a BUS file, via the flag column kallisto --num populates."""
+        dumped = subprocess.run([bustools, "text", "-f", "-p", str(bus_path)], check=True, capture_output=True, text=True)
+        return {(line.split("\t")[0], int(line.split("\t")[4])) for line in dumped.stdout.splitlines() if line.strip()}
+
+    original = bus_records(kb_count_out_vcrs / "output.bus")
+    assert len({read_index for _barcode, read_index in original}) > 1, "fixture no longer exercises this: kb count did not populate read indices"
+
+    adjust_variant_adata_by_pseudobam(
+        kb_count_vcrs_dir=str(kb_count_out_vcrs),
+        reference_genome_index=str(NG_normal_reference_index),
+        technology=technology,
+        adata=adata_template.copy(),
+        fastq_file_list=fastqs,
+        parity="paired",
+        mm=False,
+        bustools=bustools,
+        kallisto=kallisto,
+        variant_source="transcriptome",
+        reference_sequences_type="rna",
+        vcrs_t2g=str(NG_vcrs_reference_t2g),
+        count_reads_that_dont_pseudoalign_to_reference_genome=True,
+        avoid_paired_double_counting=False,
+        check_alignment_position=False,
+        overwrite=True,
+    )
+
+    pseudobam_dir = kb_count_out_vcrs / "counts_unfiltered_pseudobam"
+    filtered = bus_records(pseudobam_dir / "output_filtered.bus")
+    assert filtered, "no records survived the QC, so this test proves nothing"
+    assert {read_index for _barcode, read_index in filtered} != {0}, "read indices were lost: every kept read is flagged as read 0"
+
+    # Which fastq each kept read came from -- erased from the BUS by the barcode collapse, so it has to
+    # come from the sidecar. Every (barcode, read index) it lists must be a record kallisto really emitted.
+    provenance = pd.read_csv(pseudobam_dir / "output_filtered_reads.tsv", sep="\t")
+    assert set(provenance["barcode"]) == {"AAAAAAAAAAAAAAAA"}, "the collapsed barcode column should hold the single sample barcode"
+    assert set(provenance["raw_barcode"]) == {"AAAAAAAAAAAAAAAA", "AAAAAAAAAAAAAAAC"}, "both per-file barcodes should be recoverable, so reads from either fastq can be identified"
+    assert set(zip(provenance["raw_barcode"], provenance["read_index"])) <= original, "sidecar lists reads kallisto never emitted"
+    assert len(provenance) == len(filtered), "the sidecar must have one row per kept BUS record"
+
+
+# ======================================================================================
+# True-alignment pseudobam QC (pseudobam_validation_aligner="true"/"STAR"/"bowtie2") and
+# the pre-made-BAM shortcut (reference_bam).
+#
+# These need their own fixtures: the NG_* toy data above is built for k-mer pseudoalignment
+# (its reads are longer than several of its reference sequences), so no real aligner can map
+# it end to end. The TA_* fixtures below are ordinary 300 bp transcripts with 100 bp reads
+# drawn from them, so bowtie2 alignment is meaningful.
+#
+# The decoy is what makes the test bite: ENSTC carries a verbatim copy of VCRS "ENSTA:c.150C>G"
+# at the same offset, so a read from ENSTC pseudoaligns to that VCRS (shared 31-mers) while
+# truly aligning to ENSTC. The QC must drop it and keep the genuine ENSTA read.
+# ======================================================================================
+
+TA_ENSTA = "AGCACTCATCATGATTTGCTAAACTACGTGGCTTGCACGGAGAGGGGTCCCGCCACTACCATCTTTTGGTCAATAAAGCCTCGTGGAGTAACCGAGCGGGGGGGGGTTGAGATAGATGGGGGGCCCAACAGTCTGGCCTTAGACCTATACATAGCCTAGTTTGTAGGGACACCCGTCGATCCGGCCTCCTAGTAGAGTGAGCTCATCGACCGAAAAAAGTTACGCATCATAACTTACTCACCAGCTAATTTAGCGAAACAGGATCATTAACGCTCACAGTTGATGACGATCCAATTCCCA"
+TA_ENSTB = "CGCTGTTGATGGGCAAGAGAGTTAGCAATCACCAGCAATTGGCACATAGATCGTTTTGTCAAACGCTGGTACTTCGACGCATAGAATGGGAGAACGCCTTTCGATCAAGAAAGTTCTACATCTCGTGGTCCGTTTCGACCCTCTATCTGTTCGCTGGCCCGGAGAGATCTCGGACCAGTCGAATATGCAGGATGCTTCTTGCAGTTGTGAGTGCGATGGTTGCGGGACCGGGTGTTAACCAAACACTATGCATAGACGCCTATAGTCCAATCGATCTCGCCAGTAATGGTGTTTCTAGAA"
+# ENSTC, with [119:180] overwritten by the mutated ENSTA window (the decoy)
+TA_ENSTC = "AATCTTGGCCGACAAATGTCCCGAGTTTCACTCTGAGCTAAACGCCGGGGGAGGTGGTGACTTGAGAATTGCGACTACGCCCAAGAACCGAGAAGGATATTTTGTGGGTTCATGTAGGGGGGGCCCAACAGTCTGGCCTTAGACCTATAGATAGCCTAGTTTGTAGGGACACCCGTCGATATCACGAGAAACTCGCCTGCGTTGATTCCCAAACCGTAACAGACCTCTGGGCTGTGAATCTATACGCGGCCACCGTCTCGACAAAGCCATATAGCAGAACGTTGGGACTGTACATGAATG"
+
+TA_VCRS_A = "GGGGCCCAACAGTCTGGCCTTAGACCTATAGATAGCCTAGTTTGTAGGGACACCCGTCGAT"  # ENSTA[119:180] with 150C>G
+TA_VCRS_B = "ATCTCGTGGTCCGTTTCGACCCTCTATCTGATCGCTGGCCCGGAGAGATCTCGGACCAGTC"  # ENSTB[119:180] with 150T>A
+
+TA_READ_A = "GGGGGGGTTGAGATAGATGGGGGGCCCAACAGTCTGGCCTTAGACCTATAGATAGCCTAGTTTGTAGGGACACCCGTCGATCCGGCCTCCTAGTAGAGTG"  # ENSTA[99:199] + variant
+TA_READ_B = "TTCGATCAAGAAAGTTCTACATCTCGTGGTCCGTTTCGACCCTCTATCTGATCGCTGGCCCGGAGAGATCTCGGACCAGTCGAATATGCAGGATGCTTCT"  # ENSTB[99:199] + variant
+TA_READ_C = "TTTTGTGGGTTCATGTAGGGGGGGCCCAACAGTCTGGCCTTAGACCTATAGATAGCCTAGTTTGTAGGGACACCCGTCGATATCACGAGAAACTCGCCTG"  # ENSTC[99:199], the decoy
+
+
+@pytest.fixture
+def TA_normal_reference_fasta(tmp_path):
+    path = tmp_path / "ta_normal.fasta"
+    path.write_text(f">ENSTA\n{TA_ENSTA}\n>ENSTB\n{TA_ENSTB}\n>ENSTC\n{TA_ENSTC}\n")
+    return path
+
+
+@pytest.fixture
+def TA_vcrs_reference_fasta(tmp_path):
+    path = tmp_path / "ta_vcrs.fasta"
+    path.write_text(f">ENSTA:c.150C>G\n{TA_VCRS_A}\n>ENSTB:c.150T>A\n{TA_VCRS_B}\n")
+    return path
+
+
+@pytest.fixture
+def TA_vcrs_reference_t2g(tmp_path, TA_vcrs_reference_fasta):
+    path = tmp_path / "ta_vcrs_t2g.txt"
+    create_identity_t2g(TA_vcrs_reference_fasta, path)
+    return path
+
+
+@pytest.fixture
+def TA_vcrs_reference_index(tmp_path, TA_vcrs_reference_fasta):
+    path = tmp_path / "ta_vcrs_index.idx"
+    subprocess.run(["kb", "ref", "--workflow", "custom", "-t", "2", "-i", str(path), "--d-list", "None", "-k", "31", str(TA_vcrs_reference_fasta)], check=True)
+    return path
+
+
+@pytest.fixture
+def TA_fastq(tmp_path):
+    qual = "I" * 100
+    path = tmp_path / "ta_reads.fastq"
+    path.write_text(
+        f"@readA_true_ENSTA\n{TA_READ_A}\n+\n{qual}\n"
+        f"@readB_true_ENSTB\n{TA_READ_B}\n+\n{qual}\n"
+        f"@readC_decoy_true_ENSTC\n{TA_READ_C}\n+\n{qual}\n"
+    )
+    return path
+
+
+@pytest.fixture
+def TA_kb_count_vcrs_dir(out_dir, TA_vcrs_reference_index, TA_vcrs_reference_t2g, TA_fastq):
+    kb_count_out = out_dir / "ta_kb_count_vcrs"
+    subprocess.run(["kb", "count", "-t", "2", "-k", "31", "-i", str(TA_vcrs_reference_index), "-g", str(TA_vcrs_reference_t2g),
+                    "-x", "BULK", "--num", "--h5ad", "--parity", "single", "-o", str(kb_count_out), str(TA_fastq)], check=True)
+    return kb_count_out
+
+
+def _matrix_df(adata):
+    return pd.DataFrame(adata.X.toarray() if hasattr(adata.X, "toarray") else adata.X,
+                        index=adata.obs.index, columns=adata.var.index)
+
+
+def _ta_qc_kwargs(TA_kb_count_vcrs_dir, TA_fastq, TA_vcrs_reference_t2g, TA_normal_reference_fasta, bustools, kallisto):
+    return dict(
+        kb_count_vcrs_dir=str(TA_kb_count_vcrs_dir),
+        technology="BULK",
+        adata=str(TA_kb_count_vcrs_dir / "counts_unfiltered" / "adata.h5ad"),
+        fastq_file_list=[str(TA_fastq)],
+        parity="single",
+        mm=False,
+        variant_source="transcriptome",
+        reference_sequences_type="rna",  # RNA reads vs a transcriptome -> use_genomebam False -> bowtie2
+        vcrs_t2g=str(TA_vcrs_reference_t2g),
+        sequences=str(TA_normal_reference_fasta),
+        count_reads_that_dont_pseudoalign_to_reference_genome=True,
+        bustools=bustools,
+        kallisto=kallisto,
+        overwrite=True,
+    )
+
+
+def test_adjust_variant_adata_by_pseudobam_true_aligner_bowtie2(out_dir, TA_kb_count_vcrs_dir, TA_fastq, TA_vcrs_reference_t2g, TA_normal_reference_fasta, bustools, kallisto):
+    """pseudobam_validation_aligner="true" against a transcriptome reference must pick bowtie2, build the
+    index from `sequences`, and drop the decoy read whose real alignment (ENSTC) contradicts the VCRS it
+    was assigned (ENSTA:c.150C>G) while keeping the two genuine reads."""
+    kwargs = _ta_qc_kwargs(TA_kb_count_vcrs_dir, TA_fastq, TA_vcrs_reference_t2g, TA_normal_reference_fasta, bustools, kallisto)
+
+    raw = _matrix_df(ad.read_h5ad(kwargs["adata"]))
+    assert raw.loc["AAAAAAAAAAAAAAAA", "ENSTA:c.150C>G"] == 2  # readA + the readC decoy
+    assert raw.loc["AAAAAAAAAAAAAAAA", "ENSTB:c.150T>A"] == 1
+
+    adata = adjust_variant_adata_by_pseudobam(
+        kallisto_quant_reference_genome_dir=str(out_dir / "ta_qc_bowtie2"),
+        pseudobam_validation_aligner="true",
+        **kwargs,
+    )
+
+    matrix_df = _matrix_df(adata)
+    assert matrix_df.loc["AAAAAAAAAAAAAAAA", "ENSTA:c.150C>G"] == 1  # decoy dropped
+    assert matrix_df.loc["AAAAAAAAAAAAAAAA", "ENSTB:c.150T>A"] == 1  # genuine read kept
+
+    # the index and the BAM really were produced by bowtie2
+    assert os.path.exists(str(out_dir / "ta_qc_bowtie2" / "bowtie2_index.1.bt2"))
+    assert os.path.exists(str(out_dir / "ta_qc_bowtie2" / "align_group_0" / "aligned.sorted.bam"))
+
+
+def test_adjust_variant_adata_by_pseudobam_reference_bam(out_dir, TA_kb_count_vcrs_dir, TA_fastq, TA_vcrs_reference_t2g, TA_normal_reference_fasta, bustools, kallisto):
+    """Handing back the BAM that the bowtie2 run produced (as vk denovo users would) must skip alignment
+    entirely and reproduce the same result."""
+    kwargs = _ta_qc_kwargs(TA_kb_count_vcrs_dir, TA_fastq, TA_vcrs_reference_t2g, TA_normal_reference_fasta, bustools, kallisto)
+
+    adata_aligned = adjust_variant_adata_by_pseudobam(
+        kallisto_quant_reference_genome_dir=str(out_dir / "ta_qc_bowtie2"),
+        pseudobam_validation_aligner="bowtie2",
+        **kwargs,
+    )
+    bam = str(out_dir / "ta_qc_bowtie2" / "align_group_0" / "aligned.sorted.bam")
+
+    adata_from_bam = adjust_variant_adata_by_pseudobam(
+        kallisto_quant_reference_genome_dir=str(out_dir / "ta_qc_from_bam"),
+        reference_bam=bam,
+        **kwargs,
+    )
+    assert not os.path.exists(str(out_dir / "ta_qc_from_bam" / "align_group_0"))  # nothing was re-aligned
+    assert _matrix_df(adata_from_bam).equals(_matrix_df(adata_aligned))
+
+    # a list of BAMs is accepted too (one per fastq group -- here a single bulk sample)
+    adata_from_bam_list = adjust_variant_adata_by_pseudobam(
+        kallisto_quant_reference_genome_dir=str(out_dir / "ta_qc_from_bam_list"),
+        reference_bam=[bam],
+        **kwargs,
+    )
+    assert _matrix_df(adata_from_bam_list).equals(_matrix_df(adata_aligned))
+
+
+def test_adjust_variant_adata_by_pseudobam_aligner_and_index_mismatches(out_dir, TA_kb_count_vcrs_dir, TA_fastq, TA_vcrs_reference_t2g, TA_normal_reference_fasta, bustools, kallisto, tmp_path):
+    """The aligner and the supplied index must both agree with the read/reference combination."""
+    kwargs = _ta_qc_kwargs(TA_kb_count_vcrs_dir, TA_fastq, TA_vcrs_reference_t2g, TA_normal_reference_fasta, bustools, kallisto)
+
+    # RNA reads vs a transcriptome need bowtie2, not splice-aware STAR
+    with pytest.raises(ValueError, match="incompatible with use_genomebam=False"):
+        adjust_variant_adata_by_pseudobam(kallisto_quant_reference_genome_dir=str(out_dir / "ta_err1"), pseudobam_validation_aligner="STAR", **kwargs)
+
+    # a kallisto index handed to the true aligner
+    kallisto_index = tmp_path / "some_kallisto_index.idx"
+    kallisto_index.write_text("")
+    with pytest.raises(ValueError, match="is a kallisto index"):
+        adjust_variant_adata_by_pseudobam(kallisto_quant_reference_genome_dir=str(out_dir / "ta_err2"), pseudobam_validation_aligner="true", reference_genome_index=str(kallisto_index), **kwargs)
+
+    # a bowtie2 index handed to kallisto
+    bowtie2_index = tmp_path / "some_bowtie2_index"
+    (tmp_path / "some_bowtie2_index.1.bt2").write_text("")
+    with pytest.raises(ValueError, match="is a bowtie2 index"):
+        adjust_variant_adata_by_pseudobam(kallisto_quant_reference_genome_dir=str(out_dir / "ta_err3"), pseudobam_validation_aligner="pseudo", reference_genome_index=str(bowtie2_index), **kwargs)
+
+    # a STAR index handed to the true aligner when bowtie2 is what the biology calls for
+    star_dir = tmp_path / "some_star_index"
+    star_dir.mkdir()
+    (star_dir / "SAindex").write_text("")
+    with pytest.raises(ValueError, match="requires a bowtie2 index"):
+        adjust_variant_adata_by_pseudobam(kallisto_quant_reference_genome_dir=str(out_dir / "ta_err4"), pseudobam_validation_aligner="true", reference_genome_index=str(star_dir), **kwargs)
+
+    with pytest.raises(ValueError, match="pseudobam_validation_aligner must be one of"):
+        adjust_variant_adata_by_pseudobam(kallisto_quant_reference_genome_dir=str(out_dir / "ta_err5"), pseudobam_validation_aligner="minimap2", **kwargs)
+
+
+# ======================================================================================
+# STAR branch of the true-alignment pseudobam QC (use_genomebam=True: RNA reads against a
+# genome reference). These fixtures are a two-exon transcript on a toy genome, and the
+# genuine read straddles the exon-exon junction -- so it is a read that only a splice-aware
+# aligner can place, which is exactly why STAR (and not bowtie2) is required here.
+#
+# Layout (1-based): chr1 exon1 = 201..500, intron = 501..1500, exon2 = 1501..1800, with the
+# variant at chr1:g.1550. chr2 carries a verbatim copy of the VCRS sequence, so a read from
+# chr2 pseudoaligns to the chr1 VCRS but truly aligns to chr2 and must be dropped.
+# ======================================================================================
+
+def _star_toy_sequences():
+    import random
+    rng = random.Random(4242)
+    chr1 = "".join(rng.choice("ACGT") for _ in range(2000))
+    chr2 = "".join(rng.choice("ACGT") for _ in range(800))
+    ref_base = chr1[1549]  # 0-based 1549 == 1-based 1550
+    alt_base = {"A": "T", "T": "A", "C": "G", "G": "C"}[ref_base]
+    chr1 = chr1[:1549] + alt_base + chr1[1550:]  # the genome carries the variant, so the reads do too
+    vcrs = chr1[1519:1580]  # 61 bp window around the variant
+    chr2 = chr2[:300] + vcrs + chr2[361:]  # the decoy
+    read_junction = chr1[460:500] + chr1[1500:1580]  # 40 bp of exon1 + 80 bp of exon2
+    read_decoy = chr2[260:380]
+    # A second, never-observed VCRS on chr2. It only exists so the recounted matrix has more than one
+    # column: load_adata_from_mtx cannot read a single-row cells_x_genes.genes.txt (pandas rejects
+    # 3 names for a 1-column, 1-row file), which is unrelated to what this test is about.
+    other_ref, other_pos = chr2[630], 631  # 1-based 631
+    other_alt = {"A": "T", "T": "A", "C": "G", "G": "C"}[other_ref]
+    return {
+        "chr1": chr1, "chr2": chr2, "vcrs": vcrs,
+        "vcrs_header": f"chr1:g.1550{ref_base}>{alt_base}",
+        "other_vcrs": chr2[600:630] + other_alt + chr2[631:661],
+        "other_vcrs_header": f"chr2:g.{other_pos}{other_ref}>{other_alt}",
+        "read_junction": read_junction, "read_decoy": read_decoy,
+    }
+
+
+@pytest.fixture
+def STAR_toy():
+    return _star_toy_sequences()
+
+
+@pytest.fixture
+def STAR_genome_fasta(tmp_path, STAR_toy):
+    path = tmp_path / "star_genome.fasta"
+    path.write_text(f">chr1\n{STAR_toy['chr1']}\n>chr2\n{STAR_toy['chr2']}\n")
+    return path
+
+
+@pytest.fixture
+def STAR_gtf(tmp_path):
+    attrs = 'gene_id "geneA"; transcript_id "txA";'
+    lines = [
+        f"chr1\ttoy\tgene\t201\t1800\t.\t+\t.\tgene_id \"geneA\";",
+        f"chr1\ttoy\ttranscript\t201\t1800\t.\t+\t.\t{attrs}",
+        f"chr1\ttoy\texon\t201\t500\t.\t+\t.\t{attrs} exon_number \"1\";",
+        f"chr1\ttoy\texon\t1501\t1800\t.\t+\t.\t{attrs} exon_number \"2\";",
+    ]
+    path = tmp_path / "star_toy.gtf"
+    path.write_text("\n".join(lines) + "\n")
+    return path
+
+
+@pytest.fixture
+def STAR_vcrs_index_and_t2g(tmp_path, STAR_toy):
+    fasta = tmp_path / "star_vcrs.fasta"
+    fasta.write_text(f">{STAR_toy['vcrs_header']}\n{STAR_toy['vcrs']}\n>{STAR_toy['other_vcrs_header']}\n{STAR_toy['other_vcrs']}\n")
+    t2g = tmp_path / "star_vcrs_t2g.txt"
+    create_identity_t2g(fasta, t2g)
+    index = tmp_path / "star_vcrs_index.idx"
+    subprocess.run(["kb", "ref", "--workflow", "custom", "-t", "2", "-i", str(index), "--d-list", "None", "-k", "31", str(fasta)], check=True)
+    return index, t2g
+
+
+@pytest.fixture
+def STAR_fastq(tmp_path, STAR_toy):
+    qual = "I" * 120
+    path = tmp_path / "star_reads.fastq"
+    path.write_text(
+        f"@read_junction_true_chr1\n{STAR_toy['read_junction']}\n+\n{qual}\n"
+        f"@read_decoy_true_chr2\n{STAR_toy['read_decoy']}\n+\n{qual}\n"
+    )
+    return path
+
+
+def test_adjust_variant_adata_by_pseudobam_true_aligner_star(out_dir, STAR_toy, STAR_genome_fasta, STAR_gtf, STAR_vcrs_index_and_t2g, STAR_fastq, bustools, kallisto):
+    """RNA reads against a genome reference must select splice-aware STAR, build the STAR genome index
+    from `sequences` + `gtf`, keep the junction-spanning read (which no unspliced aligner could place)
+    and drop the chr2 decoy that only k-mer-matches the chr1 VCRS."""
+    pytest.importorskip("pysam")
+    if not shutil.which("STAR"):
+        pytest.skip("STAR is not installed")
+
+    vcrs_index, vcrs_t2g = STAR_vcrs_index_and_t2g
+    kb_count_out = out_dir / "star_kb_count_vcrs"
+    subprocess.run(["kb", "count", "-t", "2", "-k", "31", "-i", str(vcrs_index), "-g", str(vcrs_t2g),
+                    "-x", "BULK", "--num", "--h5ad", "--parity", "single", "-o", str(kb_count_out), str(STAR_fastq)], check=True)
+
+    vcrs_header = STAR_toy["vcrs_header"]
+    raw = _matrix_df(ad.read_h5ad(str(kb_count_out / "counts_unfiltered" / "adata.h5ad")))
+    assert raw.loc["AAAAAAAAAAAAAAAA", vcrs_header] == 2  # the genuine read + the decoy
+
+    adata = adjust_variant_adata_by_pseudobam(
+        kb_count_vcrs_dir=str(kb_count_out),
+        technology="BULK",
+        kallisto_quant_reference_genome_dir=str(out_dir / "star_qc"),
+        adata=str(kb_count_out / "counts_unfiltered" / "adata.h5ad"),
+        fastq_file_list=[str(STAR_fastq)],
+        parity="single",
+        mm=False,
+        variant_source="genome",
+        reference_sequences_type="dna",
+        reads_type="rna",  # RNA reads vs a genome -> use_genomebam True -> STAR
+        vcrs_t2g=str(vcrs_t2g),
+        sequences=str(STAR_genome_fasta),
+        gtf=str(STAR_gtf),
+        count_reads_that_dont_pseudoalign_to_reference_genome=True,
+        bustools=bustools,
+        kallisto=kallisto,
+        pseudobam_validation_aligner="true",
+        overwrite=True,
+    )
+
+    assert _matrix_df(adata).loc["AAAAAAAAAAAAAAAA", vcrs_header] == 1
+    assert os.path.exists(str(out_dir / "star_qc" / "star_index" / "SAindex"))  # STAR, not bowtie2
+    assert os.path.exists(str(out_dir / "star_qc" / "align_group_0" / "aligned.sorted.bam"))

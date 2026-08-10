@@ -80,7 +80,8 @@ analysis = [
 include = ["varseek*"]
 
 [tool.setuptools.package-data]
-varseek = ["*.txt", "*.md", "*.csv"]  # Ensure additional files like data or docs are included
+# cpp/*.cpp must ship: the compiled helpers are built from source on demand at runtime.
+varseek = ["*.txt", "*.md", "*.csv", "cpp/*.cpp"]  # Ensure additional files like data or docs are included
 
 [project.scripts]
 vk = "varseek.main:main"  # This replaces the console_scripts entry
