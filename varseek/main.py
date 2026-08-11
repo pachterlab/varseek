@@ -78,7 +78,9 @@ def extract_help_from_doc(module, arg_name, disable=False):
     if help_message:
         if disable:
             help_message = [f"Disable {arg_name}, described below:"] + help_message
-        return "\n".join(help_message).strip()
+        # argparse runs help strings through %-formatting, so a literal % in a docstring
+        # (e.g. "recall above 97%") would crash --help. Escape it rather than banning it.
+        return "\n".join(help_message).strip().replace("%", "%%")
     return "Help message not found in docstring."
     # raise ValueError(f"Argument '{arg_name}' not found in the docstring of the module '{module}'.")
 
@@ -390,6 +392,12 @@ def add_build_arguments(parser, required):
         help=extract_help_from_doc(build, "optimize_flanking_regions", disable=True),
     )
     parser.add_argument(
+        "--shorten_repetitive_regions",
+        action="store_true",
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "shorten_repetitive_regions"),
+    )
+    parser.add_argument(
         "--disable_remove_seqs_with_wt_kmers",
         dest="remove_seqs_with_wt_kmers",
         action="store_false",
@@ -490,6 +498,27 @@ def add_build_arguments(parser, required):
         required=False,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(build, "min_triplet_complexity"),
+    )
+    parser.add_argument(
+        "--min_unique_triplets",
+        type=int,
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "min_unique_triplets"),
+    )
+    parser.add_argument(
+        "--min_unique_triplets_local",
+        type=int,
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "min_unique_triplets_local"),
+    )
+    parser.add_argument(
+        "--local_length",
+        type=int,
+        required=False,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(build, "local_length"),
     )
     parser.add_argument(
         "--keep_alignment_to_reference",
@@ -876,6 +905,20 @@ def main():  # noqa: C901
         type=float,
         default=argparse.SUPPRESS,
         help=extract_help_from_doc(denovo, "max_vaf"),
+    )
+    parser_denovo.add_argument(
+        "--min-mapq",
+        "--min_mapq",
+        type=int,
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "min_mapq"),
+    )
+    parser_denovo.add_argument(
+        "--min-baseq",
+        "--min_baseq",
+        type=int,
+        default=argparse.SUPPRESS,
+        help=extract_help_from_doc(denovo, "min_baseq"),
     )
     parser_denovo.add_argument(
         "--bowtie2-seed-length",
@@ -1326,6 +1369,18 @@ def main():  # noqa: C901
         type=int,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(clean, "alignment_position_tolerance"),
+    )
+    parser_clean.add_argument(
+        "--min_snp_vaf",
+        type=float,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "min_snp_vaf"),
+    )
+    parser_clean.add_argument(
+        "--min_indel_vaf",
+        type=float,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "min_indel_vaf"),
     )
     parser_clean.add_argument(
         "--reference_sequences_type",
@@ -1937,6 +1992,18 @@ def main():  # noqa: C901
         type=int,
         default=argparse.SUPPRESS,  # Remove from args if not provided
         help=extract_help_from_doc(clean, "alignment_position_tolerance"),
+    )
+    parser_count.add_argument(
+        "--min_snp_vaf",
+        type=float,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "min_snp_vaf"),
+    )
+    parser_count.add_argument(
+        "--min_indel_vaf",
+        type=float,
+        default=argparse.SUPPRESS,  # Remove from args if not provided
+        help=extract_help_from_doc(clean, "min_indel_vaf"),
     )
     parser_count.add_argument(
         "--check_alignment_position",

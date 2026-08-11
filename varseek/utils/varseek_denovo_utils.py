@@ -667,6 +667,13 @@ def bam_to_vcf(
     work is done by varseek/cpp/bam2vcf.cpp, compiled and cached on first use; if it
     cannot be built, an equivalent pysam implementation runs instead.
 
+    The gates below default to off, so this function reports everything the alignments
+    contain. `vk denovo` is the opinionated entry point: it defaults min_mapq=20 and
+    min_baseq=20 (see BAM2VCF_DEFAULT_* in varseek/varseek_denovo.py), which costs almost no
+    recall. It leaves min_vaf at 0 and warns instead, since a fraction floor is the one gate
+    that drops real somatic/subclonal and allele-specific variants. Set min_mapq/min_baseq
+    here too unless you specifically want the raw firehose.
+
     Arguments:
     - bam                     (str) Coordinate-sorted BAM/CRAM. Required.
     - output                  (str) Output VCF path. A .gz/.bgz suffix produces BGZF. Default: "out.vcf.gz"

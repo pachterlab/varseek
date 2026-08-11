@@ -233,6 +233,75 @@ def test_multi_deletion_with_right_repeats(long_sequence, out_dir):
 
     assert_global_variables_zero()
 
+def test_shorten_repetitive_regions_helpers():
+    from varseek.utils import repeat_length_at_sequence_end, repeat_length_at_sequence_start
+
+    # a repeat unit must occur at least twice, and only units of length 1, 2, and 3 are considered
+    assert repeat_length_at_sequence_end("CATTATT") == 6  # 'TT' (2), no doublet, 'ATTATT' (6)
+    assert repeat_length_at_sequence_end("TTTT") == 4
+    assert repeat_length_at_sequence_end("ACGTATATA") == 6
+    assert repeat_length_at_sequence_end("GCTAGTAGTAG") == 9
+    assert repeat_length_at_sequence_end("ACGT") == 0
+    assert repeat_length_at_sequence_end("") == 0
+
+    assert repeat_length_at_sequence_start("TTATTAG") == 6
+    assert repeat_length_at_sequence_start("TAGTAGTAGC") == 9
+    assert repeat_length_at_sequence_start("TTAATTAATTAAC") == 2  # 'TTAA' is a unit of length 4
+    assert repeat_length_at_sequence_start("ACGT") == 0
+
+
+def test_shorten_repetitive_regions_left_repeat_shortens_right_flank(out_dir):
+    # left flank ends with 'CATTATT' -> longest repeat is 'ATTATT' (6), so 5 nucleotides come off the right flank
+    sequence = "GATCCAGTAC" + "CATTATT" + "C" + "GACTCAGTCAG"
+    build_kwargs = dict(dont_create_index=True, sequences=sequence, variants="c.18del", return_variant_output=True, w=10, k=11, out=out_dir, overwrite=True)
+
+    assert vk.build(shorten_repetitive_regions=False, **build_kwargs)[0] == "TACCATTATT" + "GACTCAGTCA"
+    assert vk.build(shorten_repetitive_regions=True, **build_kwargs)[0] == "TACCATTATT" + "GACTC"
+
+
+def test_shorten_repetitive_regions_right_repeat_shortens_left_flank(out_dir):
+    # right flank starts with 'TTATTAG' -> longest repeat is 'TTATTA' (6), so 5 nucleotides come off the left flank
+    # (the final nucleotide of the right flank is removed by optimize_flanking_regions in both cases)
+    sequence = "GATCCAGTAC" + "C" + "TTATTAG" + "ACGTCAGTC"
+    build_kwargs = dict(dont_create_index=True, sequences=sequence, variants="c.11del", return_variant_output=True, w=10, k=11, out=out_dir, overwrite=True)
+
+    assert vk.build(shorten_repetitive_regions=False, **build_kwargs)[0] == "GATCCAGTAC" + "TTATTAGAC"
+    assert vk.build(shorten_repetitive_regions=True, **build_kwargs)[0] == "AGTAC" + "TTATTAGAC"
+
+
+def test_shorten_repetitive_regions_insertion_capped_at_flank_length(out_dir):
+    # left flank ends with 'TAGTAGTAG' (9) -> 8 nucleotides come off the right flank
+    sequence = "CCAGT" + "TAGTAGTAG" + "ACGTCAGTCAGGA"
+    build_kwargs = dict(dont_create_index=True, sequences=sequence, variants="c.14_15insTT", return_variant_output=True, w=10, k=11, out=out_dir, overwrite=True)
+
+    assert vk.build(shorten_repetitive_regions=False, **build_kwargs)[0] == "TTAGTAGTAG" + "TT" + "ACGTCAGTCA"
+    assert vk.build(shorten_repetitive_regions=True, **build_kwargs)[0] == "TTAGTAGTAG" + "TT" + "AC"
+
+    # the right flank here is shorter than the 5 nucleotides the left repeat would remove -> remove all of it
+    short_right_flank_sequence = "GATCCAGTAC" + "CATTATT" + "C" + "GAC"
+    assert vk.build(dont_create_index=True, sequences=short_right_flank_sequence, variants="c.18del", shorten_repetitive_regions=True, min_seq_len=None, remove_seqs_with_wt_kmers=False, return_variant_output=True, w=10, k=11, out=out_dir, overwrite=True)[0] == "TACCATTATT"
+
+
+def test_shorten_repetitive_regions_applies_to_substitutions(out_dir):
+    # left flank ends with 'CATTATT' -> 'ATTATT' (6), so 5 nucleotides come off the right flank; the right flank
+    # starts with 'GACTCAGTCA', which holds no repeat, so the left flank is untouched
+    sequence = "GATCCAGTAC" + "CATTATT" + "C" + "GACTCAGTCAG"
+    build_kwargs = dict(dont_create_index=True, sequences=sequence, variants="c.18C>G", return_variant_output=True, w=10, k=11, out=out_dir, overwrite=True)
+
+    assert vk.build(shorten_repetitive_regions=False, **build_kwargs)[0] == "TACCATTATT" + "G" + "GACTCAGTCA"
+    assert vk.build(shorten_repetitive_regions=True, **build_kwargs)[0] == "TACCATTATT" + "G" + "GACTC"
+
+
+def test_shorten_repetitive_regions_substitution_between_two_repeats(out_dir):
+    # both flanks abut a repeat: left flank ends with 'TATATA' (6) -> 5 off the right flank, right flank starts
+    # with 'TTT' (3) -> 2 off the left flank
+    sequence = "GCAGT" + "TATATA" + "C" + "TTT" + "GACCAGTCAG"
+    build_kwargs = dict(dont_create_index=True, sequences=sequence, variants="c.12C>G", return_variant_output=True, w=10, k=11, out=out_dir, overwrite=True)
+
+    assert vk.build(shorten_repetitive_regions=False, **build_kwargs)[0] == "CAGTTATATA" + "G" + "TTTGACCAGT"
+    assert vk.build(shorten_repetitive_regions=True, **build_kwargs)[0] == "GTTATATA" + "G" + "TTTGA"
+
+
 def test_single_insertion(long_sequence, out_dir):
     result = vk.build(
         dont_create_index=True,
@@ -1033,3 +1102,33 @@ def test_strip_gene_name_from_seq_id_round_trip():
 
     series = pd.Series(["ENST1(ACT)", "3(BRCA1)", "ENST9"])
     assert list(strip_gene_name_from_seq_id(series)) == ["ENST1", "3", "ENST9"]
+
+
+def test_count_unique_kmers_local_window():
+    from varseek.utils import count_unique_kmers, triplet_stats
+
+    vcrs = "GTCCAGTAAA" + "G" + "AAAGTCAGCT"  # 21 nt, variant at the center base (index 10)
+
+    # local window around the center base: 'AAAGAAA' -> {AAA, AAG, AGA, GAA}
+    assert count_unique_kmers(vcrs, k=3, max_bases_left=3, max_bases_right=3) == 4
+    # no window given -> the whole VCRS, matching the global triplet count
+    assert count_unique_kmers(vcrs, k=3) == triplet_stats(vcrs)[0] == 14
+    assert count_unique_kmers("ACGT", k=5) == 0  # shorter than k
+
+
+def test_min_unique_triplets_local(out_dir):
+    # the variant sits in a local AAA...AAA stretch (few distinct triplets nearby) inside an otherwise complex VCRS
+    sequence = "GTCCAGT" + "AAA" + "C" + "AAA" + "GTCAGCT"
+    vcrs = "GTCCAGTAAA" + "G" + "AAAGTCAGCT"
+    build_kwargs = dict(dont_create_index=True, sequences=sequence, variants="c.11C>G", return_variant_output=True, w=10, k=11, out=out_dir, overwrite=True)
+
+    assert vk.build(**build_kwargs)[0] == vcrs
+    assert vk.build(min_unique_triplets=5, **build_kwargs)[0] == vcrs  # 14 distinct triplets globally -> kept
+    assert vk.build(min_unique_triplets_local=4, local_length=3, **build_kwargs)[0] == vcrs  # 4 locally -> kept
+    assert vk.build(min_unique_triplets_local=5, local_length=3, **build_kwargs) is None  # 4 locally -> dropped
+    assert vk.build(min_unique_triplets_local=5, local_length=10, **build_kwargs)[0] == vcrs  # window covers the whole VCRS -> kept
+
+
+def test_min_unique_triplets_local_requires_local_length(out_dir):
+    with pytest.raises(Exception, match="local_length"):
+        vk.build(dont_create_index=True, sequences="GTCCAGTAAACAAAGTCAGCT", variants="c.11C>G", w=10, k=11, out=out_dir, overwrite=True, min_unique_triplets_local=5)

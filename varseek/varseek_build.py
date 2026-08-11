@@ -50,10 +50,12 @@ from .utils import (
     vcf_to_dataframe,
     wt_fragment_and_mutant_fragment_share_kmer,
     merge_fasta_file_headers,
+    join_headers_unique,
     fasta_looks_like_cdna,
     run_pseudoalign_on_vcrs_df,
     longest_homopolymer,
     triplet_stats,
+    count_unique_kmers,
     download_cosmic_sequences,
     download_cosmic_mutations,
     merge_gtf_transcript_locations_into_cosmic_csv,
@@ -94,6 +96,8 @@ from .utils.varseek_build_utils import (
     end_mut_nucleotides_with_left_flank,
     calculate_beginning_mutation_overlap_with_right_flank,
     calculate_end_mutation_overlap_with_left_flank,
+    repeat_length_at_sequence_end,
+    repeat_length_at_sequence_start,
     iterate_through_vcf_in_chunks,
     merge_subsequence_vcrss,
     compute_gene_name_series_for_headers,
@@ -200,6 +204,8 @@ class BuildParams(BaseModel):
     k: object = None
     gtf: object = None
     convert_variant_coordinates: object = None
+    min_unique_triplets_local: object = None
+    local_length: object = None
 
     # Every per-parameter check (including the value-semantics of gtf, dlist,
     # min_triplet_complexity, and
@@ -258,6 +264,10 @@ class BuildParams(BaseModel):
             if k > 2 * w:
                 raise ValueError("k must be less than or equal to 2*w")
 
+        # the local triplet filter needs a window size to be local at all
+        if self.min_unique_triplets_local is not None and self.local_length is None:
+            raise ValueError(f"min_unique_triplets_local={self.min_unique_triplets_local} requires 'local_length' (the number of nucleotides to either side of the variant that make up the local window). Got local_length=None.")
+
         # coordinate conversion requires a GTF for exon structure
         if self.convert_variant_coordinates:
             if not (isinstance(self.gtf, str) and os.path.isfile(self.gtf)):
@@ -272,6 +282,7 @@ def build(
     w: PositiveInt = 47,  # parameters
     k: OddInt3To63 = 51,
     optimize_flanking_regions: bool = True,
+    shorten_repetitive_regions: bool = False,
     merge_identical: bool = True,
     merge_reference_equivalent_headers: bool = False,
     dlist: Optional[Union[Literal["None", "intergenic_dna", "cdna"], ExistingFasta]] = None,
@@ -281,6 +292,9 @@ def build(
     remove_seqs_with_wt_kmers: bool = True,
     max_homopolymer_length: Optional[PositiveInt] = None,
     min_triplet_complexity: Optional[Ratio] = None,
+    min_unique_triplets: Optional[PositiveInt] = None,
+    min_unique_triplets_local: Optional[PositiveInt] = None,
+    local_length: Optional[PositiveInt] = None,
     remove_alignment_to_reference: bool = True,
     alignment_to_reference_type: ReferenceType = "genome_or_transcriptome",
     alignment_to_reference_aligner: Literal["bowtie2", "kallisto"] = "bowtie2",
@@ -375,6 +389,15 @@ def build(
                                          Must be greater than the value passed in for w. Default: 51.
     - optimize_flanking_regions          (True/False) Whether to remove nucleotides from either end of the mutant sequence to ensure (when possible)
                                          that the mutant sequence does not contain any (w+1)-mers (where a (w+1)-mer is a subsequence of length w+1, with w defined by the 'w' argument) also found in the wildtype/input sequence. Default: True
+    - shorten_repetitive_regions         (True/False) Whether to additionally shorten the flanking regions of a VCRS when the variant abuts a tandem repeat, which makes the
+                                         variant's exact position ambiguous. For each side of the variant, the number of nucleotides taken up by the longest tandem repeat
+                                         (with a repeat unit of length 1, 2, or 3 - e.g. 'TTTT', 'TATATA', or 'TAGTAGTAG') immediately adjacent to the variant is computed, and
+                                         that number minus 1 nucleotides is removed from the *opposite* flank (a repeat to the left of the variant shortens the right flank, and
+                                         vice versa). E.g. for 'CATTATT' immediately left of the variant, the longest repeat is 'ATTATT' (6 nucleotides: 2 for a unit of length 1,
+                                         0 for a unit of length 2, 6 for a unit of length 3), so 5 nucleotides are removed from the right flank. The number removed from each
+                                         flank is the maximum of this value and whatever optimize_flanking_regions would already remove (and is capped at the flank length).
+                                         Unlike optimize_flanking_regions, this applies to every variant type, substitutions included. Note that the resulting shorter VCRSs are
+                                         more likely to be dropped by the `min_seq_len` filter. Default: False
     - merge_identical                    (True/False) Whether to merge sequence-identical VCRSs in the output (identical VCRSs will be merged by concatenating the sequence
                                          headers for all identical sequences with semicolons). Default: True
     - merge_reference_equivalent_headers (True/False) Whether to rewrite each VCRS header to its full reference equivalence class. Two reference positions are equivalent when
@@ -400,6 +423,13 @@ def build(
                                          Default: True
     - max_homopolymer_length             (int) Drop any VCRS whose longest single-nucleotide homopolymer run is longer than this value. None disables the filter. Default: None.
     - min_triplet_complexity             (float) Drop any VCRS whose triplet complexity (distinct 3-mers / total 3-mers, in (0, 1]) is below this value. None disables the filter. Default: None.
+    - min_unique_triplets                (int) Drop any VCRS whose number of distinct 3-mers is below this value. Like `min_triplet_complexity`, but an absolute count rather than a fraction of the total 3-mers. None disables the filter. Default: None.
+    - min_unique_triplets_local          (int) Like `min_unique_triplets`, but counted only over the local window immediately surrounding the variant rather than over the whole VCRS:
+                                         the window spans `local_length` nucleotides to either side of the VCRS's center base (the center base being where the variant sits, since
+                                         the VCRS is built with a flanking region on each side of the variant). Drop any VCRS with fewer than this many distinct 3-mers in that
+                                         window. Requires `local_length`. None disables the filter. Default: None.
+    - local_length                       (int) Number of nucleotides to either side of the variant that make up the local window used by `min_unique_triplets_local` (so the window
+                                         is up to 2*local_length + 1 nucleotides long, clipped at the ends of the VCRS). Only used by `min_unique_triplets_local`. Default: None.
     - remove_alignment_to_reference      (True/False) Remove VCRSs that pseudoalign to a normal reference (they would be false positives). Requires a reference DNA fasta (see `alignment_to_reference_dna`/`species`). Default: True.
     - alignment_to_reference_type        (str) Which normal reference to pseudoalign against when remove_alignment_to_reference=True: one of 'genome', 'cdna', 'transcriptome', 'genome_or_transcriptome'. Default: 'genome_or_transcriptome'.
     - alignment_to_reference_aligner     (str) Aligner backend for the pseudoalignment filter: 'bowtie2' (default; falls back to 'kallisto' if bowtie2 is not installed) or 'kallisto'. Default: 'bowtie2'.
@@ -686,6 +716,14 @@ def build(
         max_homopolymer_length = int(max_homopolymer_length)
     if min_triplet_complexity is not None:
         min_triplet_complexity = float(min_triplet_complexity)
+    if min_unique_triplets is not None:
+        min_unique_triplets = int(min_unique_triplets)
+    if min_unique_triplets_local is not None:
+        min_unique_triplets_local = int(min_unique_triplets_local)
+    if local_length is not None:
+        local_length = int(local_length)
+        if min_unique_triplets_local is None:
+            logger.warning("local_length=%d was provided but min_unique_triplets_local is None, so it has no effect.", local_length)
 
     # * 8. Start the actual function
     if isinstance(mutations, Path):
@@ -943,6 +981,18 @@ def build(
 
         mutations = mutations[mutations[seq_id_column].isin(seq_dict.keys())]
 
+    # The normalization steps just above (chromosome-value cleanup, the VCF insertion->duplication
+    # rewrite, and stripping seq_ID version suffixes) can collapse rows that were still distinct at
+    # the earlier (seq_ID, variant) de-duplication -- e.g. 'ENST00000123.4' and 'ENST00000123.5', or
+    # an insertion rewritten into the duplication another row already spells out. Those rows now
+    # yield byte-identical headers, which the identical-VCRS merge would semicolon-join into a
+    # header naming the same variant twice ('20:g.21G>A;20:g.21G>A'). Rows are still ordered
+    # most-informative-first from that earlier pass, so keep="first" makes the same choice.
+    rows_before_normalization_dedup = mutations.shape[0]
+    mutations = mutations.drop_duplicates(subset=[seq_id_column, var_column], keep="first")
+    duplicate_count += rows_before_normalization_dedup - mutations.shape[0]
+    total_mutations_updated = mutations.shape[0]
+
     mutations["vcrs_sequence"] = ""
 
     # Optionally annotate the HGVS-like header with the gene name in parentheses, e.g.
@@ -1191,27 +1241,61 @@ def build(
         mutations["updated_left_flank_start"] = 0
         mutations["updated_right_flank_end"] = 0
 
+    # A tandem repeat (repeat unit of length 1-3) immediately adjacent to the variant makes the variant's exact
+    # position ambiguous, so shave (length of that repeat - 1) nucleotides off the *opposite* flank - i.e. a repeat
+    # at the end of r1 shortens r2, and a repeat at the beginning of r2 shortens r1. Applies to every variant type
+    # (substitutions included). Never shaves off less than optimize_flanking_regions already does (above), and never
+    # more than the flank itself is long.
+    if shorten_repetitive_regions:
+        mutations["left_repeat_length"] = mutations["left_flank_region"].apply(repeat_length_at_sequence_end)
+        mutations["right_repeat_length"] = mutations["right_flank_region"].apply(repeat_length_at_sequence_start)
+
+        mutations["updated_right_flank_end"] = np.minimum(
+            np.maximum(
+                mutations["updated_right_flank_end"],
+                (mutations["left_repeat_length"] - 1).clip(lower=0),
+            ),
+            mutations["right_flank_region"].str.len(),
+        )
+        mutations["updated_left_flank_start"] = np.minimum(
+            np.maximum(
+                mutations["updated_left_flank_start"],
+                (mutations["right_repeat_length"] - 1).clip(lower=0),
+            ),
+            mutations["left_flank_region"].str.len(),
+        )
+
+        mutations["updated_left_flank_start"] = mutations["updated_left_flank_start"].fillna(0).astype(int)
+        mutations["updated_right_flank_end"] = mutations["updated_right_flank_end"].fillna(0).astype(int)
+
+    # Both optimize_flanking_regions and shorten_repetitive_regions express themselves as
+    # `updated_left_flank_start`/`updated_right_flank_end`: how many nucleotides to shave off the outer end of
+    # the left/right flank. Substitutions are only ever shaved by shorten_repetitive_regions, so when that is
+    # off their sequences are built with the cheaper vectorized concatenation of the untouched flanks.
+    def build_sequence_from_trimmed_flanks(row, variant_nucleotides_column):
+        return row["left_flank_region"][row["updated_left_flank_start"] :] + row[variant_nucleotides_column] + row["right_flank_region"][: len(row["right_flank_region"]) - row["updated_right_flank_end"]]
+
     # Create WT substitution w-mer sequences
     if substitution_mask.any():
-        mutations.loc[substitution_mask, "wt_sequence"] = mutations.loc[substitution_mask, "left_flank_region"] + mutations.loc[substitution_mask, "wt_nucleotides_ensembl"] + mutations.loc[substitution_mask, "right_flank_region"]
+        if shorten_repetitive_regions:
+            mutations.loc[substitution_mask, "wt_sequence"] = mutations.loc[substitution_mask].apply(build_sequence_from_trimmed_flanks, axis=1, variant_nucleotides_column="wt_nucleotides_ensembl")
+        else:
+            mutations.loc[substitution_mask, "wt_sequence"] = mutations.loc[substitution_mask, "left_flank_region"] + mutations.loc[substitution_mask, "wt_nucleotides_ensembl"] + mutations.loc[substitution_mask, "right_flank_region"]
 
     # Create WT non-substitution w-mer sequences
     if non_substitution_mask.any():
-        mutations.loc[non_substitution_mask, "wt_sequence"] = mutations.loc[non_substitution_mask].apply(
-            lambda row: row["left_flank_region"][row["updated_left_flank_start"] :] + row["wt_nucleotides_ensembl"] + row["right_flank_region"][: len(row["right_flank_region"]) - row["updated_right_flank_end"]],
-            axis=1,
-        )
+        mutations.loc[non_substitution_mask, "wt_sequence"] = mutations.loc[non_substitution_mask].apply(build_sequence_from_trimmed_flanks, axis=1, variant_nucleotides_column="wt_nucleotides_ensembl")
 
     # Create mutant substitution w-mer sequences
     if substitution_mask.any():
-        mutations.loc[substitution_mask, "vcrs_sequence"] = mutations.loc[substitution_mask, "left_flank_region"] + mutations.loc[substitution_mask, "mut_nucleotides"] + mutations.loc[substitution_mask, "right_flank_region"]
+        if shorten_repetitive_regions:
+            mutations.loc[substitution_mask, "vcrs_sequence"] = mutations.loc[substitution_mask].apply(build_sequence_from_trimmed_flanks, axis=1, variant_nucleotides_column="mut_nucleotides")
+        else:
+            mutations.loc[substitution_mask, "vcrs_sequence"] = mutations.loc[substitution_mask, "left_flank_region"] + mutations.loc[substitution_mask, "mut_nucleotides"] + mutations.loc[substitution_mask, "right_flank_region"]
 
     # Create mutant non-substitution w-mer sequences
     if non_substitution_mask.any():
-        mutations.loc[non_substitution_mask, "vcrs_sequence"] = mutations.loc[non_substitution_mask].apply(
-            lambda row: row["left_flank_region"][row["updated_left_flank_start"] :] + row["mut_nucleotides"] + row["right_flank_region"][: len(row["right_flank_region"]) - row["updated_right_flank_end"]],
-            axis=1,
-        )
+        mutations.loc[non_substitution_mask, "vcrs_sequence"] = mutations.loc[non_substitution_mask].apply(build_sequence_from_trimmed_flanks, axis=1, variant_nucleotides_column="mut_nucleotides")
 
     # * Save the unfiltered VCRS fasta (before the quality filters and before merging identical VCRSs).
     # One record per surviving variant, headers = the per-variant `header` column, no t2g and no merge.
@@ -1278,7 +1362,7 @@ def build(
     # * New quality filters (homopolymer, triplet complexity, pseudoalignment-to-reference).
     # These operate on `vcrs_sequence`/`header` and persist no new columns, so they run before
     # the columns_to_keep subsetting below and require no changes to columns_to_keep.
-    num_rows_homopolymer = num_rows_triplet = num_rows_pseudoaligned = 0
+    num_rows_homopolymer = num_rows_triplet = num_rows_unique_triplets = num_rows_unique_triplets_local = num_rows_pseudoaligned = 0
 
     if max_homopolymer_length is not None:
         homopolymer_lengths = mutations["vcrs_sequence"].apply(lambda s: longest_homopolymer(s)[0] if pd.notna(s) else 0)
@@ -1291,6 +1375,19 @@ def build(
         num_rows_triplet = int((triplet_complexities < min_triplet_complexity).sum())
         mutations = mutations[triplet_complexities >= min_triplet_complexity]
         logger.info("Removed %d variant-containing reference sequences with triplet complexity below %s...", num_rows_triplet, min_triplet_complexity)
+
+    if min_unique_triplets is not None:
+        unique_triplet_counts = mutations["vcrs_sequence"].apply(lambda s: triplet_stats(s)[0] if pd.notna(s) else min_unique_triplets)
+        num_rows_unique_triplets = int((unique_triplet_counts < min_unique_triplets).sum())
+        mutations = mutations[unique_triplet_counts >= min_unique_triplets]
+        logger.info("Removed %d variant-containing reference sequences with fewer than %d distinct triplets...", num_rows_unique_triplets, min_unique_triplets)
+
+    if min_unique_triplets_local is not None:
+        # Counted over the local window around the VCRS's center base (i.e. around the variant) rather than the whole VCRS.
+        local_unique_triplet_counts = mutations["vcrs_sequence"].apply(lambda s: count_unique_kmers(s, k=3, max_bases_left=local_length, max_bases_right=local_length) if pd.notna(s) else min_unique_triplets_local)
+        num_rows_unique_triplets_local = int((local_unique_triplet_counts < min_unique_triplets_local).sum())
+        mutations = mutations[local_unique_triplet_counts >= min_unique_triplets_local]
+        logger.info("Removed %d variant-containing reference sequences with fewer than %d distinct triplets within %d nucleotides of the variant...", num_rows_unique_triplets_local, min_unique_triplets_local, local_length)
 
     if remove_alignment_to_reference and not mutations.empty:
         if species is not None and species in species_to_url and (alignment_to_reference_dna is None or alignment_to_reference_gtf is None):  #* 1. use species if present, and alignment_to_reference_dna or alignment_to_reference_gtf is not provided
@@ -1379,6 +1476,14 @@ def build(
 
     if min_triplet_complexity is not None:
         report += f"""  {num_rows_triplet} variants with triplet complexity < {min_triplet_complexity} removed ({num_rows_triplet/total_mutations*100:.3f}%)
+        """
+
+    if min_unique_triplets is not None:
+        report += f"""  {num_rows_unique_triplets} variants with fewer than {min_unique_triplets} distinct triplets removed ({num_rows_unique_triplets/total_mutations*100:.3f}%)
+        """
+
+    if min_unique_triplets_local is not None:
+        report += f"""  {num_rows_unique_triplets_local} variants with fewer than {min_unique_triplets_local} distinct triplets within {local_length} nucleotides of the variant removed ({num_rows_unique_triplets_local/total_mutations*100:.3f}%)
         """
 
     if remove_alignment_to_reference:
@@ -1532,14 +1637,14 @@ def build(
 
         if save_variants_updated_dataframe:
             logger.warning("Merging rows of identical VCRSs can take a while if save_variants_updated_dataframe=True since it will concatenate all VCRSs too")
-            mutations = mutations.groupby(group_key, sort=False).agg({col: ("first" if col in columns_not_to_semicolon_join else (";".join if col == "header" else lambda x: list(x.fillna(np.nan)))) for col in agg_columns}).reset_index(drop=merge_identical_rc)  # lambda x: list(x) will make simple list, but lengths will be inconsistent with NaN values  # concatenate values with semicolons: lambda x: `";".join(x.astype(str))`   # drop if merging by vcrs_sequence_and_rc_tuple, but not if merging by vcrs_sequence
+            mutations = mutations.groupby(group_key, sort=False).agg({col: ("first" if col in columns_not_to_semicolon_join else (join_headers_unique if col == "header" else lambda x: list(x.fillna(np.nan)))) for col in agg_columns}).reset_index(drop=merge_identical_rc)  # lambda x: list(x) will make simple list, but lengths will be inconsistent with NaN values  # concatenate values with semicolons: lambda x: `";".join(x.astype(str))`   # drop if merging by vcrs_sequence_and_rc_tuple, but not if merging by vcrs_sequence
             if original_order:
                 mutations["original_order"] = mutations["original_order"].apply(min)  # get the minimum original order for each group
         else:
             if original_order:
-                mutations_temp = mutations.groupby(group_key, sort=False, group_keys=False).agg({"header": ";".join, "original_order": lambda x: min(x)}).reset_index()  # Take the minimum order value
+                mutations_temp = mutations.groupby(group_key, sort=False, group_keys=False).agg({"header": join_headers_unique, "original_order": lambda x: min(x)}).reset_index()  # Take the minimum order value
             else:
-                mutations_temp = mutations.groupby(group_key, sort=False, group_keys=False)["header"].apply(";".join).reset_index()  # ignores original_order
+                mutations_temp = mutations.groupby(group_key, sort=False, group_keys=False)["header"].apply(join_headers_unique).reset_index()  # ignores original_order
 
             if merge_identical_rc:
                 mutations_temp = mutations_temp.merge(mutations[["vcrs_sequence", group_key]], on=group_key, how="left")

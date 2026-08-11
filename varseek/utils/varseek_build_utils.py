@@ -1023,6 +1023,28 @@ def _concatenate_lists(series):
     return merged
 
 
+def join_headers_unique(headers, sort=False):
+    """Semicolon-join VCRS headers, dropping repeats of the same variant.
+
+    Any element of ``headers`` may itself already be a semicolon-joined header (from an
+    earlier merge), so components are flattened before de-duplication -- otherwise merging
+    a VCRS into one that already names the same variant yields a header like
+    '20:g.21G>A;20:g.21G>A'. Components keep first-occurrence order (callers merge rows
+    that are already header-sorted); pass ``sort=True`` to order them alphabetically.
+    """
+    components, seen = [], set()
+    for header in headers:
+        if header is None or (isinstance(header, float) and pd.isna(header)):
+            continue
+        for component in str(header).split(";"):
+            if component and component not in seen:
+                seen.add(component)
+                components.append(component)
+    if sort:
+        components.sort()
+    return ";".join(components)
+
+
 def merge_subsequence_vcrss(mutations, merge_identical_rc=False):
     """Merge VCRSs whose sequence is a subsequence of another VCRS's sequence.
 
@@ -1058,7 +1080,7 @@ def merge_subsequence_vcrss(mutations, merge_identical_rc=False):
         if col in ("merge_target", "seq_len"):
             continue
         if col == "header":
-            agg_dict[col] = lambda values: ";".join(sorted(values))  # alphabetical, matching the identical-merge ordering
+            agg_dict[col] = lambda values: join_headers_unique(values, sort=True)  # alphabetical, matching the identical-merge ordering
         elif col == "original_order":
             agg_dict[col] = "min"
         elif isinstance(mutations[col].iloc[0], list):
@@ -1082,16 +1104,23 @@ def merge_fasta_file_headers(input_fasta, use_IDs=False, id_to_header_csv_out=No
         merged_fasta_name = merged_fasta.name
 
     try:
-        # Step 1: Convert FASTA to a single-line, tab-separated file (sequence<tab>header)
-        awk_cmd = f"""awk 'BEGIN {{FS="\\n"; RS=">"; ORS=""}} 
-            NR > 1 {{
-                split($0, lines, "\\n");
+        # Step 1: Convert FASTA to a single-line, tab-separated file (sequence<tab>header).
+        # Records split on "\n>" rather than ">" so that the ">" inside a substitution header
+        # (e.g. "20:g.21G>A") does not cut the record in two; the first record keeps the
+        # leading ">" from the start of the file and has it stripped.
+        awk_cmd = f"""awk 'BEGIN {{FS="\\n"; RS="\\n>"; ORS=""}}
+            {{
+                record = $0;
+                if (NR == 1) {{ sub(/^>/, "", record); }}
+                num_lines = split(record, lines, "\\n");
                 header = lines[1];
                 seq = "";
-                for (i = 2; i <= length(lines); i++) {{
+                for (i = 2; i <= num_lines; i++) {{
                     seq = seq lines[i];
                 }}
-                print seq "\\t" header "\\n";
+                if (header != "") {{
+                    print seq "\\t" header "\\n";
+                }}
             }}' {input_fasta} > {temp_tsv_name}"""
         subprocess.run(awk_cmd, shell=True, check=True, executable="/bin/bash")
 
@@ -1101,11 +1130,16 @@ def merge_fasta_file_headers(input_fasta, use_IDs=False, id_to_header_csv_out=No
 
         
         step_3_output_fasta = merged_fasta_name if use_IDs else output_fasta
-        # Step 3: Merge headers for identical sequences
-        awk_merge_cmd = f"""awk -F'\\t' 'BEGIN {{ prevSeq = ""; mergedHeader = "" }}
+        # Step 3: Merge headers for identical sequences. The sort above puts identical
+        # (sequence, header) lines next to each other, so skipping a header equal to the
+        # previous one drops variants that appear in more than one chunk instead of
+        # repeating them in the merged header (e.g. "20:g.21G>A;20:g.21G>A").
+        awk_merge_cmd = f"""awk -F'\\t' 'BEGIN {{ prevSeq = ""; prevHeader = ""; mergedHeader = "" }}
             {{
                 if ($1 == prevSeq) {{
-                    mergedHeader = mergedHeader ";" $2;
+                    if ($2 != prevHeader) {{
+                        mergedHeader = mergedHeader ";" $2;
+                    }}
                 }} else {{
                     if (prevSeq != "") {{
                         print ">" mergedHeader "\\n" prevSeq;
@@ -1113,6 +1147,7 @@ def merge_fasta_file_headers(input_fasta, use_IDs=False, id_to_header_csv_out=No
                     prevSeq = $1;
                     mergedHeader = $2;
                 }}
+                prevHeader = $2;
             }}
             END {{
                 if (prevSeq != "") {{
@@ -1207,6 +1242,49 @@ def triplet_stats(sequence):
     total_triplets = len(triplets)
     triplet_complexity = len(distinct_triplets) / total_triplets if total_triplets > 0 else 0
     return len(distinct_triplets), total_triplets, triplet_complexity
+
+
+def count_unique_kmers(seq, k, max_bases_left=None, max_bases_right=None):
+    """
+    Count the number of unique k-mers in a sequence.
+
+    Parameters
+    ----------
+    seq : str
+        Input nucleotide sequence.
+    k : int
+        k-mer length.
+    max_bases_left : int or None, default=None
+        Maximum number of bases to keep to the left of the center base.
+        If None, keep the entire left side.
+    max_bases_right : int or None, default=None
+        Maximum number of bases to keep to the right of the center base.
+        If None, keep the entire right side.
+
+    Returns
+    -------
+    int
+        Number of unique k-mers.
+    """
+    seq = seq.upper()
+
+    if k <= 0:
+        raise ValueError("k must be positive")
+
+    if len(seq) < k:
+        return 0
+
+    center = len(seq) // 2
+
+    start = 0 if max_bases_left is None else max(0, center - max_bases_left)
+    end = len(seq) if max_bases_right is None else min(len(seq), center + max_bases_right + 1)
+
+    seq = seq[start:end]
+
+    if len(seq) < k:
+        return 0
+
+    return len({seq[i : i + k] for i in range(len(seq) - k + 1)})
 
 
 # --------------------------------------------------------------------------- #
@@ -2051,6 +2129,48 @@ def end_mut_nucleotides_with_left_flank(mut_nucleotides, left_flank_region):
         return count_repeat_left_flank(mut_nucleotides, left_flank_region)
     else:
         return common_suffix_length(mut_nucleotides, left_flank_region)
+
+
+def repeat_length_at_sequence_end(sequence, max_repeat_unit_length=3):
+    """Length (in nucleotides) of the longest tandem repeat ending at the end of `sequence`.
+
+    Considers repeat units of length 1 up to `max_repeat_unit_length` (e.g. 'TTTT', 'TATATA',
+    'TAGTAGTAG') and returns the maximum number of nucleotides taken up by such a repeat, where
+    the unit must appear at least twice in a row to count as a repeat. E.g. for 'CATTATT': the
+    unit-length-1 repeat is 'TT' (2 nucleotides), there is no unit-length-2 repeat (0), and the
+    unit-length-3 repeat is 'ATTATT' (6 nucleotides), so the value returned is 6.
+    """
+    sequence_length = len(sequence)
+    longest_repeat_length = 0
+    for repeat_unit_length in range(1, max_repeat_unit_length + 1):
+        if sequence_length < 2 * repeat_unit_length:
+            continue
+        repeat_unit = sequence[sequence_length - repeat_unit_length :]
+        copies = 1
+        while (copies + 1) * repeat_unit_length <= sequence_length and sequence[sequence_length - (copies + 1) * repeat_unit_length : sequence_length - copies * repeat_unit_length] == repeat_unit:
+            copies += 1
+        if copies >= 2:
+            longest_repeat_length = max(longest_repeat_length, copies * repeat_unit_length)
+    return longest_repeat_length
+
+
+def repeat_length_at_sequence_start(sequence, max_repeat_unit_length=3):
+    """Length (in nucleotides) of the longest tandem repeat starting at the beginning of `sequence`.
+
+    The mirror image of :func:`repeat_length_at_sequence_end` (see there for details).
+    """
+    sequence_length = len(sequence)
+    longest_repeat_length = 0
+    for repeat_unit_length in range(1, max_repeat_unit_length + 1):
+        if sequence_length < 2 * repeat_unit_length:
+            continue
+        repeat_unit = sequence[:repeat_unit_length]
+        copies = 1
+        while (copies + 1) * repeat_unit_length <= sequence_length and sequence[copies * repeat_unit_length : (copies + 1) * repeat_unit_length] == repeat_unit:
+            copies += 1
+        if copies >= 2:
+            longest_repeat_length = max(longest_repeat_length, copies * repeat_unit_length)
+    return longest_repeat_length
 
 
 def calculate_beginning_mutation_overlap_with_right_flank(row):

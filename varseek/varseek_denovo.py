@@ -43,6 +43,32 @@ from .utils.varseek_denovo_utils import (
 )
 
 
+# bam2vcf reads variants straight off the alignment records and applies no statistical
+# model, so these gates are all that stand between the caller and every sequencing error
+# and mismapped read in the BAM. Left at zero it is a firehose: on 30x NA12878 chr20 it
+# emits ~520k candidates versus ~127k at min_mapq=20, with SNP recall still above 97%.
+# The quality gates are the values benchmarked in the NA12878 notebook (alongside k=41,
+# w=40, min_counts=3) and cost essentially no recall, so they are safe to default on.
+#
+# min_vaf is deliberately NOT among them. varseek is a sensitive candidate generator, and a
+# fraction floor is the one filter that removes *real* variants: somatic/subclonal alleles
+# and allele-specific expression legitimately sit far below the germline 0.5. It stays at 0
+# and denovo warns instead, so the choice is the caller's rather than a silent default.
+BAM2VCF_DEFAULT_MIN_MAPQ = 20
+BAM2VCF_DEFAULT_MIN_BASEQ = 20
+BAM2VCF_DEFAULT_MIN_VAF = 0.0
+
+# min_vaf below this is treated as "no meaningful fraction floor" and triggers the advisory
+# warning. 0.05 is well under any germline expectation, so it does not fire on somatic work
+# that has deliberately set a low-but-real floor.
+BAM2VCF_LOW_MIN_VAF = 0.05
+
+# What to suggest when the fraction floor is off. Germline DNA variants cluster at ~0.5/1.0,
+# so a floor there is nearly free; RNA fractions are skewed by allele-specific expression
+# and uneven coverage, so the advice is to lean on min_counts instead of a fraction.
+BAM2VCF_SUGGESTED_MIN_VAF_DNA = 0.2
+
+
 class DenovoParams(BaseModel):
     """Cross-field / filesystem validation for :func:`denovo`.
 
@@ -68,20 +94,28 @@ class DenovoParams(BaseModel):
     tsv_reference_type: object = "auto"
     overwrite: object = False
     variant_caller: object = "bam2vcf"
-    min_vaf: object = 0.0
+    min_vaf: object = None
     max_vaf: object = 1.0
-    min_mapq: object = 0
-    min_baseq: object = 0
+    min_mapq: object = None
+    min_baseq: object = None
 
     @model_validator(mode="after")
     def _validate(self):
+        # min_vaf/min_mapq/min_baseq are None when the caller left them alone; denovo then
+        # resolves them to the bam2vcf defaults, or to no-ops for the other callers. Only a
+        # value the caller actually passed can conflict with a non-bam2vcf caller, so every
+        # cross-caller check below tests the raw (pre-resolution) value.
+        min_vaf = 0.0 if self.min_vaf is None else float(self.min_vaf)
+        min_mapq = 0 if self.min_mapq is None else int(self.min_mapq)
+        min_baseq = 0 if self.min_baseq is None else int(self.min_baseq)
+
         # VAF bounds are computed from INFO/AO over INFO/DP, which only bam2vcf emits.
         # Ignoring them for the other callers would misreport what was actually filtered.
-        if not 0.0 <= self.min_vaf <= 1.0 or not 0.0 <= self.max_vaf <= 1.0:
+        if not 0.0 <= min_vaf <= 1.0 or not 0.0 <= self.max_vaf <= 1.0:
             raise ValueError(f"--min-vaf and --max-vaf must lie between 0 and 1, got min_vaf={self.min_vaf}, max_vaf={self.max_vaf}")
-        if self.min_vaf > self.max_vaf:
-            raise ValueError(f"--min-vaf ({self.min_vaf}) exceeds --max-vaf ({self.max_vaf}), so no variant could pass")
-        if (self.min_vaf > 0.0 or self.max_vaf < 1.0) and self.variant_caller != "bam2vcf":
+        if min_vaf > self.max_vaf:
+            raise ValueError(f"--min-vaf ({min_vaf}) exceeds --max-vaf ({self.max_vaf}), so no variant could pass")
+        if ((self.min_vaf is not None and min_vaf > 0.0) or self.max_vaf < 1.0) and self.variant_caller != "bam2vcf":
             raise ValueError(
                 f"--min-vaf/--max-vaf require variant_caller='bam2vcf' (got '{self.variant_caller}'); "
                 "the bcftools caller can express a similar filter through --include, and the cigar caller reports no depth."
@@ -90,9 +124,9 @@ class DenovoParams(BaseModel):
         # bam2vcf reads alignment records directly, so read/base quality is the only handle it
         # has on misalignment and sequencing error -- bcftools instead expresses these through
         # mpileup's own -q/-Q. Silently dropping them would misreport what was filtered.
-        if int(self.min_mapq) < 0 or int(self.min_baseq) < 0:
+        if min_mapq < 0 or min_baseq < 0:
             raise ValueError(f"--min-mapq and --min-baseq must be non-negative, got min_mapq={self.min_mapq}, min_baseq={self.min_baseq}")
-        if (int(self.min_mapq) > 0 or int(self.min_baseq) > 0) and self.variant_caller != "bam2vcf":
+        if ((self.min_mapq is not None and min_mapq > 0) or (self.min_baseq is not None and min_baseq > 0)) and self.variant_caller != "bam2vcf":
             raise ValueError(
                 f"--min-mapq/--min-baseq require variant_caller='bam2vcf' (got '{self.variant_caller}'); "
                 "the bcftools caller sets mpileup's -q/-Q itself, and the cigar caller ignores qualities."
@@ -159,10 +193,10 @@ def denovo(
     tsv_reference_type: str = "auto",
     read_length: Optional[PositiveInt] = None,
     min_counts: int = 3,
-    min_vaf: float = 0.0,
+    min_vaf: Optional[float] = None,
     max_vaf: float = 1.0,
-    min_mapq: NonNegativeInt = 0,
-    min_baseq: NonNegativeInt = 0,
+    min_mapq: Optional[NonNegativeInt] = None,
+    min_baseq: Optional[NonNegativeInt] = None,
     aligner: Literal["STAR", "bowtie2"] = "bowtie2",
     technology: Optional[str] = None,  # kb-style technology string (as in vk ref/count); "DNA" => genomic DNA reads, anything else => RNA reads. Used to derive the read type for aligner validation.
     reference_type: Optional[str] = "auto",  # not a strict Literal: the body lowercases before validating
@@ -207,10 +241,10 @@ def denovo(
     - tsv_reference_type             (str) Variant coordinate prefix for output_tsv. One of auto, dna, genome, cdna, transcriptome. Default: "auto"
     - read_length                    (int) Read length. Default: None
     - min_counts                     (int) Minimum count threshold for filtering, i.e. the minimum number of reads supporting a variant (INFO/AO for bam2vcf, INFO/AD[1] for bcftools). Default: 3
-    - min_vaf                      (float) Minimum variant allele fraction (INFO/VAF, i.e. AO/DP), inclusive. Filters out low-fraction candidates that pass min_counts only because the site is deeply covered. Only supported by the bam2vcf variant caller. Default: 0.0
+    - min_vaf                      (float) Minimum variant allele fraction (INFO/VAF, i.e. AO/DP), inclusive. Filters out low-fraction candidates that pass min_counts only because the site is deeply covered. Left at 0 so that somatic/subclonal and allele-specific variants, which legitimately sit far below the germline fraction, are not dropped by default; denovo warns when no floor is in effect. On germline DNA, 0.2 is a cheap specificity win. Only supported by the bam2vcf variant caller. Default: 0.0
     - max_vaf                      (float) Maximum variant allele fraction (INFO/VAF, i.e. AO/DP), inclusive. Lower it (e.g. 0.9) to drop likely-germline homozygous sites when hunting somatic variants. Only supported by the bam2vcf variant caller. Default: 1.0
-    - min_mapq                       (int) Minimum read mapping quality; reads below it contribute to neither AO nor DP. Because bam2vcf trusts the aligner's placement, unfiltered multi-mapping reads in repeats turn every mismapped base into a candidate — on 30x NA12878 chr20, min_mapq=20 cut the candidate set from 520k to 127k while keeping SNP recall above 97%. Only supported by the bam2vcf variant caller. Default: 0
-    - min_baseq                      (int) Minimum base quality at the variant position; low-quality bases contribute to neither AO nor DP. bam2vcf has no statistical model, so this is its only defence against sequencing error. Only supported by the bam2vcf variant caller. Default: 0
+    - min_mapq                       (int) Minimum read mapping quality; reads below it contribute to neither AO nor DP. Because bam2vcf trusts the aligner's placement, unfiltered multi-mapping reads in repeats turn every mismapped base into a candidate — on 30x NA12878 chr20, min_mapq=20 cut the candidate set from 520k to 127k while keeping SNP recall above 97%. Only supported by the bam2vcf variant caller. Set it to 0 to disable the filter. Default: 20 (bam2vcf), unset for the other callers
+    - min_baseq                      (int) Minimum base quality at the variant position; low-quality bases contribute to neither AO nor DP. bam2vcf has no statistical model, so this is its only defence against sequencing error. Only supported by the bam2vcf variant caller. Set it to 0 to disable the filter. Default: 20 (bam2vcf), unset for the other callers
     - aligner                      (str) Aligner to use. One of STAR or bowtie2. Splice-aware STAR is required only when RNA reads are aligned to a genome (reads span exon-exon junctions); bowtie2 is correct otherwise (DNA reads to a genome, or RNA reads to a transcriptome). A mismatch against `technology`/`reference_type` raises. Default: "bowtie2"
     - technology                     (str) Sequencing technology, using the same vocabulary as vk ref/count (run `kb --list`; varseek additionally accepts "dna"). It fills in the read type used to validate `aligner`: "dna" (or "DNA") declares genomic DNA reads (-> bowtie2), any other technology declares RNA reads (-> STAR on a genome). Required to validate the aligner when the reference is a genome. Default: None
     - reference_type                 (str) Whether `sequences` is a genome or transcriptome, used to validate `aligner`. One of auto, genome, dna, transcriptome, cdna. "auto" infers it from the FASTA sequence IDs. Default: "auto"
@@ -247,6 +281,29 @@ def denovo(
     #  are enforced by their signature types, so they need no re-check here.
     DenovoParams(**make_function_parameter_to_value_dict(1))
 
+    #* Resolve the bam2vcf gates (must follow DenovoParams, which needs the raw values to
+    #  tell "unset" from an explicit request). bam2vcf gets the defaults; the other callers
+    #  get no-ops, since bcftools expresses these through mpileup's own -q/-Q and --include
+    #  while cigar ignores qualities entirely, and DenovoParams has already refused an
+    #  explicit value there.
+    if variant_caller == "bam2vcf":
+        defaulted = [f"{name}={value}" for name, value, given in (
+            ("min_mapq", BAM2VCF_DEFAULT_MIN_MAPQ, min_mapq),
+            ("min_baseq", BAM2VCF_DEFAULT_MIN_BASEQ, min_baseq),
+        ) if given is None]
+        if min_mapq is None:
+            min_mapq = BAM2VCF_DEFAULT_MIN_MAPQ
+        if min_baseq is None:
+            min_baseq = BAM2VCF_DEFAULT_MIN_BASEQ
+        if min_vaf is None:
+            min_vaf = BAM2VCF_DEFAULT_MIN_VAF
+        if defaulted:
+            logger.info("bam2vcf quality defaults applied (%s); pass 0 to disable a filter", ", ".join(defaulted))
+    else:
+        min_mapq = 0 if min_mapq is None else min_mapq
+        min_baseq = 0 if min_baseq is None else min_baseq
+        min_vaf = 0.0 if min_vaf is None else min_vaf
+
     if min_counts < 2:
         min_counts = 0
         message = "Filtering by a minimum count threshold is highly recommended."
@@ -255,6 +312,28 @@ def denovo(
             # indels do survive there; only mpileup drops them.
             message += " Additionally, indels observed once will not be output regardless of settings (bcftools mpileup behavior)."
         logger.warning(message)
+
+    #* Advise on the fraction floor rather than imposing one. Without it bam2vcf reports every
+    #  allele that clears min_counts, so a deeply covered site contributes a candidate for each
+    #  recurrent error; min_counts alone cannot tell 3 reads out of 5 from 3 out of 3000. The
+    #  advice is technology-dependent because the cost of a floor is: germline DNA variants sit
+    #  at ~0.5/1.0 and lose almost nothing, whereas RNA fractions are pulled around by
+    #  allele-specific expression, so there min_counts is the safer lever.
+    if variant_caller == "bam2vcf" and min_vaf < BAM2VCF_LOW_MIN_VAF:
+        reads_type = "dna" if (technology or "").upper() == "DNA" else ("rna" if technology else None)
+        advice = (
+            f"For germline DNA, min_vaf={BAM2VCF_SUGGESTED_MIN_VAF_DNA} removes most error-driven candidates at little recall cost."
+            if reads_type == "dna"
+            else "For RNA, a fraction floor is riskier because allele-specific expression puts real variants at low VAF, so prefer raising min_counts."
+            if reads_type == "rna"
+            else f"For germline DNA, min_vaf={BAM2VCF_SUGGESTED_MIN_VAF_DNA} is a reasonable floor; for RNA or somatic/subclonal work, prefer raising min_counts instead."
+        )
+        logger.warning(
+            "min_vaf=%g applies no variant allele fraction floor, so bam2vcf will report every allele passing min_counts=%s, "
+            "including recurrent sequencing errors at deeply covered sites. %s Keep min_vaf low if you are deliberately "
+            "hunting low-fraction variants.",
+            min_vaf, min_counts, advice,
+        )
 
     #* Validate inputs
     if isinstance(inputs, str):
@@ -649,10 +728,10 @@ def main():
     parser.add_argument("--tsv-reference-type", default="auto", choices=["auto", "dna", "genome", "cdna", "transcriptome"], help="Variant coordinate prefix for --output-tsv. auto uses c. for transcript-like sequence IDs and g. otherwise.")
     parser.add_argument("-r", "--read-length", type=int, default=None, help="Read length (default: inferred from the first read)")
     parser.add_argument("-m", "--min-counts", type=int, default=3, help="Minimum count threshold for filtering (minimum reads supporting a variant)")
-    parser.add_argument("--min-vaf", type=float, default=0.0, help="Minimum variant allele fraction AO/DP, inclusive (bam2vcf variant caller only)")
+    parser.add_argument("--min-vaf", type=float, default=None, help=f"Minimum variant allele fraction AO/DP, inclusive; left off by default to keep somatic/subclonal variants, and {BAM2VCF_SUGGESTED_MIN_VAF_DNA} is a cheap specificity win on germline DNA (bam2vcf variant caller only, default {BAM2VCF_DEFAULT_MIN_VAF})")
     parser.add_argument("--max-vaf", type=float, default=1.0, help="Maximum variant allele fraction AO/DP, inclusive; lower it to drop likely-germline homozygous sites (bam2vcf variant caller only)")
-    parser.add_argument("--min-mapq", type=int, default=0, help="Minimum read mapping quality; reads below it contribute to neither AO nor DP (bam2vcf variant caller only)")
-    parser.add_argument("--min-baseq", type=int, default=0, help="Minimum base quality at the variant position; low-quality bases contribute to neither AO nor DP (bam2vcf variant caller only)")
+    parser.add_argument("--min-mapq", type=int, default=None, help=f"Minimum read mapping quality; reads below it contribute to neither AO nor DP, and 0 disables the filter (bam2vcf variant caller only, default {BAM2VCF_DEFAULT_MIN_MAPQ})")
+    parser.add_argument("--min-baseq", type=int, default=None, help=f"Minimum base quality at the variant position; low-quality bases contribute to neither AO nor DP, and 0 disables the filter (bam2vcf variant caller only, default {BAM2VCF_DEFAULT_MIN_BASEQ})")
     parser.add_argument("-a", "--aligner", default="bowtie2", choices=["STAR", "bowtie2"], help="Aligner to use: STAR (splice-aware; RNA reads to a genome) or bowtie2 (otherwise)")
     parser.add_argument("--technology", "--technology", default=None, help="Sequencing technology (same vocabulary as vk ref/count; 'dna' declares genomic DNA reads, any other technology declares RNA reads). Fills in the read type used to validate the aligner; required to validate the choice when the reference is a genome.")
     parser.add_argument("--reference-type", "--reference_type", default="auto", choices=["auto", "genome", "dna", "transcriptome", "cdna"], help="Whether --sequences is a genome or transcriptome, used to validate the aligner. auto infers it from the FASTA sequence IDs.")

@@ -24,6 +24,7 @@ from varseek.utils import (
     PositiveInt,
     NonNegativeInt,
     Parity,
+    Ratio,
     StrandBiasEnd,
     Technology,
     adjust_variant_adata_by_pseudobam,
@@ -131,7 +132,9 @@ def clean(
     reference_genome_index: Optional[Union[str, Path]] = None,
     reference_bam: object = None,
     check_alignment_position: bool = False,
-    alignment_position_tolerance: int = 50,
+    alignment_position_tolerance: int = 200,
+    min_snp_vaf: Optional[Ratio] = None,
+    min_indel_vaf: Optional[Ratio] = None,
     reference_sequences_type: Optional[str] = None,
     reads_type: Optional[str] = None,
     kallisto: Optional[str] = None,
@@ -216,7 +219,9 @@ def clean(
     - reference_genome_index                (str) Path to the standard reference index used for pseudobam validation: a kallisto index for pseudobam_validation_aligner="pseudo", the STAR genome directory for STAR, or the bowtie2 index prefix for bowtie2. Passing an index of the wrong kind for the chosen aligner (or for the read/reference combination) raises. If the path does not exist, it is built from `sequences`: kallisto builds a cDNA index from the genome + `gtf` with `kb ref --workflow standard` when RNA reads are aligned against a DNA (genome) reference and indexes `sequences` directly (`kb ref --workflow custom`) otherwise; STAR builds a genome index from `sequences` + `gtf`; bowtie2 builds one from `sequences`. Not needed when `reference_bam` is given. Default: None.
     - reference_bam                         (str or list[str]) Path to a BAM (or list of BAMs) of the same reads already aligned against the standard reference - e.g. the BAM produced by vk denovo. When given, no re-alignment is run and `reference_genome_index`/`pseudobam_validation_aligner` are ignored. Pass either one BAM covering all reads, or one BAM per sample in the same order as `fastqs`. Only used when pseudobam_validation=True. Default: None.
     - check_alignment_position              (bool) When pseudobam_validation=True, also require each read's alignment position to fall within `alignment_position_tolerance` of its assigned variant's position (in addition to matching the sequence/reference name). Heavier but more accurate. Default: False.
-    - alignment_position_tolerance          (int) Position tolerance (bp) used when check_alignment_position=True. Default: 50.
+    - alignment_position_tolerance          (int) Position tolerance (bp) used when check_alignment_position=True. Must be at least `read_length`, as a read covering a variant can start up to a read length before it; smaller values are raised to `read_length` (taken from `read_length` when given, otherwise from the first read of the fastqs) with a warning. Default: 200.
+    - min_snp_vaf                           (float) When pseudobam_validation=True, drop a called single-base substitution unless its locus reaches this alt allele fraction in the alignments (in (0, 1]). The VCRS matrix counts only reads compatible with the variant, so it cannot tell a real heterozygote from a coincidental k-mer match until the reference allele is counted too; this reads that depth off the same BAM the position check uses. Fragments are counted once (a read pair contributes one observation), and a VCRS merging several variants survives if any one of them passes. Variants whose locus is missing from the BAM are left alone. None disables the filter. Default: None.
+    - min_indel_vaf                         (float) As `min_snp_vaf`, but for insertions/deletions/duplications/delins and multi-base substitutions. Indel support is counted from I/D CIGAR operations within 10bp of the variant interval, so left-aligned representations of the same event still count; note this makes it less precise than `min_snp_vaf`, and a strict value can discard true indels whose alignment places them slightly differently. None disables the filter. Default: None.
     - reference_sequences_type              (str) "rna" or "dna": whether the VCRS reference was built from transcriptome (RNA) or genome (DNA) sequences. Used (with reads_type) to pick the pseudobam alignment strategy; inferred from `sequences` when not provided. Default: None.
     - reads_type                            (str) "rna" or "dna": the sequencing molecule of the reads. Normally derived from `technology` (the "dna" technology => "dna", any RNA technology => "rna"); pass explicitly to override. RNA reads against a DNA/genome reference trigger the `kb ref --workflow standard` + `kallisto quant --genomebam` path. When None, it defaults to `reference_sequences_type` (reads assumed to match the reference). Default: None.
     - kallisto                              (str) Path to the kallisto binary (must support --pseudobam/--genomebam). Resolved from `kb info` when not provided. Only used for pseudobam_validation=True. Default: None.
@@ -225,7 +230,7 @@ def clean(
     - avoid_paired_double_counting          (bool) For paired-end BULK/SMARTSEQ2 data run through kb count in single-end mode, count each VCRS at most once per fragment instead of once per mate (the first mate to carry a variant keeps it; the second mate has it removed). Only used when pseudobam_validation=True and the data is paired-end run in single mode. Default: False.
     - account_for_strand_bias               (bool) Whether to account for strand bias from stranded single-cell technologies. Default: False.
     - strand_bias_end                       (str) The end of the read to use for strand bias correction. Either "5p" or "3p". Must be provided if and only if account_for_strand_bias=True. Default: None.
-    - read_length                           (int) The read length used in the experiment. Must be provided if and only if account_for_strand_bias=True. Default: None.
+    - read_length                           (int) The read length used in the experiment. Must be provided if account_for_strand_bias=True and `fastqs` is not provided; otherwise inferred from the first read of the fastqs when needed (strand-bias correction, or the alignment_position_tolerance check when check_alignment_position=True). Default: None.
     - filter_cells_by_min_counts            (int or bool or None) Part of the QC performed on the **gene** count matrix with which to adjust the **variant** count matrix. Minimum number of gene counts per cell to keep the cell. If True, will use kneed's KneeLocator to determine the cutoff. Default: None.
     - filter_cells_by_min_genes             (int or None) Part of the QC performed on the **gene** count matrix with which to adjust the **variant** count matrix. Minimum number of genes per cell to keep the cell. Default: None.
     - filter_genes_by_min_cells             (int or None) Part of the QC performed on the **gene** count matrix with which to adjust the **variant** count matrix. Minimum number of cells per gene to keep the gene. Default: None.
@@ -424,16 +429,25 @@ def clean(
                 raise ValueError(f"strand_bias_end must be provided if account_for_strand_bias=True and technology is {technology}. Possible values are {strand_bias_end_possible_values}.")
             strand_bias_end = strand_bias_end_possible_values[0]
             logger.info(f"Determined strand_bias_end to be {strand_bias_end} based on technology {technology}.")
-        if not read_length:
-            if not fastqs:
-                raise ValueError("read_length must be provided if account_for_strand_bias=True and fastqs is not provided.")
-            file_index_with_transcripts = technology_info[technology.upper()]["transcript_file_index"]
-            first_fastq_file_with_transcripts = fastqs[file_index_with_transcripts]
-            first_fastq_file_with_transcripts_pyfastx = pyfastx.Fastx(first_fastq_file_with_transcripts)
-            for _, seq, _ in first_fastq_file_with_transcripts_pyfastx:
-                read_length = len(seq)
-                break
-            logger.info(f"Determined read_length to be {read_length} based on the fastq file {first_fastq_file_with_transcripts}.")
+        if not read_length and not fastqs:
+            raise ValueError("read_length must be provided if account_for_strand_bias=True and fastqs is not provided.")
+
+    # read_length is needed for strand-bias correction, and to sanity-check alignment_position_tolerance below
+    if not read_length and fastqs and (account_for_strand_bias or (pseudobam_validation and check_alignment_position)):
+        file_index_with_transcripts = technology_info[technology.upper()]["transcript_file_index"]
+        first_fastq_file_with_transcripts = fastqs[file_index_with_transcripts]
+        first_fastq_file_with_transcripts_pyfastx = pyfastx.Fastx(first_fastq_file_with_transcripts)
+        for _, seq, _ in first_fastq_file_with_transcripts_pyfastx:
+            read_length = len(seq)
+            break
+        logger.info(f"Determined read_length to be {read_length} based on the fastq file {first_fastq_file_with_transcripts}.")
+
+    # A read that genuinely covers a variant can start up to read_length - 1 bp before the variant's first base, and
+    # the position check compares the read's leftmost alignment coordinate against the variant interval - so a
+    # tolerance smaller than the read length would throw away legitimate reads.
+    if pseudobam_validation and check_alignment_position and read_length and alignment_position_tolerance < read_length:
+        logger.warning(f"alignment_position_tolerance ({alignment_position_tolerance}) is smaller than read_length ({read_length}), which would discard reads that genuinely overlap their variant. Increasing alignment_position_tolerance to {read_length}.")
+        alignment_position_tolerance = read_length
 
     if not bustools:
         bustools_binary_path_command = "kb info | grep 'bustools:' | awk '{print $3}' | sed 's/[()]//g'"
@@ -589,7 +603,7 @@ def clean(
     #     )
 
     if pseudobam_validation:
-        adata = adjust_variant_adata_by_pseudobam(kb_count_vcrs_dir=kb_count_vcrs_dir, reference_genome_index=reference_genome_index, technology=technology, kallisto_quant_reference_genome_dir=kallisto_quant_reference_genome_dir, adata=adata, fastq_file_list=fastqs, adata_output_path=None, parity=parity, mm=mm, bustools=bustools, kallisto=kallisto, threads=threads, variant_source=variant_source, reference_sequences_type=reference_sequences_type, reads_type=reads_type, sequences=sequences, gtf=gtf, vcrs_t2g=vcrs_t2g, check_alignment_position=check_alignment_position, alignment_position_tolerance=alignment_position_tolerance, count_reads_that_dont_pseudoalign_to_reference_genome=count_reads_that_dont_pseudoalign_to_reference_genome, avoid_paired_double_counting=avoid_paired_double_counting, seq_id_column=seq_id_column, var_column=var_column, fastq_sorting_check_only=(not sort_fastqs), save_type="parquet", overwrite=overwrite, pseudobam_validation_aligner=pseudobam_validation_aligner, reference_bam=reference_bam, read_length=read_length)
+        adata = adjust_variant_adata_by_pseudobam(kb_count_vcrs_dir=kb_count_vcrs_dir, reference_genome_index=reference_genome_index, technology=technology, kallisto_quant_reference_genome_dir=kallisto_quant_reference_genome_dir, adata=adata, fastq_file_list=fastqs, adata_output_path=None, parity=parity, mm=mm, bustools=bustools, kallisto=kallisto, threads=threads, variant_source=variant_source, reference_sequences_type=reference_sequences_type, reads_type=reads_type, sequences=sequences, gtf=gtf, vcrs_t2g=vcrs_t2g, check_alignment_position=check_alignment_position, alignment_position_tolerance=alignment_position_tolerance, min_snp_vaf=min_snp_vaf, min_indel_vaf=min_indel_vaf, count_reads_that_dont_pseudoalign_to_reference_genome=count_reads_that_dont_pseudoalign_to_reference_genome, avoid_paired_double_counting=avoid_paired_double_counting, seq_id_column=seq_id_column, var_column=var_column, fastq_sorting_check_only=(not sort_fastqs), save_type="parquet", overwrite=overwrite, pseudobam_validation_aligner=pseudobam_validation_aligner, reference_bam=reference_bam, read_length=read_length)
     
     # set all count values below min_counts to 0
     if min_counts is not None:  # important I do BEFORE CPM normalization

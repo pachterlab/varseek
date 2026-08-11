@@ -1331,6 +1331,226 @@ def _load_and_align_recounted_adata(mtx_file, adata_template):
     return ad.AnnData(X=final, obs=adata_template.obs.copy(), var=adata_template.var.copy(), uns=adata_template.uns.copy())
 
 
+# --------------------------------------------------------------------------- #
+# Variant allele fraction from the pseudobam
+# --------------------------------------------------------------------------- #
+# The VCRS count matrix only ever counts reads *compatible with the variant* -- the ALT side.
+# It has no notion of how many reads at the same locus carry the reference allele, so a VCRS
+# that a handful of reads match by coincidence (a catalog entry that mimics the sample's real
+# haplotype, a mismapped paralogue) is indistinguishable from a genuine heterozygote. The
+# alignments gathered for the position check already answer that question, so the reference
+# depth is read straight off them here.
+
+_HGVS_VAF_PATTERNS = (
+    # order matters: delins must be tried before del, and dup before the bare-position forms
+    ("delins", re.compile(r"^(?P<seq>.+):g\.(?P<start>\d+)(?:_(?P<end>\d+))?delins(?P<alt>[ACGTN]+)$")),
+    ("del", re.compile(r"^(?P<seq>.+):g\.(?P<start>\d+)(?:_(?P<end>\d+))?del(?P<ref>[ACGTN]*)$")),
+    ("ins", re.compile(r"^(?P<seq>.+):g\.(?P<start>\d+)_(?P<end>\d+)ins(?P<alt>[ACGTN]+)$")),
+    ("dup", re.compile(r"^(?P<seq>.+):g\.(?P<start>\d+)(?:_(?P<end>\d+))?dup(?P<alt>[ACGTN]*)$")),
+    ("sub", re.compile(r"^(?P<seq>.+):g\.(?P<start>\d+)(?P<ref>[ACGTN]+)>(?P<alt>[ACGTN]+)$")),
+)
+
+
+def parse_hgvsg_for_vaf(header):
+    """(seq_id, start, end, kind, alt) for one HGVS genomic string, or None if unparseable.
+
+    `kind` is "snv" for a single-base substitution and "indel" for everything else, which is
+    what selects between `min_snp_vaf` and `min_indel_vaf`. Multi-base substitutions (MNVs)
+    count as indels: they are not scored base-by-base below.
+    """
+    for name, pattern in _HGVS_VAF_PATTERNS:
+        match = pattern.match(header)
+        if not match:
+            continue
+        parts = match.groupdict()
+        seq_id = parts["seq"].split("(")[0].split(".")[0]
+        start = int(parts["start"])
+        end = int(parts["end"]) if parts.get("end") else start
+        alt = parts.get("alt") or ""
+        if name == "sub":
+            ref = parts.get("ref") or ""
+            kind = "snv" if len(ref) == 1 and len(alt) == 1 else "indel"
+            return seq_id, start, start + max(len(ref), 1) - 1, kind, alt
+        return seq_id, start, end, "indel", alt
+    return None
+
+
+def _resolve_bam_contig(bam, seq_id):
+    """Match an HGVS seq_id to a BAM reference name, tolerating a 'chr' prefix on either side."""
+    refs = set(bam.references)
+    for candidate in (seq_id, f"chr{seq_id}", seq_id[3:] if seq_id.startswith("chr") else None):
+        if candidate and candidate in refs:
+            return candidate
+    return None
+
+
+def _ensure_indexed_bam(bam_path, samtools="samtools", threads=1):
+    """A coordinate-sorted, indexed copy of `bam_path` (the original when it already is one).
+
+    Random access by locus is required to read the reference depth; alignment output from
+    kallisto/bowtie2 is name-ordered, so it is sorted once into a sibling file and reused.
+    """
+    try:
+        with pysam.AlignmentFile(bam_path, "rb") as bam:
+            if bam.has_index():
+                return bam_path
+    except (ValueError, OSError):
+        pass
+
+    sorted_path = str(bam_path).replace(".bam", "") + ".vaf_sorted.bam"
+    if not os.path.exists(sorted_path + ".bai"):
+        logger.info(f"VAF filter: sorting and indexing {bam_path} for random access")
+        try:
+            pysam.sort("-@", str(max(1, int(threads) - 1)), "-o", sorted_path, str(bam_path))
+            pysam.index(sorted_path)
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning(f"VAF filter: could not sort/index {bam_path} ({exc}); VAF cannot be computed from it.")
+            return None
+    return sorted_path
+
+
+def compute_vaf_for_variants(bam_paths, headers, slack=10, max_depth=100000, samtools="samtools", threads=1):
+    """{header: (depth, alt_fragments, vaf)} for each HGVS genomic string in `headers`.
+
+    Counting is per *fragment* (read name), not per record, so a read pair covering the locus
+    contributes once -- matching how the VCRS matrix treats a pair once
+    `avoid_paired_double_counting` has been applied. Substitutions are scored by the base at
+    the variant position; indels by an I/D operation within `slack` bp of the interval, which
+    keeps left-aligned representations of the same event together.
+    """
+    parsed = {}
+    for header in headers:
+        info = parse_hgvsg_for_vaf(str(header))
+        if info is not None:
+            parsed[header] = info
+    if not parsed:
+        return {}
+
+    totals = {header: [set(), set()] for header in parsed}  # header -> [covering, alt-carrying]
+    for bam_path in bam_paths:
+        indexed = _ensure_indexed_bam(bam_path, samtools=samtools, threads=threads)
+        if indexed is None:
+            continue
+        with pysam.AlignmentFile(indexed, "rb") as bam:
+            for header, (seq_id, start, end, kind, alt) in parsed.items():
+                contig = _resolve_bam_contig(bam, seq_id)
+                if contig is None:
+                    continue
+                covering, alt_frags = totals[header]
+                try:
+                    fetched = bam.fetch(contig, max(0, start - 1 - slack - 1000), end + slack + 1000)
+                except (ValueError, OSError):
+                    continue
+                for read in fetched:
+                    if read.is_unmapped or read.query_sequence is None or read.reference_end is None:
+                        continue
+                    # the read must actually span the variant's first base to say anything about it
+                    if not read.reference_start < start <= read.reference_end:
+                        continue
+                    covering.add(read.query_name)
+                    if kind == "snv":
+                        for qpos, rpos in read.get_aligned_pairs(matches_only=True):
+                            if rpos + 1 == start:
+                                if read.query_sequence[qpos].upper() == alt[:1].upper():
+                                    alt_frags.add(read.query_name)
+                                break
+                    else:
+                        ref_pos = read.reference_start
+                        for op, length in (read.cigartuples or ()):
+                            if op in (0, 7, 8):        # M / = / X
+                                ref_pos += length
+                            elif op == 2:              # D
+                                if start - slack <= ref_pos + 1 <= end + slack + length:
+                                    alt_frags.add(read.query_name)
+                                ref_pos += length
+                            elif op == 1:              # I
+                                if start - slack <= ref_pos <= end + slack:
+                                    alt_frags.add(read.query_name)
+
+    out = {}
+    for header, (covering, alt_frags) in totals.items():
+        depth = len(covering)
+        n_alt = len(alt_frags)
+        out[header] = (depth, n_alt, (n_alt / depth) if depth else float("nan"))
+    return out
+
+
+def apply_vaf_filter(adata, bam_paths, min_snp_vaf=None, min_indel_vaf=None, slack=10, samtools="samtools", threads=1):
+    """Zero out VCRSs whose locus does not reach the required allele fraction in the alignments.
+
+    Only VCRSs that still carry counts are evaluated -- a catalog reference has millions of
+    columns and all but a few thousand are already empty, so the pileup work is proportional to
+    the number of calls rather than to the size of the reference.
+
+    A VCRS whose header merges several variants passes if *any* of them passes (each judged
+    against the threshold for its own kind), so merging never makes a call stricter. A variant
+    whose locus is absent from the BAM, or whose HGVS cannot be parsed, is left alone: the
+    filter only ever removes calls it has positive evidence against.
+    """
+    if min_snp_vaf is None and min_indel_vaf is None:
+        return adata
+
+    counts = np.asarray(adata.X.sum(axis=0)).ravel()
+    called = np.flatnonzero(counts > 0)
+    if called.size == 0:
+        return adata
+
+    vcrs_ids = [str(v) for v in adata.var_names[called]]
+    individual = sorted({part for vid in vcrs_ids for part in vid.split(";") if part})
+    logger.info(f"VAF filter: computing allele fractions for {len(individual):,} variant(s) across {len(vcrs_ids):,} VCRS(s) with counts")
+    vaf_by_variant = compute_vaf_for_variants(bam_paths, individual, slack=slack, samtools=samtools, threads=threads)
+
+    thresholds = {"snv": min_snp_vaf, "indel": min_indel_vaf}
+    failing, n_evaluated = [], 0
+    vaf_column, depth_column = {}, {}
+    for row, vid in zip(called, vcrs_ids):
+        verdicts, best_vaf, best_depth = [], float("nan"), 0
+        for part in vid.split(";"):
+            if not part:
+                continue
+            info = parse_hgvsg_for_vaf(part)
+            stats = vaf_by_variant.get(part)
+            if info is None or stats is None:
+                continue
+            depth, _n_alt, vaf = stats
+            if depth == 0 or np.isnan(vaf):
+                continue
+            threshold = thresholds.get(info[3])
+            if threshold is None:      # this kind is not being filtered -> the VCRS survives
+                verdicts.append(True)
+            else:
+                verdicts.append(vaf >= threshold)
+            if np.isnan(best_vaf) or vaf > best_vaf:
+                best_vaf, best_depth = vaf, depth
+        if not verdicts:               # nothing measurable -> leave the call alone
+            continue
+        n_evaluated += 1
+        vaf_column[vid], depth_column[vid] = best_vaf, best_depth
+        if not any(verdicts):
+            failing.append(row)
+
+    if vaf_column:
+        adata.var["pseudobam_vaf"] = [vaf_column.get(str(v), np.nan) for v in adata.var_names]
+        adata.var["pseudobam_vaf_depth"] = [depth_column.get(str(v), np.nan) for v in adata.var_names]
+
+    if n_evaluated == 0:
+        logger.warning(
+            "VAF filter requested but no call could be measured, so nothing was filtered. The filter needs "
+            "HGVS *genomic* headers (`seq:g.…`) whose seq_id appears in the alignment BAM; transcript-space "
+            "(`c.`) headers and loci absent from the BAM are skipped by design."
+        )
+    logger.info(
+        f"VAF filter (min_snp_vaf={min_snp_vaf}, min_indel_vaf={min_indel_vaf}): "
+        f"{len(failing):,} / {n_evaluated:,} evaluated VCRSs fell below the threshold and were zeroed "
+        f"({len(vcrs_ids) - n_evaluated:,} could not be measured and were left alone)."
+    )
+    if failing:
+        X = adata.X.tolil() if issparse(adata.X) else adata.X
+        X[:, failing] = 0
+        adata.X = X.tocsr() if issparse(adata.X) else X
+    return adata
+
+
 def adjust_variant_adata_by_pseudobam(
     kb_count_vcrs_dir,
     technology,
@@ -1352,7 +1572,9 @@ def adjust_variant_adata_by_pseudobam(
     chromosomes=None,
     vcrs_t2g=None,
     check_alignment_position=False,
-    alignment_position_tolerance=50,
+    alignment_position_tolerance=200,
+    min_snp_vaf=None,
+    min_indel_vaf=None,
     count_reads_that_dont_pseudoalign_to_reference_genome=True,
     avoid_paired_double_counting=False,
     fragment_length=51,
@@ -1387,6 +1609,12 @@ def adjust_variant_adata_by_pseudobam(
     `reference_bam` short-circuits all of that: pass a BAM that was already aligned against the same
     reference (e.g. the one vk denovo produced) and it is used as-is. Either a single BAM covering all
     reads, or one BAM per fastq group in the same order as the fastqs.
+
+    `min_snp_vaf` / `min_indel_vaf` additionally require the variant's locus to reach an allele
+    fraction in those same alignments before the VCRS is allowed to keep its counts. This is the
+    one thing the VCRS matrix cannot see on its own: it counts only reads compatible with the
+    variant, so a coincidental match and a real heterozygote look identical until the reference
+    allele is counted too.
     """
     if kallisto_quant_reference_genome_dir is None:
         kallisto_quant_reference_genome_dir = os.path.join(kb_count_vcrs_dir, "pseudobam_qc")
@@ -1460,6 +1688,7 @@ def adjust_variant_adata_by_pseudobam(
     groups = _group_fastqs_for_quant(fastq_file_list, technology, vcrs_parity, barcodes)
 
     align_by_group = {}
+    vaf_bam_paths = []  # the alignments the VAF filter reads reference depth from, whatever produced them
     if alignment_mode == "bam":
         # ---- use BAM(s) the caller already produced against the same reference (e.g. from vk denovo) ----
         bam_list = [str(reference_bam)] if isinstance(reference_bam, (str, Path)) else [str(b) for b in reference_bam]
@@ -1475,6 +1704,7 @@ def adjust_variant_adata_by_pseudobam(
             align_by_group = {group_barcode: _parse_pseudobam(bam_path) for (group_barcode, _, _), bam_path in zip(groups, bam_list)}
         else:
             raise ValueError(f"reference_bam has {len(bam_list)} BAMs but the fastqs form {len(groups)} group(s). Pass either one BAM covering all reads or one BAM per group, in the same order as the fastqs.")
+        vaf_bam_paths = list(bam_list)
     elif alignment_mode == "pseudo":
         # ---- generate chromosomes file for --genomebam if needed ----
         if use_genomebam and not chromosomes:
@@ -1497,6 +1727,7 @@ def adjust_variant_adata_by_pseudobam(
                 gtf=gtf, chromosomes=chromosomes, overwrite=overwrite,
             )
             align_by_group[group_barcode] = _parse_pseudobam(bam_path)
+            vaf_bam_paths.append(bam_path)
     else:
         # ---- true alignment: STAR when the reads must be spliced onto a genome, bowtie2 otherwise ----
         from varseek.utils.varseek_denovo_utils import check_tool  # local import to keep the module import graph acyclic
@@ -1521,6 +1752,7 @@ def adjust_variant_adata_by_pseudobam(
                 star=star, bowtie2=bowtie2, samtools=samtools,
             )
             align_by_group[group_barcode] = _parse_pseudobam(bam_path)
+            vaf_bam_paths.append(bam_path)
 
     single_cell = groups[0][0] is None  # barcode comes from the BUS file rather than the group
 
@@ -1675,7 +1907,8 @@ def adjust_variant_adata_by_pseudobam(
 
     if n_dropped == 0 and n_rewritten == 0 and n_double_counted == 0 and n_dedup_narrowed == 0:
         logger.info("No inconsistent reads found; returning the original AnnData object.")
-        return adata
+        # the position check changed nothing, but the allele-fraction check is independent of it
+        return apply_vaf_filter(adata, vaf_bam_paths, min_snp_vaf=min_snp_vaf, min_indel_vaf=min_indel_vaf, samtools=samtools, threads=threads)
 
     # ---- regenerate the count matrix from the filtered/rewritten BUS ----
     new_counts_dir = os.path.join(kb_count_vcrs_dir, "counts_unfiltered_pseudobam")
@@ -1695,6 +1928,10 @@ def adjust_variant_adata_by_pseudobam(
         kept_records["raw_barcode"] = kept_raw_barcodes
     mtx_file = _recount_from_filtered_bus(kb_count_vcrs_dir, kept_records, new_ec_records, bustools, threads, vcrs_t2g, new_counts_dir, mm)
     adata_new = _load_and_align_recounted_adata(mtx_file, adata)
+
+    # Allele-fraction filter, applied after the recount so only VCRSs that still hold counts are
+    # pileup'd (a catalog reference has millions of columns and nearly all are already empty).
+    adata_new = apply_vaf_filter(adata_new, vaf_bam_paths, min_snp_vaf=min_snp_vaf, min_indel_vaf=min_indel_vaf, samtools=samtools, threads=threads)
 
     adata_output_path = adata_output_path or os.path.join(new_counts_dir, "adata.h5ad")
     if adata_output_path:
