@@ -1252,7 +1252,11 @@ def run_bowtie_alignment_dlist(output_sam_file, read_fa, ref_folder, ref_prefix,
     
     logger.info("Running bowtie2 alignment")
 
-    bowtie_reference_prefix = os.path.join(ref_folder, ref_prefix)
+    # ref_prefix is already the full index prefix (e.g. ".../bowtie_index_genome/index"),
+    # matching what run_bowtie_build_dlist wrote, so it must NOT be re-joined with
+    # ref_folder -- doing so doubled the path and made bowtie2 fail to find the index,
+    # silently skipping the d-list and leaving non-specific VCRS in the index.
+    bowtie_reference_prefix = ref_prefix
 
     bowtie2_alignment_command = [
         bowtie2,  # Path to the bowtie2 executable
