@@ -96,8 +96,8 @@ from .utils.varseek_build_utils import (
     end_mut_nucleotides_with_left_flank,
     calculate_beginning_mutation_overlap_with_right_flank,
     calculate_end_mutation_overlap_with_left_flank,
-    repeat_length_at_sequence_end,
-    repeat_length_at_sequence_start,
+    repeat_lengths_at_sequence_ends,
+    concatenate_with_trimmed_flanks,
     iterate_through_vcf_in_chunks,
     merge_subsequence_vcrss,
     compute_gene_name_series_for_headers,
@@ -282,7 +282,7 @@ def build(
     w: PositiveInt = 47,  # parameters
     k: OddInt3To63 = 51,
     optimize_flanking_regions: bool = True,
-    shorten_repetitive_regions: bool = False,
+    shorten_repetitive_regions: bool = True,
     merge_identical: bool = True,
     merge_reference_equivalent_headers: bool = False,
     dlist: Optional[Union[Literal["None", "intergenic_dna", "cdna"], ExistingFasta]] = None,
@@ -397,7 +397,7 @@ def build(
                                          0 for a unit of length 2, 6 for a unit of length 3), so 5 nucleotides are removed from the right flank. The number removed from each
                                          flank is the maximum of this value and whatever optimize_flanking_regions would already remove (and is capped at the flank length).
                                          Unlike optimize_flanking_regions, this applies to every variant type, substitutions included. Note that the resulting shorter VCRSs are
-                                         more likely to be dropped by the `min_seq_len` filter. Default: False
+                                         more likely to be dropped by the `min_seq_len` filter. Default: True
     - merge_identical                    (True/False) Whether to merge sequence-identical VCRSs in the output (identical VCRSs will be merged by concatenating the sequence
                                          headers for all identical sequences with semicolons). Default: True
     - merge_reference_equivalent_headers (True/False) Whether to rewrite each VCRS header to its full reference equivalence class. Two reference positions are equivalent when
@@ -1247,8 +1247,8 @@ def build(
     # (substitutions included). Never shaves off less than optimize_flanking_regions already does (above), and never
     # more than the flank itself is long.
     if shorten_repetitive_regions:
-        mutations["left_repeat_length"] = mutations["left_flank_region"].apply(repeat_length_at_sequence_end)
-        mutations["right_repeat_length"] = mutations["right_flank_region"].apply(repeat_length_at_sequence_start)
+        mutations["left_repeat_length"] = repeat_lengths_at_sequence_ends(mutations["left_flank_region"], at_end=True)
+        mutations["right_repeat_length"] = repeat_lengths_at_sequence_ends(mutations["right_flank_region"], at_end=False)
 
         mutations["updated_right_flank_end"] = np.minimum(
             np.maximum(
@@ -1272,30 +1272,36 @@ def build(
     # `updated_left_flank_start`/`updated_right_flank_end`: how many nucleotides to shave off the outer end of
     # the left/right flank. Substitutions are only ever shaved by shorten_repetitive_regions, so when that is
     # off their sequences are built with the cheaper vectorized concatenation of the untouched flanks.
-    def build_sequence_from_trimmed_flanks(row, variant_nucleotides_column):
-        return row["left_flank_region"][row["updated_left_flank_start"] :] + row[variant_nucleotides_column] + row["right_flank_region"][: len(row["right_flank_region"]) - row["updated_right_flank_end"]]
+    def build_sequences_from_trimmed_flanks(mask, variant_nucleotides_column):
+        return concatenate_with_trimmed_flanks(
+            mutations.loc[mask, "left_flank_region"],
+            mutations.loc[mask, variant_nucleotides_column],
+            mutations.loc[mask, "right_flank_region"],
+            mutations.loc[mask, "updated_left_flank_start"],
+            mutations.loc[mask, "updated_right_flank_end"],
+        )
 
     # Create WT substitution w-mer sequences
     if substitution_mask.any():
         if shorten_repetitive_regions:
-            mutations.loc[substitution_mask, "wt_sequence"] = mutations.loc[substitution_mask].apply(build_sequence_from_trimmed_flanks, axis=1, variant_nucleotides_column="wt_nucleotides_ensembl")
+            mutations.loc[substitution_mask, "wt_sequence"] = build_sequences_from_trimmed_flanks(substitution_mask, "wt_nucleotides_ensembl")
         else:
             mutations.loc[substitution_mask, "wt_sequence"] = mutations.loc[substitution_mask, "left_flank_region"] + mutations.loc[substitution_mask, "wt_nucleotides_ensembl"] + mutations.loc[substitution_mask, "right_flank_region"]
 
     # Create WT non-substitution w-mer sequences
     if non_substitution_mask.any():
-        mutations.loc[non_substitution_mask, "wt_sequence"] = mutations.loc[non_substitution_mask].apply(build_sequence_from_trimmed_flanks, axis=1, variant_nucleotides_column="wt_nucleotides_ensembl")
+        mutations.loc[non_substitution_mask, "wt_sequence"] = build_sequences_from_trimmed_flanks(non_substitution_mask, "wt_nucleotides_ensembl")
 
     # Create mutant substitution w-mer sequences
     if substitution_mask.any():
         if shorten_repetitive_regions:
-            mutations.loc[substitution_mask, "vcrs_sequence"] = mutations.loc[substitution_mask].apply(build_sequence_from_trimmed_flanks, axis=1, variant_nucleotides_column="mut_nucleotides")
+            mutations.loc[substitution_mask, "vcrs_sequence"] = build_sequences_from_trimmed_flanks(substitution_mask, "mut_nucleotides")
         else:
             mutations.loc[substitution_mask, "vcrs_sequence"] = mutations.loc[substitution_mask, "left_flank_region"] + mutations.loc[substitution_mask, "mut_nucleotides"] + mutations.loc[substitution_mask, "right_flank_region"]
 
     # Create mutant non-substitution w-mer sequences
     if non_substitution_mask.any():
-        mutations.loc[non_substitution_mask, "vcrs_sequence"] = mutations.loc[non_substitution_mask].apply(build_sequence_from_trimmed_flanks, axis=1, variant_nucleotides_column="mut_nucleotides")
+        mutations.loc[non_substitution_mask, "vcrs_sequence"] = build_sequences_from_trimmed_flanks(non_substitution_mask, "mut_nucleotides")
 
     # * Save the unfiltered VCRS fasta (before the quality filters and before merging identical VCRSs).
     # One record per surviving variant, headers = the per-variant `header` column, no t2g and no merge.

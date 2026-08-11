@@ -392,10 +392,11 @@ def add_build_arguments(parser, required):
         help=extract_help_from_doc(build, "optimize_flanking_regions", disable=True),
     )
     parser.add_argument(
-        "--shorten_repetitive_regions",
-        action="store_true",
+        "--disable_shorten_repetitive_regions",
+        dest="shorten_repetitive_regions",
+        action="store_false",
         default=argparse.SUPPRESS,  # Remove from args if not provided
-        help=extract_help_from_doc(build, "shorten_repetitive_regions"),
+        help=extract_help_from_doc(build, "shorten_repetitive_regions", disable=True),
     )
     parser.add_argument(
         "--disable_remove_seqs_with_wt_kmers",

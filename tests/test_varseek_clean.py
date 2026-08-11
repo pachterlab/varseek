@@ -40,7 +40,7 @@ def out_dir(tmp_path, request):
 def test_cleaned_adata_to_vcf(out_dir):
     # Define the data
     adata_var_toy = pd.DataFrame({
-        "vcrs_header": ["header1", "header2;header3", "header4;header5;header6", "header7", "header8"],
+        "vcrs_id": ["header1", "header2;header3", "header4;header5;header6", "header7", "header8"],
         "vcrs_count": [1, 4, 2, 99, 0],
         "number_obs": [1, 2, 1, 3, 0],
     })
@@ -76,7 +76,7 @@ def test_cleaned_adata_to_vcf(out_dir):
 def test_cleaned_adata_to_vcf_with_samples(out_dir):
     # Define the data
     adata_var_toy = pd.DataFrame({
-        "vcrs_header": ["header1", "header2;header3", "header4;header5;header6", "header7", "header8"],
+        "vcrs_id": ["header1", "header2;header3", "header4;header5;header6", "header7", "header8"],
         "vcrs_count": [1, 4, 2, 99, 0],
         "number_obs": [1, 2, 1, 3, 0],
     })

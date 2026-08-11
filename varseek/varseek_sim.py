@@ -357,11 +357,11 @@ def sim(
         if sequences_cdna is not None and sequences_genome is not None:
             update_df_out_cdna = update_df_out.replace(".csv", "_cdna.csv")
             if not os.path.exists(update_df_out_cdna):
-                varseek.build(sequences=sequences_cdna, variants=variants, out=vk_build_out_dir, w=read_w, k=read_k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, save_variants_updated_dataframe=True, variants_updated_csv_out=update_df_out_cdna, seq_id_column=seq_id_column_cdna, var_column=var_column_cdna, overwrite=True, dont_create_index=True, **kwargs)
+                varseek.build(sequences=sequences_cdna, variants=variants, out=vk_build_out_dir, w=read_w, k=read_k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, shorten_repetitive_regions=False, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, save_variants_updated_dataframe=True, variants_updated_csv_out=update_df_out_cdna, seq_id_column=seq_id_column_cdna, var_column=var_column_cdna, overwrite=True, dont_create_index=True, **kwargs)
 
             update_df_out_genome = update_df_out.replace(".csv", "_genome.csv")
             if not os.path.exists(update_df_out_genome):
-                varseek.build(sequences=sequences_genome, variants=variants, out=vk_build_out_dir, w=read_w, k=read_k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, save_variants_updated_dataframe=True, variants_updated_csv_out=update_df_out_genome, seq_id_column=seq_id_column_genome, var_column=var_column_genome, overwrite=True, dont_create_index=True, **kwargs)
+                varseek.build(sequences=sequences_genome, variants=variants, out=vk_build_out_dir, w=read_w, k=read_k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, shorten_repetitive_regions=False, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, save_variants_updated_dataframe=True, variants_updated_csv_out=update_df_out_genome, seq_id_column=seq_id_column_genome, var_column=var_column_genome, overwrite=True, dont_create_index=True, **kwargs)
 
             # Load the CSV files
             df_cdna = pd.read_csv(update_df_out_cdna)
@@ -374,7 +374,7 @@ def sim(
         else:
             if not os.path.exists(update_df_out):
                 logger.info("running varseek build")
-                varseek.build(sequences=sequences, variants=variants, out=vk_build_out_dir, w=read_w, k=read_k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, save_variants_updated_dataframe=True, variants_updated_csv_out=update_df_out, seq_id_column=seq_id_column, var_column=var_column, var_id_column=var_id_column, overwrite=True, dont_create_index=True, **kwargs)
+                varseek.build(sequences=sequences, variants=variants, out=vk_build_out_dir, w=read_w, k=read_k, remove_seqs_with_wt_kmers=False, optimize_flanking_regions=False, shorten_repetitive_regions=False, max_ambiguous=None, merge_identical=False, min_seq_len=read_length, save_variants_updated_dataframe=True, variants_updated_csv_out=update_df_out, seq_id_column=seq_id_column, var_column=var_column, var_id_column=var_id_column, overwrite=True, dont_create_index=True, **kwargs)
 
             sim_data_df = pd.read_csv(update_df_out)
         

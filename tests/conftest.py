@@ -22,8 +22,8 @@ from varseek.utils import (
     add_variant_type
 )
 
-def pytest_ignore_collect(path, config):  # skip test_bustools.py on Mac due to kb python issues
-    if sys.platform == "darwin" and "test_bustools.py" in str(path):
+def pytest_ignore_collect(collection_path, config):  # skip test_bustools.py on Mac due to kb python issues
+    if sys.platform == "darwin" and collection_path.name == "test_bustools.py":
         return True
 
 

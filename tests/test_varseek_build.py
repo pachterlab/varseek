@@ -12,16 +12,23 @@ import varseek as vk
 
 @pytest.fixture(autouse=True)
 def _disable_alignment_to_reference_filter(monkeypatch):
-    """Opt every vk.build call in this file out of the remove_alignment_to_reference filter.
+    """Opt every vk.build call in this file out of two on-by-default behaviors.
 
-    That filter (default True) pseudoaligns each VCRS against a normal genome reference to drop
-    false positives, which requires a genome fasta / downloadable species that these toy tests do
-    not provide. The filter itself is exercised in test_varseek_ref.py; here we only test the
-    variant-building logic, so default it off (still overridable per-call via setdefault)."""
+    remove_alignment_to_reference (default True) pseudoaligns each VCRS against a normal genome
+    reference to drop false positives, which requires a genome fasta / downloadable species that
+    these toy tests do not provide. It is exercised in test_varseek_ref.py.
+
+    shorten_repetitive_regions (default True) shaves flanks wherever the variant abuts a tandem
+    repeat, and the toy fixture sequences here are near-pure repeat ('CCCCGCCCCACCCC...'), so it
+    fires on nearly every case and obscures the flank arithmetic these tests are pinning down. It
+    has its own dedicated tests below, including test_shorten_repetitive_regions_is_on_by_default.
+
+    Both are only defaulted off here, so any test that names either one explicitly still wins."""
     original_build = vk.build
 
     def build_without_alignment_filter(*args, **kwargs):
         kwargs.setdefault("remove_alignment_to_reference", False)
+        kwargs.setdefault("shorten_repetitive_regions", False)
         return original_build(*args, **kwargs)
 
     monkeypatch.setattr(vk, "build", build_without_alignment_filter)
@@ -250,6 +257,51 @@ def test_shorten_repetitive_regions_helpers():
     assert repeat_length_at_sequence_start("ACGT") == 0
 
 
+def test_repeat_lengths_at_sequence_ends_matches_scalar_reference():
+    """The build path uses the vectorized helper; the scalar pair is its readable spec, so pin them together."""
+    import random
+
+    from varseek.utils import repeat_length_at_sequence_end, repeat_length_at_sequence_start, repeat_lengths_at_sequence_ends
+
+    random.seed(0)
+    sequences = ["CATTATT", "TTTT", "ACGTATATA", "GCTAGTAGTAG", "ACGT", "", "A", "TT", "TTATTAG", "TAGTAGTAGC", "TTAATTAATTAAC"]
+    for _ in range(500):  # unstructured
+        sequences.append("".join(random.choice("ACGT") for _ in range(random.randint(0, 14))))
+    for _ in range(500):  # repeat-rich, including units longer than the 3 that count
+        unit = "".join(random.choice("AT") for _ in range(random.randint(1, 4)))
+        sequences.append("".join(random.choice("ACGT") for _ in range(random.randint(0, 5))) + unit * random.randint(1, 6) + "".join(random.choice("ACGT") for _ in range(random.randint(0, 5))))
+
+    for max_unit in (1, 2, 3, 5):
+        assert list(repeat_lengths_at_sequence_ends(sequences, max_unit, at_end=True)) == [repeat_length_at_sequence_end(s, max_unit) for s in sequences]
+        assert list(repeat_lengths_at_sequence_ends(sequences, max_unit, at_end=False)) == [repeat_length_at_sequence_start(s, max_unit) for s in sequences]
+
+    # ragged input (flanks are short near a sequence boundary) must not let padding fake a repeat
+    assert list(repeat_lengths_at_sequence_ends(["A", "TTTT", "", "ACGT"], at_end=True)) == [0, 4, 0, 0]
+    assert list(repeat_lengths_at_sequence_ends([], at_end=True)) == []
+
+
+def test_concatenate_with_trimmed_flanks_matches_rowwise_reference():
+    from varseek.utils import concatenate_with_trimmed_flanks
+
+    frame = pd.DataFrame({
+        "left_flank_region": ["AAAA", "CCCC", "GGGG", "TTTT"],
+        "mut_nucleotides": ["X", "X", "", "X"],
+        "right_flank_region": ["AAAA", "CCCC", "GGGG", "TTTT"],
+        "updated_left_flank_start": [1, 2, 0, 4],
+        "updated_right_flank_end": [0, 1, 2, 4],
+    })
+
+    def rowwise(row):
+        return row["left_flank_region"][row["updated_left_flank_start"]:] + row["mut_nucleotides"] + row["right_flank_region"][: len(row["right_flank_region"]) - row["updated_right_flank_end"]]
+
+    for index in ([0, 1, 2, 3], [0, 0, 1, 1]):  # a duplicate-label index must not cross-assign rows
+        reindexed = frame.set_axis(index)
+        result = concatenate_with_trimmed_flanks(reindexed["left_flank_region"], reindexed["mut_nucleotides"], reindexed["right_flank_region"], reindexed["updated_left_flank_start"], reindexed["updated_right_flank_end"])
+        assert list(result) == list(reindexed.apply(rowwise, axis=1))
+    # last row is trimmed away entirely on both sides, leaving just the variant nucleotides
+    assert list(result) == ["AAA" + "X" + "AAAA", "CC" + "X" + "CCC", "GGGG" + "" + "GG", "" + "X" + ""]
+
+
 def test_shorten_repetitive_regions_left_repeat_shortens_right_flank(out_dir):
     # left flank ends with 'CATTATT' -> longest repeat is 'ATTATT' (6), so 5 nucleotides come off the right flank
     sequence = "GATCCAGTAC" + "CATTATT" + "C" + "GACTCAGTCAG"
@@ -300,6 +352,33 @@ def test_shorten_repetitive_regions_substitution_between_two_repeats(out_dir):
 
     assert vk.build(shorten_repetitive_regions=False, **build_kwargs)[0] == "CAGTTATATA" + "G" + "TTTGACCAGT"
     assert vk.build(shorten_repetitive_regions=True, **build_kwargs)[0] == "GTTATATA" + "G" + "TTTGA"
+
+
+def test_shorten_repetitive_regions_is_on_by_default():
+    # the autouse fixture above defaults this off for the rest of the file, so pin the real default
+    # here (both the Python signature and the CLI, which exposes it as an opt-OUT flag)
+    import argparse
+
+    import varseek.main as main_module
+
+    assert inspect.signature(vk.varseek_build.build).parameters["shorten_repetitive_regions"].default is True
+
+    parser = argparse.ArgumentParser()
+    main_module.add_build_arguments(parser, required=False)
+    (action,) = [a for a in parser._actions if a.dest == "shorten_repetitive_regions"]
+    assert action.option_strings == ["--disable_shorten_repetitive_regions"]
+    assert isinstance(action, argparse._StoreFalseAction)
+
+
+def test_shorten_repetitive_regions_default_shortens_end_to_end(out_dir, monkeypatch):
+    # same case as test_shorten_repetitive_regions_applies_to_substitutions, but with the argument
+    # omitted entirely, so it goes through vk.build's own default rather than an explicit True
+    monkeypatch.setattr(vk, "build", vk.varseek_build.build)
+    sequence = "GCTACCATTATT" + "C" + "GACTCAGTCAG"
+
+    result = vk.build(dont_create_index=True, sequences=sequence, variants="c.13C>G", return_variant_output=True, w=10, k=11, out=out_dir, overwrite=True, remove_alignment_to_reference=False)
+
+    assert result[0] == "TACCATTATT" + "G" + "GACTC"
 
 
 def test_single_insertion(long_sequence, out_dir):

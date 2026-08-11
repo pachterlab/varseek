@@ -2173,6 +2173,65 @@ def repeat_length_at_sequence_start(sequence, max_repeat_unit_length=3):
     return longest_repeat_length
 
 
+def repeat_lengths_at_sequence_ends(sequences, max_repeat_unit_length=3, at_end=True):
+    """Vectorized :func:`repeat_length_at_sequence_end` (at_end=True) / :func:`repeat_length_at_sequence_start`.
+
+    Takes an iterable of sequences and returns one repeat length per sequence as an int array,
+    matching the scalar functions element for element. The sequences are packed into an
+    (n_sequences, width) matrix of bytes oriented so that the edge of interest is column 0; a
+    tandem repeat with a unit of length u is then just a run of leading matches between that
+    matrix and itself shifted u columns, whose length is (copies - 1) * u nucleotides.
+    """
+    sequences = list(sequences)
+    n_sequences = len(sequences)
+    sequence_lengths = np.fromiter(map(len, sequences), dtype=np.int64, count=n_sequences)
+    longest_repeat_lengths = np.zeros(n_sequences, dtype=np.int64)
+    if n_sequences == 0:
+        return longest_repeat_lengths
+    width = int(sequence_lengths.max())
+    if width < 2:
+        return longest_repeat_lengths
+
+    # Pad every sequence out to `width` on the side away from the edge of interest, with a byte no
+    # base can equal. Padding is skipped in the common case where the flanks are all w long.
+    if (sequence_lengths == width).all():
+        padded_sequences = sequences
+    elif at_end:
+        padded_sequences = [sequence.rjust(width, "\x00") for sequence in sequences]
+    else:
+        padded_sequences = [sequence.ljust(width, "\x00") for sequence in sequences]
+    characters = np.frombuffer("".join(padded_sequences).encode("latin-1"), dtype=np.uint8).reshape(n_sequences, width)
+    if at_end:  # flip so that the edge of interest is column 0 for both directions
+        characters = np.ascontiguousarray(characters[:, ::-1])
+
+    for repeat_unit_length in range(1, max_repeat_unit_length + 1):
+        if width < 2 * repeat_unit_length:
+            break
+        matches = characters[:, repeat_unit_length:] == characters[:, :-repeat_unit_length]
+        matched_nucleotides = np.where(matches.all(axis=1), matches.shape[1], np.argmin(matches, axis=1))
+        # A run of matches can spill into the padding, so cap it exactly where the scalar loop's
+        # `(copies + 1) * repeat_unit_length <= sequence_length` guard does.
+        matched_nucleotides = np.minimum(matched_nucleotides, np.maximum(sequence_lengths - repeat_unit_length, 0))
+        copies = 1 + matched_nucleotides // repeat_unit_length
+        longest_repeat_lengths = np.maximum(longest_repeat_lengths, np.where(copies >= 2, copies * repeat_unit_length, 0))
+    return longest_repeat_lengths
+
+
+def concatenate_with_trimmed_flanks(left_flank_regions, variant_nucleotides, right_flank_regions, left_flank_starts, right_flank_ends):
+    """left_flank_region[left_flank_start:] + variant_nucleotides + right_flank_region[:len - right_flank_end], per row.
+
+    Equivalent to a `.apply(..., axis=1)` over those five columns but roughly 30x faster, because it
+    walks the raw value arrays positionally instead of materializing a Series per row. pandas cannot
+    slice a string column at a per-row offset, and going through `.str[]` on offset-grouped rows is
+    both slower than this and silently wrong when the frame's index has duplicate labels.
+    """
+    return pd.Series(
+        [left_flank_region[flank_start:] + nucleotides + (right_flank_region[:-flank_end] if flank_end else right_flank_region) for left_flank_region, nucleotides, right_flank_region, flank_start, flank_end in zip(left_flank_regions.to_numpy(), variant_nucleotides.to_numpy(), right_flank_regions.to_numpy(), left_flank_starts.to_numpy(), right_flank_ends.to_numpy())],
+        index=left_flank_regions.index,
+        dtype=object,
+    )
+
+
 def calculate_beginning_mutation_overlap_with_right_flank(row):
     if row["variant_type"] == "deletion":
         sequence_to_check = row["wt_nucleotides_ensembl"]
