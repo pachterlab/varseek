@@ -3651,7 +3651,10 @@ def add_information_from_variant_header_to_adata_var_exploded(adata_var_exploded
                 adata_var_exploded["end_variant_position"] = split_positions[1].fillna(split_positions[0])
             else:
                 adata_var_exploded["end_variant_position"] = adata_var_exploded["start_variant_position"]
-            adata_var_exploded.loc[adata_var_exploded["end_variant_position"].isna(), "end_variant_position"] = adata_var_exploded["start_variant_position"]
+            # Fill positionally rather than with `.loc[mask, col] = series`: the exploded frame
+            # carries duplicate index labels, and pandas >=2 refuses to align a Series onto them.
+            end_positions = adata_var_exploded["end_variant_position"]
+            adata_var_exploded["end_variant_position"] = end_positions.where(end_positions.notna(), adata_var_exploded["start_variant_position"].values)
             adata_var_exploded[["start_variant_position", "end_variant_position"]] = adata_var_exploded[["start_variant_position", "end_variant_position"]].astype(int)
     
     if not variant_source:  # detect automatically per-variant

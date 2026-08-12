@@ -19,6 +19,6 @@ from .varseek_summarize import summarize
 # Mute numexpr threads info
 logging.getLogger("numexpr").setLevel(logging.WARNING)
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 __author__ = "Joseph Rich"
 __email__ = "josephrich98@gmail.com"

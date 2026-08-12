@@ -1109,7 +1109,8 @@ def build(
 
     # Extract the WT nucleotides for the substitution rows from the Mutation CDS (i.e., COSMIC)
     mutations["wt_nucleotides_cosmic"] = None
-    mutations.loc[substitution_mask, "wt_nucleotides_cosmic"] = mutations["actual_variant"].str[0]
+    # .values keeps this positional; aligning a Series here breaks on a duplicated index under pandas >=2
+    mutations.loc[substitution_mask, "wt_nucleotides_cosmic"] = mutations.loc[substitution_mask, "actual_variant"].str[0].values
 
     congruent_wt_bases_mask = (mutations["wt_nucleotides_cosmic"] == mutations["wt_nucleotides_ensembl"]) | mutations[["wt_nucleotides_cosmic", "wt_nucleotides_ensembl"]].isna().any(axis=1)
 

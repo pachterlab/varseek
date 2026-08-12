@@ -2220,22 +2220,6 @@ def main():  # noqa: C901
 
         i += 1  # Move to the next flag
 
-    # Help return
-    if args.help:
-        parent_parser.print_help(sys.stderr)
-        sys.exit(1)
-
-    # Version return
-    if args.version:
-        print(f"varseek version: {__version__}")
-        sys.exit(1)
-
-    # Show help when no arguments are given
-    if len(sys.argv) == 1:
-        parent_parser.print_help(sys.stderr)
-        sys.exit(1)
-
-    # Show  module specific help if only module but no further arguments are given
     command_to_parser = {
         "build": parser_build,
         "denovo": parser_denovo,
@@ -2246,6 +2230,24 @@ def main():  # noqa: C901
         "count": parser_count,
     }
 
+    # Help return. Help that was explicitly asked for is not an error: it goes to stdout and
+    # exits 0, so `vk --help` can be used in scripts and in package smoke tests. Help printed
+    # because the invocation was wrong (below) still goes to stderr and exits 1.
+    if args.help:
+        command_to_parser.get(args.command, parent_parser).print_help(sys.stdout)
+        sys.exit(0)
+
+    # Version return
+    if args.version:
+        print(f"varseek version: {__version__}")
+        sys.exit(0)
+
+    # Show help when no arguments are given
+    if len(sys.argv) == 1:
+        parent_parser.print_help(sys.stderr)
+        sys.exit(1)
+
+    # Show  module specific help if only module but no further arguments are given
     if len(sys.argv) == 2:
         if sys.argv[1] in command_to_parser:
             command_to_parser[sys.argv[1]].print_help(sys.stderr)
