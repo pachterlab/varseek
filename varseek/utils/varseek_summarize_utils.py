@@ -30,12 +30,29 @@ def _detected_per_var(X):
 
 
 def _fmt_int(value):
-    """Format an integer with thousands separators."""
-    return f"{int(round(float(value))):,}"
+    """Format an integer with thousands separators.
+
+    Returns "n/a" for NaN/inf/non-numeric input rather than raising, so a single bad
+    value in an upstream column cannot abort the whole report.
+    """
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "n/a"
+    if not np.isfinite(number):
+        return "n/a"
+    return f"{int(round(number)):,}"
 
 
 def _fmt_float(value, decimals=1):
-    return f"{float(value):,.{decimals}f}"
+    """Format a float with thousands separators, or "n/a" if it is not finite."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "n/a"
+    if not np.isfinite(number):
+        return "n/a"
+    return f"{number:,.{decimals}f}"
 
 
 def _distribution_line(values):
@@ -78,12 +95,17 @@ def _explode_gene_stats(var_df, gene_column, count_column="vcrs_count"):
     n_variants = {}
     total_counts = {}
     for gene_value, count in zip(var_df[gene_column], var_df[count_column]):
-        if gene_value is None or (isinstance(gene_value, float) and np.isnan(gene_value)):
+        if gene_value is None or (np.ndim(gene_value) == 0 and pd.isna(gene_value)):
             continue
-        genes = {g for g in str(gene_value).split(";") if g and g.lower() != "nan"}
+        genes = {g.strip() for g in str(gene_value).split(";")}
+        genes = {g for g in genes if g and g.lower() not in ("nan", "none", "<na>")}
+        try:
+            count = float(count)
+        except (TypeError, ValueError):
+            count = 0.0
         for gene in genes:
             n_variants[gene] = n_variants.get(gene, 0) + 1
-            total_counts[gene] = total_counts.get(gene, 0.0) + float(count)
+            total_counts[gene] = total_counts.get(gene, 0.0) + count
     if not n_variants:
         return pd.DataFrame(columns=["n_variants_detected", "total_counts"])
     genes_df = pd.DataFrame(

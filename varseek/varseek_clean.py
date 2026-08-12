@@ -22,12 +22,14 @@ from varseek.utils import (
     validate_call,
     vk_config,
     PositiveInt,
+    PositiveFloat,
     NonNegativeInt,
     Parity,
     Ratio,
     StrandBiasEnd,
     Technology,
     adjust_variant_adata_by_pseudobam,
+    apply_read_count_matrix,
     check_file_path_is_string_with_valid_extension,
     decrement_adata_matrix_when_split_by_Ns_or_running_paired_end_in_single_end_mode,
     is_valid_int,
@@ -124,7 +126,8 @@ CLEAN_ADVANCED_PARAMS_DOC = """
 def clean(
     adata_vcrs: object,  # required inputs
     technology: Optional[Technology],
-    min_counts: PositiveInt = 2,  # parameters
+    min_counts: PositiveFloat = 2,  # parameters
+    min_reads: Optional[PositiveInt] = None,
     use_binary_matrix: bool = False,
     drop_empty_columns: bool = False,
     pseudobam_validation: bool = False,
@@ -211,8 +214,9 @@ def clean(
     - technology                            (str)  Technology used to generate the data. To see list of supported technologies, run `kb --list`.
 
     # Additional parameters
-    - min_counts                            (int) Minimum counts to consider valid in the VCRS count matrix - everything below this number gets set to 0. Default: 2.
-    - use_binary_matrix                     (bool) Whether to binarize the matrix (i.e., set all values >=1 to 1). Default: False.
+    - min_counts                          (float) Minimum counts to consider valid in the VCRS count matrix - everything below this number gets set to 0. May be fractional (e.g. 1.5), which matters when the matrix itself holds fractional counts. Default: 2.
+    - min_reads                             (int) Count each VCRS by the number of reads compatible with it, taken from the BUS file, and set every entry below this number to 0. `bustools count --multimapping --cm` gives a VCRS `sum over ECs of floor(reads_in_EC / targets_in_EC)`, so a VCRS whose reads only ever land in equivalence classes holding fewer reads than targets receives a hard 0 and no value of `min_counts` can recover it; counting reads instead makes the call a threshold on evidence. When pseudobam_validation=True the counts come from the position-filtered BUS, and the filter is applied before `min_snp_vaf`/`min_indel_vaf` so the two compose. The matrix `bustools count` produced is kept in `adata.layers["bustools_counts"]` and the per-VCRS totals in `adata.var["read_count"]`; `adata.X` becomes the read counts, so `min_counts` (and everything else downstream) then applies to those. Requires the kb count directory to still hold its BUS file alongside the matrix.ec and transcripts.txt those equivalence classes index into. None counts with bustools as before. Default: None.
+    - use_binary_matrix                  (bool) Whether to binarize the matrix (i.e., set all values >=1 to 1). Default: False.
     - drop_empty_columns                    (bool) Whether to drop columns (variants) that are empty across all samples. Default: False.
     - pseudobam_validation                  (bool) Whether to validate the VCRS count matrix against the reference genome by re-aligning the reads to it. Each read's true alignment coordinate is compared against the HGVS locus of its assigned VCRS; reads that aligned somewhere inconsistent with the variant are dropped and the VCRS count matrix is regenerated. Requires `fastqs`, plus either `reference_genome_index` (or `sequences` to build it) or a pre-made `reference_bam`. Default: False.
     - pseudobam_validation_aligner          (str) How the validation alignments are produced when pseudobam_validation=True. "pseudo" uses `kallisto quant --pseudobam` (or `--genomebam` when RNA reads are aligned against a DNA/genome reference) - fast, and reuses a kallisto index. "true" uses a real aligner: splice-aware STAR when RNA reads are aligned against a genome reference (the reads span exon-exon junctions), bowtie2 otherwise - slower and heavier, but a genuine alignment. "STAR"/"bowtie2" request one explicitly and raise if it disagrees with the read/reference combination. Ignored when `reference_bam` is given. Default: "pseudo".
@@ -348,6 +352,9 @@ def clean(
         if not variants_updated_dataframe:
             variants_updated_dataframe = os.path.join(vk_ref_dir, "variants_updated_filtered.csv") if os.path.isfile(os.path.join(vk_ref_dir, "variants_updated_filtered.csv")) else os.path.join(vk_ref_dir, "variants_updated.csv")
 
+    if min_reads is not None and (not kb_count_vcrs_dir or not os.path.exists(kb_count_vcrs_dir) or len(os.listdir(kb_count_vcrs_dir)) == 0):
+        raise ValueError("kb_count_vcrs_dir must be provided as the output from kb count out to the VCRS reference if min_reads is set, because the read counts are read out of its BUS file.")
+
     if pseudobam_validation:
         if not kb_count_vcrs_dir or not os.path.exists(kb_count_vcrs_dir) or len(os.listdir(kb_count_vcrs_dir)) == 0:
             raise ValueError("kb_count_vcrs_dir must be provided as the output from kb count out to the VCRS reference if pseudobam_validation is True.")
@@ -398,10 +405,10 @@ def clean(
     except Exception as e:
         pass
 
-    # * 7.5 make sure ints are ints
+    # * 7.5 make sure numbers are numbers
     if min_counts is None:
         min_counts = 0
-    min_counts = int(min_counts)
+    min_counts = float(min_counts)
 
     # * 8. Start the actual function
     if fastqs:
@@ -603,8 +610,11 @@ def clean(
     #     )
 
     if pseudobam_validation:
-        adata = adjust_variant_adata_by_pseudobam(kb_count_vcrs_dir=kb_count_vcrs_dir, reference_genome_index=reference_genome_index, technology=technology, kallisto_quant_reference_genome_dir=kallisto_quant_reference_genome_dir, adata=adata, fastq_file_list=fastqs, adata_output_path=None, parity=parity, mm=mm, bustools=bustools, kallisto=kallisto, threads=threads, variant_source=variant_source, reference_sequences_type=reference_sequences_type, reads_type=reads_type, sequences=sequences, gtf=gtf, vcrs_t2g=vcrs_t2g, check_alignment_position=check_alignment_position, alignment_position_tolerance=alignment_position_tolerance, min_snp_vaf=min_snp_vaf, min_indel_vaf=min_indel_vaf, count_reads_that_dont_pseudoalign_to_reference_genome=count_reads_that_dont_pseudoalign_to_reference_genome, avoid_paired_double_counting=avoid_paired_double_counting, seq_id_column=seq_id_column, var_column=var_column, fastq_sorting_check_only=(not sort_fastqs), save_type="parquet", overwrite=overwrite, pseudobam_validation_aligner=pseudobam_validation_aligner, reference_bam=reference_bam, read_length=read_length)
-    
+        adata = adjust_variant_adata_by_pseudobam(kb_count_vcrs_dir=kb_count_vcrs_dir, reference_genome_index=reference_genome_index, technology=technology, kallisto_quant_reference_genome_dir=kallisto_quant_reference_genome_dir, adata=adata, fastq_file_list=fastqs, adata_output_path=None, parity=parity, mm=mm, bustools=bustools, kallisto=kallisto, threads=threads, variant_source=variant_source, reference_sequences_type=reference_sequences_type, reads_type=reads_type, sequences=sequences, gtf=gtf, vcrs_t2g=vcrs_t2g, check_alignment_position=check_alignment_position, alignment_position_tolerance=alignment_position_tolerance, min_reads=min_reads, min_snp_vaf=min_snp_vaf, min_indel_vaf=min_indel_vaf, count_reads_that_dont_pseudoalign_to_reference_genome=count_reads_that_dont_pseudoalign_to_reference_genome, avoid_paired_double_counting=avoid_paired_double_counting, seq_id_column=seq_id_column, var_column=var_column, fastq_sorting_check_only=(not sort_fastqs), save_type="parquet", overwrite=overwrite, pseudobam_validation_aligner=pseudobam_validation_aligner, reference_bam=reference_bam, read_length=read_length)
+    elif min_reads is not None:
+        # No pseudobam pass to hand the read counts off to, so count straight from the BUS kb count wrote.
+        adata = apply_read_count_matrix(adata, kb_count_vcrs_dir, min_reads=min_reads, bus_file="output.bus", bustools=bustools)
+
     # set all count values below min_counts to 0
     if min_counts is not None:  # important I do BEFORE CPM normalization
         adata.X = adata.X.multiply(adata.X >= min_counts)

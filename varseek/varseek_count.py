@@ -35,6 +35,7 @@ from varseek.utils import (
     Strand,
     StrandBiasEnd,
     PositiveInt,
+    PositiveFloat,
     NonNegativeInt,
     int_range,
 )
@@ -244,7 +245,8 @@ def count(
     concatenate_paired_fastqs_out_dir: Optional[Union[str, Path]] = None,
     delete_intermediate_files: bool = True,
     # ---- passthrough to vk clean ----
-    min_counts: PositiveInt = 2,
+    min_counts: PositiveFloat = 2,
+    min_reads: Optional[PositiveInt] = None,
     use_binary_matrix: bool = False,
     drop_empty_columns: bool = False,
     pseudobam_validation_aligner: str = "pseudo",
@@ -302,11 +304,6 @@ def count(
     # ---- passthrough to vk summarize ----
     top_values: PositiveInt = 10,
     gene_name_column: Optional[str] = None,
-    plot_strand_bias: bool = False,
-    cdna_fasta: Optional[str] = None,
-    seq_id_cdna_column: str = "seq_ID",
-    start_variant_position_cdna_column: str = "start_variant_position",
-    end_variant_position_cdna_column: str = "end_variant_position",
     stats_file: Optional[Union[str, Path]] = None,
     specific_stats_folder: Optional[Union[str, Path]] = None,
     plots_folder: Optional[Union[str, Path]] = None,
@@ -636,7 +633,7 @@ def count(
             logger.info("Running vk clean")
             _ = vk.clean(
                 adata_vcrs=adata_vcrs, vcrs_index=index, vcrs_t2g=t2g, technology=technology, fastqs=fastqs, threads=threads, pseudobam_validation=pseudobam_validation, account_for_strand_bias=account_for_strand_bias, strand_bias_end=strand_bias_end, read_length=read_length, gtf=gtf, mm=mm, parity=parity, parity_kb_count=parity_kb_count, out=out, chunksize=chunksize, dry_run=dry_run, overwrite=True, sort_fastqs=sort_fastqs, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir,  # native count args (adata_vcrs/vcrs_index/vcrs_t2g derived internally)
-                min_counts=min_counts, use_binary_matrix=use_binary_matrix, drop_empty_columns=drop_empty_columns, pseudobam_validation_aligner=pseudobam_validation_aligner, reference_genome_index=reference_genome_index, reference_bam=reference_bam, check_alignment_position=check_alignment_position, alignment_position_tolerance=alignment_position_tolerance, min_snp_vaf=min_snp_vaf, min_indel_vaf=min_indel_vaf, reference_sequences_type=reference_sequences_type, reads_type=reads_type, kallisto=kallisto, count_reads_that_dont_pseudoalign_to_reference_genome=count_reads_that_dont_pseudoalign_to_reference_genome, avoid_paired_double_counting=avoid_paired_double_counting, filter_cells_by_min_counts=filter_cells_by_min_counts, filter_cells_by_min_genes=filter_cells_by_min_genes, filter_genes_by_min_cells=filter_genes_by_min_cells, filter_cells_by_max_mt_content=filter_cells_by_max_mt_content, doublet_detection=doublet_detection, remove_doublets=remove_doublets, cpm_normalization=cpm_normalization, sum_rows=sum_rows, drop_multi_variant_vcrs=drop_multi_variant_vcrs, rename_vcrs_to_variant=rename_vcrs_to_variant, vcrs_id_set_to_exclusively_keep=vcrs_id_set_to_exclusively_keep, vcrs_id_set_to_exclude=vcrs_id_set_to_exclude, gene_set_to_exclusively_keep=gene_set_to_exclusively_keep, gene_set_to_exclude=gene_set_to_exclude, multiplexed=multiplexed, adata_reference_genome=adata_reference_genome, vk_ref_dir=vk_ref_dir, kb_count_vcrs_dir=kb_count_vcrs_dir, kallisto_quant_reference_genome_dir=kallisto_quant_reference_genome_dir, reference_genome_t2g=reference_genome_t2g, vcf_data_dataframe=vcf_data_dataframe, variants=variants, sequences=sequences, variant_source=variant_source, vcrs_metadata_df=vcrs_metadata_df, variants_usecols=variants_usecols, seq_id_column=seq_id_column, var_column=var_column, var_id_column=var_id_column, gene_id_column=gene_id_column, adata_vcrs_clean_out=adata_vcrs_clean_out, adata_reference_genome_clean_out=adata_reference_genome_clean_out, vcf_out=vcf_out, save_vcf=save_vcf, save_vcf_samples=save_vcf_samples, variants_updated_dataframe=variants_updated_dataframe, bustools=bustools, cosmic_tsv=cosmic_tsv, cosmic_reference_genome_fasta=cosmic_reference_genome_fasta, cosmic_version=cosmic_version, forgiveness=forgiveness, add_hgvs_breakdown_to_adata_var=add_hgvs_breakdown_to_adata_var,  # passthrough to vk clean
+                min_counts=min_counts, min_reads=min_reads, use_binary_matrix=use_binary_matrix, drop_empty_columns=drop_empty_columns, pseudobam_validation_aligner=pseudobam_validation_aligner, reference_genome_index=reference_genome_index, reference_bam=reference_bam, check_alignment_position=check_alignment_position, alignment_position_tolerance=alignment_position_tolerance, min_snp_vaf=min_snp_vaf, min_indel_vaf=min_indel_vaf, reference_sequences_type=reference_sequences_type, reads_type=reads_type, kallisto=kallisto, count_reads_that_dont_pseudoalign_to_reference_genome=count_reads_that_dont_pseudoalign_to_reference_genome, avoid_paired_double_counting=avoid_paired_double_counting, filter_cells_by_min_counts=filter_cells_by_min_counts, filter_cells_by_min_genes=filter_cells_by_min_genes, filter_genes_by_min_cells=filter_genes_by_min_cells, filter_cells_by_max_mt_content=filter_cells_by_max_mt_content, doublet_detection=doublet_detection, remove_doublets=remove_doublets, cpm_normalization=cpm_normalization, sum_rows=sum_rows, drop_multi_variant_vcrs=drop_multi_variant_vcrs, rename_vcrs_to_variant=rename_vcrs_to_variant, vcrs_id_set_to_exclusively_keep=vcrs_id_set_to_exclusively_keep, vcrs_id_set_to_exclude=vcrs_id_set_to_exclude, gene_set_to_exclusively_keep=gene_set_to_exclusively_keep, gene_set_to_exclude=gene_set_to_exclude, multiplexed=multiplexed, adata_reference_genome=adata_reference_genome, vk_ref_dir=vk_ref_dir, kb_count_vcrs_dir=kb_count_vcrs_dir, kallisto_quant_reference_genome_dir=kallisto_quant_reference_genome_dir, reference_genome_t2g=reference_genome_t2g, vcf_data_dataframe=vcf_data_dataframe, variants=variants, sequences=sequences, variant_source=variant_source, vcrs_metadata_df=vcrs_metadata_df, variants_usecols=variants_usecols, seq_id_column=seq_id_column, var_column=var_column, var_id_column=var_id_column, gene_id_column=gene_id_column, adata_vcrs_clean_out=adata_vcrs_clean_out, adata_reference_genome_clean_out=adata_reference_genome_clean_out, vcf_out=vcf_out, save_vcf=save_vcf, save_vcf_samples=save_vcf_samples, variants_updated_dataframe=variants_updated_dataframe, bustools=bustools, cosmic_tsv=cosmic_tsv, cosmic_reference_genome_fasta=cosmic_reference_genome_fasta, cosmic_version=cosmic_version, forgiveness=forgiveness, add_hgvs_breakdown_to_adata_var=add_hgvs_breakdown_to_adata_var,  # passthrough to vk clean
                 **kwargs_vk_clean,
             )
         else:
@@ -649,14 +646,16 @@ def count(
     # # vk summarize
     if summarize:
         if not os.path.exists(file_signifying_successful_vk_summarize_completion) or overwrite:
-            # adata is derived internally and passed explicitly; strand_bias_end/read_length are native (count owns them) but forwarded here so vk summarize's strand-bias plotting matches the clean path
+            # adata is derived internally and passed explicitly. Note that strand_bias_end/read_length are native
+            # to count (and forwarded to vk clean above) but are NOT forwarded here - vk summarize no longer does
+            # strand-bias plotting, so it has no use for them.
             kwargs_vk_summarize = {key: value for key, value in kwargs.items() if key in all_parameter_names_set_vk_summarize and key != "adata"}  # forward-compat: leftover **kwargs that vk summarize accepts (all mirrored args are passed explicitly below)
 
             logger.info("Running vk summarize")
             try:
                 _ = vk.summarize(
-                    adata=adata, technology=technology, out=vk_summarize_out_dir, dry_run=dry_run, overwrite=True, strand_bias_end=strand_bias_end, read_length=read_length, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir,  # native count args (adata derived internally)
-                    top_values=top_values, gene_name_column=gene_name_column, plot_strand_bias=plot_strand_bias, cdna_fasta=cdna_fasta, seq_id_cdna_column=seq_id_cdna_column, start_variant_position_cdna_column=start_variant_position_cdna_column, end_variant_position_cdna_column=end_variant_position_cdna_column, stats_file=stats_file, specific_stats_folder=specific_stats_folder, plots_folder=plots_folder,  # passthrough to vk summarize
+                    adata=adata, technology=technology, out=vk_summarize_out_dir, dry_run=dry_run, overwrite=True, logging_level=logging_level, save_logs=save_logs, log_out_dir=log_out_dir,  # native count args (adata derived internally)
+                    top_values=top_values, gene_name_column=gene_name_column, stats_file=stats_file, specific_stats_folder=specific_stats_folder, plots_folder=plots_folder,  # passthrough to vk summarize
                     **kwargs_vk_summarize,
                 )
             except Exception as e:

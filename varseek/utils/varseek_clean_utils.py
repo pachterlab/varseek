@@ -1332,6 +1332,129 @@ def _load_and_align_recounted_adata(mtx_file, adata_template):
 
 
 # --------------------------------------------------------------------------- #
+# Read counts straight from the BUS file (bustools' multimapping division undone)
+# --------------------------------------------------------------------------- #
+# `bustools count --multimapping --cm` splits a multimapped read's count across the targets of
+# its equivalence class *in integer arithmetic*, so the value a VCRS lands in the matrix is
+#
+#       sum over ECs containing it of  floor(reads_in_EC / targets_in_EC)
+#
+# A VCRS whose reads only ever fall in equivalence classes holding fewer reads than targets
+# therefore receives a hard **0** -- not a small number, zero -- and is indistinguishable from a
+# VCRS that no read ever matched. No threshold on that matrix can recover it, because there is
+# nothing left to threshold. Counting reads *compatible with* each VCRS instead makes the call a
+# threshold on evidence rather than on an artefact of integer division.
+
+
+def compute_vcrs_read_counts(bus_dir, bus_file="output.bus", bustools="bustools"):
+    """(barcodes, vcrs_names, matrix) of reads compatible with each VCRS, read out of a BUS file.
+
+    `bus_dir` is a kb-count-style directory holding the BUS file plus the `matrix.ec` and
+    `transcripts.txt` its equivalence-class indices refer to. Every record of the BUS
+    contributes its full count to *each* target of its equivalence class, which is exactly what
+    `bustools count` does minus the `--cm` division.
+
+    The returned matrix is barcodes x transcripts, so summing it over rows reproduces a
+    whole-run per-VCRS read count and a single-sample bulk run yields one row.
+    """
+    import collections
+
+    transcripts_path = os.path.join(bus_dir, "transcripts.txt")
+    ec_path = os.path.join(bus_dir, "matrix.ec")
+    bus_path = os.path.join(bus_dir, bus_file)
+    for required in (transcripts_path, ec_path, bus_path):
+        if not os.path.exists(required):
+            raise FileNotFoundError(f"Cannot count reads per VCRS: {required} does not exist. Re-run kb count with delete_intermediate_files=False so the BUS file and its equivalence classes are kept.")
+
+    with open(transcripts_path, encoding="utf-8") as f:
+        vcrs_names = f.read().splitlines()
+
+    bus_txt = f"{bus_path}.txt"
+    if not os.path.exists(bus_txt):
+        subprocess.run([bustools, "text", "-o", bus_txt, bus_path], check=True)
+
+    # (barcode, EC) -> reads. Reads are summed per equivalence class first so that each EC's
+    # target list is only expanded once, however many records share it.
+    reads_per_barcode_ec = collections.Counter()
+    with open(bus_txt, encoding="utf-8") as fh:
+        for line in fh:
+            fields = line.split("\t")
+            reads_per_barcode_ec[(fields[0], int(fields[2]))] += int(fields[3])
+
+    # matrix.ec is routinely hundreds of MB for a catalog reference, and only the classes the
+    # reads actually hit are needed, so it is streamed and filtered rather than held whole.
+    ec_ids_needed = {ec_id for _barcode, ec_id in reads_per_barcode_ec}
+    ec_targets = {}
+    with open(ec_path, encoding="utf-8") as fh:
+        for line in fh:
+            ec_id, targets = line.rstrip("\n").split("\t")
+            ec_id = int(ec_id)
+            if ec_id in ec_ids_needed:
+                ec_targets[ec_id] = np.fromstring(targets, dtype=np.int64, sep=",")
+    missing_ecs = ec_ids_needed - set(ec_targets)
+    if missing_ecs:
+        raise ValueError(f"{len(missing_ecs)} equivalence class(es) in {bus_path} are absent from {ec_path} (e.g. {sorted(missing_ecs)[:5]}); the BUS file and matrix.ec do not belong to the same run.")
+
+    barcodes = sorted({barcode for barcode, _ec_id in reads_per_barcode_ec})
+    barcode_index = {barcode: i for i, barcode in enumerate(barcodes)}
+    rows, cols, values = [], [], []
+    for (barcode, ec_id), n_reads in reads_per_barcode_ec.items():
+        targets = ec_targets[ec_id]
+        rows.append(np.full(targets.size, barcode_index[barcode], dtype=np.int64))
+        cols.append(targets)
+        values.append(np.full(targets.size, n_reads, dtype=np.float64))
+
+    shape = (len(barcodes), len(vcrs_names))
+    if not values:
+        return barcodes, vcrs_names, csr_matrix(shape, dtype=np.float64)
+    matrix = csr_matrix((np.concatenate(values), (np.concatenate(rows), np.concatenate(cols))), shape=shape)  # duplicate (row, col) pairs are summed
+    return barcodes, vcrs_names, matrix
+
+
+def apply_read_count_matrix(adata, bus_dir, min_reads=None, bus_file="output.bus", bustools="bustools"):
+    """Replace `adata.X` with reads-compatible-per-VCRS and zero everything below `min_reads`.
+
+    The matrix `bustools count --cm` produced is kept in `adata.layers["bustools_counts"]` and the
+    per-VCRS read totals in `adata.var["read_count"]`, so nothing is lost -- but `adata.X`, which is
+    what every downstream filter and the VCF writer read, becomes the read counts.
+    """
+    barcodes, vcrs_names, read_matrix = compute_vcrs_read_counts(bus_dir, bus_file=bus_file, bustools=bustools)
+
+    # Barcodes are matched on their trailing characters the same way the recounted matrix is (kb
+    # pads bulk barcodes), and VCRSs by name rather than by position, so neither a reordering
+    # between kb count and the AnnData nor a padded barcode can silently misalign the counts.
+    barcode_length = len(str(adata.obs.index[0]))
+    obs_map = {str(barcode): i for i, barcode in enumerate(adata.obs.index)}
+    var_map = {str(vcrs): i for i, vcrs in enumerate(adata.var.index)}
+    row_target = np.array([obs_map.get(str(barcode)[-barcode_length:], -1) for barcode in barcodes], dtype=np.int64)
+    col_target = np.array([var_map.get(str(vcrs), -1) for vcrs in vcrs_names], dtype=np.int64)
+
+    coo = read_matrix.tocoo()
+    rows, cols = row_target[coo.row], col_target[coo.col]
+    keep = (rows >= 0) & (cols >= 0)
+    reads = csr_matrix((coo.data[keep], (rows[keep], cols[keep])), shape=adata.shape)
+
+    n_unmatched_vcrs = int((col_target < 0).sum())
+    if n_unmatched_vcrs:
+        logger.warning(f"{n_unmatched_vcrs:,} / {len(vcrs_names):,} VCRSs in {os.path.join(bus_dir, 'transcripts.txt')} are not columns of the count matrix and were skipped when counting reads.")
+
+    bustools_counts = np.asarray(adata.X.sum(axis=0)).ravel()
+    read_counts = np.asarray(reads.sum(axis=0)).ravel()
+    adata.layers["bustools_counts"] = adata.X.copy()
+    adata.X = reads
+    adata.var["read_count"] = read_counts
+
+    logger.info(f"Read counts from {os.path.join(bus_dir, bus_file)}: {int((read_counts > 0).sum()):,} VCRSs have at least one compatible read, versus {int((bustools_counts > 0).sum()):,} detected by `bustools count --cm` ({int(((read_counts > 0) & (bustools_counts == 0)).sum()):,} of them zeroed by its multimapping division).")
+
+    if min_reads is not None and min_reads > 1:
+        n_before = int((read_counts > 0).sum())
+        adata.X = adata.X.multiply(adata.X >= min_reads).tocsr() if issparse(adata.X) else adata.X * (adata.X >= min_reads)
+        n_after = int((np.asarray(adata.X.sum(axis=0)).ravel() > 0).sum())
+        logger.info(f"min_reads={min_reads}: {n_before - n_after:,} VCRSs fell below the threshold and were zeroed -> {n_after:,} VCRSs called.")
+    return adata
+
+
+# --------------------------------------------------------------------------- #
 # Variant allele fraction from the pseudobam
 # --------------------------------------------------------------------------- #
 # The VCRS count matrix only ever counts reads *compatible with the variant* -- the ALT side.
@@ -1573,6 +1696,7 @@ def adjust_variant_adata_by_pseudobam(
     vcrs_t2g=None,
     check_alignment_position=False,
     alignment_position_tolerance=200,
+    min_reads=None,
     min_snp_vaf=None,
     min_indel_vaf=None,
     count_reads_that_dont_pseudoalign_to_reference_genome=True,
@@ -1907,6 +2031,9 @@ def adjust_variant_adata_by_pseudobam(
 
     if n_dropped == 0 and n_rewritten == 0 and n_double_counted == 0 and n_dedup_narrowed == 0:
         logger.info("No inconsistent reads found; returning the original AnnData object.")
+        # the position check changed nothing, so the read counts come from the original BUS
+        if min_reads is not None:
+            adata = apply_read_count_matrix(adata, kb_count_vcrs_dir, min_reads=min_reads, bus_file="output.bus", bustools=bustools)
         # the position check changed nothing, but the allele-fraction check is independent of it
         return apply_vaf_filter(adata, vaf_bam_paths, min_snp_vaf=min_snp_vaf, min_indel_vaf=min_indel_vaf, samtools=samtools, threads=threads)
 
@@ -1928,6 +2055,13 @@ def adjust_variant_adata_by_pseudobam(
         kept_records["raw_barcode"] = kept_raw_barcodes
     mtx_file = _recount_from_filtered_bus(kb_count_vcrs_dir, kept_records, new_ec_records, bustools, threads, vcrs_t2g, new_counts_dir, mm)
     adata_new = _load_and_align_recounted_adata(mtx_file, adata)
+
+    # Read counts are taken from the *filtered* BUS, so the position check is not silently undone
+    # by recounting the reads it dropped. Applied before the VAF filter so that the two precision
+    # filters compose: the VAF filter only pileups VCRSs that still hold counts, and on the
+    # bustools matrix that set is missing everything its multimapping division zeroed.
+    if min_reads is not None:
+        adata_new = apply_read_count_matrix(adata_new, new_counts_dir, min_reads=min_reads, bus_file="output_filtered.sorted.bus", bustools=bustools)
 
     # Allele-fraction filter, applied after the recount so only VCRSs that still hold counts are
     # pileup'd (a catalog reference has millions of columns and nearly all are already empty).
@@ -3637,8 +3771,18 @@ def _validate_clean_params(params_dict):
     if technology is None or technology.lower() not in technology_valid_values_lower:
         raise ValueError(f"Technology must be one of {technology_valid_values_lower}")
 
+    # min_counts may be fractional, so it is checked as a number rather than an int
+    min_counts = params_dict.get("min_counts")
+    try:
+        if isinstance(min_counts, bool):
+            raise TypeError
+        min_counts_as_float = float(min_counts)
+    except (TypeError, ValueError):
+        min_counts_as_float = None
+    if min_counts_as_float is None or min_counts_as_float <= 0:
+        raise ValueError(f"min_counts must be a number > 0. Got {min_counts} of type {type(min_counts)}.")
+
     for param_name, min_value, optional_value in [
-        ("min_counts", 1, False),
         ("read_length", 1, True),
         ("filter_cells_by_min_genes", 0, True),  # optional True means that it can be None
         ("filter_genes_by_min_cells", 0, True),

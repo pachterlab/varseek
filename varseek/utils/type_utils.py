@@ -90,6 +90,7 @@ __all__ = [
     "int_range",
     # floats
     "Ratio",
+    "PositiveFloat",
     # polymorphic domain args
     "GtfArg",
     # domain literals
@@ -283,6 +284,9 @@ def int_range(min_value: Optional[int] = None, max_value: Optional[int] = None):
 # --------------------------------------------------------------------------- #
 # A proportion in the half-open unit interval (0, 1] — e.g. min_triplet_complexity.
 Ratio = Annotated[float, Field(gt=0, le=1)]
+
+# A strictly positive real — e.g. min_counts, where a fractional threshold is meaningful.
+PositiveFloat = Annotated[float, Field(gt=0)]
 
 
 # --------------------------------------------------------------------------- #
