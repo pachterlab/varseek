@@ -4,10 +4,8 @@
 [![license](https://img.shields.io/pypi/l/varseek)](LICENSE)
 ![status](https://github.com/pachterlab/varseek/actions/workflows/ci.yml/badge.svg)
 ![Code Coverage](https://img.shields.io/badge/Coverage-83%25-green.svg)
-
-<!--[![image](https://anaconda.org/bioconda/varseek/badges/version.svg)](https://anaconda.org/bioconda/varseek)-->
-<!--[![Conda](https://img.shields.io/conda/dn/bioconda/varseek?logo=Anaconda)](https://anaconda.org/bioconda/varseek)-->
-
+[![image](https://anaconda.org/bioconda/varseek/badges/version.svg)](https://anaconda.org/bioconda/varseek)
+[![Conda](https://img.shields.io/conda/dn/bioconda/varseek?logo=Anaconda)](https://anaconda.org/bioconda/varseek)
 ![alt text](https://github.com/pachterlab/varseek/blob/main/figures/logo.png?raw=true)
 
 `varseek` is a free, open-source command-line tool and Python package that enables variant calling and genotyping of DNA-seq, bulk RNA-seq, and single-cell RNA-seq data using k-mer-based alignment against a reference of variant sequences.
@@ -28,12 +26,12 @@ PyPI:
 pip install varseek
 ```
 
-For additional use cases involving FASTQ preprocessing or the de novo variant calling workflow, we recommend using a conda environment.
+For additional use cases involving FASTQ preprocessing or the de novo variant calling workflow, we recommend using the bioconda installation.
 
-<!-- Conda:
+Conda:
 ```bash
 conda install -c bioconda varseek
-``` -->
+```
 
 GitHub:
 ```bash
