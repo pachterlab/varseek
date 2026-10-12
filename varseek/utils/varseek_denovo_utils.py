@@ -596,14 +596,15 @@ def _refspan_from_md(md, cigartuples, query_bytes, span_len):
 
 
 def _vcf_header(bam_file, bam_path, reference, min_count, min_vaf, max_vaf, min_mapq, min_baseq, normalize,
-                strip_version_numbers, emit_type):
+                strip_version_numbers, emit_type, mnv_max_gap=None):
     """VCF header text matching what varseek/cpp/bam2vcf.cpp writes."""
     lines = [
         "##fileformat=VCFv4.2",
         "##source=varseek-bam2vcf-python",
         f'##bam2vcfCommandLine=<bam="{bam_path}",minCount={min_count},'
         f"minVAF={min_vaf:g},maxVAF={max_vaf:g},minMapQ={min_mapq},"
-        f"minBaseQ={min_baseq},normalize={1 if normalize else 0}>",
+        f"minBaseQ={min_baseq},normalize={1 if normalize else 0}"
+        f"{f',mnvMaxGap={mnv_max_gap}' if mnv_max_gap is not None else ''}>",
     ]
     if reference:
         lines.append(f"##reference=file://{reference}")
@@ -615,7 +616,8 @@ def _vcf_header(bam_file, bam_path, reference, min_count, min_vaf, max_vaf, min_
         '##INFO=<ID=VAF,Number=A,Type=Float,Description="Alternate allele fraction, AO/DP">',
     ]
     if emit_type:
-        lines.append('##INFO=<ID=TYPE,Number=A,Type=String,Description="Variant class: snv, ins or del">')
+        classes = "snv, ins, del, mnv or complex" if mnv_max_gap is not None else "snv, ins or del"
+        lines.append(f'##INFO=<ID=TYPE,Number=A,Type=String,Description="Variant class: {classes}">')
     lines.append("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO")
     return "\n".join(lines) + "\n"
 
@@ -647,6 +649,7 @@ def bam_to_vcf(
     threads=1,
     normalize=True,
     skip_indels=False,
+    mnv_max_gap=None,
     index=False,
     strip_version_numbers=False,
     assume_sorted=False,
@@ -696,6 +699,13 @@ def bam_to_vcf(
     - threads                 (int) BGZF worker threads. Default: 1
     - normalize              (bool) Left-align indels; requires `reference`. Default: True
     - skip_indels            (bool) Report substitutions only. Default: False
+    - mnv_max_gap             (int) When set, changes within one read that lie at most this many
+                                   reference bases apart (and not across a spliced gap) are
+                                   reported as a single allele: an MNV when REF and ALT have equal
+                                   length, otherwise an anchored complex allele (TYPE mnv/complex).
+                                   0 merges only directly adjacent changes, so a multi-base
+                                   substitution is reported as itself rather than as separate SNVs.
+                                   Default: None (off)
     - index                  (bool) Tabix-index the output; requires BGZF. Default: False
     - strip_version_numbers  (bool) Drop trailing .N version suffixes from contig names. Default: False
     - assume_sorted          (bool) Skip the @HD SO:coordinate check. Default: False
@@ -718,6 +728,8 @@ def bam_to_vcf(
         raise ValueError(f"min_vaf and max_vaf must lie between 0 and 1, got min_vaf={min_vaf}, max_vaf={max_vaf}")
     if min_vaf > max_vaf:
         raise ValueError(f"min_vaf ({min_vaf}) exceeds max_vaf ({max_vaf}), so no variant could pass")
+    if mnv_max_gap is not None and int(mnv_max_gap) < 0:
+        raise ValueError(f"mnv_max_gap must be non-negative or None, got {mnv_max_gap}")
     if os.path.exists(output) and not overwrite:
         raise ValueError(f"output file '{output}' already exists. Use overwrite=True to overwrite.")
     os.makedirs(os.path.dirname(os.path.abspath(output)) or ".", exist_ok=True)
@@ -747,6 +759,7 @@ def bam_to_vcf(
         threads=threads,
         normalize=normalize,
         skip_indels=skip_indels,
+        mnv_max_gap=mnv_max_gap,
         index=index,
         strip_version_numbers=strip_version_numbers,
         assume_sorted=assume_sorted,
@@ -772,7 +785,7 @@ def bam_to_vcf(
 
 
 def _bam_to_vcf_native(binary, bam, output, reference, regions, min_count, min_vaf, max_vaf, min_mapq, min_baseq, exclude_flags,
-                       require_flags, max_reads, threads, normalize, skip_indels, index, strip_version_numbers,
+                       require_flags, max_reads, threads, normalize, skip_indels, mnv_max_gap, index, strip_version_numbers,
                        assume_sorted, emit_type, bgzip, progress, logger):
     """Run the compiled bam2vcf and return its statistics."""
     import tempfile
@@ -803,6 +816,8 @@ def _bam_to_vcf_native(binary, bam, output, reference, regions, min_count, min_v
             cmd.append("--no-normalize")
         if skip_indels:
             cmd.append("--skip-indels")
+        if mnv_max_gap is not None:
+            cmd += ["--mnv-max-gap", str(int(mnv_max_gap))]
         if not emit_type:
             cmd.append("--no-type")
         if bgzip:
@@ -847,7 +862,7 @@ def _bam_to_vcf_native(binary, bam, output, reference, regions, min_count, min_v
 
 
 def _bam_to_vcf_python(bam, output, reference, regions, min_count, min_vaf, max_vaf, min_mapq, min_baseq, exclude_flags, require_flags,
-                       max_reads, threads, normalize, skip_indels, index, strip_version_numbers, assume_sorted,
+                       max_reads, threads, normalize, skip_indels, mnv_max_gap, index, strip_version_numbers, assume_sorted,
                        emit_type, bgzip, progress, logger):
     """Pure-pysam equivalent of varseek/cpp/bam2vcf.cpp.
 
@@ -897,7 +912,7 @@ def _bam_to_vcf_python(bam, output, reference, regions, min_count, min_vaf, max_
         try:
             writer.write(
                 _vcf_header(bam_file, bam, reference, min_count, min_vaf, max_vaf, min_mapq, min_baseq, normalize,
-                            strip_version_numbers, emit_type)
+                            strip_version_numbers, emit_type, mnv_max_gap)
             )
 
             depth = _DepthRing()
@@ -975,6 +990,75 @@ def _bam_to_vcf_python(bam, output, reference, regions, min_count, min_vaf, max_
                     first1 -= 1
                     budget -= 1
                 return seq, first1
+
+            def emit_insertion(inserted, rpos1, refspan, start1):
+                inserted, first1 = left_shift(inserted, rpos1)
+                anchor1 = first1 - 1
+                anchor = anchor_base(anchor1, refspan, start1) if anchor1 >= 1 else None
+                if anchor is None:
+                    stats["skipped_no_anchor"] += 1
+                else:
+                    add_allele(anchor1, anchor, anchor + inserted, "ins")
+
+            def emit_deletion(length, rpos1, refspan, start1):
+                off = rpos1 - start1
+                deleted = refspan[off : off + length].decode("ascii", "replace")
+                if len(deleted) == length and "\x00" not in deleted and "N" not in deleted:
+                    deleted, first1 = left_shift(deleted, rpos1)
+                    anchor1 = first1 - 1
+                    anchor = anchor_base(anchor1, refspan, start1) if anchor1 >= 1 else None
+                    if anchor is None:
+                        stats["skipped_no_anchor"] += 1
+                    else:
+                        add_allele(anchor1, anchor + deleted, anchor, "del")
+
+            def emit_single(event, refspan, start1):
+                beg1, end1, ref_base, alt, vtype, _ = event
+                if vtype == "snv":
+                    add_allele(beg1, ref_base, alt, "snv")
+                elif vtype == "ins":
+                    emit_insertion(alt, beg1, refspan, start1)
+                else:
+                    emit_deletion(end1 - beg1, beg1, refspan, start1)
+
+            def emit_merged(cluster, end1, refspan, start1):
+                """Mirror of Caller::emit_merged in bam2vcf.cpp."""
+                beg1 = cluster[0][0]
+                off = beg1 - start1
+                if off < 0 or end1 - start1 > len(refspan):
+                    return False
+                ref_allele = refspan[off : end1 - start1].decode("ascii", "replace")
+                if "\x00" in ref_allele or "N" in ref_allele:
+                    return False
+                alt_allele = ""
+                cursor = beg1
+                for e_beg1, e_end1, _, e_alt, _, _ in cluster:
+                    if e_beg1 > cursor:
+                        alt_allele += refspan[cursor - start1 : e_beg1 - start1].decode("ascii", "replace")
+                    alt_allele += e_alt
+                    cursor = max(cursor, e_end1)
+                if len(ref_allele) == len(alt_allele):
+                    add_allele(beg1, ref_allele, alt_allele, "mnv")
+                    return True
+                anchor = anchor_base(beg1 - 1, refspan, start1) if beg1 - 1 >= 1 else None
+                if anchor is None:
+                    return False
+                add_allele(beg1 - 1, anchor + ref_allele, anchor + alt_allele, "complex")
+                return True
+
+            def resolve_events(events, refspan, start1):
+                """Mirror of Caller::resolve_events in bam2vcf.cpp: merge each read's nearby changes."""
+                i = 0
+                while i < len(events):
+                    j = i
+                    end1 = events[i][1]
+                    while j + 1 < len(events) and events[j + 1][5] == events[i][5] and events[j + 1][0] - end1 <= mnv_max_gap:
+                        j += 1
+                        end1 = max(end1, events[j][1])
+                    if j == i or not emit_merged(events[i : j + 1], end1, refspan, start1):
+                        for event in events[i : j + 1]:
+                            emit_single(event, refspan, start1)
+                    i = j + 1
 
             def anchor_base(anchor1, refspan, span_start1):
                 if refwin is not None:
@@ -1079,6 +1163,11 @@ def _bam_to_vcf_python(bam, output, reference, regions, min_count, min_vaf, max_
 
                 rpos1 = start1
                 qpos = 0
+                # With merging on, the read's changes are collected as (beg1, end1, ref, alt, type, segment)
+                # and resolved after the walk; segment counts spliced gaps, which a merge never crosses.
+                merge = mnv_max_gap is not None and not depth_only
+                events = []
+                seg = 0
                 for op, length in cigartuples:
                     if op in (0, 7, 8):  # M / = / X
                         depth.add(rpos1, length)
@@ -1097,7 +1186,10 @@ def _bam_to_vcf_python(bam, output, reference, regions, min_count, min_vaf, max_
                                     continue
                                 if min_baseq and quals is not None and quals[qpos + k] < min_baseq:
                                     continue
-                                add_allele(rpos1 + k, ref_base, alt_base, "snv")
+                                if merge:
+                                    events.append((rpos1 + k, rpos1 + k + 1, ref_base, alt_base, "snv", seg))
+                                else:
+                                    add_allele(rpos1 + k, ref_base, alt_base, "snv")
                         rpos1 += length
                         qpos += length
                     elif op == 1:  # I
@@ -1106,33 +1198,27 @@ def _bam_to_vcf_python(bam, output, reference, regions, min_count, min_vaf, max_
                         )
                         if not depth_only and not low_quality and not skip_indels:
                             inserted = query[qpos : qpos + length].upper()
-                            inserted, first1 = left_shift(inserted, rpos1)
-                            anchor1 = first1 - 1
-                            anchor = anchor_base(anchor1, refspan, start1) if anchor1 >= 1 else None
-                            if anchor is None:
-                                stats["skipped_no_anchor"] += 1
+                            if merge:
+                                events.append((rpos1, rpos1, None, inserted, "ins", seg))
                             else:
-                                add_allele(anchor1, anchor, anchor + inserted, "ins")
+                                emit_insertion(inserted, rpos1, refspan, start1)
                         qpos += length
                     elif op == 2:  # D
                         depth.add(rpos1, length)  # the read spans deleted bases
                         if not depth_only and not skip_indels:
-                            off = rpos1 - start1
-                            deleted = refspan[off : off + length].decode("ascii", "replace")
-                            if len(deleted) == length and "\x00" not in deleted and "N" not in deleted:
-                                deleted, first1 = left_shift(deleted, rpos1)
-                                anchor1 = first1 - 1
-                                anchor = anchor_base(anchor1, refspan, start1) if anchor1 >= 1 else None
-                                if anchor is None:
-                                    stats["skipped_no_anchor"] += 1
-                                else:
-                                    add_allele(anchor1, anchor + deleted, anchor, "del")
+                            if merge:
+                                events.append((rpos1, rpos1 + length, None, "", "del", seg))
+                            else:
+                                emit_deletion(length, rpos1, refspan, start1)
                         rpos1 += length
                     elif op == 3:  # N -- spliced gap: a reference skip, not a deletion
                         rpos1 += length
+                        seg += 1
                     elif op == 4:  # S -- soft clip, present in query_sequence
                         qpos += length
                     # 5 (H) and 6 (P) consume neither the read nor the reference
+                if merge:
+                    resolve_events(events, refspan, start1)
 
             drain()  # the final contig
         finally:

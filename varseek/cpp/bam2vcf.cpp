@@ -263,7 +263,19 @@ class MDReader {
 // ---------------------------------------------------------------------------
 // Per-position accumulator.
 // ---------------------------------------------------------------------------
-enum VarType { kSNV = 0, kIns = 1, kDel = 2 };
+enum VarType { kSNV = 0, kIns = 1, kDel = 2, kMNV = 3, kComplex = 4 };
+
+// One change carried by a single read, held back when nearby changes are merged. beg1/end1
+// are the 1-based reference span [beg1, end1) the change replaces (empty for an insertion),
+// and seg counts spliced gaps so that changes on opposite sides of an intron never merge.
+struct Event {
+    int64_t beg1;
+    int64_t end1;
+    char ref;  // reference base, for an SNV
+    std::string alt;
+    uint8_t type;
+    int seg;
+};
 
 struct Allele {
     std::string ref;
@@ -295,6 +307,7 @@ struct Config {
     int64_t flush_margin = 1000;
     bool normalize = true;
     bool skip_indels = false;
+    int64_t mnv_max_gap = -1;  // <0: off; otherwise merge changes in one read at most this many bases apart
     bool bgzip = false;
     bool index = false;
     bool assume_sorted = false;
@@ -369,7 +382,8 @@ class Caller {
         h += "##source=varseek-bam2vcf-" BAM2VCF_VERSION "\n";
         h += "##bam2vcfCommandLine=<bam=\"" + cfg_.bam + "\",minCount=" + std::to_string(cfg_.min_count) +
              vaf_buf + ",minMapQ=" + std::to_string(cfg_.min_mapq) + ",minBaseQ=" + std::to_string(cfg_.min_baseq) +
-             ",normalize=" + (cfg_.normalize ? "1" : "0") + ">\n";
+             ",normalize=" + (cfg_.normalize ? "1" : "0") +
+             (cfg_.mnv_max_gap >= 0 ? ",mnvMaxGap=" + std::to_string(cfg_.mnv_max_gap) : std::string()) + ">\n";
         if (!cfg_.reference.empty()) h += "##reference=file://" + cfg_.reference + "\n";
         const int nref = sam_hdr_nref(hdr_);
         for (int i = 0; i < nref; ++i) {
@@ -381,7 +395,10 @@ class Caller {
         h += "##INFO=<ID=AO,Number=A,Type=Integer,Description=\"Reads supporting the alternate allele\">\n";
         h += "##INFO=<ID=DP,Number=1,Type=Integer,Description=\"Reads passing filters that span this position\">\n";
         h += "##INFO=<ID=VAF,Number=A,Type=Float,Description=\"Alternate allele fraction, AO/DP\">\n";
-        if (cfg_.emit_type) h += "##INFO=<ID=TYPE,Number=A,Type=String,Description=\"Variant class: snv, ins or del\">\n";
+        if (cfg_.emit_type)
+            h += cfg_.mnv_max_gap >= 0
+                     ? "##INFO=<ID=TYPE,Number=A,Type=String,Description=\"Variant class: snv, ins, del, mnv or complex\">\n"
+                     : "##INFO=<ID=TYPE,Number=A,Type=String,Description=\"Variant class: snv, ins or del\">\n";
         h += "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n";
         out_.put(h);
     }
@@ -527,7 +544,8 @@ class Caller {
             }
             if (cfg_.emit_type) {
                 line_ += ";TYPE=";
-                line_ += (a.type == kSNV ? "snv" : (a.type == kIns ? "ins" : "del"));
+                static const char *kTypeNames[] = {"snv", "ins", "del", "mnv", "complex"};
+                line_ += kTypeNames[a.type];
             }
             line_ += '\n';
             out_.put(line_);
@@ -604,6 +622,10 @@ class Caller {
 
         int64_t rpos1 = start1;  // 1-based reference position of the next aligned base
         int qpos = 0;
+        // With merging on, the read's changes are collected first and resolved after the walk.
+        const bool merge = cfg_.mnv_max_gap >= 0 && !depth_only;
+        events_.clear();
+        int seg = 0;
 
         for (int i = 0; i < ncig; ++i) {
             const int op = bam_cigar_op(cig[i]);
@@ -621,7 +643,10 @@ class Caller {
                             const char qb = seq_nt16_str[bam_seqi(qseq, qpos + k)];
                             if (qb == rb || qb == 'N' || qb == '=') continue;
                             if (cfg_.min_baseq > 0 && qual[qpos + k] < cfg_.min_baseq) continue;
-                            add_allele(rpos1 + k, &rb, 1, &qb, 1, kSNV);
+                            if (merge)
+                                events_.push_back(Event{rpos1 + k, rpos1 + k + 1, rb, std::string(1, qb), kSNV, seg});
+                            else
+                                add_allele(rpos1 + k, &rb, 1, &qb, 1, kSNV);
                         }
                     }
                     rpos1 += len;
@@ -629,19 +654,29 @@ class Caller {
                     break;
                 }
                 case BAM_CINS: {
-                    if (!depth_only && !cfg_.skip_indels)
-                        emit_insertion(b, qseq, qual, qpos, len, rpos1, refspan, start1, span_len);
+                    if (!depth_only && !cfg_.skip_indels && read_insertion(qseq, qual, qpos, len)) {
+                        if (merge)
+                            events_.push_back(Event{rpos1, rpos1, 0, ins_, kIns, seg});
+                        else
+                            emit_insertion(rpos1, refspan, start1, span_len);
+                    }
                     qpos += len;
                     break;
                 }
                 case BAM_CDEL: {
                     add_depth(rpos1, len);  // the read spans deleted bases
-                    if (!depth_only && !cfg_.skip_indels) emit_deletion(len, rpos1, refspan, start1, span_len);
+                    if (!depth_only && !cfg_.skip_indels) {
+                        if (merge)
+                            events_.push_back(Event{rpos1, rpos1 + len, 0, std::string(), kDel, seg});
+                        else
+                            emit_deletion(len, rpos1, refspan, start1, span_len);
+                    }
                     rpos1 += len;
                     break;
                 }
                 case BAM_CREF_SKIP:  // spliced gap: reference skip, not a deletion, and absent from MD
                     rpos1 += len;
+                    ++seg;
                     break;
                 case BAM_CSOFT_CLIP:  // present in the query sequence, so it advances qpos
                     qpos += len;
@@ -650,19 +685,84 @@ class Caller {
                     break;
             }
         }
+        if (merge) resolve_events(refspan, start1, span_len);
     }
 
-    void emit_insertion(bam1_t *b, const uint8_t *qseq, const uint8_t *qual, int qpos, int len, int64_t rpos1,
-                        const char *refspan, int64_t span_start1, int64_t span_len) {
-        (void)b;
+    // Groups the read's changes into clusters whose members sit at most mnv_max_gap reference
+    // bases apart, and reports each multi-change cluster as one allele spanning it: an MNV
+    // when REF and ALT have equal length, otherwise an anchored complex allele. A read that
+    // carries a multi-base substitution then supports that haplotype rather than each of its
+    // constituent SNVs, so a downstream reference built from the call contains the read's
+    // actual sequence. Singletons are reported exactly as without merging.
+    void resolve_events(const char *refspan, int64_t start1, int64_t span_len) {
+        const size_t n = events_.size();
+        size_t i = 0;
+        while (i < n) {
+            size_t j = i;
+            int64_t end1 = events_[i].end1;
+            while (j + 1 < n && events_[j + 1].seg == events_[i].seg && events_[j + 1].beg1 - end1 <= cfg_.mnv_max_gap) {
+                ++j;
+                if (events_[j].end1 > end1) end1 = events_[j].end1;
+            }
+            if (j == i || !emit_merged(i, j, end1, refspan, start1, span_len))
+                for (size_t k = i; k <= j; ++k) emit_single(events_[k], refspan, start1, span_len);
+            i = j + 1;
+        }
+    }
+
+    void emit_single(const Event &e, const char *refspan, int64_t start1, int64_t span_len) {
+        if (e.type == kSNV) {
+            add_allele(e.beg1, &e.ref, 1, e.alt.data(), 1, kSNV);
+        } else if (e.type == kIns) {
+            ins_ = e.alt;
+            emit_insertion(e.beg1, refspan, start1, span_len);
+        } else {
+            emit_deletion((int)(e.end1 - e.beg1), e.beg1, refspan, start1, span_len);
+        }
+    }
+
+    bool emit_merged(size_t i, size_t j, int64_t end1, const char *refspan, int64_t start1, int64_t span_len) {
+        const int64_t beg1 = events_[i].beg1;
+        const int64_t off = beg1 - start1;
+        if (off < 0 || end1 - start1 > span_len) return false;
+        ref_alleles_.assign(refspan + off, (size_t)(end1 - beg1));
+        for (char c : ref_alleles_)
+            if (!c || c == 'N') return false;
+        alt_.clear();
+        int64_t cursor = beg1;
+        for (size_t k = i; k <= j; ++k) {
+            const Event &e = events_[k];
+            if (e.beg1 > cursor) alt_.append(refspan + (cursor - start1), (size_t)(e.beg1 - cursor));
+            alt_ += e.alt;
+            if (e.end1 > cursor) cursor = e.end1;
+        }
+        if (ref_alleles_.size() == alt_.size()) {
+            add_allele(beg1, ref_alleles_.data(), ref_alleles_.size(), alt_.data(), alt_.size(), kMNV);
+            return true;
+        }
+        if (beg1 - 1 < 1) return false;
+        const char anchor = anchor_base(beg1 - 1, refspan, start1, span_len);
+        if (!anchor) return false;
+        ref_alleles_.insert(ref_alleles_.begin(), anchor);
+        alt_.insert(alt_.begin(), anchor);
+        add_allele(beg1 - 1, ref_alleles_.data(), ref_alleles_.size(), alt_.data(), alt_.size(), kComplex);
+        return true;
+    }
+
+    // Loads the inserted bases into ins_, or returns false when any fails min_baseq.
+    bool read_insertion(const uint8_t *qseq, const uint8_t *qual, int qpos, int len) {
         if (cfg_.min_baseq > 0) {
             for (int k = 0; k < len; ++k)
-                if (qual[qpos + k] < cfg_.min_baseq) return;
+                if (qual[qpos + k] < cfg_.min_baseq) return false;
         }
         ins_.clear();
         ins_.reserve((size_t)len);
         for (int k = 0; k < len; ++k) ins_ += seq_nt16_str[bam_seqi(qseq, qpos + k)];
+        return true;
+    }
 
+    // Reports the insertion held in ins_, which would sit before reference position rpos1.
+    void emit_insertion(int64_t rpos1, const char *refspan, int64_t span_start1, int64_t span_len) {
         int64_t first1 = rpos1;  // the inserted bases would sit at, and after, rpos1
         left_shift(ins_, first1);
         const int64_t anchor1 = first1 - 1;
@@ -784,6 +884,7 @@ class Caller {
 
     std::vector<char> scratch_;  // reference bases for the current read's span
     std::string ins_, del_, alt_, ref_alleles_, line_;
+    std::vector<Event> events_;  // the current read's changes, when merging
 };
 
 // ---------------------------------------------------------------------------
@@ -821,6 +922,8 @@ void usage(FILE *fp) {
             "  -t, --threads N         BGZF worker threads (default 1)\n"
             "      --no-normalize      report indels as aligned instead of left-aligning them\n"
             "      --skip-indels       report substitutions only\n"
+            "      --mnv-max-gap N     report changes in one read at most N reference bases apart as one\n"
+            "                          MNV/complex allele (0 = directly adjacent only; default off)\n"
             "      --flush-margin N    left-alignment lookback in bp (default 1000)\n"
             "      --no-type           omit the TYPE INFO field\n"
             "      --strip-version     drop trailing .N version suffixes from contig names\n"
@@ -911,6 +1014,8 @@ int main(int argc, char **argv) {
             cfg.normalize = false;
         else if (!strcmp(a, "--skip-indels"))
             cfg.skip_indels = true;
+        else if (!strcmp(a, "--mnv-max-gap"))
+            cfg.mnv_max_gap = strtoll(need(a), nullptr, 10);
         else if (!strcmp(a, "--no-type"))
             cfg.emit_type = false;
         else if (!strcmp(a, "--bgzip")) {

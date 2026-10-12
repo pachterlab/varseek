@@ -477,3 +477,130 @@ def test_bad_engine_rejected(synthetic_bam, tmp_path):
 def test_missing_bam_rejected(tmp_path):
     with pytest.raises(ValueError, match="does not exist"):
         bam_to_vcf(str(tmp_path / "nope.bam"), output=str(tmp_path / "x.vcf"))
+
+
+# ---------------------------------------------------------------------------
+# mnv_max_gap: merging nearby changes within a read
+# ---------------------------------------------------------------------------
+@pytest.fixture(scope="module")
+def mnv_bam(tmp_path_factory):
+    """Reads that each carry a known cluster of changes.
+
+    chr1 (1000 bp):
+    - 3 reads with a 2-base substitution at 101-102
+    - 2 reads with an SNV at 301 directly followed by a 2-base deletion at 302-303
+    - 2 reads with SNVs at 501 and 505 (three reference bases between them)
+    - 2 spliced reads (50M200N50M) whose SNVs sit on either side of the junction at 750 and 951
+    """
+    out = tmp_path_factory.mktemp("bam_to_vcf_mnv")
+    random.seed(11)
+    chrom = "".join(random.choice("ACGT") for _ in range(1000))
+    fasta = out / "ref.fa"
+    with open(fasta, "w") as handle:
+        handle.write(">chr1\n")
+        for i in range(0, len(chrom), 60):
+            handle.write(chrom[i : i + 60] + "\n")
+    pysam.faidx(str(fasta))
+    flip = {"A": "C", "C": "A", "G": "T", "T": "G"}
+
+    def mutate(pos0, positions1):
+        seq = list(chrom[pos0 : pos0 + READLEN])
+        for p1 in positions1:
+            seq[p1 - 1 - pos0] = flip[seq[p1 - 1 - pos0]]
+        return "".join(seq)
+
+    reads = []
+    for i in range(3):
+        reads.append((60 + i, mutate(60 + i, [101, 102]), f"{READLEN}M"))
+    for i in range(2):
+        pos0 = 260 + i
+        seq = list(chrom[pos0 : pos0 + READLEN + 2])
+        seq[300 - pos0] = flip[seq[300 - pos0]]
+        del seq[301 - pos0 : 303 - pos0]
+        left = 301 - pos0
+        reads.append((pos0, "".join(seq)[:READLEN], f"{left}M2D{READLEN - left}M"))
+    for i in range(2):
+        reads.append((460 + i, mutate(460 + i, [501, 505]), f"{READLEN}M"))
+    for i in range(2):
+        seq = list(chrom[700:750] + chrom[950:1000])
+        seq[49] = flip[seq[49]]  # chr1:750
+        seq[50] = flip[seq[50]]  # chr1:951
+        reads.append((700, "".join(seq), "50M200N50M"))
+
+    header = {"HD": {"VN": "1.6", "SO": "coordinate"}, "SQ": [{"SN": "chr1", "LN": len(chrom)}]}
+    unsorted_bam = out / "unsorted.bam"
+    with pysam.AlignmentFile(str(unsorted_bam), "wb", header=header) as bam:
+        for i, (pos0, seq, cigar) in enumerate(reads):
+            rec = pysam.AlignedSegment()
+            rec.query_name = f"m{i}"
+            rec.query_sequence = seq
+            rec.flag = 0
+            rec.reference_id = 0
+            rec.reference_start = pos0
+            rec.mapping_quality = 60
+            rec.cigarstring = cigar
+            rec.query_qualities = pysam.qualitystring_to_array("I" * len(seq))
+            bam.write(rec)
+    sorted_bam = out / "sorted.bam"
+    pysam.sort("-o", str(sorted_bam), str(unsorted_bam))
+    return {"bam": str(sorted_bam), "fasta": str(fasta), "ref": chrom, "flip": flip}
+
+
+def _alleles(path):
+    return {(pos, ref, alt): (info["AO"][0], info["TYPE"][0]) for _, pos, ref, alt, info in read_records(path)}
+
+
+@pytest.mark.parametrize("engine", ENGINES)
+def test_mnv_merging_off_by_default(mnv_bam, tmp_path, engine):
+    out = tmp_path / f"{engine}.vcf"
+    bam_to_vcf(mnv_bam["bam"], output=str(out), reference=mnv_bam["fasta"], engine=engine, overwrite=True)
+    types = {t for _, t in _alleles(str(out)).values()}
+    assert types <= {"snv", "ins", "del"}
+    assert sum(1 for _, t in _alleles(str(out)).values() if t == "snv") == 7
+
+
+@pytest.mark.parametrize("engine", ENGINES)
+def test_mnv_merging_adjacent(mnv_bam, tmp_path, engine):
+    ref, flip = mnv_bam["ref"], mnv_bam["flip"]
+    out = tmp_path / f"{engine}.vcf"
+    bam_to_vcf(mnv_bam["bam"], output=str(out), reference=mnv_bam["fasta"], engine=engine, overwrite=True, mnv_max_gap=0)
+    got = _alleles(str(out))
+    mnv_ref = ref[100:102]
+    assert got[(101, mnv_ref, flip[mnv_ref[0]] + flip[mnv_ref[1]])] == (3, "mnv")
+    # SNV at 301 then deletion of 302-303: one anchored complex allele
+    assert got[(300, ref[299:303], ref[299] + flip[ref[300]])] == (2, "complex")
+    # three reference bases apart: not merged at gap 0
+    assert got[(501, ref[500], flip[ref[500]])] == (2, "snv")
+    assert got[(505, ref[504], flip[ref[504]])] == (2, "snv")
+    # a spliced gap is never merged across
+    assert got[(750, ref[749], flip[ref[749]])] == (2, "snv")
+    assert got[(951, ref[950], flip[ref[950]])] == (2, "snv")
+    assert len(got) == 6
+
+
+@pytest.mark.parametrize("engine", ENGINES)
+def test_mnv_merging_with_gap(mnv_bam, tmp_path, engine):
+    ref, flip = mnv_bam["ref"], mnv_bam["flip"]
+    out = tmp_path / f"{engine}.vcf"
+    bam_to_vcf(mnv_bam["bam"], output=str(out), reference=mnv_bam["fasta"], engine=engine, overwrite=True, mnv_max_gap=3)
+    got = _alleles(str(out))
+    alt = flip[ref[500]] + ref[501:504] + flip[ref[504]]
+    assert got[(501, ref[500:505], alt)] == (2, "mnv")
+    assert (750, ref[749], flip[ref[749]]) in got
+
+
+def test_mnv_max_gap_rejects_negative(mnv_bam, tmp_path):
+    with pytest.raises(ValueError, match="mnv_max_gap"):
+        bam_to_vcf(mnv_bam["bam"], output=str(tmp_path / "x.vcf"), reference=mnv_bam["fasta"], mnv_max_gap=-1)
+
+
+@requires_native
+def test_engines_agree_with_mnv_merging(mnv_bam, tmp_path):
+    for gap in (0, 3):
+        outputs = []
+        for engine in ("native", "python"):
+            out = tmp_path / f"agree_{engine}_{gap}.vcf"
+            bam_to_vcf(mnv_bam["bam"], output=str(out), reference=mnv_bam["fasta"], engine=engine, overwrite=True, mnv_max_gap=gap)
+            with open(out) as handle:
+                outputs.append([line for line in handle if not line.startswith("##")])
+        assert outputs[0] == outputs[1]

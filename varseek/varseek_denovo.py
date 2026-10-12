@@ -98,6 +98,7 @@ class DenovoParams(BaseModel):
     max_vaf: object = 1.0
     min_mapq: object = None
     min_baseq: object = None
+    mnv_max_gap: object = None
 
     @model_validator(mode="after")
     def _validate(self):
@@ -131,6 +132,10 @@ class DenovoParams(BaseModel):
                 f"--min-mapq/--min-baseq require variant_caller='bam2vcf' (got '{self.variant_caller}'); "
                 "the bcftools caller sets mpileup's -q/-Q itself, and the cigar caller ignores qualities."
             )
+
+        # Merging happens while bam2vcf walks each read; the other callers never see a read's changes together.
+        if self.mnv_max_gap is not None and self.variant_caller != "bam2vcf":
+            raise ValueError(f"--mnv-max-gap requires variant_caller='bam2vcf' (got '{self.variant_caller}')")
 
         # The callers emit different formats, so the required extension depends on the caller:
         # only 'cigar' writes a CSV of HGVS strings; bam2vcf and bcftools both write VCF.
@@ -204,8 +209,10 @@ def denovo(
     bam2vcf_engine: Literal["auto", "native", "python"] = "auto",
     bowtie2_seed_length: Optional[PositiveInt] = None,
     bowtie2_score_min: Optional[str] = None,
+    star_extra_args: Optional[str] = None,
     include: Optional[str] = None,
     skip_indels: bool = False,
+    mnv_max_gap: Optional[NonNegativeInt] = None,
     disable_baq: bool = True,
     max_depth: PositiveInt = 1000,
     split_bam_by_n: bool = False,
@@ -252,8 +259,10 @@ def denovo(
     - bam2vcf_engine                 (str) Implementation used by the bam2vcf caller. "auto" uses the compiled C++ helper and falls back to Python if it cannot be built, "native" requires the compiled helper, "python" forces the pysam implementation. Default: "auto"
     - bowtie2_seed_length            (int) Seed length for Bowtie2 aligner. Default: None
     - bowtie2_score_min              (str) Bowtie2 score-min setting. Default: None
+    - star_extra_args                (str) Extra arguments appended to the STAR alignment command, e.g. "--scoreDelBase -1 --outFilterScoreMinOverLread 0.3" to keep reads that carry long indels. Default: None
     - include                        (str) bcftools filter expression. Default: None
     - skip_indels                    (bool) Skip indels. Default: False
+    - mnv_max_gap                    (int) Report changes within one read that lie at most this many reference bases apart as a single MNV or complex allele instead of separate SNVs/indels (0 merges only directly adjacent changes, e.g. a multi-base substitution). This keeps a read's haplotype intact for vk ref, whose sequences would otherwise carry the reference base at the neighboring change. bam2vcf variant caller only. Default: None (off)
     - disable_baq                    (bool) Disable BAQ (Base Alignment Quality) computation in mpileup, passing -B. BAQ downweights base qualities near indels and in misalignment-prone regions, which raises specificity but suppresses marginal calls and costs a large amount of runtime (a per-read HMM realignment). Disabled by default because varseek's typical use is sensitive candidate discovery; set False to recover bcftools' stock specificity. Default: True
     - max_depth                      (int) Maximum reads per input file at any single position in mpileup, passed as -d. Only binds at positions deeper than this. Capping subsamples reads, so allele *fraction* is roughly preserved and only absolute counts shrink -- a variant is lost only if its capped ALT count falls under min_counts (roughly AF < min_counts/max_depth at capped sites). Raise it when hunting low-frequency somatic/subclonal variants; lower it for speed on deep RNA-seq pileups. Default: 1000
     - split_bam_by_n                 (bool) Split BAM by N in CIGAR using GATK SplitNCigarReads. Default: False
@@ -482,6 +491,8 @@ def denovo(
                     --limitBAMsortRAM 0"""
                 if inputs[0].endswith(".gz"):
                     cmd += " --readFilesCommand zcat"
+                if star_extra_args:
+                    cmd += f" {star_extra_args}"
                 run(cmd)
 
                 #* Split spliced reads if requested
@@ -602,6 +613,7 @@ def denovo(
             threads=threads,
             normalize=(not disable_bcftools_norm),
             skip_indels=skip_indels,
+            mnv_max_gap=mnv_max_gap,
             index=output.endswith(".vcf.gz"),
             strip_version_numbers=strip_version_numbers,
             overwrite=True,  # DenovoParams already applied the overwrite policy
@@ -739,8 +751,10 @@ def main():
     parser.add_argument("--bam2vcf-engine", default="auto", choices=["auto", "native", "python"], help="Implementation used by the bam2vcf caller: auto (compiled C++ with a Python fallback), native (require the compiled helper) or python")
     parser.add_argument("--bowtie2-seed-length", type=int, default=None, help="Seed length for Bowtie2 aligner")
     parser.add_argument("--bowtie2-score-min", default=None, help="Score minimum for Bowtie2 aligner")
+    parser.add_argument("--star-extra-args", default=None, help="Extra arguments appended to the STAR alignment command (quote them as one string)")
     parser.add_argument("-i", "--include", default="", help="bcftools filter expression")
     parser.add_argument("-I", "--skip-indels", action="store_true", help="Skip indels")
+    parser.add_argument("--mnv-max-gap", type=int, default=None, help="Report changes within one read at most this many reference bases apart as one MNV/complex allele (0 = directly adjacent only; bam2vcf variant caller only; default off)")
     parser.add_argument("--enable-baq", dest="disable_baq", action="store_false", help="Enable BAQ computation in mpileup (disabled by default: BAQ raises specificity near indels but suppresses marginal calls and is a large runtime cost)")
     parser.add_argument("--max-depth", type=int, default=1000, help="Maximum reads per input file at any single position in mpileup (-d). Raise for low-frequency somatic/subclonal variants, lower for speed on deep pileups.")
     parser.add_argument("--split-bam-by-n", action="store_true", help="Split BAM by N in CIGAR (spliced reads)")
@@ -783,8 +797,10 @@ def main():
         min_baseq=args.min_baseq,
         bowtie2_seed_length=args.bowtie2_seed_length,
         bowtie2_score_min=args.bowtie2_score_min,
+        star_extra_args=args.star_extra_args,
         include=args.include,
         skip_indels=args.skip_indels,
+        mnv_max_gap=args.mnv_max_gap,
         disable_baq=args.disable_baq,
         max_depth=args.max_depth,
         split_bam_by_n=args.split_bam_by_n,
